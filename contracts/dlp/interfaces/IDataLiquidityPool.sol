@@ -2,8 +2,8 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {IDataRegistry} from "../../dataRegistry/interfaces/IDataRegistry.sol";
-import {ITeePool} from "../../teePool/interfaces/ITeePool.sol";
+import {IDataRegistry} from "../../dependencies/dataRegistry/interfaces/IDataRegistry.sol";
+import {ITeePool} from "../../dependencies/teePool/interfaces/ITeePool.sol";
 
 interface IDataLiquidityPool {
     enum FileStatus {

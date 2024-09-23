@@ -12,7 +12,10 @@ yarn install
 npx hardhat test
 ```
 
-
+5. Deploy your own Token & DLP
+```bash
+npx hardhat deploy --network moksha --tags DLPDeploy  
+```
 
 
 ### Deployments:

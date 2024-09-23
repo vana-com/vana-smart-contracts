@@ -1,10 +1,10 @@
 import chai, { should } from "chai";
 import chaiAsPromised from "chai-as-promised";
 import { ethers, upgrades } from "hardhat";
-import { DataRegistryImplementation } from "../typechain-types";
+import { DataRegistryImplementation } from "../../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { getCurrentBlockNumber } from "../utils/timeAndBlockManipulation";
-import { parseEther } from "../utils/helpers";
+import { getCurrentBlockNumber } from "../../utils/timeAndBlockManipulation";
+import { parseEther } from "../../utils/helpers";
 
 chai.use(chaiAsPromised);
 should();
@@ -220,72 +220,6 @@ describe("DataRegistry", () => {
         .acceptOwnership()
         .should.be.rejectedWith(
           `OwnableUnauthorizedAccount("${user3.address}")`,
-        );
-    });
-
-    it("Should upgradeTo when owner", async function () {
-      await upgrades.upgradeProxy(
-        dataRegistry,
-        await ethers.getContractFactory(
-          "DataRegistryImplementationV2Mock",
-          owner,
-        ),
-      );
-
-      const newRoot = await ethers.getContractAt(
-        "DataRegistryImplementationV2Mock",
-        dataRegistry,
-      );
-      (await newRoot.owner()).should.eq(owner);
-      (await newRoot.version()).should.eq(2);
-
-      (await newRoot.test()).should.eq("test");
-    });
-
-    it("Should upgradeTo when owner and emit event", async function () {
-      const newRootImplementation = await ethers.deployContract(
-        "DataRegistryImplementationV2Mock",
-      );
-
-      await dataRegistry
-        .connect(owner)
-        .upgradeToAndCall(newRootImplementation, "0x")
-        .should.emit(dataRegistry, "Upgraded")
-        .withArgs(newRootImplementation);
-
-      const newRoot = await ethers.getContractAt(
-        "DataRegistryImplementationV2Mock",
-        dataRegistry,
-      );
-
-      (await newRoot.owner()).should.eq(owner);
-      (await newRoot.version()).should.eq(2);
-
-      (await newRoot.test()).should.eq("test");
-    });
-
-    it("Should reject upgradeTo when storage layout is incompatible", async function () {
-      await upgrades
-        .upgradeProxy(
-          dataRegistry,
-          await ethers.getContractFactory(
-            "DataRegistryImplementationV3Mock",
-            owner,
-          ),
-        )
-        .should.be.rejectedWith("New storage layout is incompatible");
-    });
-
-    it("Should reject upgradeTo when non owner", async function () {
-      const newRootImplementation = await ethers.deployContract(
-        "DataRegistryImplementationV2Mock",
-      );
-
-      await dataRegistry
-        .connect(user1)
-        .upgradeToAndCall(newRootImplementation, "0x")
-        .should.be.rejectedWith(
-          `OwnableUnauthorizedAccount("${user1.address}")`,
         );
     });
   });

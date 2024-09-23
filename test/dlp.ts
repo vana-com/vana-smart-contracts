@@ -15,7 +15,7 @@ import {
   getCurrentBlockNumber,
   getCurrentBlockTimestamp,
 } from "../utils/timeAndBlockManipulation";
-import { deployDataRegistry, Proof, proofs, signProof } from "./dataRegistry";
+import { deployDataRegistry, Proof, proofs, signProof } from "./dependencies/dataRegistry";
 import { parseEther } from "../utils/helpers";
 
 chai.use(chaiAsPromised);
