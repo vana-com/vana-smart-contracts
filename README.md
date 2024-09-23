@@ -1,6 +1,6 @@
 
 1. Install hardhat: https://hardhat.org/hardhat-runner/docs/getting-started#installation
-2. Clone the DLP Smart Contract Repo: https://github.com/vana-com/vana-dlp-smart-contracts/
+2. Clone the DLP Smart Contract Repo: https://github.com/vana-com/vana-smart-contracts/
 3. Install dependencies
 
 ```bash
@@ -12,17 +12,12 @@ yarn install
 npx hardhat test
 ```
 
-5. Deploy your own Token & DLP
-```bash
-npx hardhat deploy --network satori --tags DLPDeploy  
-```
 
 
 
-
-### Satori deployments:
-DataLiquidityPoolsRoot: ```0x8f514f140034a1C23Cbc31f8D7aCDE78C41AF9E8```
-
-DataRegistry: ```0x63937b885141E905192f00f33E69eccD6301e9c7```
-
-TeePool: ```0xb1D0cB224F6756E7AD52e6f805CDD52c1369b832```
+### Deployments:
+| Contract                                                              | Moksha                                     | Satori                                                                            | Mainnet |
+|-----------------------------------------------------------------------|--------------------------------------------|-----------------------------------------------------------------------------------|--------------------------------------------|
+| `DataLiquidityPoolsRoot`                                              | [0xf408A064d640b620219F510963646Ed2bD5606BB](https://moksha.vanascan.io/address/0xf408A064d640b620219F510963646Ed2bD5606BB) | [0xf408A064d640b620219F510963646Ed2bD5606BB](https://satori.vanascan.io/address/0xf408A064d640b620219F510963646Ed2bD5606BB) |  |
+| `DataRegistry`                                                        | [0xEA882bb75C54DE9A08bC46b46c396727B4BFe9a5](https://moksha.vanascan.io/address/0xEA882bb75C54DE9A08bC46b46c396727B4BFe9a5) | [0xEA882bb75C54DE9A08bC46b46c396727B4BFe9a5](https://satori.vanascan.io/address/0xEA882bb75C54DE9A08bC46b46c396727B4BFe9a5) |  |
+| `TeePool`                                                             | [0xF084Ca24B4E29Aa843898e0B12c465fAFD089965](https://moksha.vanascan.io/address/0xF084Ca24B4E29Aa843898e0B12c465fAFD089965) | [0xF084Ca24B4E29Aa843898e0B12c465fAFD089965](https://satori.vanascan.io/address/0xF084Ca24B4E29Aa843898e0B12c465fAFD089965) |  |
