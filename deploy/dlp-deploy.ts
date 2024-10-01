@@ -7,7 +7,7 @@ import { parseEther } from "../utils/helpers";
 const implementationContractName = "DataLiquidityPoolImplementation";
 const proxyContractName = "DataLiquidityPoolProxy";
 const proxyContractPath =
-  "contracts/dlpLight/DataLiquidityPoolProxy.sol:DataLiquidityPoolProxy";
+  "contracts/dlp/DataLiquidityPoolProxy.sol:DataLiquidityPoolProxy";
 
 const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const [deployer] = await ethers.getSigners();
@@ -17,6 +17,12 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const tokenContractName = "DAT";
   const tokenName = process.env.DLP_TOKEN_NAME ?? "Custom Data Autonomy Token";
   const tokenSymbol = process.env.DLP_TOKEN_SYMBOL ?? "CUSTOMDAT";
+
+  const teePoolContractAddress = process.env.TEE_POOL_CONTRACT_ADDRESS ?? "";
+  const dataRegistryContractAddress = process.env.DATA_REGISTRY_CONTRACT_ADDRESS ?? "";
+
+  const dlpMasterKey = process.env.DLP_MASTER_KEY ?? "masterKey";
+  const dlpName = process.env.DLP_NAME ?? "DLP Name";
 
   console.log(``);
   console.log(``);
@@ -35,20 +41,20 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const token = await ethers.getContractAt("DAT", tokenDeploy.address);
   const dataRegistry = await ethers.getContractAt(
     "DataRegistryImplementation",
-    (await deployments.get("DataRegistryProxy")).address,
+    dataRegistryContractAddress,
   );
   const teePool = await ethers.getContractAt(
     "TeePoolImplementation",
-    (await deployments.get("TeePoolProxy")).address,
+    teePoolContractAddress,
   );
 
   const params = {
     ownerAddress: ownerAddress,
-    name: "DLP Name",
+    name: dlpName,
     dataRegistryAddress: dataRegistry.target,
     teePoolAddress: teePool.target,
     tokenAddress: token.target,
-    masterKey: "masterKey",
+    masterKey: dlpMasterKey,
     fileRewardFactor: parseEther(10),
   };
 
