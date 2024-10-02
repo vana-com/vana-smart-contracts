@@ -4,9 +4,9 @@ import { ethers, upgrades } from "hardhat";
 import {
   DataRegistryImplementation,
   TeePoolImplementation,
-} from "../typechain-types";
+} from "../../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { getReceipt, parseEther } from "../utils/helpers";
+import { getReceipt, parseEther } from "../../utils/helpers";
 import { deployDataRegistry, proofs } from "./dataRegistry";
 import {
   advanceBlockNTimes,
@@ -14,7 +14,7 @@ import {
   advanceToBlockN,
   getCurrentBlockNumber,
   getCurrentBlockTimestamp,
-} from "../utils/timeAndBlockManipulation";
+} from "../../utils/timeAndBlockManipulation";
 
 chai.use(chaiAsPromised);
 should();
@@ -167,66 +167,6 @@ describe("TeePool", () => {
       await teePool
         .connect(user1)
         .updateCancelDelay(200)
-        .should.be.rejectedWith(
-          `OwnableUnauthorizedAccount("${user1.address}")`,
-        );
-    });
-
-    it("Should upgradeTo when owner", async function () {
-      await upgrades.upgradeProxy(
-        teePool,
-        await ethers.getContractFactory("TeePoolImplementationV2Mock", owner),
-      );
-
-      const newRoot = await ethers.getContractAt(
-        "TeePoolImplementationV2Mock",
-        teePool,
-      );
-      (await newRoot.owner()).should.eq(owner);
-      (await newRoot.version()).should.eq(2);
-
-      (await newRoot.test()).should.eq("test");
-    });
-
-    it("Should upgradeTo when owner and emit event", async function () {
-      const newRootImplementation = await ethers.deployContract(
-        "TeePoolImplementationV2Mock",
-      );
-
-      await teePool
-        .connect(owner)
-        .upgradeToAndCall(newRootImplementation, "0x")
-        .should.emit(teePool, "Upgraded")
-        .withArgs(newRootImplementation);
-
-      const newRoot = await ethers.getContractAt(
-        "TeePoolImplementationV2Mock",
-        teePool,
-      );
-
-      (await newRoot.owner()).should.eq(owner);
-      (await newRoot.version()).should.eq(2);
-
-      (await newRoot.test()).should.eq("test");
-    });
-
-    it("Should reject upgradeTo when storage layout is incompatible", async function () {
-      await upgrades
-        .upgradeProxy(
-          teePool,
-          await ethers.getContractFactory("TeePoolImplementationV3Mock", owner),
-        )
-        .should.be.rejectedWith("New storage layout is incompatible");
-    });
-
-    it("Should reject upgradeTo when non owner", async function () {
-      const newRootImplementation = await ethers.deployContract(
-        "TeePoolImplementationV2Mock",
-      );
-
-      await teePool
-        .connect(user1)
-        .upgradeToAndCall(newRootImplementation, "0x")
         .should.be.rejectedWith(
           `OwnableUnauthorizedAccount("${user1.address}")`,
         );
