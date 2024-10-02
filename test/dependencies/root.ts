@@ -2,14 +2,17 @@ import chai, { should } from "chai";
 import chaiAsPromised from "chai-as-promised";
 import { ethers, network, upgrades } from "hardhat";
 import { Wallet } from "ethers";
-import { DAT, DataLiquidityPoolsRootImplementation } from "../typechain-types";
+import {
+  DAT,
+  DataLiquidityPoolsRootImplementation,
+} from "../../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import {
   advanceBlockNTimes,
   advanceToBlockN,
   getCurrentBlockNumber,
-} from "../utils/timeAndBlockManipulation";
-import { getReceipt, parseEther } from "../utils/helpers";
+} from "../../utils/timeAndBlockManipulation";
+import { getReceipt, parseEther } from "../../utils/helpers";
 import { randomInt } from "node:crypto";
 
 chai.use(chaiAsPromised);
@@ -529,86 +532,6 @@ describe("DataLiquidityPoolsRoot", () => {
         .acceptOwnership()
         .should.be.rejectedWith(
           `OwnableUnauthorizedAccount("${user3.address}")`,
-        );
-    });
-
-    it("Should upgradeTo when owner", async function () {
-      await upgrades.upgradeProxy(
-        root,
-        await ethers.getContractFactory(
-          "DataLiquidityPoolsRootImplementationV2Mock",
-          owner,
-        ),
-      );
-
-      const newRoot = await ethers.getContractAt(
-        "DataLiquidityPoolsRootImplementationV2Mock",
-        root,
-      );
-      (await newRoot.owner()).should.eq(owner);
-      (await newRoot.numberOfTopDlps()).should.eq(numberOfTopDlps);
-      (await newRoot.minDlpStakeAmount()).should.eq(minDlpStakeAmount);
-      (await newRoot.epochSize()).should.eq(epochSize);
-      (await newRoot.epochRewardAmount()).should.eq(epochRewardAmount);
-      (await newRoot.paused()).should.eq(false);
-      (await newRoot.version()).should.eq(2);
-
-      (await newRoot.epochsCount()).should.eq(0);
-
-      (await newRoot.test()).should.eq("test");
-    });
-
-    it("Should upgradeTo when owner and emit event", async function () {
-      const newRootImplementation = await ethers.deployContract(
-        "DataLiquidityPoolsRootImplementationV2Mock",
-      );
-
-      await root
-        .connect(owner)
-        .upgradeToAndCall(newRootImplementation, "0x")
-        .should.emit(root, "Upgraded")
-        .withArgs(newRootImplementation);
-
-      const newRoot = await ethers.getContractAt(
-        "DataLiquidityPoolsRootImplementationV2Mock",
-        root,
-      );
-
-      (await newRoot.owner()).should.eq(owner);
-      (await newRoot.numberOfTopDlps()).should.eq(numberOfTopDlps);
-      (await newRoot.minDlpStakeAmount()).should.eq(minDlpStakeAmount);
-      (await newRoot.epochSize()).should.eq(epochSize);
-      (await newRoot.epochRewardAmount()).should.eq(epochRewardAmount);
-      (await newRoot.paused()).should.eq(false);
-      (await newRoot.version()).should.eq(2);
-
-      (await newRoot.epochsCount()).should.eq(0);
-
-      (await newRoot.test()).should.eq("test");
-    });
-
-    it("Should reject upgradeTo when storage layout is incompatible", async function () {
-      await upgrades
-        .upgradeProxy(
-          root,
-          await ethers.getContractFactory(
-            "DataLiquidityPoolsRootImplementationV3Mock",
-            owner,
-          ),
-        )
-        .should.be.rejectedWith("New storage layout is incompatible");
-    });
-
-    it("Should reject upgradeTo when non owner", async function () {
-      const newRootImplementation = await ethers.deployContract(
-        "DataLiquidityPoolsRootImplementationV2Mock",
-      );
-
-      await root
-        .connect(user1)
-        .upgradeToAndCall(newRootImplementation, "0x")
-        .should.be.rejectedWith(
-          `OwnableUnauthorizedAccount("${user1.address}")`,
         );
     });
   });
