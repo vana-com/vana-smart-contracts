@@ -23,6 +23,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     process.env.DATA_REGISTRY_CONTRACT_ADDRESS ?? "";
 
   const dlpMasterKey = process.env.DLP_MASTER_KEY ?? "masterKey";
+  const proofInstruction =
+    process.env.DLP_PROOF_INSTRUCTION ?? "proofInstruction";
   const dlpName = process.env.DLP_NAME ?? "DLP Name";
   const dlpFileRewardFactor =
     process.env.DLP_FILE_REWARD_FACTOR ?? parseEther(1);
@@ -42,22 +44,15 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   });
 
   const token = await ethers.getContractAt("DAT", tokenDeploy.address);
-  const dataRegistry = await ethers.getContractAt(
-    "DataRegistryImplementation",
-    dataRegistryContractAddress,
-  );
-  const teePool = await ethers.getContractAt(
-    "TeePoolImplementation",
-    teePoolContractAddress,
-  );
 
   const params = {
     ownerAddress: ownerAddress,
     name: dlpName,
-    dataRegistryAddress: dataRegistry.target,
-    teePoolAddress: teePool.target,
+    dataRegistryAddress: dataRegistryContractAddress,
+    teePoolAddress: teePoolContractAddress,
     tokenAddress: token.target,
     masterKey: dlpMasterKey,
+    proofInstruction: proofInstruction,
     fileRewardFactor: dlpFileRewardFactor,
   };
 
