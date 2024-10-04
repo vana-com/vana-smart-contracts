@@ -145,6 +145,8 @@ Before deploying or interacting with the contracts, you need to set up your envi
 
 `DLP_TOKEN_SYMBOL`: The symbol of your DLP token. This is typically a short, all-caps code.
 
+`DLP_FILE_REWARD_FACTOR`: A factor used to calculate file rewards. This value determines the reward amount based on the file's score.
+
 #### 2. Install dependencies
 ```bash
 yarn install

@@ -1,7 +1,7 @@
 import { deployments, ethers } from "hardhat";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { DeployFunction } from "hardhat-deploy/types";
-import { deployProxy, verifyProxy } from "./helpers";
+import { deployProxy, verifyContract, verifyProxy } from "./helpers";
 import { parseEther } from "../utils/helpers";
 
 const implementationContractName = "DataLiquidityPoolImplementation";
@@ -19,10 +19,13 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const tokenSymbol = process.env.DLP_TOKEN_SYMBOL ?? "CUSTOMDAT";
 
   const teePoolContractAddress = process.env.TEE_POOL_CONTRACT_ADDRESS ?? "";
-  const dataRegistryContractAddress = process.env.DATA_REGISTRY_CONTRACT_ADDRESS ?? "";
+  const dataRegistryContractAddress =
+    process.env.DATA_REGISTRY_CONTRACT_ADDRESS ?? "";
 
   const dlpMasterKey = process.env.DLP_MASTER_KEY ?? "masterKey";
   const dlpName = process.env.DLP_NAME ?? "DLP Name";
+  const dlpFileRewardFactor =
+    process.env.DLP_FILE_REWARD_FACTOR ?? parseEther(1);
 
   console.log(``);
   console.log(``);
@@ -55,7 +58,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     teePoolAddress: teePool.target,
     tokenAddress: token.target,
     masterKey: dlpMasterKey,
-    fileRewardFactor: parseEther(10),
+    fileRewardFactor: dlpFileRewardFactor,
   };
 
   const proxyDeploy = await deployProxy(
@@ -70,9 +73,32 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     proxyDeploy.proxyAddress,
   );
 
-  await token.connect(deployer).mint(deployer, parseEther(100000000));
-  await token.connect(deployer).approve(dlp, parseEther(1000000));
-  await dlp.connect(deployer).addRewardsForContributors(parseEther(1000000));
+  console.log(``);
+  console.log(``);
+  console.log(``);
+  console.log(`**************************************************************`);
+  console.log(`**************************************************************`);
+  console.log(`**************************************************************`);
+  console.log(`********** Mint tokens **********`);
+  const txMint = await token
+    .connect(deployer)
+    .mint(deployer, parseEther(100000000));
+  await txMint.wait();
+
+  const txApprove = await token
+    .connect(deployer)
+    .approve(dlp, parseEther(1000000));
+  await txApprove.wait();
+
+  const txAddRewards = await dlp
+    .connect(deployer)
+    .addRewardsForContributors(parseEther(1000000));
+
+  await verifyContract(tokenDeploy.address, [
+    tokenName,
+    tokenSymbol,
+    ownerAddress,
+  ]);
 
   await verifyProxy(
     proxyDeploy.proxyAddress,

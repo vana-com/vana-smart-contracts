@@ -46,7 +46,7 @@ export async function verifyProxy(
       constructorArguments: [],
     });
   } catch (e) {
-    console.log(e);
+    // console.log(e);
   }
 
   try {
@@ -57,7 +57,7 @@ export async function verifyProxy(
       constructorArguments: [rootImplementationAddress, initializeData],
     });
   } catch (e) {
-    console.log(e);
+    // console.log(e);
   }
 }
 
@@ -81,7 +81,7 @@ export async function verifyContract(
       constructorArguments: constructorArguments,
     });
   } catch (e) {
-    console.log(e);
+    // console.log(e);
   }
 }
 
