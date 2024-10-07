@@ -252,12 +252,12 @@ contract DataLiquidityPoolImplementation is
     /**
      * @notice Updates the masterKey
      *
-     * @param newProofInstruction                new proof instruction
+     * @param newMasteryKey                      new master key
      */
-    function updateMasterKey(string calldata newProofInstruction) external override onlyOwner {
-        masterKey = newProofInstruction;
+    function updateMasterKey(string calldata newMasterKey) external override onlyOwner {
+        masterKey = newMasterKey;
 
-        emit MasterKeyUpdated(newProofInstruction);
+        emit MasterKeyUpdated(newMasterKey);
     }
 
     /**
