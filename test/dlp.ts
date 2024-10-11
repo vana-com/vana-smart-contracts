@@ -22,7 +22,7 @@ describe("DataLiquidityPool", () => {
   let user3: HardhatEthersSigner;
   let user4: HardhatEthersSigner;
   let user5: HardhatEthersSigner;
-  let tee1: HardhatEthersSigner;
+  let tee0: HardhatEthersSigner;
   let sponsor: HardhatEthersSigner;
 
   let dlp: DataLiquidityPoolImplementation;
@@ -44,7 +44,7 @@ describe("DataLiquidityPool", () => {
     "https://ipfs.io/ipfs/qf34f34q4fq3fgdsgjgbdugsgwegqlgqhfejrfqjfwjfeql3u4iq4u47ll1";
 
   const deploy = async () => {
-    [deployer, owner, user1, user2, user3, user4, user5, tee1, sponsor] =
+    [deployer, owner, user1, user2, user3, user4, user5, tee0, sponsor] =
       await ethers.getSigners();
 
     const datDeploy = await ethers.deployContract("DAT", [
@@ -69,7 +69,7 @@ describe("DataLiquidityPool", () => {
       teePoolDeploy.target,
     );
 
-    await teePool.connect(owner).addTee(tee1.address, "tee1Url");
+    await teePool.connect(owner).addTee(tee0.address, "tee0Url", "tee0PubKey");
 
     const dlpDeploy = await upgrades.deployProxy(
       await ethers.getContractFactory("DataLiquidityPoolImplementation"),
@@ -354,11 +354,11 @@ describe("DataLiquidityPool", () => {
       await teePool.connect(sponsor).submitJob(1, { value: parseEther(0.01) });
 
       const proof1: Proof = {
-        signature: await signProof(tee1, "file1Url", proofs[1].data),
+        signature: await signProof(tee0, "file1Url", proofs[1].data),
         data: proofs[1].data,
       };
 
-      await dataRegistry.connect(tee1).addProof(1, proof1);
+      await dataRegistry.connect(tee0).addProof(1, proof1);
 
       await dlp
         .connect(sponsor)
@@ -405,17 +405,17 @@ describe("DataLiquidityPool", () => {
       await teePool.connect(sponsor).submitJob(3, { value: parseEther(0.01) });
 
       const proof1: Proof = {
-        signature: await signProof(tee1, "file1Url", proofs[2].data),
+        signature: await signProof(tee0, "file1Url", proofs[2].data),
         data: proofs[2].data,
       };
 
       const proof2: Proof = {
-        signature: await signProof(tee1, "file1Url", proofs[1].data),
+        signature: await signProof(tee0, "file1Url", proofs[1].data),
         data: proofs[1].data,
       };
 
-      await dataRegistry.connect(tee1).addProof(3, proof1);
-      await dataRegistry.connect(tee1).addProof(3, proof2);
+      await dataRegistry.connect(tee0).addProof(3, proof1);
+      await dataRegistry.connect(tee0).addProof(3, proof2);
 
       await dlp
         .connect(sponsor)
