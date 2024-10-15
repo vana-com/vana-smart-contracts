@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -15,6 +16,7 @@ contract DataLiquidityPoolImplementation is
     PausableUpgradeable,
     Ownable2StepUpgradeable,
     ReentrancyGuardUpgradeable,
+    MulticallUpgradeable,
     DataLiquidityPoolStorageV1
 {
     using EnumerableSet for EnumerableSet.UintSet;
@@ -252,12 +254,12 @@ contract DataLiquidityPoolImplementation is
     /**
      * @notice Updates the masterKey
      *
-     * @param newProofInstruction                new proof instruction
+     * @param newMasterKey                new master key
      */
-    function updateMasterKey(string calldata newProofInstruction) external override onlyOwner {
-        masterKey = newProofInstruction;
+    function updateMasterKey(string calldata newMasterKey) external override onlyOwner {
+        masterKey = newMasterKey;
 
-        emit MasterKeyUpdated(newProofInstruction);
+        emit MasterKeyUpdated(newMasterKey);
     }
 
     /**

@@ -59,16 +59,25 @@ The following describes the process of contributing data to a DLP from a user's 
 
 Bob wants to become a data contributor for DLP1. Here's the step-by-step process:
 
-1. Bob uploads his file to the DataRegistry (a URL with encrypted data).
-2. Bob requests an attestation by adding a new job in the TeePool.
+1. Bob uploads his file to the DataRegistry (a URL with encrypted data).  
+E.g.https://moksha.vanascan.io/tx/0x900e23d55bf7706973376ff7da5a649bbf3d470bfd9020dc66d9830fd4dbd1d3
+2. Bob requests an attestation by adding a new job in the TeePool.  
+E.g.https://moksha.vanascan.io/tx/0x40c58020c0cf10c8c53e412f209b60c923dc7a8c7513bf94fefe189a736b7f96?tab=logs
 3. TEE operators see Bob's job and create an attestation for that file based on the instructions required for validating the file in relation to DLP1.
-4. This proof is saved in the DataRegistry.
-5. Simultaneously, Bob must grant access to the DLP to read the data (by encrypting the file with the specific masterKey of DLP1).
-6. After Bob's file receives the necessary attestation, he must inform DLP1 that he has uploaded a file to the DataRegistry intended for this DLP.
-7. DLP1 must verify if it can indeed decrypt the file's content using its master private key.
-8. If successful, Bob will be automatically rewarded based on the score obtained from the attestation by the TEE operator.
+4. This proof is saved in the DataRegistry.  
+E.g.https://moksha.vanascan.io/tx/0x2f4dba67e90685429b73a43e74fe839e580c9e50f60ce5d460b19f88f56a2e99?tab=index
+5. Bob must grant access to the DLP to read the data (by encrypting the file with the specific masterKey of DLP1).  
+E.g.https://moksha.vanascan.io/tx/0xfeeda337eeb60367a8332a664087cbef5b4e7f0882af30e36c5259c43a7042cc
+
+    This step can be done by Bob in the first step by passing the permission along with the file.  
+E.g.https://moksha.vanascan.io/tx/0xb54582c8bfa1940a2003dff4aa729f36effeef4537181e1a68d009b32a5880d0
+
+7. After Bob's file receives the necessary attestation, he must inform DLP1 that he owns a file and a valid proof intended for this DLP. Bob will be automatically rewarded based on the score obtained from the attestation by the TEE operator.  
+E.g. https://moksha.vanascan.io/tx/0x69c07a8e0e5fd3a2f9b9c063c4c4f1f56a9aabb18b5c0f07bd10107d0844ebd9  
 
 This process ensures that data is securely contributed, validated, and rewarded within the Vana ecosystem.
+
+To save Bob from paying transaction fees, the DLP can act as a proxy between Bob and the smart contracts. Bob provides the DLP app with the necessary information, and the DLP can perform all the required transactions on Bob's behalf. Bob remains the owner of the file and the recipient of the allocated reward.
 
 It's important to emphasize that this is just an example of Bob's interaction with the smart contracts. In practice, there should be a user interface (UI) that comes packaged with these contracts to assist users. This UI would simplify the process for users, making it easier for them to interact with the DLP ecosystem without needing to directly interact with the smart contracts.
 
@@ -80,6 +89,8 @@ The RootNetwork smart contract manages the reward distribution for Data Liquidit
 
 1. Each DLP must register in the RootNetwork contract using the `registerDLP` method.
 2. During registration, the DLP specifies a `stakersPercentage`, which determines the proportion of rewards that will go to the DLP's stakers. The remainder goes to the DLP owner.
+  
+E.g.  https://moksha.vanascan.io/tx/0x84532d83be589ec1c13d9de04e426dcc7c54652060f8f78032a416d9f5dc159b
 
 #### Epoch System
 
@@ -180,6 +191,8 @@ After deploying your DLP, you need to register it on the RootNetwork contract. T
     - `stakersPercentage`: The percentage of rewards that will be distributed to stakers (in 18 decimal format, e.g., 50% would be 50e18)
 - Send the required stake amount with the transaction. The value sent with the transaction (`msg.value`) must be at least the `minDlpStakeAmount` (0.1 Vana on moksha).
 
+E.g.  https://moksha.vanascan.io/tx/0x84532d83be589ec1c13d9de04e426dcc7c54652060f8f78032a416d9f5dc159b
+
 ### After Registration
 
 Upon successful registration:
@@ -200,236 +213,273 @@ For more information on the UUPS pattern and how to work with upgradeable contra
 - [Proxy Upgrade Pattern](https://docs.openzeppelin.com/upgrades-plugins/1.x/proxies)
 - [Writing Upgradeable Contracts](https://docs.openzeppelin.com/upgrades-plugins/1.x/writing-upgradeable)
 
+#### Methods
 
-###
 ```solidity
 function initialize(InitParams memory params) external initializer
 ```
+Initializes the contract with the given parameters.
 
-Description: Initializes the contract with essential parameters.
+**Parameters:**
+- `params`: A struct containing initialization parameters
+    - `ownerAddress`: The address of the contract owner
+    - `tokenAddress`: The address of the ERC20 token used for rewards
+    - `dataRegistryAddress`: The address of the data registry contract
+    - `teePoolAddress`: The address of the TEE pool contract
+    - `name`: The name of the data liquidity pool
+    - `masterKey`: The master key for the pool
+    - `proofInstruction`: The instruction for generating proofs
+    - `fileRewardFactor`: The factor used to calculate file rewards
 
-Parameters:
-- `params`: InitParams struct containing:
-    - `ownerAddress`: Address of the contract owner
-    - `tokenAddress`: Address of the ERC20 token used for rewards
-    - `dataRegistryAddress`: Address of the DataRegistry contract
-    - `teePoolAddress`: Address of the TeePool contract
-    - `name`: Name of the DataLiquidityPool
-    - `masterKey`: Master key for the pool
-    - `fileRewardFactor`: Factor used to calculate file rewards
+**Restrictions:** Can only be called once during contract deployment
 
-Restrictions: Can only be called once due to the `initializer` modifier
+**Events Emitted:** None
 
-Events Emitted: None
+**Errors:**
+- `InvalidInitialization`: Thrown if the contract has already been initialized
 
-###
+---
+
 ```solidity
-function version() external pure virtual override returns (uint256)
+function version() external pure returns (uint256)
 ```
+Returns the version of the contract.
 
-Description: Returns the version of the contract.
+**Returns:** The version number
 
-Parameters: None
+**Restrictions:** None
 
-Return Value:
-- `uint256`: The version number of the contract
+---
 
-Restrictions: None
-
-Events Emitted: None
-
-###
 ```solidity
-function files(uint256 fileId) public view override returns (FileResponse memory)
+function files(uint256 fileId) public view returns (FileResponse memory)
 ```
+Retrieves information about a specific file.
 
-Description: Gets the file information for a given file ID.
+**Parameters:**
+- `fileId`: The ID of the file
 
-Parameters:
-- `fileId`: ID of the file
+**Returns:** `FileResponse` struct containing:
+- `fileId`: The ID of the file
+- `timestamp`: The timestamp when the file was added
+- `proofIndex`: The index of the proof associated with the file
+- `rewardAmount`: The amount of reward for the file
 
-Return Value:
-- `FileResponse`: A struct containing file details (fileId, status, registryId, timestamp, proofIndex, rewardAmount, rewardWithdrawn)
+**Restrictions:** None
 
-Restrictions: None
+---
 
-Events Emitted: None
-
-###
 ```solidity
-function contributors(uint256 index) external view override returns (ContributorInfoResponse memory)
+function filesListCount() external view returns (uint256)
 ```
+Returns the total number of files in the pool.
 
-Description: Gets the contributor information for a given index.
+**Returns:** The number of files
 
-Parameters:
-- `index`: Index of the contributor
+**Restrictions:** None
 
-Return Value:
-- `ContributorInfoResponse`: A struct containing contributor details (contributorAddress, fileIdsCount)
+---
 
-Restrictions: None
-
-Events Emitted: None
-
-###
 ```solidity
-function contributorInfo(address contributorAddress) public view override returns (ContributorInfoResponse memory)
+function filesListAt(uint256 index) external view returns (uint256)
 ```
+Retrieves the file ID at a specific index in the files list.
 
-Description: Gets the contributor information for a given address.
+**Parameters:**
+- `index`: The index in the files list
 
-Parameters:
-- `contributorAddress`: Address of the contributor
+**Returns:** The file ID at the given index
 
-Return Value:
-- `ContributorInfoResponse`: A struct containing contributor details (contributorAddress, fileIdsCount)
+**Restrictions:** None
 
-Restrictions: None
+---
 
-Events Emitted: None
-
-###
 ```solidity
-function contributorFiles(address contributorAddress, uint256 index) external view override returns (FileResponse memory)
+function contributors(uint256 index) external view returns (ContributorInfoResponse memory)
 ```
+Retrieves information about a contributor at a specific index.
 
-Description: Gets the file information for a contributor's file at a given index.
+**Parameters:**
+- `index`: The index of the contributor
 
-Parameters:
-- `contributorAddress`: Address of the contributor
-- `index`: Index of the file
+**Returns:** `ContributorInfoResponse` struct containing:
+- `contributorAddress`: The address of the contributor
+- `filesListCount`: The number of files contributed by this contributor
 
-Return Value:
-- `FileResponse`: A struct containing file details (fileId, status, registryId, timestamp, proofIndex, rewardAmount, rewardWithdrawn)
+**Restrictions:** None
 
-Restrictions: None
+---
 
-Events Emitted: None
-
-###
 ```solidity
-function pause() external override onlyOwner
+function contributorInfo(address contributorAddress) public view returns (ContributorInfoResponse memory)
 ```
+Retrieves information about a specific contributor.
 
-Description: Pauses the contract.
+**Parameters:**
+- `contributorAddress`: The address of the contributor
 
-Parameters: None
+**Returns:** `ContributorInfoResponse` struct (same as `contributors` method)
 
-Restrictions: Only owner
+**Restrictions:** None
 
-Events Emitted: None (inherited from OpenZeppelin's Pausable)
+---
 
-###
 ```solidity
-function unpause() external override onlyOwner
+function contributorFiles(address contributorAddress, uint256 index) external view returns (FileResponse memory)
 ```
+Retrieves information about a specific file contributed by a contributor.
 
-Description: Unpauses the contract.
+**Parameters:**
+- `contributorAddress`: The address of the contributor
+- `index`: The index of the file in the contributor's files list
 
-Parameters: None
+**Returns:** `FileResponse` struct (same as `files` method)
 
-Restrictions: Only owner
+**Restrictions:** None
 
-Events Emitted: None (inherited from OpenZeppelin's Pausable)
+---
 
-###
 ```solidity
-function updateFileRewardFactor(uint256 newFileRewardFactor) external override onlyOwner
+function pause() external
 ```
+Pauses the contract, preventing certain operations.
 
-Description: Updates the file reward factor.
+**Restrictions:** Can only be called by the contract owner
 
-Parameters:
-- `newFileRewardFactor`: New file reward factor value
+**Events Emitted:** None (inherited from PausableUpgradeable)
 
-Restrictions: Only owner
+**Errors:**
+- `OwnableUnauthorizedAccount`: Thrown if called by any account other than the owner
 
-Events Emitted:
-- `FileRewardFactorUpdated(uint256 newFileRewardFactor)`
+---
 
-###
 ```solidity
-function updateTeePool(address newTeePool) external override onlyOwner
+function unpause() external
 ```
+Unpauses the contract, re-enabling paused operations.
 
-Description: Updates the TEE pool address.
+**Restrictions:** Can only be called by the contract owner
 
-Parameters:
-- `newTeePool`: Address of the new TEE pool
+**Events Emitted:** None (inherited from PausableUpgradeable)
 
-Restrictions: Only owner
+**Errors:**
+- `OwnableUnauthorizedAccount`: Thrown if called by any account other than the owner
 
-Events Emitted: None
+---
 
-###
 ```solidity
-function addFile(uint256 registryId, uint256 proofIndex) external override whenNotPaused
+function updateFileRewardFactor(uint256 newFileRewardFactor) external
 ```
+Updates the file reward factor used to calculate rewards.
 
-Description: Adds a new file to the pool.
+**Parameters:**
+- `newFileRewardFactor`: The new file reward factor
 
-Parameters:
-- `registryId`: File ID from the DataRegistry contract
-- `proofIndex`: Index of the proof in the DataRegistry
+**Restrictions:** Can only be called by the contract owner
 
-Restrictions:
+**Events Emitted:** `FileRewardFactorUpdated`
+
+**Errors:**
+- `OwnableUnauthorizedAccount`: Thrown if called by any account other than the owner
+
+---
+
+```solidity
+function updateTeePool(address newTeePool) external
+```
+Updates the address of the TEE pool contract.
+
+**Parameters:**
+- `newTeePool`: The new TEE pool contract address
+
+**Restrictions:** Can only be called by the contract owner
+
+**Events Emitted:** None
+
+**Errors:**
+- `OwnableUnauthorizedAccount`: Thrown if called by any account other than the owner
+
+---
+
+```solidity
+function updateProofInstruction(string calldata newProofInstruction) external
+```
+Updates the proof instruction used for validating proofs.
+
+**Parameters:**
+- `newProofInstruction`: The new proof instruction
+
+**Restrictions:** Can only be called by the contract owner
+
+**Events Emitted:** `ProofInstructionUpdated`
+
+**Errors:**
+- `OwnableUnauthorizedAccount`: Thrown if called by any account other than the owner
+
+---
+
+```solidity
+function updateMasterKey(string calldata newMasterKey) external
+```
+Updates the master key of the pool.
+
+**Parameters:**
+- `newMasterKey`: The new master key
+
+**Restrictions:** Can only be called by the contract owner
+
+**Events Emitted:** `MasterKeyUpdated`
+
+**Errors:**
+- `OwnableUnauthorizedAccount`: Thrown if called by any account other than the owner
+
+---
+
+```solidity
+function requestReward(uint256 fileId, uint256 proofIndex) external
+```
+Requests a reward for a file based on its proof.
+
+**Parameters:**
+- `fileId`: The ID of the file from the data registry
+- `proofIndex`: The index of the proof for the file
+
+**Restrictions:**
 - Contract must not be paused
-- Caller must be the owner of the file in the DataRegistry
-- Proof must be signed by a valid TEE
+- File must not have been already rewarded
+- Proof must be valid and signed by a registered TEE
 
-Events Emitted:
-- `FileAdded(address indexed contributorAddress, uint256 fileId)`
+**Events Emitted:** `RewardRequested`
 
-###
+**Errors:**
+- `EnforcedPause`: Thrown if the contract is paused
+- `FileAlreadyAdded`: Thrown if the file has already been rewarded
+- `InvalidProof`: Thrown if the proof instruction doesn't match the contract's proof instruction
+- `InvalidAttestator`: Thrown if the proof is not signed by a registered TEE
+
+---
+
 ```solidity
-function addRewardsForContributors(uint256 contributorsRewardAmount) external override nonReentrant
+function addRewardsForContributors(uint256 contributorsRewardAmount) external
 ```
+Adds rewards to the pool for contributors.
 
-Description: Adds rewards for contributors to the pool.
+**Parameters:**
+- `contributorsRewardAmount`: The amount of rewards to add
 
-Parameters:
-- `contributorsRewardAmount`: Amount of tokens to add as rewards
+**Restrictions:** None
 
-Restrictions:
-- NonReentrant
+**Events Emitted:** None
 
-Events Emitted: None
+**Errors:**
+- `ERC20InsufficientAllowance`: Thrown if the caller has not approved enough tokens for transfer
+- `ERC20InsufficientBalance`: Thrown if the caller does not have enough tokens to transfer
 
+
+### 
 ###
-```solidity
-function validateFile(uint256 fileId) external override onlyOwner
-```
 
-Description: Validates a file and sends the contribution reward.
-
-Parameters:
-- `fileId`: ID of the file to validate
-
-Restrictions:
-- Only owner
-- File must be in 'Added' status
-- Sufficient rewards must be available
-
-Events Emitted:
-- `FileValidated(uint256 indexed fileId)`
-
-###
-```solidity
-function invalidateFile(uint256 fileId) external override onlyOwner
-```
-
-Description: Invalidates a file.
-
-Parameters:
-- `fileId`: ID of the file to invalidate
-
-Restrictions:
-- Only owner
-- File must be in 'Added' status
-
-Events Emitted:
-- `FileInvalidated(uint256 indexed fileId)`
+---
 
 ### DAT (Data Access Token)
 
@@ -613,7 +663,3 @@ Restrictions: Only admin can call
 
 Events Emitted:
 - `AddressUnblocked(address indexed unblockedAddress)`
-
----
-
-This README provides a detailed overview of the DLP project's smart contracts. For the most up-to-date information, always refer to the latest contract code and documentation.
