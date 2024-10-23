@@ -144,19 +144,21 @@ Before deploying or interacting with the contracts, you need to set up your envi
 - Copy the `.env.example` file and rename it to `.env`. 
 - Open the `.env` file and update the following parameters:
 
-`DEPLOYER_PRIVATE_KEY`: The private key of the account that will deploy the contracts. Make sure to keep this private and never share it.
+`DEPLOYER_PRIVATE_KEY`: The private key of the account that will deploy the contracts. Make sure to keep this private and never share it. (E.g. **29bb1493d4f3b0042857e4a23452fc610d2c4e42b95ef5c13f8941eedb37e408**)
 
-`OWNER_ADDRESS`: The Ethereum address that will be set as the owner of the deployed contracts. This address will have special privileges in the contracts.
+`OWNER_ADDRESS`: The Ethereum address that will be set as the owner of the deployed contracts. This address will have special privileges in the contracts. (E.g. **0x853407D0C625Ce7E43C0a2596fBc470C3a6f8305**)
 
-`DLP_NAME`: The name of your Data Liquidity Pool. Choose a descriptive name for your DLP.
+`DLP_NAME`: The name of your Data Liquidity Pool. Choose a descriptive name for your DLP. (E.g. **CookieDLP**)
 
-`DLP_MASTER_KEY`: A master key for your DLP. This is used for encryption purposes. Make sure to generate a strong, unique key.
+`DLP_MASTER_KEY`: A master key for your DLP. This is used for encryption purposes. Make sure to generate a strong, unique key. (E.g. **0x04bfcab8282071e4c17b3ae235928ec9dd9fb8e2b2f981c56c4a5215c9e7a1fcf1a84924476b8b56f17f719d3d3b729688bb7c39a60b00414d53ae8491df5791fa**)
 
-`DLP_TOKEN_NAME`: The name of the token associated with your DLP. This will be visible in token listings.
+`DLP_TOKEN_NAME`: The name of the token associated with your DLP. This will be visible in token listings. (E.g. **CookieToken**)
 
-`DLP_TOKEN_SYMBOL`: The symbol of your DLP token. This is typically a short, all-caps code.
+`DLP_TOKEN_SYMBOL`: The symbol of your DLP token. This is typically a short, all-caps code. (E.g. **CTK**)
 
-`DLP_FILE_REWARD_FACTOR`: A factor used to calculate file rewards. This value determines the reward amount based on the file's score.
+`DLP_FILE_REWARD_FACTOR`: A factor used to calculate file rewards. This value determines the reward amount based on the file's score and is represented with 18 decimals. (E.g. **2e18** => the reward multiplier is 2)
+
+`DLP_PROOF_INSTRUCTION`: The instruction for generating proofs. This should match the instruction used by the TEE operators for validating proofs. (E.g. **https://github.com/vana-com/vana-satya-proof-template/releases/download/v24/gsc-my-proof-24.tar.gz**)
 
 #### 2. Install dependencies
 ```bash
@@ -222,14 +224,14 @@ Initializes the contract with the given parameters.
 
 **Parameters:**
 - `params`: A struct containing initialization parameters
-    - `ownerAddress`: The address of the contract owner
-    - `tokenAddress`: The address of the ERC20 token used for rewards
-    - `dataRegistryAddress`: The address of the data registry contract
-    - `teePoolAddress`: The address of the TEE pool contract
-    - `name`: The name of the data liquidity pool
-    - `masterKey`: The master key for the pool
-    - `proofInstruction`: The instruction for generating proofs
-    - `fileRewardFactor`: The factor used to calculate file rewards
+    - `ownerAddress`: The address of the contract owner. (E.g. **0x853407D0C625Ce7E43C0a2596fBc470C3a6f8305**)
+    - `tokenAddress`: The address of the ERC20 token used for rewards. (E.g. **0xF3D9A139a7ba707843dD4f1FDfE0F9E55D9D8d6b**)
+    - `dataRegistryAddress`: The address of the data registry contract. (E.g. **0xEA882bb75C54DE9A08bC46b46c396727B4BFe9a5**)
+    - `teePoolAddress`: The address of the TEE pool contract. (E.g. **0xF084Ca24B4E29Aa843898e0B12c465fAFD089965**)
+    - `name`: The name of the data liquidity pool. (E.g. **CookieDLP**)
+    - `masterKey`: The master key for the pool. (E.g. **0x04bfcab8282071e4c17b3ae235928ec9dd9fb8e2b2f981c56c4a5215c9e7a1fcf1a84924476b8b56f17f719d3d3b729688bb7c39a60b00414d53ae8491df5791fa**)
+    - `proofInstruction`: The instruction for generating proofs. (E.g. **https://github.com/vana-com/vana-satya-proof-template/releases/download/v24/gsc-my-proof-24.tar.gz**)
+    - `fileRewardFactor`: The factor used to calculate file rewards. (E.g. **2e18** => the reward multiplier is 2)
 
 **Restrictions:** Can only be called once during contract deployment
 
@@ -407,7 +409,7 @@ function updateProofInstruction(string calldata newProofInstruction) external
 Updates the proof instruction used for validating proofs.
 
 **Parameters:**
-- `newProofInstruction`: The new proof instruction
+- `newProofInstruction`: The new proof instruction.
 
 **Restrictions:** Can only be called by the contract owner
 
@@ -424,7 +426,7 @@ function updateMasterKey(string calldata newMasterKey) external
 Updates the master key of the pool.
 
 **Parameters:**
-- `newMasterKey`: The new master key
+- `newMasterKey`: The new master key (E.g. **0x04bfcab8282071e4c17b3ae235928ec9dd9fb8e2b2f981c56c4a5215c9e7a1fcf1a84924476b8b56f17f719d3d3b729688bb7c39a60b00414d53ae8491df5791fa**)
 
 **Restrictions:** Can only be called by the contract owner
 
