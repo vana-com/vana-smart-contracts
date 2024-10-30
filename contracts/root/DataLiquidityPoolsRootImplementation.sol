@@ -1148,4 +1148,53 @@ contract DataLiquidityPoolsRootImplementation is
             emit EpochCreated(epochsCount);
         }
     }
+
+    // I need a method to return all dlps ids and their associeted dlpAddrress between two dlp ids
+    struct DlpResponse2 {
+        uint256 id;
+        address dlpAddress;
+    }
+    function getAllDlps(uint256 from, uint256 to) external view returns (DlpResponse2[] memory) {
+        DlpResponse2[] memory dlps = new DlpResponse2[](to - from);
+        for (uint256 i = from; i < to; i++) {
+            dlps[i - from] = DlpResponse2({
+                id: _dlps[_registeredDlps.at(i)].id,
+                dlpAddress: _dlps[_registeredDlps.at(i)].dlpAddress
+            });
+        }
+        return dlps;
+    }
+
+    function getAllDlpAddressesThatAreNotAContract(
+        uint256 from,
+        uint256 to
+    ) external view returns (DlpResponse2[] memory) {
+        DlpResponse2[] memory dlps = new DlpResponse2[](to - from);
+        for (uint256 i = from; i < to; i++) {
+            uint256 dlpId = _registeredDlps.at(i);
+            address dlpAddress = _dlps[dlpId].dlpAddress;
+            if (!isContract(dlpAddress)) {
+                dlps[i - from] = DlpResponse2({id: _dlps[dlpId].id, dlpAddress: dlpAddress});
+            }
+        }
+        return dlps;
+    }
+
+    function isContract(address account) public view returns (bool) {
+        uint256 size;
+        assembly {
+            size := extcodesize(account)
+        }
+        return size > 0;
+    }
+
+    function forceRemoveDlps(uint256[] memory dlpIds) external onlyOwner {
+        for (uint256 i = 0; i < dlpIds.length; i++) {
+            _registeredDlps.remove(dlpIds[i]);
+        }
+    }
+
+    function registeredDlpsCount() external view returns (uint256) {
+        return _registeredDlps.length();
+    }
 }

@@ -20,6 +20,35 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   console.log(`**************************************************************`);
   console.log(`********** Deploying ${tokenContractName} **********`);
 
+  // const dlpRoot = await ethers.getContractAt(
+  //   "DataLiquidityPoolsRootImplementation",
+  //   "0xf408A064d640b620219F510963646Ed2bD5606BB",
+  // );
+  //
+  // const dlps = await dlpRoot.getAllDlpAddressesThatAreNotAContract(1, 500);
+  // console.log(
+  //   JSON.stringify(
+  //     dlps,
+  //     (key, value) => (typeof value === "bigint" ? Number(value) : value),
+  //     2,
+  //   ),
+  // );
+  //
+  // return;
+
+  const deploy = await deployments.deploy(
+    "DataLiquidityPoolsRootImplementation",
+    {
+      from: deployer.address,
+      args: [],
+      log: true,
+    },
+  );
+
+  await verifyContract(deploy.address, []);
+
+  return;
+
   const tokenDeploy = await deployments.deploy(tokenContractName, {
     from: deployer.address,
     args: [tokenName, tokenSymbol, ownerAddress],
@@ -34,4 +63,4 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 };
 
 export default func;
-func.tags = ["TokenDeploy"];
+func.tags = ["Deploy"];
