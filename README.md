@@ -233,6 +233,10 @@ Initializes the contract with the given parameters.
     - `proofInstruction`: The instruction for generating proofs. (E.g. **https://github.com/vana-com/vana-satya-proof-template/releases/download/v24/gsc-my-proof-24.tar.gz**)
     - `fileRewardFactor`: The factor used to calculate file rewards. (E.g. **2e18** => the reward multiplier is 2)
 
+
+Tee validators calculate a total score for the files they verify, based on the set of instructions executed to generate the proof. This score ranges between 0 and 1 (i.e., between 0 and 1e18). At the end, the dataContributor will receive a reward. DLP_FILE_REWARD_FACTOR is used to convert the score into the amount of DLP tokens the data contributor receives for their file. Essentially, the reward is calculated using the formula:  
+```reward = fileScore * DLP_FILE_REWARD_FACTOR ```  
+  
 **Restrictions:** Can only be called once during contract deployment
 
 **Events Emitted:** None
