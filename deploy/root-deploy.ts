@@ -5,39 +5,44 @@ import { parseEther } from "ethers";
 import { getCurrentBlockNumber } from "../utils/timeAndBlockManipulation";
 import { deployProxy, verifyProxy } from "./helpers";
 
-const implementationContractName = "DataLiquidityPoolsRootImplementation";
-const proxyContractName = "DataLiquidityPoolsRootProxy";
-const proxyContractPath =
-  "contracts/root/DataLiquidityPoolsRootProxy.sol:DataLiquidityPoolsRootProxy";
+const implementationContractName = "DLPRootImplementation";
+const proxyContractName = "DLPRootProxy";
+const proxyContractPath = "contracts/root/DLPRootProxy.sol:DLPRootProxy";
 
 const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const [deployer] = await ethers.getSigners();
 
   const ownerAddress = process.env.OWNER_ADDRESS ?? deployer.address;
 
-  const numberOfTopDlps = 16;
-  const epochSize = 14400;
-  const minDlpStakeAmount = parseEther("0.1");
-  const startBlock: number = await getCurrentBlockNumber();
-  const epochRewardAmount = parseEther("1");
-  const ttfPercentage = parseEther("15");
-  const tfcPercentage = parseEther("15");
-  const vduPercentage = parseEther("50");
-  const uwPercentage = parseEther("20");
-
-  const addRewardToDlpAmount = parseEther("1000");
+  const epochDlpsLimit = 16;
+  const eligibleDlpsLimit = 300;
+  let daySize = 3600 / 8;
+  let epochSize = daySize * 21;
+  const minStakeAmount = parseEther("0.001");
+  const minDlpStakersPercentage = parseEther("50");
+  const minDlpRegistrationStake = parseEther("10");
+  const dlpEligibilityThreshold = parseEther("1000");
+  const dlpSubEligibilityThreshold = parseEther("500");
+  const stakeWithdrawalDelay = daySize * 10;
+  const rewardClaimDelay = daySize * 7;
+  const startBlock = (await getCurrentBlockNumber()) + (3600 * 24) / 8;
+  let epochRewardAmount = parseEther("2");
 
   const initializeParams = {
     ownerAddress: deployer.address,
-    numberOfTopDlps: numberOfTopDlps,
-    minDlpStakeAmount: minDlpStakeAmount,
+    eligibleDlpsLimit: eligibleDlpsLimit,
+    epochDlpsLimit: epochDlpsLimit,
+    minStakeAmount: minStakeAmount,
+    minDlpStakersPercentage: minDlpStakersPercentage,
+    minDlpRegistrationStake: minDlpRegistrationStake,
+    dlpEligibilityThreshold: dlpEligibilityThreshold,
+    dlpSubEligibilityThreshold: dlpSubEligibilityThreshold,
+    stakeWithdrawalDelay: stakeWithdrawalDelay,
+    rewardClaimDelay: rewardClaimDelay,
     startBlock: startBlock,
     epochSize: epochSize,
+    daySize: daySize,
     epochRewardAmount: epochRewardAmount,
-    ttfPercentage: ttfPercentage,
-    tfcPercentage: tfcPercentage,
-    vduPercentage: vduPercentage,
-    uwPercentage: uwPercentage,
   };
 
   const proxyDeploy = await deployProxy(
@@ -59,9 +64,6 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     implementationContractName,
     proxyDeploy.proxyAddress,
   );
-
-  await proxy.addRewardForDlps({ value: addRewardToDlpAmount });
-  await proxy.transferOwnership(ownerAddress);
 
   await verifyProxy(
     proxyDeploy.proxyAddress,
