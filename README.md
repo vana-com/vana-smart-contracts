@@ -58,6 +58,8 @@ A Data Liquidity Pool (DLP) is a core component of the Vana ecosystem, designed 
 
 **DataRegistry**, **TEEPool**, and **RootNetwork** are part of the Vana core smart contracts and do not need to be deployed by DLP builders. For testing and integration, you should use the addresses deployed on Moksha. However, you will need to deploy your own **Data Liquidity Pool** & **DLPToken** (either the template version suggested by us or your own version). Keep in mind that to be part of the Vana ecosystem and qualify for the DLP rewards program, the DLP contract needs to be integrated with **DataRegistry** and **RootNetwork** as shown in the template in this repository.
 
+### [Multisend](https://docs.vana.org/vana/welcome-to-vana/what-is-multisend)
+The multisend contract allows users to send multiple transactions in a single call. This is useful for batch operations such as distributing rewards/gas fees to multiple addresses. The contract is designed to optimize gas usage and reduce the number of transactions required for these operations.
 
 ## 3. Flow
 
