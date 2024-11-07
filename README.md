@@ -191,7 +191,7 @@ After deploying your DLP, you need to register it on the RootNetwork contract. T
     - `dlpAddress`: The address of your DLP contract
     - `dlpOwnerAddress`: The address that will be set as the owner of the DLP
     - `stakersPercentage`: The percentage of rewards that will be distributed to stakers (in 18 decimal format, e.g., 50% would be 50e18)
-- Send the required stake amount with the transaction. The value sent with the transaction (`msg.value`) must be at least the `minDlpStakeAmount` (0.1 Vana on moksha).
+- Send the required stake amount with the transaction. The value sent with the transaction (`msg.value`) must be at least the `minDlpStakeAmount` (100 Vana on moksha).
 
 E.g.  https://moksha.vanascan.io/tx/0x84532d83be589ec1c13d9de04e426dcc7c54652060f8f78032a416d9f5dc159b
 
