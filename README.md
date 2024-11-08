@@ -66,7 +66,7 @@ E.g.https://moksha.vanascan.io/tx/0x40c58020c0cf10c8c53e412f209b60c923dc7a8c7513
 3. TEE operators see Bob's job and create an attestation for that file based on the instructions required for validating the file in relation to DLP1.
 4. This proof is saved in the DataRegistry.  
 E.g.https://moksha.vanascan.io/tx/0x2f4dba67e90685429b73a43e74fe839e580c9e50f60ce5d460b19f88f56a2e99?tab=index
-5. Bob must grant access to the DLP to read the data (by encrypting the file with the specific publicKey of DLP1).  
+5. Bob must grant access to the DLP to read the data (by encrypting the encryption key of the file with the specific publicKey of DLP1).  
 E.g.https://moksha.vanascan.io/tx/0xfeeda337eeb60367a8332a664087cbef5b4e7f0882af30e36c5259c43a7042cc
 
     This step can be done by Bob in the first step by passing the permission along with the file.  
@@ -150,7 +150,7 @@ Before deploying or interacting with the contracts, you need to set up your envi
 
 `DLP_NAME`: The name of your Data Liquidity Pool. Choose a descriptive name for your DLP. (E.g. **CookieDLP**)
 
-`DLP_PUBLIC_KEY`: A public key for your DLP. This is used for encryption purposes. Make sure to generate a strong, unique key. (E.g. **0x04bfcab8282071e4c17b3ae235928ec9dd9fb8e2b2f981c56c4a5215c9e7a1fcf1a84924476b8b56f17f719d3d3b729688bb7c39a60b00414d53ae8491df5791fa**)
+`DLP_PUBLIC_KEY`: A public key for your DLP. This is used for encryption purposes. The public key is used by data contributors to encrypt the encryption key. The dlp can use the private key associated to this public key to decode the file. See [this](https://docs.vana.org/docs/data-privacy#code-samples) for more details. (E.g. **0x04bfcab8282071e4c17b3ae235928ec9dd9fb8e2b2f981c56c4a5215c9e7a1fcf1a84924476b8b56f17f719d3d3b729688bb7c39a60b00414d53ae8491df5791fa**)
 
 `DLP_TOKEN_NAME`: The name of the token associated with your DLP. This will be visible in token listings. (E.g. **CookieToken**)
 
