@@ -40,9 +40,9 @@ Satori: [0xF084Ca24B4E29Aa843898e0B12c465fAFD089965](https://satori.vanascan.io/
 
 The DLP Root contract manages the registration and reward distribution for Data Liquidity Pools (DLPs) in the Vana ecosystem. It operates on an epoch-based system, where the top 16 most staked DLPs and their stakers receive rewards at the end of each epoch. The contract allows users to stake VANA tokens as guarantors for DLPs, with rewards distributed based on the staking position at the beginning of each epoch.
 
-Moksha:  [0xf408A064d640b620219F510963646Ed2bD5606BB](https://moksha.vanascan.io/address/0xf408A064d640b620219F510963646Ed2bD5606BB)
+Moksha:  [0x896af4A3dA3F2C226AE121dC1a00c20Ee1aA5691](https://moksha.vanascan.io/address/0x896af4A3dA3F2C226AE121dC1a00c20Ee1aA5691)
 
-Satori: [0xf408A064d640b620219F510963646Ed2bD5606BB](https://satori.vanascan.io/address/0xf408A064d640b620219F510963646Ed2bD5606BB)
+Satori: [0x896af4A3dA3F2C226AE121dC1a00c20Ee1aA5691](https://satori.vanascan.io/address/0x896af4A3dA3F2C226AE121dC1a00c20Ee1aA5691)
 
 ### [Data Liquidity Pool & DLPToken](https://docs.vana.org/vana/welcome-to-vana/what-is-data-liquidity-pool)
 
@@ -66,7 +66,7 @@ E.g.https://moksha.vanascan.io/tx/0x40c58020c0cf10c8c53e412f209b60c923dc7a8c7513
 3. TEE operators see Bob's job and create an attestation for that file based on the instructions required for validating the file in relation to DLP1.
 4. This proof is saved in the DataRegistry.  
 E.g.https://moksha.vanascan.io/tx/0x2f4dba67e90685429b73a43e74fe839e580c9e50f60ce5d460b19f88f56a2e99?tab=index
-5. Bob must grant access to the DLP to read the data (by encrypting the file with the specific masterKey of DLP1).  
+5. Bob must grant access to the DLP to read the data (by encrypting the file with the specific publicKey of DLP1).  
 E.g.https://moksha.vanascan.io/tx/0xfeeda337eeb60367a8332a664087cbef5b4e7f0882af30e36c5259c43a7042cc
 
     This step can be done by Bob in the first step by passing the permission along with the file.  
@@ -90,7 +90,7 @@ The RootNetwork smart contract manages the reward distribution for Data Liquidit
 1. Each DLP must register in the RootNetwork contract using the `registerDLP` method.
 2. During registration, the DLP specifies a `stakersPercentage`, which determines the proportion of rewards that will go to the DLP's stakers. The remainder goes to the DLP owner.
   
-E.g.  https://moksha.vanascan.io/tx/0x84532d83be589ec1c13d9de04e426dcc7c54652060f8f78032a416d9f5dc159b
+E.g. https://moksha.vanascan.io/tx/0x84532d83be589ec1c13d9de04e426dcc7c54652060f8f78032a416d9f5dc159b
 
 #### Epoch System
 
@@ -150,7 +150,7 @@ Before deploying or interacting with the contracts, you need to set up your envi
 
 `DLP_NAME`: The name of your Data Liquidity Pool. Choose a descriptive name for your DLP. (E.g. **CookieDLP**)
 
-`DLP_MASTER_KEY`: A master key for your DLP. This is used for encryption purposes. Make sure to generate a strong, unique key. (E.g. **0x04bfcab8282071e4c17b3ae235928ec9dd9fb8e2b2f981c56c4a5215c9e7a1fcf1a84924476b8b56f17f719d3d3b729688bb7c39a60b00414d53ae8491df5791fa**)
+`DLP_PUBLIC_KEY`: A public key for your DLP. This is used for encryption purposes. Make sure to generate a strong, unique key. (E.g. **0x04bfcab8282071e4c17b3ae235928ec9dd9fb8e2b2f981c56c4a5215c9e7a1fcf1a84924476b8b56f17f719d3d3b729688bb7c39a60b00414d53ae8491df5791fa**)
 
 `DLP_TOKEN_NAME`: The name of the token associated with your DLP. This will be visible in token listings. (E.g. **CookieToken**)
 
@@ -181,19 +181,36 @@ The deployment script will also verify the contract on blockscout.
 After deploying your DLP, you need to register it on the RootNetwork contract. This will allow your DLP to participate in the Vana ecosystem and receive rewards. To register your DLP, call the `registerDlp` function on the RootNetwork contract.
 
    ```solidity
-   function registerDlp(
-       address dlpAddress,
-       address payable dlpOwnerAddress,
-       uint256 stakersPercentage
-   ) external payable
+    struct DlpRegistration {
+        address dlpAddress;
+        address ownerAddress;
+        address payable treasuryAddress;
+        uint256 stakersPercentage;
+        string name;
+        string iconUrl;
+        string website;
+        string metadata;
+    }
+
+    function registerDlp(
+        DlpRegistration calldata registrationInfo
+    ) external payable
    ```
 
+**Parameters:**
+- `params`: A struct containing information about the DLP
     - `dlpAddress`: The address of your DLP contract
-    - `dlpOwnerAddress`: The address that will be set as the owner of the DLP
-    - `stakersPercentage`: The percentage of rewards that will be distributed to stakers (in 18 decimal format, e.g., 50% would be 50e18)
+    - `dlpOwnerAddress`: The address that will be set as the owner of the DLP and have special privileges to update the DLP parameters. It can be any address (EOA wallet, multisig, DAO contract).
+    - `treasuryAddress`: The address where the rewards will be sent. It can be the same as the owner address or a different address (EOA wallet, multisig, DAO contract).
+    - `stakersPercentage`: The percentage of rewards that will be distributed to stakers (in 18 decimal format, e.g., 50% would be 50e18). It should be >= minDlpStakersPercentage (>= 50e18 on moksha).
+    - `name`: The name of your DLP
+    - `iconUrl`: A URL to an icon image for your DLP
+    - `website`: The website URL for your DLP
+    - `metadata`: Additional metadata for your DLP. This can be any string data you want to associate with your DLP or a link to a JSON file with more detailed information or it can be left empty.
+   
 - Send the required stake amount with the transaction. The value sent with the transaction (`msg.value`) must be at least the `minDlpStakeAmount` (100 Vana on moksha).
 
-E.g.  https://moksha.vanascan.io/tx/0x84532d83be589ec1c13d9de04e426dcc7c54652060f8f78032a416d9f5dc159b
+E.g.  https://moksha.vanascan.io/tx/0xd3472bfaa68990c2dd7e0c9ff125936a6edcc031be1beb589fc7cc92e683cb46
 
 ### After Registration
 
@@ -229,7 +246,7 @@ Initializes the contract with the given parameters.
     - `dataRegistryAddress`: The address of the data registry contract. (E.g. **0xEA882bb75C54DE9A08bC46b46c396727B4BFe9a5**)
     - `teePoolAddress`: The address of the TEE pool contract. (E.g. **0xF084Ca24B4E29Aa843898e0B12c465fAFD089965**)
     - `name`: The name of the data liquidity pool. (E.g. **CookieDLP**)
-    - `masterKey`: The master key for the pool. (E.g. **0x04bfcab8282071e4c17b3ae235928ec9dd9fb8e2b2f981c56c4a5215c9e7a1fcf1a84924476b8b56f17f719d3d3b729688bb7c39a60b00414d53ae8491df5791fa**)
+    - `publicKey`: The public key to be used by data contributors to encrypt the encryption key. See [this](https://docs.vana.org/docs/data-privacy#code-samples) for more details. (E.g. **0x04bfcab8282071e4c17b3ae235928ec9dd9fb8e2b2f981c56c4a5215c9e7a1fcf1a84924476b8b56f17f719d3d3b729688bb7c39a60b00414d53ae8491df5791fa**)
     - `proofInstruction`: The instruction for generating proofs. (E.g. **https://github.com/vana-com/vana-satya-proof-template/releases/download/v24/gsc-my-proof-24.tar.gz**)
     - `fileRewardFactor`: The factor used to calculate file rewards. (E.g. **2e18** => the reward multiplier is 2)
 
@@ -425,16 +442,16 @@ Updates the proof instruction used for validating proofs.
 ---
 
 ```solidity
-function updateMasterKey(string calldata newMasterKey) external
+function updatePublicKey(string calldata newPublicKey) external
 ```
-Updates the master key of the pool.
+Updates the public key of the pool.
 
 **Parameters:**
-- `newMasterKey`: The new master key (E.g. **0x04bfcab8282071e4c17b3ae235928ec9dd9fb8e2b2f981c56c4a5215c9e7a1fcf1a84924476b8b56f17f719d3d3b729688bb7c39a60b00414d53ae8491df5791fa**)
+- `newPublicKey`: The new public key (E.g. **0x04bfcab8282071e4c17b3ae235928ec9dd9fb8e2b2f981c56c4a5215c9e7a1fcf1a84924476b8b56f17f719d3d3b729688bb7c39a60b00414d53ae8491df5791fa**)
 
 **Restrictions:** Can only be called by the contract owner
 
-**Events Emitted:** `MasterKeyUpdated`
+**Events Emitted:** `PublicKeyUpdated`
 
 **Errors:**
 - `OwnableUnauthorizedAccount`: Thrown if called by any account other than the owner

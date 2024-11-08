@@ -72,11 +72,11 @@ contract DataLiquidityPoolImplementation is
     event ProofInstructionUpdated(string newProofInstruction);
 
     /**
-     * @notice Triggered when the masterKey has been updated
+     * @notice Triggered when the publicKey has been updated
      *
-     * @param newMasterKey                new master key
+     * @param newPublicKey                new public key
      */
-    event MasterKeyUpdated(string newMasterKey);
+    event PublicKeyUpdated(string newPublicKey);
 
     error FileAlreadyAdded();
     error InvalidAttestator();
@@ -93,7 +93,7 @@ contract DataLiquidityPoolImplementation is
         address dataRegistryAddress;
         address teePoolAddress;
         string name;
-        string masterKey;
+        string publicKey;
         string proofInstruction;
         uint256 fileRewardFactor;
     }
@@ -113,7 +113,7 @@ contract DataLiquidityPoolImplementation is
         dataRegistry = IDataRegistry(params.dataRegistryAddress);
         token = IERC20(params.tokenAddress);
         teePool = ITeePool(params.teePoolAddress);
-        masterKey = params.masterKey;
+        publicKey = params.publicKey;
         proofInstruction = params.proofInstruction;
         fileRewardFactor = params.fileRewardFactor;
 
@@ -252,14 +252,14 @@ contract DataLiquidityPoolImplementation is
     }
 
     /**
-     * @notice Updates the masterKey
+     * @notice Updates the publicKey
      *
-     * @param newMasterKey                new master key
+     * @param newPublicKey                new public key
      */
-    function updateMasterKey(string calldata newMasterKey) external override onlyOwner {
-        masterKey = newMasterKey;
+    function updatePublicKey(string calldata newPublicKey) external override onlyOwner {
+        publicKey = newPublicKey;
 
-        emit MasterKeyUpdated(newMasterKey);
+        emit PublicKeyUpdated(newPublicKey);
     }
 
     /**

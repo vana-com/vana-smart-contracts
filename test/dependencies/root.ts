@@ -2,10 +2,7 @@ import chai, { should } from "chai";
 import chaiAsPromised from "chai-as-promised";
 import { ethers, network, upgrades } from "hardhat";
 import { Wallet } from "ethers";
-import {
-  DAT,
-  DataLiquidityPoolsRootImplementation,
-} from "../../typechain-types";
+import { DAT, DLPRootImplementation } from "../../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import {
   advanceBlockNTimes,
@@ -65,7 +62,7 @@ chai.Assertion.addMethod(
   },
 );
 
-describe("DataLiquidityPoolsRoot", () => {
+describe("DLPRoot", () => {
   enum DlpStatus {
     None,
     Registered,
@@ -90,7 +87,7 @@ describe("DataLiquidityPoolsRoot", () => {
   let user4: HardhatEthersSigner;
   let user5: HardhatEthersSigner;
 
-  let root: DataLiquidityPoolsRootImplementation;
+  let root: DLPRootImplementation;
 
   const numberOfTopDlps = 3;
   const maxNumberOfRegisteredDlps = 10000;
@@ -135,7 +132,7 @@ describe("DataLiquidityPoolsRoot", () => {
     startBlock = (await getCurrentBlockNumber()) + 200;
 
     const dlpRootDeploy = await upgrades.deployProxy(
-      await ethers.getContractFactory("DataLiquidityPoolsRootImplementation"),
+      await ethers.getContractFactory("DLPRootImplementation"),
       [
         {
           ownerAddress: owner.address,
@@ -157,7 +154,7 @@ describe("DataLiquidityPoolsRoot", () => {
     );
 
     root = await ethers.getContractAt(
-      "DataLiquidityPoolsRootImplementation",
+      "DLPRootImplementation",
       dlpRootDeploy.target,
     );
   };
