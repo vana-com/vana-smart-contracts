@@ -78,6 +78,13 @@ contract DataLiquidityPoolImplementation is
      */
     event PublicKeyUpdated(string newPublicKey);
 
+    /**
+     * @notice Triggered when the teePool has been updated
+     *
+     * @param newTeePool                new tee pool
+     */
+    event TeePoolUpdated(address newTeePool);
+
     error FileAlreadyAdded();
     error InvalidAttestator();
     error InvalidProof();
@@ -238,6 +245,8 @@ contract DataLiquidityPoolImplementation is
      */
     function updateTeePool(address newTeePool) external override onlyOwner {
         teePool = ITeePool(newTeePool);
+
+        emit TeePoolUpdated(newTeePool);
     }
 
     /**

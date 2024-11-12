@@ -66,7 +66,6 @@ contract DLPRootImplementation is
     event EpochSizeUpdated(uint256 newEpochSize);
     event EpochRewardAmountUpdated(uint256 newEpochRewardAmount);
     event MinDlpRegistrationStakeUpdated(uint256 newMinDlpRegistrationStake);
-    event StakerDlpEpochRewardClaimed(address staker, uint256 dlpId, uint256 epochId, uint256 claimAmount);
     event StakeCreated(uint256 stakeId, address indexed staker, uint256 indexed dlpId, uint256 amount);
     event StakeClosed(uint256 indexed stakeId);
     event StakeWithdrawn(uint256 indexed stakeId);
@@ -77,6 +76,7 @@ contract DLPRootImplementation is
     error InvalidStakeAmount();
     error StakeAlreadyWithdrawn();
     error StakeNotClosed();
+    error StakeAlreadyClosed();
     error StakeWithdrawalTooEarly();
     error InvalidDlpStatus();
     error InvalidAddress();
@@ -702,6 +702,10 @@ contract DLPRootImplementation is
 
         if (stake.stakerAddress != stakerAddress) {
             revert NotStakeOwner();
+        }
+
+        if (stake.endBlock != 0) {
+            revert StakeAlreadyClosed();
         }
 
         Dlp storage dlp = _dlps[stake.dlpId];

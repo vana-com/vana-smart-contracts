@@ -74,7 +74,9 @@ describe("DataLiquidityPool", () => {
       teePoolDeploy.target,
     );
 
-    await teePool.connect(owner).addTee(tee0.address, "tee0Url", "tee0PubKey");
+    await teePool
+      .connect(owner)
+      .addTee(tee0.address, "tee0Url", "tee0PublicKey");
 
     const dlpDeploy = await upgrades.deployProxy(
       await ethers.getContractFactory("DataLiquidityPoolImplementation"),
