@@ -9,7 +9,7 @@
     - [Vana Core Contracts](#vana-core-contracts)
       - [DataRegistry](#dataregistry)
       - [TeePool](#teePool)
-      - [DataLiquidityPoolsRoot](#dataliquiditypoolsroot)
+      - [DLPRoot](#DLPRoot)
       - [Deposit](#deposit)
     - [DLP Template Contracts](#dlp-template-contracts)
       - [DataLiquidityPool](#dataliquiditypool)
@@ -48,9 +48,9 @@ Satori: [0xF084Ca24B4E29Aa843898e0B12c465fAFD089965](https://satori.vanascan.io/
 
 The DLP Root contract manages the registration and reward distribution for Data Liquidity Pools (DLPs) in the Vana ecosystem. It operates on an epoch-based system, where the top 16 most staked DLPs and their stakers receive rewards at the end of each epoch. The contract allows users to stake VANA tokens as guarantors for DLPs, with rewards distributed based on the staking position at the beginning of each epoch.
 
-Moksha:  [0xf408A064d640b620219F510963646Ed2bD5606BB](https://moksha.vanascan.io/address/0xf408A064d640b620219F510963646Ed2bD5606BB)
+Moksha:  [0x896af4A3dA3F2C226AE121dC1a00c20Ee1aA5691](https://moksha.vanascan.io/address/0x896af4A3dA3F2C226AE121dC1a00c20Ee1aA5691)
 
-Satori: [0xf408A064d640b620219F510963646Ed2bD5606BB](https://satori.vanascan.io/address/0xf408A064d640b620219F510963646Ed2bD5606BB)
+Satori: [0x896af4A3dA3F2C226AE121dC1a00c20Ee1aA5691](https://satori.vanascan.io/address/0x896af4A3dA3F2C226AE121dC1a00c20Ee1aA5691)
 
 ### [Data Liquidity Pool & DLPToken](https://docs.vana.org/vana/welcome-to-vana/what-is-data-liquidity-pool)
 
@@ -76,7 +76,7 @@ Bob wants to become a data contributor for DLP1. Here's the step-by-step process
 3. TEE operators see Bob's job and create an attestation for that file based on the instructions required for validating the file in relation to DLP1.
 4. This proof is saved in the DataRegistry.  
    E.g.https://moksha.vanascan.io/tx/0x2f4dba67e90685429b73a43e74fe839e580c9e50f60ce5d460b19f88f56a2e99?tab=index
-5. Bob must grant access to the DLP to read the data (by encrypting the file with the specific masterKey of DLP1).  
+5. Bob must grant access to the DLP to read the data (by encrypting the file with the specific pubicKey of DLP1).  
    E.g.https://moksha.vanascan.io/tx/0xfeeda337eeb60367a8332a664087cbef5b4e7f0882af30e36c5259c43a7042cc
 
    This step can be done by Bob in the first step by passing the permission along with the file.  
@@ -160,7 +160,7 @@ Before deploying or interacting with the contracts, you need to set up your envi
 
 `DLP_NAME`: The name of your Data Liquidity Pool. Choose a descriptive name for your DLP.
 
-`DLP_MASTER_KEY`: A master key for your DLP. This is used for encryption purposes. Make sure to generate a strong, unique key.
+`DLP_PUBLIC_KEY`: A pubic key for your DLP. This is used for encryption purposes. Make sure to generate a strong, unique key.
 
 `DLP_TOKEN_NAME`: The name of the token associated with your DLP. This will be visible in token listings.
 
@@ -813,7 +813,7 @@ Restrictions:
 Events emitted:
 - `Claimed(address indexed teeAddress, uint256 amount)`
 
-### DataLiquidityPoolsRoot
+### DLPRoot
 
 ```solidity
 function version() external pure returns (uint256)
@@ -1701,7 +1701,7 @@ Initializes the contract with the given parameters.
     - `dataRegistryAddress`: The address of the data registry contract
     - `teePoolAddress`: The address of the TEE pool contract
     - `name`: The name of the data liquidity pool
-    - `masterKey`: The master key for the pool
+    - `pubicKey`: The pubic key for the pool
     - `proofInstruction`: The instruction for generating proofs
     - `fileRewardFactor`: The factor used to calculate file rewards
 
@@ -1893,16 +1893,16 @@ Updates the proof instruction used for validating proofs.
 ---
 
 ```solidity
-function updateMasterKey(string calldata newMasterKey) external
+function updatePubicKey(string calldata newPubicKey) external
 ```
-Updates the master key of the pool.
+Updates the pubic key of the pool.
 
 **Parameters:**
-- `newMasterKey`: The new master key
+- `newPubicKey`: The new pubic key
 
 **Restrictions:** Can only be called by the contract owner
 
-**Events Emitted:** `MasterKeyUpdated`
+**Events Emitted:** `PubicKeyUpdated`
 
 **Errors:**
 - `OwnableUnauthorizedAccount`: Thrown if called by any account other than the owner

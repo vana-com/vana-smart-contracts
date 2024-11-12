@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -15,6 +16,7 @@ contract DataLiquidityPoolImplementation is
     PausableUpgradeable,
     Ownable2StepUpgradeable,
     ReentrancyGuardUpgradeable,
+    MulticallUpgradeable,
     DataLiquidityPoolStorageV1
 {
     using EnumerableSet for EnumerableSet.UintSet;
@@ -70,11 +72,18 @@ contract DataLiquidityPoolImplementation is
     event ProofInstructionUpdated(string newProofInstruction);
 
     /**
-     * @notice Triggered when the masterKey has been updated
+     * @notice Triggered when the publicKey has been updated
      *
-     * @param newMasterKey                new master key
+     * @param newPublicKey                new public key
      */
-    event MasterKeyUpdated(string newMasterKey);
+    event PublicKeyUpdated(string newPublicKey);
+
+    /**
+     * @notice Triggered when the teePool has been updated
+     *
+     * @param newTeePool                new tee pool
+     */
+    event TeePoolUpdated(address newTeePool);
 
     error FileAlreadyAdded();
     error InvalidAttestator();
@@ -91,7 +100,7 @@ contract DataLiquidityPoolImplementation is
         address dataRegistryAddress;
         address teePoolAddress;
         string name;
-        string masterKey;
+        string publicKey;
         string proofInstruction;
         uint256 fileRewardFactor;
     }
@@ -111,7 +120,7 @@ contract DataLiquidityPoolImplementation is
         dataRegistry = IDataRegistry(params.dataRegistryAddress);
         token = IERC20(params.tokenAddress);
         teePool = ITeePool(params.teePoolAddress);
-        masterKey = params.masterKey;
+        publicKey = params.publicKey;
         proofInstruction = params.proofInstruction;
         fileRewardFactor = params.fileRewardFactor;
 
@@ -236,6 +245,8 @@ contract DataLiquidityPoolImplementation is
      */
     function updateTeePool(address newTeePool) external override onlyOwner {
         teePool = ITeePool(newTeePool);
+
+        emit TeePoolUpdated(newTeePool);
     }
 
     /**
@@ -250,14 +261,14 @@ contract DataLiquidityPoolImplementation is
     }
 
     /**
-     * @notice Updates the masterKey
+     * @notice Updates the publicKey
      *
-     * @param newProofInstruction                new proof instruction
+     * @param newPublicKey                new public key
      */
-    function updateMasterKey(string calldata newProofInstruction) external override onlyOwner {
-        masterKey = newProofInstruction;
+    function updatePublicKey(string calldata newPublicKey) external override onlyOwner {
+        publicKey = newPublicKey;
 
-        emit MasterKeyUpdated(newProofInstruction);
+        emit PublicKeyUpdated(newPublicKey);
     }
 
     /**

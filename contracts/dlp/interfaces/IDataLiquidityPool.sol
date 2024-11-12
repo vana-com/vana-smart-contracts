@@ -29,7 +29,7 @@ interface IDataLiquidityPool {
     function dataRegistry() external view returns (IDataRegistry);
     function teePool() external view returns (ITeePool);
     function token() external view returns (IERC20);
-    function masterKey() external view returns (string memory);
+    function publicKey() external view returns (string memory);
     function proofInstruction() external view returns (string memory);
     function totalContributorsRewardAmount() external view returns (uint256);
     function fileRewardFactor() external view returns (uint256);
@@ -52,7 +52,7 @@ interface IDataLiquidityPool {
     function updateFileRewardFactor(uint256 newFileRewardFactor) external;
     function updateTeePool(address newTeePool) external;
     function updateProofInstruction(string calldata newProofInstruction) external;
-    function updateMasterKey(string calldata newProofInstruction) external;
+    function updatePublicKey(string calldata newProofInstruction) external;
     function requestReward(uint256 registryFileId, uint256 proofIndex) external;
     function addRewardsForContributors(uint256 contributorsRewardAmount) external;
 }

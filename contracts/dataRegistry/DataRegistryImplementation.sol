@@ -3,6 +3,7 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
@@ -12,6 +13,7 @@ contract DataRegistryImplementation is
     UUPSUpgradeable,
     PausableUpgradeable,
     Ownable2StepUpgradeable,
+    MulticallUpgradeable,
     DataRegistryStorageV1
 {
     using ECDSA for bytes32;
@@ -148,7 +150,7 @@ contract DataRegistryImplementation is
         string memory url,
         address ownerAddress,
         Permission[] memory permissions
-    ) external returns (uint256) {
+    ) external override whenNotPaused returns (uint256) {
         uint256 fileId = _addFile(url, ownerAddress);
 
         for (uint256 i = 0; i < permissions.length; i++) {
@@ -204,6 +206,6 @@ contract DataRegistryImplementation is
 
         emit FileAdded(cachedFilesCount, ownerAddress, url);
 
-        return filesCount;
+        return cachedFilesCount;
     }
 }

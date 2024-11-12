@@ -46,7 +46,7 @@ contract MultisendImplementation is
     function _authorizeUpgrade(address newImplementation) internal virtual override onlyOwner {}
 
     function multisendVana(uint256 amount, address payable[] memory recipients) public payable nonReentrant {
-        if (msg.value < amount * recipients.length) {
+        if (msg.value != amount * recipients.length) {
             revert InvalidAmount();
         }
 
@@ -64,7 +64,7 @@ contract MultisendImplementation is
             revert InvalidAmount();
         }
 
-        if (token.allowance(msg.sender, address(this)) < amount * recipients.length) {
+        if (token.allowance(msg.sender, address(this)) != amount * recipients.length) {
             revert InvalidAllowance();
         }
 

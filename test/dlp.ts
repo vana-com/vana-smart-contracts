@@ -69,7 +69,9 @@ describe("DataLiquidityPool", () => {
       teePoolDeploy.target,
     );
 
-    await teePool.connect(owner).addTee(tee0.address, "tee0Url", "tee0PubKey");
+    await teePool
+      .connect(owner)
+      .addTee(tee0.address, "tee0Url", "tee0PublicKey");
 
     const dlpDeploy = await upgrades.deployProxy(
       await ethers.getContractFactory("DataLiquidityPoolImplementation"),
@@ -80,7 +82,7 @@ describe("DataLiquidityPool", () => {
           dataRegistryAddress: dataRegistry.target,
           teePoolAddress: teePool.target,
           name: dlpName,
-          masterKey: "masterKey",
+          publicKey: "publicKey",
           proofInstruction: proofInstruction,
           fileRewardFactor: fileRewardFactor,
         },
@@ -110,7 +112,7 @@ describe("DataLiquidityPool", () => {
       (await dlp.token()).should.eq(dat);
       (await dlp.teePool()).should.eq(teePool);
       (await dlp.dataRegistry()).should.eq(dataRegistry);
-      (await dlp.masterKey()).should.eq("masterKey");
+      (await dlp.publicKey()).should.eq("publicKey");
       (await dlp.paused()).should.eq(false);
       (await dlp.fileRewardFactor()).should.eq(fileRewardFactor);
       (await dlp.version()).should.eq(1);
@@ -194,20 +196,20 @@ describe("DataLiquidityPool", () => {
       (await dlp.fileRewardFactor()).should.eq(fileRewardFactor);
     });
 
-    it("Should updateMasterKey when owner", async function () {
+    it("Should updatePublicKey when owner", async function () {
       await dlp
         .connect(owner)
-        .updateMasterKey("newMasterKey")
-        .should.emit(dlp, "MasterKeyUpdated")
-        .withArgs("newMasterKey");
+        .updatePublicKey("newPublicKey")
+        .should.emit(dlp, "PublicKeyUpdated")
+        .withArgs("newPublicKey");
 
-      (await dlp.masterKey()).should.eq("newMasterKey");
+      (await dlp.publicKey()).should.eq("newPublicKey");
     });
 
-    it("Should reject updateMasterKey when non-owner", async function () {
+    it("Should reject updatePublicKey when non-owner", async function () {
       await dlp
         .connect(user1)
-        .updateMasterKey("newMasterKey")
+        .updatePublicKey("newPublicKey")
         .should.be.rejectedWith(
           `OwnableUnauthorizedAccount("${user1.address}")`,
         );

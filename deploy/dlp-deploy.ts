@@ -22,7 +22,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const dataRegistryContractAddress =
     process.env.DATA_REGISTRY_CONTRACT_ADDRESS ?? "";
 
-  const dlpMasterKey = process.env.DLP_MASTER_KEY ?? "masterKey";
+  const dlpPubicKey = process.env.DLP_PUBLIC_KEY ?? "pubicKey";
   const proofInstruction =
     process.env.DLP_PROOF_INSTRUCTION ?? "proofInstruction";
   const dlpName = process.env.DLP_NAME ?? "DLP Name";
@@ -51,7 +51,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     dataRegistryAddress: dataRegistryContractAddress,
     teePoolAddress: teePoolContractAddress,
     tokenAddress: token.target,
-    masterKey: dlpMasterKey,
+    pubicKey: dlpPubicKey,
     proofInstruction: proofInstruction,
     fileRewardFactor: dlpFileRewardFactor,
   };

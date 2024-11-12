@@ -12,7 +12,7 @@ abstract contract DataLiquidityPoolStorageV1 is IDataLiquidityPool {
     string public override name;
     IDataRegistry public override dataRegistry;
     IERC20 public override token;
-    string public override masterKey;
+    string public override publicKey;
     string public override proofInstruction;
     uint256 public override totalContributorsRewardAmount;
     uint256 public override fileRewardFactor;
