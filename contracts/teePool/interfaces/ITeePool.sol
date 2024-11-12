@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-pragma solidity ^0.8.24;
+pragma solidity 0.8.24;
 
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {IDataRegistry} from "../../dataRegistry/interfaces/IDataRegistry.sol";
