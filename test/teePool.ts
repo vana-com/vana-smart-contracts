@@ -18,6 +18,7 @@ chai.use(chaiAsPromised);
 should();
 
 describe("TeePool", () => {
+  let trustedForwarder: HardhatEthersSigner;
   let deployer: HardhatEthersSigner;
   let owner: HardhatEthersSigner;
   let tee0: HardhatEthersSigner;
@@ -44,14 +45,19 @@ describe("TeePool", () => {
   }
 
   const deploy = async () => {
-    [deployer, owner, tee0, tee1, tee2, user1, user2, user3] =
+    [trustedForwarder, deployer, owner, tee0, tee1, tee2, user1, user2, user3] =
       await ethers.getSigners();
 
-    dataRegistry = await deployDataRegistry(owner);
+    dataRegistry = await deployDataRegistry(trustedForwarder, owner);
 
     const teePoolDeploy = await upgrades.deployProxy(
       await ethers.getContractFactory("TeePoolImplementation"),
-      [owner.address, dataRegistry.target, cancelDelay],
+      [
+        trustedForwarder.address,
+        owner.address,
+        dataRegistry.target,
+        cancelDelay,
+      ],
       {
         kind: "uups",
       },

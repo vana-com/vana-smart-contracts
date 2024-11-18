@@ -2,7 +2,8 @@
 pragma solidity 0.8.24;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
@@ -12,12 +13,16 @@ import "./interfaces/DataRegistryStorageV1.sol";
 contract DataRegistryImplementation is
     UUPSUpgradeable,
     PausableUpgradeable,
-    Ownable2StepUpgradeable,
+    AccessControlUpgradeable,
     MulticallUpgradeable,
+    ERC2771ContextUpgradeable,
     DataRegistryStorageV1
 {
     using ECDSA for bytes32;
     using MessageHashUtils for bytes32;
+
+    bytes32 public constant OWNER_ROLE = keccak256("OWNER_ROLE");
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
 
     /**
      * @notice Triggered when a file has been added
@@ -47,7 +52,7 @@ contract DataRegistryImplementation is
     error NotFileOwner();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
+    constructor() ERC2771ContextUpgradeable(address(0)) {
         _disableInitializers();
     }
 
@@ -56,12 +61,16 @@ contract DataRegistryImplementation is
      *
      * @param ownerAddress                      address of the owner
      */
-    function initialize(address ownerAddress) external initializer {
-        __Ownable2Step_init();
+    function initialize(address trustedForwarder, address ownerAddress) external initializer {
+        __AccessControl_init();
         __UUPSUpgradeable_init();
         __Pausable_init();
 
-        _transferOwnership(ownerAddress);
+        _trustedForwarder = trustedForwarder;
+
+        _setRoleAdmin(ADMIN_ROLE, OWNER_ROLE);
+        _grantRole(OWNER_ROLE, ownerAddress);
+        _grantRole(ADMIN_ROLE, ownerAddress);
     }
 
     /**
@@ -70,7 +79,36 @@ contract DataRegistryImplementation is
      *
      * @param newImplementation                  new implementation
      */
-    function _authorizeUpgrade(address newImplementation) internal virtual override onlyOwner {}
+    function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(OWNER_ROLE) {}
+
+    function _msgSender()
+        internal
+        view
+        override(ContextUpgradeable, ERC2771ContextUpgradeable)
+        returns (address sender)
+    {
+        return ERC2771ContextUpgradeable._msgSender();
+    }
+
+    function _msgData() internal view override(ContextUpgradeable, ERC2771ContextUpgradeable) returns (bytes calldata) {
+        return ERC2771ContextUpgradeable._msgData();
+    }
+
+    function _contextSuffixLength()
+        internal
+        view
+        override(ContextUpgradeable, ERC2771ContextUpgradeable)
+        returns (uint256)
+    {
+        return ERC2771ContextUpgradeable._contextSuffixLength();
+    }
+
+    /**
+     * @dev Returns the address of the trusted forwarder.
+     */
+    function trustedForwarder() public view virtual override returns (address) {
+        return _trustedForwarder;
+    }
 
     /**
      * @notice Returns the version of the contract
@@ -80,16 +118,25 @@ contract DataRegistryImplementation is
     }
 
     /**
+     * @notice Update the trusted forwarder
+     *
+     * @param trustedForwarder                  address of the trusted forwarder
+     */
+    function updateTrustedForwarder(address trustedForwarder) external onlyRole(ADMIN_ROLE) {
+        _trustedForwarder = trustedForwarder;
+    }
+
+    /**
      * @dev Pauses the contract
      */
-    function pause() external override onlyOwner {
+    function pause() external override onlyRole(ADMIN_ROLE) {
         _pause();
     }
 
     /**
      * @dev Unpauses the contract
      */
-    function unpause() external override onlyOwner {
+    function unpause() external override onlyRole(ADMIN_ROLE) {
         _unpause();
     }
 

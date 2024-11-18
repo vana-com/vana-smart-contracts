@@ -2,21 +2,23 @@
 pragma solidity 0.8.24;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "./interfaces/DataLiquidityPoolStorageV1.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import "./interfaces/DataLiquidityPoolStorageV1.sol";
 
 contract DataLiquidityPoolImplementation is
     UUPSUpgradeable,
     PausableUpgradeable,
-    Ownable2StepUpgradeable,
+    AccessControlUpgradeable,
     ReentrancyGuardUpgradeable,
     MulticallUpgradeable,
+    ERC2771ContextUpgradeable,
     DataLiquidityPoolStorageV1
 {
     using EnumerableSet for EnumerableSet.UintSet;
@@ -26,6 +28,9 @@ contract DataLiquidityPoolImplementation is
     using MessageHashUtils for bytes32;
 
     using SafeERC20 for IERC20;
+
+    bytes32 public constant OWNER_ROLE = keccak256("OWNER_ROLE");
+    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
 
     /**
      * @notice Triggered when a reward has been requested for a file
@@ -90,11 +95,12 @@ contract DataLiquidityPoolImplementation is
     error InvalidProof();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
+    constructor() ERC2771ContextUpgradeable(address(0)) {
         _disableInitializers();
     }
 
     struct InitParams {
+        address trustedForwarder;
         address ownerAddress;
         address tokenAddress;
         address dataRegistryAddress;
@@ -111,11 +117,12 @@ contract DataLiquidityPoolImplementation is
      * @param params                             initialization parameters
      */
     function initialize(InitParams memory params) external initializer {
-        __Ownable2Step_init();
+        __AccessControl_init();
         __UUPSUpgradeable_init();
         __ReentrancyGuard_init();
         __Pausable_init();
 
+        _trustedForwarder = params.trustedForwarder;
         name = params.name;
         dataRegistry = IDataRegistry(params.dataRegistryAddress);
         token = IERC20(params.tokenAddress);
@@ -124,7 +131,9 @@ contract DataLiquidityPoolImplementation is
         proofInstruction = params.proofInstruction;
         fileRewardFactor = params.fileRewardFactor;
 
-        _transferOwnership(params.ownerAddress);
+        _setRoleAdmin(ADMIN_ROLE, OWNER_ROLE);
+        _grantRole(OWNER_ROLE, params.ownerAddress);
+        _grantRole(ADMIN_ROLE, params.ownerAddress);
     }
 
     /**
@@ -133,7 +142,36 @@ contract DataLiquidityPoolImplementation is
      *
      * @param newImplementation                  new implementation
      */
-    function _authorizeUpgrade(address newImplementation) internal virtual override onlyOwner {}
+    function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(OWNER_ROLE) {}
+
+    function _msgSender()
+        internal
+        view
+        override(ContextUpgradeable, ERC2771ContextUpgradeable)
+        returns (address sender)
+    {
+        return ERC2771ContextUpgradeable._msgSender();
+    }
+
+    function _msgData() internal view override(ContextUpgradeable, ERC2771ContextUpgradeable) returns (bytes calldata) {
+        return ERC2771ContextUpgradeable._msgData();
+    }
+
+    function _contextSuffixLength()
+        internal
+        view
+        override(ContextUpgradeable, ERC2771ContextUpgradeable)
+        returns (uint256)
+    {
+        return ERC2771ContextUpgradeable._contextSuffixLength();
+    }
+
+    /**
+     * @dev Returns the address of the trusted forwarder.
+     */
+    function trustedForwarder() public view virtual override returns (address) {
+        return _trustedForwarder;
+    }
 
     /**
      * returns the version of the contract
@@ -216,14 +254,14 @@ contract DataLiquidityPoolImplementation is
     /**
      * @dev Pauses the contract
      */
-    function pause() external override onlyOwner {
+    function pause() external override onlyRole(OWNER_ROLE) {
         _pause();
     }
 
     /**
      * @dev Unpauses the contract
      */
-    function unpause() external override onlyOwner {
+    function unpause() external override onlyRole(OWNER_ROLE) {
         _unpause();
     }
 
@@ -232,7 +270,7 @@ contract DataLiquidityPoolImplementation is
      *
      * @param newFileRewardFactor                new file reward factor
      */
-    function updateFileRewardFactor(uint256 newFileRewardFactor) external override onlyOwner {
+    function updateFileRewardFactor(uint256 newFileRewardFactor) external override onlyRole(OWNER_ROLE) {
         fileRewardFactor = newFileRewardFactor;
 
         emit FileRewardFactorUpdated(newFileRewardFactor);
@@ -243,7 +281,7 @@ contract DataLiquidityPoolImplementation is
      *
      * @param newTeePool                new tee pool
      */
-    function updateTeePool(address newTeePool) external override onlyOwner {
+    function updateTeePool(address newTeePool) external override onlyRole(OWNER_ROLE) {
         teePool = ITeePool(newTeePool);
 
         emit TeePoolUpdated(newTeePool);
@@ -254,7 +292,7 @@ contract DataLiquidityPoolImplementation is
      *
      * @param newProofInstruction                new proof instruction
      */
-    function updateProofInstruction(string calldata newProofInstruction) external override onlyOwner {
+    function updateProofInstruction(string calldata newProofInstruction) external override onlyRole(OWNER_ROLE) {
         proofInstruction = newProofInstruction;
 
         emit ProofInstructionUpdated(newProofInstruction);
@@ -265,10 +303,19 @@ contract DataLiquidityPoolImplementation is
      *
      * @param newPublicKey                new public key
      */
-    function updatePublicKey(string calldata newPublicKey) external override onlyOwner {
+    function updatePublicKey(string calldata newPublicKey) external override onlyRole(OWNER_ROLE) {
         publicKey = newPublicKey;
 
         emit PublicKeyUpdated(newPublicKey);
+    }
+
+    /**
+     * @notice Update the trusted forwarder
+     *
+     * @param trustedForwarder                  address of the trusted forwarder
+     */
+    function updateTrustedForwarder(address trustedForwarder) external onlyRole(OWNER_ROLE) {
+        _trustedForwarder = trustedForwarder;
     }
 
     /**

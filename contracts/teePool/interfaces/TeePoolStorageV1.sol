@@ -9,6 +9,7 @@ import "./ITeePool.sol";
  * contract which implements TeePoolStorageV1
  */
 abstract contract TeePoolStorageV1 is ITeePool {
+    address internal _trustedForwarder;
     IDataRegistry public override dataRegistry;
 
     uint256 public override jobsCount;

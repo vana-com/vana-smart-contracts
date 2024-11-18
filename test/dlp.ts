@@ -15,6 +15,7 @@ chai.use(chaiAsPromised);
 should();
 
 describe("DataLiquidityPool", () => {
+  let trustedForwarder: HardhatEthersSigner;
   let deployer: HardhatEthersSigner;
   let owner: HardhatEthersSigner;
   let user1: HardhatEthersSigner;
@@ -44,8 +45,18 @@ describe("DataLiquidityPool", () => {
     "https://ipfs.io/ipfs/qf34f34q4fq3fgdsgjgbdugsgwegqlgqhfejrfqjfwjfeql3u4iq4u47ll1";
 
   const deploy = async () => {
-    [deployer, owner, user1, user2, user3, user4, user5, tee0, sponsor] =
-      await ethers.getSigners();
+    [
+      trustedForwarder,
+      deployer,
+      owner,
+      user1,
+      user2,
+      user3,
+      user4,
+      user5,
+      tee0,
+      sponsor,
+    ] = await ethers.getSigners();
 
     const datDeploy = await ethers.deployContract("DAT", [
       dlpTokenName,
@@ -54,11 +65,16 @@ describe("DataLiquidityPool", () => {
     ]);
     dat = await ethers.getContractAt("DAT", datDeploy.target);
 
-    dataRegistry = await deployDataRegistry(owner);
+    dataRegistry = await deployDataRegistry(trustedForwarder, owner);
 
     const teePoolDeploy = await upgrades.deployProxy(
       await ethers.getContractFactory("TeePoolImplementation"),
-      [owner.address, dataRegistry.target, teePoolCancelDelay],
+      [
+        trustedForwarder.address,
+        owner.address,
+        dataRegistry.target,
+        teePoolCancelDelay,
+      ],
       {
         kind: "uups",
       },

@@ -8,6 +8,7 @@ import "./IDLPRoot.sol";
  * contract which implements DLPRootStorageV1
  */
 abstract contract DLPRootStorageV1 is IDLPRoot {
+    address internal _trustedForwarder;
     uint256 public override eligibleDlpsLimit; // Must be below 500 for gas efficiency
     uint256 public override epochDlpsLimit; // Max DLPs per epoch
     uint256 public override minStakeAmount; // Minimum stake allowed

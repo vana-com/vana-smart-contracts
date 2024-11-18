@@ -108,6 +108,7 @@ interface IDLPRoot {
         DlpStatus status;
         uint256 registrationBlockNumber;
         uint256 stakeAmount;
+        uint256[] epochIds;
     }
     function dlps(uint256 index) external view returns (DlpInfo memory);
     function dlpsByAddress(address dlpAddress) external view returns (DlpInfo memory);

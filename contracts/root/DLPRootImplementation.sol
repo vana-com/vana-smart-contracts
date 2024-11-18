@@ -3,6 +3,7 @@ pragma solidity 0.8.24;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
@@ -17,6 +18,7 @@ contract DLPRootImplementation is
     AccessControlUpgradeable,
     ReentrancyGuardUpgradeable,
     MulticallUpgradeable,
+    ERC2771ContextUpgradeable,
     DLPRootStorageV1
 {
     using EnumerableSet for EnumerableSet.UintSet;
@@ -70,7 +72,7 @@ contract DLPRootImplementation is
     event StakeClosed(uint256 indexed stakeId);
     event StakeWithdrawn(uint256 indexed stakeId);
     event DlpBecameEligible(uint256 indexed dlpId);
-    event DlpStakersPercentageUpdated(uint256 dlpId, uint256 stakersPercentage);
+    event EpochDlpScoreSaved(uint256 indexed epochId, uint256 indexed dlpId, uint256 totalStakesScore);
 
     // Custom errors
     error InvalidStakeAmount();
@@ -78,14 +80,17 @@ contract DLPRootImplementation is
     error StakeNotClosed();
     error StakeAlreadyClosed();
     error StakeWithdrawalTooEarly();
+    error InvalidDlpId();
     error InvalidDlpStatus();
     error InvalidAddress();
     error NotDlpOwner();
     error NotStakeOwner();
     error NothingToClaim();
     error InvalidStakersPercentage();
+    error DLpAddressCannotBeChanged();
     error TransferFailed();
     error EpochNotEnded();
+    error EpochDlpScoreAlreadySaved();
 
     modifier onlyDlpOwner(uint256 dlpId) {
         if (_dlps[dlpId].ownerAddress != msg.sender) {
@@ -95,11 +100,12 @@ contract DLPRootImplementation is
     }
 
     /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
+    constructor() ERC2771ContextUpgradeable(address(0)) {
         _disableInitializers();
     }
 
     struct InitParams {
+        address trustedForwarder;
         address payable ownerAddress;
         uint256 eligibleDlpsLimit;
         uint256 epochDlpsLimit;
@@ -123,6 +129,7 @@ contract DLPRootImplementation is
         __Pausable_init();
         __Multicall_init();
 
+        _trustedForwarder = params.trustedForwarder;
         eligibleDlpsLimit = params.eligibleDlpsLimit;
         epochDlpsLimit = params.epochDlpsLimit;
         minStakeAmount = params.minStakeAmount;
@@ -145,9 +152,40 @@ contract DLPRootImplementation is
         _setRoleAdmin(ADMIN_ROLE, OWNER_ROLE);
         _setRoleAdmin(MANAGER_ROLE, ADMIN_ROLE);
         _grantRole(OWNER_ROLE, params.ownerAddress);
+        _grantRole(ADMIN_ROLE, params.ownerAddress);
+        _grantRole(MANAGER_ROLE, params.ownerAddress);
     }
 
     function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(OWNER_ROLE) {}
+
+    function _msgSender()
+        internal
+        view
+        override(ContextUpgradeable, ERC2771ContextUpgradeable)
+        returns (address sender)
+    {
+        return ERC2771ContextUpgradeable._msgSender();
+    }
+
+    function _msgData() internal view override(ContextUpgradeable, ERC2771ContextUpgradeable) returns (bytes calldata) {
+        return ERC2771ContextUpgradeable._msgData();
+    }
+
+    function _contextSuffixLength()
+        internal
+        view
+        override(ContextUpgradeable, ERC2771ContextUpgradeable)
+        returns (uint256)
+    {
+        return ERC2771ContextUpgradeable._contextSuffixLength();
+    }
+
+    /**
+     * @dev Returns the address of the trusted forwarder.
+     */
+    function trustedForwarder() public view virtual override returns (address) {
+        return _trustedForwarder;
+    }
 
     function version() external pure virtual override returns (uint256) {
         return 1;
@@ -166,6 +204,16 @@ contract DLPRootImplementation is
      */
     function dlps(uint256 dlpId) public view override returns (DlpInfo memory) {
         Dlp storage dlp = _dlps[dlpId];
+        Epoch storage epoch = _epochs[epochsCount];
+
+        uint stakersPercentageEpoch = dlp.registrationBlockNumber > epoch.startBlock
+            ? dlp.stakersPercentageCheckpoints.at(0)._value
+            : dlp.stakersPercentageCheckpoints.upperLookup(SafeCast.toUint48(epoch.startBlock));
+
+        uint256[] memory epochIds = new uint256[](dlp.epochIdsCount + 1);
+        for (uint256 i = 1; i <= dlp.epochIdsCount; i++) {
+            epochIds[i] = dlp.epochIds[i];
+        }
 
         return
             DlpInfo({
@@ -174,16 +222,15 @@ contract DLPRootImplementation is
                 ownerAddress: dlp.ownerAddress,
                 treasuryAddress: dlp.treasuryAddress,
                 stakersPercentage: dlp.stakersPercentageCheckpoints.latest(),
-                stakersPercentageEpoch: dlp.stakersPercentageCheckpoints.upperLookup(
-                    SafeCast.toUint48(_epochs[epochsCount].startBlock)
-                ),
+                stakersPercentageEpoch: stakersPercentageEpoch,
                 name: dlp.name,
                 iconUrl: dlp.iconUrl,
                 website: dlp.website,
                 metadata: dlp.metadata,
                 status: dlp.status,
                 registrationBlockNumber: dlp.registrationBlockNumber,
-                stakeAmount: _dlpComputedStakeAmount(dlpId)
+                stakeAmount: _dlpComputedStakeAmount(dlpId),
+                epochIds: epochIds
             });
     }
 
@@ -233,14 +280,18 @@ contract DLPRootImplementation is
     function dlpEpochs(uint256 dlpId, uint256 epochId) external view override returns (DlpEpochInfo memory) {
         Epoch storage epoch = _epochs[epochId];
         EpochDlp memory epochDlp = epoch.dlps[dlpId];
+        Dlp storage dlp = _dlps[dlpId];
+
+        uint stakersPercentageEpoch = dlp.registrationBlockNumber > epoch.startBlock
+            ? dlp.stakersPercentageCheckpoints.at(0)._value
+            : dlp.stakersPercentageCheckpoints.upperLookup(SafeCast.toUint48(epoch.startBlock));
+
         return
             DlpEpochInfo({
-                stakeAmount: _dlpComputedStakeAmountByBlock(dlpId, SafeCast.toUint48(epoch.startBlock)),
+                stakeAmount: _dlpComputedStakeAmountByBlock(dlpId, SafeCast.toUint48(epoch.endBlock)),
                 isTopDlp: epoch.dlpIds.contains(dlpId),
                 rewardAmount: epochDlp.rewardAmount,
-                stakersPercentage: _dlps[dlpId].stakersPercentageCheckpoints.upperLookup(
-                    SafeCast.toUint48(epoch.startBlock)
-                ),
+                stakersPercentage: stakersPercentageEpoch,
                 totalStakesScore: epochDlp.totalStakesScore
             });
     }
@@ -266,33 +317,41 @@ contract DLPRootImplementation is
         Dlp storage dlp = _dlps[stake.dlpId];
 
         uint256 totalRewardAmount;
-        uint256 epochToClaimIndex = stake.lastClaimedIndexEpochId;
-        uint256 epochToClaim = dlp.epochIds[epochToClaimIndex + 1];
+        uint256 epochToClaimIndex = stake.lastClaimedIndexEpochId + 1;
+        uint256 epochToClaim = dlp.epochIds[epochToClaimIndex];
         uint256 rewardClaimDelay = rewardClaimDelay();
 
-        while (epochToClaim <= epochsCount) {
+        while (epochToClaim > 0 && epochToClaim <= epochsCount - 1) {
             Epoch storage epoch = _epochs[epochToClaim];
             EpochDlp storage epochDlp = epoch.dlps[stake.dlpId];
 
-            if (epochToClaim == 0 || epochDlp.totalStakesScore == 0 || epoch.endBlock > stake.endBlock) {
+            if (
+                epochToClaim == 0 ||
+                epochDlp.totalStakesScore == 0 ||
+                (stake.endBlock > 0 && epoch.endBlock > stake.endBlock)
+            ) {
                 break;
             }
 
-            uint256 rewardAmount = (((_calculateStakeScore(stake.amount, stake.startBlock, epoch.endBlock) *
-                epochDlp.rewardAmount) / epochDlp.totalStakesScore) * epochDlp.stakersPercentage) /
+            uint256 stakeScore = calculateStakeScore(stake.amount, stake.startBlock, epoch.endBlock);
+
+            uint256 rewardAmount = (((epochDlp.rewardAmount * epochDlp.stakersPercentage) / 100e18) * stakeScore) /
                 epochDlp.totalStakesScore;
 
-            if (epoch.endBlock + rewardClaimDelay < block.number) {
-                rewardAmount = (rewardAmount * (block.number - epoch.endBlock)) / rewardClaimDelay;
+            uint256 numberOfDays = 1 + (block.number - epoch.endBlock) / daySize;
+
+            if (rewardClaimDelay > 0 && numberOfDays < rewardClaimDelay) {
+                rewardAmount = (rewardAmount * numberOfDays) / rewardClaimDelay;
             }
 
-            if (stake.claimedAmounts[epochToClaim] < rewardAmount) {
-                continue;
+            if (stake.claimedAmounts[epochToClaim] >= rewardAmount) {
+                break;
             }
 
             totalRewardAmount += rewardAmount - stake.claimedAmounts[epochToClaim];
 
-            epochToClaim = dlp.epochIds[++epochToClaimIndex];
+            ++epochToClaimIndex;
+            epochToClaim = dlp.epochIds[epochToClaimIndex];
         }
 
         return totalRewardAmount;
@@ -390,30 +449,30 @@ contract DLPRootImplementation is
         return topDlpIds;
     }
 
-    function pause() external override onlyRole(OWNER_ROLE) {
+    function pause() external override onlyRole(ADMIN_ROLE) {
         _pause();
     }
 
-    function unpause() external override onlyRole(OWNER_ROLE) {
+    function unpause() external override onlyRole(ADMIN_ROLE) {
         _unpause();
     }
 
-    function updateEligibleDlpsLimit(uint256 newEligibleDlpsLimit) external override onlyRole(OWNER_ROLE) {
+    function updateEligibleDlpsLimit(uint256 newEligibleDlpsLimit) external override onlyRole(ADMIN_ROLE) {
         eligibleDlpsLimit = newEligibleDlpsLimit;
         emit EligibleDlpsLimitUpdated(newEligibleDlpsLimit);
     }
 
-    function updateMinStakeAmount(uint256 newMinStakeAmount) external override onlyRole(OWNER_ROLE) {
+    function updateMinStakeAmount(uint256 newMinStakeAmount) external override onlyRole(ADMIN_ROLE) {
         minStakeAmount = newMinStakeAmount;
         emit MinStakeAmountUpdated(newMinStakeAmount);
     }
 
-    function updateMinDlpStakersPercentage(uint256 newMinDlpStakersPercentage) external override onlyRole(OWNER_ROLE) {
+    function updateMinDlpStakersPercentage(uint256 newMinDlpStakersPercentage) external override onlyRole(ADMIN_ROLE) {
         minDlpStakersPercentage = newMinDlpStakersPercentage;
         emit MinDlpStakersPercentageUpdated(newMinDlpStakersPercentage);
     }
 
-    function updateMinDlpRegistrationStake(uint256 newMinDlpRegistrationStake) external override onlyRole(OWNER_ROLE) {
+    function updateMinDlpRegistrationStake(uint256 newMinDlpRegistrationStake) external override onlyRole(ADMIN_ROLE) {
         minDlpRegistrationStake = newMinDlpRegistrationStake;
         emit MinDlpRegistrationStakeUpdated(newMinDlpRegistrationStake);
     }
@@ -421,13 +480,13 @@ contract DLPRootImplementation is
     /**
      * @notice Updates eligibility threshold and adjusts DLP statuses
      */
-    function updateDlpEligibilityThreshold(uint256 newDlpEligibilityThreshold) external override onlyRole(OWNER_ROLE) {
+    function updateDlpEligibilityThreshold(uint256 newDlpEligibilityThreshold) external override onlyRole(ADMIN_ROLE) {
         dlpEligibilityThreshold = newDlpEligibilityThreshold;
 
         for (uint256 index = 0; index < _eligibleDlpsList.length(); index++) {
             uint256 dlpId = _eligibleDlpsList.at(index);
             Dlp storage dlp = _dlps[dlpId];
-            if (dlp.stakersPercentageCheckpoints.latest() < newDlpEligibilityThreshold) {
+            if (_dlpComputedStakeAmount(dlpId) < newDlpEligibilityThreshold) {
                 dlp.status = DlpStatus.SubEligible;
             }
         }
@@ -440,13 +499,13 @@ contract DLPRootImplementation is
      */
     function updateDlpSubEligibilityThreshold(
         uint256 newDlpSubEligibilityThreshold
-    ) external override onlyRole(OWNER_ROLE) {
+    ) external override onlyRole(ADMIN_ROLE) {
         dlpSubEligibilityThreshold = newDlpSubEligibilityThreshold;
 
         for (uint256 index = 0; index < _eligibleDlpsList.length(); index++) {
             uint256 dlpId = _eligibleDlpsList.at(index);
             Dlp storage dlp = _dlps[dlpId];
-            if (dlp.stakersPercentageCheckpoints.latest() < newDlpSubEligibilityThreshold) {
+            if (_dlpComputedStakeAmount(dlpId) < newDlpSubEligibilityThreshold) {
                 dlp.status = DlpStatus.Registered;
                 _eligibleDlpsList.remove(dlpId);
             }
@@ -455,17 +514,17 @@ contract DLPRootImplementation is
         emit DlpSubEligibilityThresholdUpdated(newDlpSubEligibilityThreshold);
     }
 
-    function updateEpochDlpsLimit(uint256 newEpochDlpsLimit) external override onlyRole(OWNER_ROLE) {
+    function updateEpochDlpsLimit(uint256 newEpochDlpsLimit) external override onlyRole(ADMIN_ROLE) {
         epochDlpsLimit = newEpochDlpsLimit;
         emit EpochDlpsLimitUpdated(newEpochDlpsLimit);
     }
 
-    function updateStakeWithdrawalDelay(uint256 newStakeWithdrawalDelay) external override onlyRole(OWNER_ROLE) {
+    function updateStakeWithdrawalDelay(uint256 newStakeWithdrawalDelay) external override onlyRole(ADMIN_ROLE) {
         _checkpointPush(_stakeWithdrawalDelayCheckpoints, newStakeWithdrawalDelay);
         emit StakeWithdrawalDelayUpdated(newStakeWithdrawalDelay);
     }
 
-    function updateRewardClaimDelay(uint256 newRewardClaimDelay) external override onlyRole(OWNER_ROLE) {
+    function updateRewardClaimDelay(uint256 newRewardClaimDelay) external override onlyRole(ADMIN_ROLE) {
         _checkpointPush(_rewardClaimDelayCheckpoints, newRewardClaimDelay);
         emit RewardClaimDelayUpdated(newRewardClaimDelay);
     }
@@ -480,33 +539,56 @@ contract DLPRootImplementation is
         emit EpochRewardAmountUpdated(newEpochRewardAmount);
     }
 
+    function updateTrustedForwarder(address trustedForwarder) external onlyRole(ADMIN_ROLE) {
+        _trustedForwarder = trustedForwarder;
+    }
+
     /**
      * @notice Updates stake scores for DLPs in past epochs
      */
     function saveEpochDlpsTotalStakesScore(
         EpochDlpsTotalStakesScore[] memory stakeScore
-    ) external override onlyRole(OWNER_ROLE) {
+    ) external override onlyRole(MANAGER_ROLE) {
         for (uint256 i = 0; i < stakeScore.length; i++) {
-            if (_epochs[stakeScore[i].epochId].endBlock > block.number) {
+            Epoch storage epoch = _epochs[stakeScore[i].epochId];
+            EpochDlp storage epochDlp = epoch.dlps[stakeScore[i].dlpId];
+
+            if (_dlps[stakeScore[i].dlpId].dlpAddress == address(0)) {
+                revert InvalidDlpId();
+            }
+
+            if (epoch.endBlock > block.number || epoch.startBlock == 0) {
                 revert EpochNotEnded();
             }
 
-            if (_epochs[stakeScore[i].epochId].dlps[stakeScore[i].dlpId].totalStakesScore != 0) {
-                continue;
+            if (epochDlp.totalStakesScore != 0) {
+                revert EpochDlpScoreAlreadySaved();
             }
 
-            _epochs[stakeScore[i].epochId].dlps[stakeScore[i].dlpId].totalStakesScore = stakeScore[i].totalStakesScore;
+            epochDlp.totalStakesScore = stakeScore[i].totalStakesScore;
+
+            emit EpochDlpScoreSaved(stakeScore[i].epochId, stakeScore[i].dlpId, stakeScore[i].totalStakesScore);
         }
     }
 
+    /**
+     * @notice Overrides stake scores for DLPs in past epochs
+     */
     function overrideEpochDlpsTotalStakesScore(
         EpochDlpsTotalStakesScore memory stakeScore
-    ) external override onlyRole(OWNER_ROLE) {
-        if (_epochs[stakeScore.epochId].endBlock > block.number) {
+    ) external override onlyRole(MANAGER_ROLE) {
+        Epoch storage epoch = _epochs[stakeScore.epochId];
+        if (_dlps[stakeScore.dlpId].dlpAddress == address(0)) {
+            revert InvalidDlpId();
+        }
+
+        if (epoch.endBlock > block.number || epoch.startBlock == 0) {
             revert EpochNotEnded();
         }
 
-        _epochs[stakeScore.epochId].dlps[stakeScore.dlpId].totalStakesScore = stakeScore.totalStakesScore;
+        epoch.dlps[stakeScore.dlpId].totalStakesScore = stakeScore.totalStakesScore;
+
+        emit EpochDlpScoreSaved(stakeScore.epochId, stakeScore.dlpId, stakeScore.totalStakesScore);
     }
 
     /**
@@ -539,9 +621,16 @@ contract DLPRootImplementation is
 
         Dlp storage dlp = _dlps[dlpId];
 
+        //this validation will be removed in the future
+        if (dlp.dlpAddress != dlpUpdateInfo.dlpAddress) {
+            revert DLpAddressCannotBeChanged();
+        }
+
         dlp.ownerAddress = dlpUpdateInfo.ownerAddress;
         dlp.treasuryAddress = dlpUpdateInfo.treasuryAddress;
-        _checkpointPush(dlp.stakersPercentageCheckpoints, dlpUpdateInfo.stakersPercentage);
+        if (dlp.stakersPercentageCheckpoints.latest() != dlpUpdateInfo.stakersPercentage) {
+            _checkpointPush(dlp.stakersPercentageCheckpoints, dlpUpdateInfo.stakersPercentage);
+        }
         dlp.name = dlpUpdateInfo.name;
         dlp.iconUrl = dlpUpdateInfo.iconUrl;
         dlp.website = dlpUpdateInfo.website;
@@ -600,14 +689,6 @@ contract DLPRootImplementation is
     }
 
     /**
-     * @notice Claims rewards for a stake up to specified epoch
-     */
-    function claimStakeRewardUntilEpoch(uint256 stakeId, uint256 lastEpochToClaim) external nonReentrant whenNotPaused {
-        _createEpochsUntilBlockNumber(block.number);
-        _claimStakeRewardUntilEpoch(stakeId, lastEpochToClaim);
-    }
-
-    /**
      * @notice Creates a new stake for a DLP
      */
     function createStake(uint256 dlpId) external payable override nonReentrant whenNotPaused {
@@ -641,8 +722,28 @@ contract DLPRootImplementation is
     function claimStakesReward(uint256[] memory stakeIds) external nonReentrant whenNotPaused {
         _createEpochsUntilBlockNumber(block.number);
         for (uint256 i = 0; i < stakeIds.length; i++) {
-            _claimStakeRewardUntilEpoch(stakeIds[i], epochsCount);
+            _claimStakeRewardUntilEpoch(stakeIds[i], epochsCount - 1);
         }
+    }
+
+    /**
+     * @notice Claims rewards for a stake up to specified epoch
+     */
+    function claimStakeRewardUntilEpoch(uint256 stakeId, uint256 lastEpochToClaim) external nonReentrant whenNotPaused {
+        _createEpochsUntilBlockNumber(block.number);
+        _claimStakeRewardUntilEpoch(stakeId, lastEpochToClaim);
+    }
+
+    /**
+     * @notice Calculates stake score based on amount and duration
+     */
+    function calculateStakeScore(
+        uint256 stakeAmount,
+        uint256 stakeStartBlock,
+        uint256 blockNumber
+    ) public view returns (uint256) {
+        uint256 daysStaked = (blockNumber - stakeStartBlock) / daySize;
+        return (stakeAmount * _getMultiplier(daysStaked)) / 100;
     }
 
     /**
@@ -709,7 +810,7 @@ contract DLPRootImplementation is
         }
 
         Dlp storage dlp = _dlps[stake.dlpId];
-        _checkpointPush(dlp.unstakeAmountCheckpoints, stake.amount);
+        _checkpointAdd(dlp.unstakeAmountCheckpoints, stake.amount);
         stake.endBlock = block.number;
 
         uint256 dlpStake = _dlpComputedStakeAmount(stake.dlpId);
@@ -823,29 +924,37 @@ contract DLPRootImplementation is
         Dlp storage dlp = _dlps[stake.dlpId];
 
         uint256 totalRewardAmount;
-        uint256 epochToClaimIndex = stake.lastClaimedIndexEpochId;
-        uint256 epochToClaim = dlp.epochIds[epochToClaimIndex + 1];
+        uint256 epochToClaimIndex = stake.lastClaimedIndexEpochId + 1;
+        uint256 epochToClaim = dlp.epochIds[epochToClaimIndex];
         uint256 rewardClaimDelay = rewardClaimDelay();
 
-        while (epochToClaim <= lastEpochToClaim) {
+        while (epochToClaim > 0 && epochToClaim <= lastEpochToClaim) {
             Epoch storage epoch = _epochs[epochToClaim];
             EpochDlp storage epochDlp = epoch.dlps[stake.dlpId];
 
-            if (epochToClaim == 0 || epochDlp.totalStakesScore == 0 || epoch.endBlock > stake.endBlock) {
+            if (
+                epochToClaim == 0 ||
+                epochDlp.totalStakesScore == 0 ||
+                (stake.endBlock > 0 && epoch.endBlock > stake.endBlock)
+            ) {
                 break;
             }
 
-            uint256 rewardAmount = (((_calculateStakeScore(stake.amount, stake.startBlock, epoch.endBlock) *
-                epochDlp.rewardAmount) / epochDlp.totalStakesScore) * epochDlp.stakersPercentage) / 1e20;
+            uint256 stakeScore = calculateStakeScore(stake.amount, stake.startBlock, epoch.endBlock);
 
-            if (epoch.endBlock + rewardClaimDelay >= block.number) {
-                stake.lastClaimedIndexEpochId++;
+            uint256 rewardAmount = (((epochDlp.rewardAmount * epochDlp.stakersPercentage) / 100e18) * stakeScore) /
+                epochDlp.totalStakesScore;
+
+            uint256 numberOfDays = 1 + (block.number - epoch.endBlock) / daySize;
+
+            if (rewardClaimDelay > 0 && numberOfDays < rewardClaimDelay) {
+                rewardAmount = (rewardAmount * numberOfDays) / rewardClaimDelay;
             } else {
-                rewardAmount = (rewardAmount * (block.number - epoch.endBlock)) / rewardClaimDelay;
+                stake.lastClaimedIndexEpochId = epochToClaimIndex;
             }
 
-            if (stake.claimedAmounts[epochToClaim] < rewardAmount) {
-                continue;
+            if (stake.claimedAmounts[epochToClaim] >= rewardAmount) {
+                break;
             }
 
             totalRewardAmount += rewardAmount - stake.claimedAmounts[epochToClaim];
@@ -867,7 +976,7 @@ contract DLPRootImplementation is
     /**
      * @notice Returns stake score multiplier based on duration
      */
-    function getMultiplier(uint256 index) public pure returns (uint256) {
+    function _getMultiplier(uint256 index) internal pure returns (uint256) {
         if (index >= 64) {
             return 300;
         }
@@ -942,18 +1051,6 @@ contract DLPRootImplementation is
     }
 
     /**
-     * @notice Calculates stake score based on amount and duration
-     */
-    function _calculateStakeScore(
-        uint256 stakeAmount,
-        uint256 stakeStartBlock,
-        uint256 blockNumber
-    ) public view returns (uint256) {
-        uint256 daysStaked = (blockNumber - stakeStartBlock) / daySize;
-        return (stakeAmount * getMultiplier(daysStaked)) / 100;
-    }
-
-    /**
      * @notice Helper function to add value to checkpoint
      */
     function _checkpointAdd(Checkpoints.Trace208 storage store, uint256 delta) private returns (uint208, uint208) {
@@ -1011,6 +1108,9 @@ contract DLPRootImplementation is
      * @notice Finalizes epoch by distributing rewards to top DLPs
      */
     function _finalizeEpoch(uint256 epochId) internal {
+        if (epochId == 0) {
+            return;
+        }
         Epoch storage epoch = _epochs[epochId];
         uint256[] memory topDlps = topDlpIds(epochDlpsLimit);
 
@@ -1034,9 +1134,14 @@ contract DLPRootImplementation is
             dlp.epochIds[++dlp.epochIdsCount] = epochId;
 
             epochDlp = epoch.dlps[dlpId];
-            epochDlp.stakersPercentage = dlp.stakersPercentageCheckpoints.upperLookup(
-                SafeCast.toUint48(epoch.startBlock)
-            );
+
+            if (dlp.registrationBlockNumber > epoch.startBlock) {
+                epochDlp.stakersPercentage = dlp.stakersPercentageCheckpoints.at(0)._value;
+            } else {
+                epochDlp.stakersPercentage = dlp.stakersPercentageCheckpoints.upperLookup(
+                    SafeCast.toUint48(epoch.startBlock)
+                );
+            }
             epochDlp.rewardAmount = (_dlpComputedStakeAmount(dlpId) * epoch.rewardAmount) / topDlpsTotalStakeAmount;
 
             // Send treasury portion of rewards
@@ -1044,9 +1149,11 @@ contract DLPRootImplementation is
                 (bool success, ) = dlp.treasuryAddress.call{
                     value: (epochDlp.rewardAmount * (100e18 - epochDlp.stakersPercentage)) / 100e18
                 }("");
-                if (!success) {
-                    revert TransferFailed();
-                }
+
+                //skip this in phase 1 to avoid reverting the whole transaction when the treasury transfer fails
+                //                if (!success) {
+                //                    revert TransferFailed();
+                //                }
             }
         }
     }

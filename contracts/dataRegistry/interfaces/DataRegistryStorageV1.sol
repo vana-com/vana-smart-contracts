@@ -9,6 +9,7 @@ import "./IDataRegistry.sol";
  * contract which implements DataRegistryStorageV1
  */
 abstract contract DataRegistryStorageV1 is IDataRegistry {
+    address internal _trustedForwarder;
     uint256 public override filesCount;
     mapping(uint256 fileId => File) internal _files;
 }

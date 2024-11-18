@@ -5,16 +5,18 @@ import { DataRegistryImplementation } from "../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { getCurrentBlockNumber } from "../utils/timeAndBlockManipulation";
 import { parseEther } from "../utils/helpers";
+import { Wallet } from "ethers";
 
 chai.use(chaiAsPromised);
 should();
 
 export async function deployDataRegistry(
+  trustedForwarder: HardhatEthersSigner,
   owner: HardhatEthersSigner,
 ): Promise<DataRegistryImplementation> {
   const dataRegistryDeploy = await upgrades.deployProxy(
     await ethers.getContractFactory("DataRegistryImplementation"),
-    [owner.address],
+    [trustedForwarder.address, owner.address],
     {
       kind: "uups",
     },
@@ -124,7 +126,7 @@ const proof5: Proof = {
 export const proofs: Proof[] = [proof0, proof1, proof2, proof3, proof4, proof5];
 
 export async function signProof(
-  signer: HardhatEthersSigner,
+  signer: HardhatEthersSigner | Wallet,
   fileUrl: string,
   proofData: ProofData,
 ): Promise<string> {
@@ -144,6 +146,7 @@ export async function signProof(
 }
 
 describe("DataRegistry", () => {
+  let trustedForwarder: HardhatEthersSigner;
   let deployer: HardhatEthersSigner;
   let owner: HardhatEthersSigner;
   let tee1: HardhatEthersSigner;
@@ -159,10 +162,22 @@ describe("DataRegistry", () => {
   let dataRegistry: DataRegistryImplementation;
 
   const deploy = async () => {
-    [deployer, owner, tee1, tee2, tee3, dlp1, dlp2, dlp3, user1, user2, user3] =
-      await ethers.getSigners();
+    [
+      trustedForwarder,
+      deployer,
+      owner,
+      tee1,
+      tee2,
+      tee3,
+      dlp1,
+      dlp2,
+      dlp3,
+      user1,
+      user2,
+      user3,
+    ] = await ethers.getSigners();
 
-    dataRegistry = await deployDataRegistry(owner);
+    dataRegistry = await deployDataRegistry(trustedForwarder, owner);
   };
 
   describe("Setup", () => {

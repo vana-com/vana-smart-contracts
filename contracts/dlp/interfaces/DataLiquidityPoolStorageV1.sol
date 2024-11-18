@@ -9,6 +9,7 @@ import "./IDataLiquidityPool.sol";
  * contract which implements DataLiquidityPoolStorageV1
  */
 abstract contract DataLiquidityPoolStorageV1 is IDataLiquidityPool {
+    address internal _trustedForwarder;
     string public override name;
     IDataRegistry public override dataRegistry;
     IERC20 public override token;

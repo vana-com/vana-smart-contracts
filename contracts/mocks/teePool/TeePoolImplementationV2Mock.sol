@@ -10,7 +10,7 @@ contract TeePoolImplementationV2Mock is TeePoolImplementation {
      *
      * @param newImplementation                  new implementation
      */
-    function _authorizeUpgrade(address newImplementation) internal virtual override onlyOwner {}
+    function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(OWNER_ROLE) {}
 
     /**
      * return the version of the contract
