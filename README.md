@@ -150,7 +150,30 @@ Before deploying or interacting with the contracts, you need to set up your envi
 
 `DLP_NAME`: The name of your Data Liquidity Pool. Choose a descriptive name for your DLP. (E.g. **CookieDLP**)
 
-`DLP_PUBLIC_KEY`: A public key for your DLP. This is used for encryption purposes. The public key is used by data contributors to encrypt the encryption key. The dlp can use the private key associated to this public key to decode the file. See [this](https://docs.vana.org/docs/data-privacy#code-samples) for more details. (E.g. **0x04bfcab8282071e4c17b3ae235928ec9dd9fb8e2b2f981c56c4a5215c9e7a1fcf1a84924476b8b56f17f719d3d3b729688bb7c39a60b00414d53ae8491df5791fa**)
+Here’s an improved version of your README part for better clarity and professionalism:
+
+<a id="env-dlp-public-key"></a>
+`DLP_PUBLIC_KEY`: A public key for your DLP, used for encryption purposes. This key allows data contributors to encrypt the encryption key securely. Your DLP can then use the corresponding private key to decrypt and access the encrypted files. For more details on the encryption process, refer to the [data privacy section](https://docs.vana.org/docs/data-privacy#code-samples).
+
+Generate a Private-Public Key Pair using the [Vana CLI](https://github.com/vana-com/vana-framework?tab=readme-ov-file#wallets) with the following command:
+
+```bash
+vanacli create
+```
+
+The command will output a response similar to this:
+
+```json
+{
+  "address": "0x123...",
+  "publicKey": "0xabc...",
+  "privateKey": "0x111..."
+}
+```
+
+1. **Copy the `publicKey` value** and add it to your `.env` file as `DLP_PUBLIC_KEY`.
+2. **Securely store the `privateKey` value.** The private key is critical for decrypting files and must be kept in a safe and secure location. Loss of the private key will prevent access to encrypted files.
+
 
 `DLP_TOKEN_NAME`: The name of the token associated with your DLP. This will be visible in token listings. (E.g. **CookieToken**)
 
@@ -246,7 +269,7 @@ Initializes the contract with the given parameters.
     - `dataRegistryAddress`: The address of the data registry contract. (E.g. **0xEA882bb75C54DE9A08bC46b46c396727B4BFe9a5**)
     - `teePoolAddress`: The address of the TEE pool contract. (E.g. **0xF084Ca24B4E29Aa843898e0B12c465fAFD089965**)
     - `name`: The name of the data liquidity pool. (E.g. **CookieDLP**)
-    - `publicKey`: The public key to be used by data contributors to encrypt the encryption key. See [this](https://docs.vana.org/docs/data-privacy#code-samples) for more details. (E.g. **0x04bfcab8282071e4c17b3ae235928ec9dd9fb8e2b2f981c56c4a5215c9e7a1fcf1a84924476b8b56f17f719d3d3b729688bb7c39a60b00414d53ae8491df5791fa**)
+    - `publicKey`: A public key for your DLP, used for encryption purposes. See [this section](#env-dlp-public-key) for more details.
     - `proofInstruction`: The instruction for generating proofs. (E.g. **https://github.com/vana-com/vana-satya-proof-template/releases/download/v24/gsc-my-proof-24.tar.gz**)
     - `fileRewardFactor`: The factor used to calculate file rewards. (E.g. **2e18** => the reward multiplier is 2)
 
