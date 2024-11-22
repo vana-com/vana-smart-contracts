@@ -380,7 +380,10 @@ contract DLPRootImplementation is
 
         DlpRewardApy[] memory result = new DlpRewardApy[](dlpIds.length);
 
+        uint256 totalStakeAmountTmp;
         for (uint256 i = 0; i < dlpIds.length; i++) {
+            totalStakeAmountTmp = totalStakeAmount;
+
             uint256 dlpId = dlpIds[i];
 
             if (!_eligibleDlpsList.contains(dlpId)) {
@@ -392,7 +395,7 @@ contract DLPRootImplementation is
             uint256 dlpStake = _dlpComputedStakeAmount(dlpId);
 
             if (dlpStake < minTopDlpStake) {
-                totalStakeAmount -= minTopDlpStake + dlpStake;
+                totalStakeAmountTmp -= minTopDlpStake + dlpStake;
             }
 
             uint256 stakersPercentage = _dlps[dlpId].stakersPercentageCheckpoints.latest();
@@ -405,7 +408,7 @@ contract DLPRootImplementation is
                 }
             }
 
-            uint256 dlpReward = (dlpStake * epochRewardAmount) / totalStakeAmount;
+            uint256 dlpReward = (dlpStake * epochRewardAmount) / totalStakeAmountTmp;
             uint256 epy = (stakersPercentage * dlpReward) / dlpStake;
 
             uint256 apy = (epy * 365 * daySize) / epochSize;
