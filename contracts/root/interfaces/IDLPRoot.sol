@@ -145,8 +145,10 @@ interface IDLPRoot {
 
     struct DlpRewardApy {
         uint256 dlpId;
-        uint256 rewardAPYs;
+        uint256 APY; //annual percentage yield
+        uint256 EPY; //epoch percentage yield
     }
+
     function estimatedDlpRewardPercentages(uint256[] memory dlpIds) external view returns (DlpRewardApy[] memory);
 
     // Admin functions

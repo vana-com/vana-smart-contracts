@@ -12,6 +12,8 @@ import "@openzeppelin/contracts/utils/math/SafeCast.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "./interfaces/DLPRootStorageV1.sol";
 
+import "hardhat/console.sol";
+
 contract DLPRootImplementation is
     UUPSUpgradeable,
     PausableUpgradeable,
@@ -26,8 +28,7 @@ contract DLPRootImplementation is
     using Checkpoints for Checkpoints.Trace208;
     using SafeERC20 for IERC20;
 
-    bytes32 public constant OWNER_ROLE = keccak256("OWNER_ROLE");
-    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
     bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
 
     // Key events for DLP lifecycle and operations
@@ -149,14 +150,14 @@ contract DLPRootImplementation is
         epoch0.endBlock = params.startBlock - 1;
         epoch0.isFinalised = true;
 
-        _setRoleAdmin(ADMIN_ROLE, OWNER_ROLE);
-        _setRoleAdmin(MANAGER_ROLE, ADMIN_ROLE);
-        _grantRole(OWNER_ROLE, params.ownerAddress);
-        _grantRole(ADMIN_ROLE, params.ownerAddress);
+        _setRoleAdmin(MAINTAINER_ROLE, DEFAULT_ADMIN_ROLE);
+        _setRoleAdmin(MANAGER_ROLE, MAINTAINER_ROLE);
+        _grantRole(DEFAULT_ADMIN_ROLE, params.ownerAddress);
+        _grantRole(MAINTAINER_ROLE, params.ownerAddress);
         _grantRole(MANAGER_ROLE, params.ownerAddress);
     }
 
-    function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(OWNER_ROLE) {}
+    function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     function _msgSender()
         internal
@@ -364,7 +365,7 @@ contract DLPRootImplementation is
     function estimatedDlpRewardPercentages(
         uint256[] memory dlpIds
     ) external view override returns (DlpRewardApy[] memory) {
-        uint256[] memory topDlps = topDlpIds(16);
+        uint256[] memory topDlps = topDlpIds(epochDlpsLimit);
         uint256 totalStakeAmount;
 
         // Calculate total stake amount for top DLPs
@@ -381,6 +382,12 @@ contract DLPRootImplementation is
 
         for (uint256 i = 0; i < dlpIds.length; i++) {
             uint256 dlpId = dlpIds[i];
+
+            if (!_eligibleDlpsList.contains(dlpId)) {
+                result[i] = DlpRewardApy({dlpId: dlpId, EPY: 0, APY: 0});
+                continue;
+            }
+
             bool isInTop = false;
             uint256 dlpStake = _dlpComputedStakeAmount(dlpId);
 
@@ -398,12 +405,13 @@ contract DLPRootImplementation is
                 }
             }
 
-            uint256 rewardAmount = (dlpStake * epochRewardAmount) / totalStakeAmount;
-            uint256 stakeReward = (((100e18 * rewardAmount) / dlpStake) * stakersPercentage) / 1e20;
+            uint256 dlpReward = (dlpStake * epochRewardAmount) / totalStakeAmount;
+            uint256 epy = (stakersPercentage * dlpReward) / dlpStake;
 
-            result[i] = DlpRewardApy({dlpId: dlpId, rewardAPYs: stakeReward});
+            uint256 apy = (epy * 365 * daySize) / epochSize;
+
+            result[i] = DlpRewardApy({dlpId: dlpId, EPY: epy, APY: apy});
         }
-
         return result;
     }
 
@@ -449,30 +457,34 @@ contract DLPRootImplementation is
         return topDlpIds;
     }
 
-    function pause() external override onlyRole(ADMIN_ROLE) {
+    function pause() external override onlyRole(MAINTAINER_ROLE) {
         _pause();
     }
 
-    function unpause() external override onlyRole(ADMIN_ROLE) {
+    function unpause() external override onlyRole(MAINTAINER_ROLE) {
         _unpause();
     }
 
-    function updateEligibleDlpsLimit(uint256 newEligibleDlpsLimit) external override onlyRole(ADMIN_ROLE) {
+    function updateEligibleDlpsLimit(uint256 newEligibleDlpsLimit) external override onlyRole(MAINTAINER_ROLE) {
         eligibleDlpsLimit = newEligibleDlpsLimit;
         emit EligibleDlpsLimitUpdated(newEligibleDlpsLimit);
     }
 
-    function updateMinStakeAmount(uint256 newMinStakeAmount) external override onlyRole(ADMIN_ROLE) {
+    function updateMinStakeAmount(uint256 newMinStakeAmount) external override onlyRole(MAINTAINER_ROLE) {
         minStakeAmount = newMinStakeAmount;
         emit MinStakeAmountUpdated(newMinStakeAmount);
     }
 
-    function updateMinDlpStakersPercentage(uint256 newMinDlpStakersPercentage) external override onlyRole(ADMIN_ROLE) {
+    function updateMinDlpStakersPercentage(
+        uint256 newMinDlpStakersPercentage
+    ) external override onlyRole(MAINTAINER_ROLE) {
         minDlpStakersPercentage = newMinDlpStakersPercentage;
         emit MinDlpStakersPercentageUpdated(newMinDlpStakersPercentage);
     }
 
-    function updateMinDlpRegistrationStake(uint256 newMinDlpRegistrationStake) external override onlyRole(ADMIN_ROLE) {
+    function updateMinDlpRegistrationStake(
+        uint256 newMinDlpRegistrationStake
+    ) external override onlyRole(MAINTAINER_ROLE) {
         minDlpRegistrationStake = newMinDlpRegistrationStake;
         emit MinDlpRegistrationStakeUpdated(newMinDlpRegistrationStake);
     }
@@ -480,7 +492,9 @@ contract DLPRootImplementation is
     /**
      * @notice Updates eligibility threshold and adjusts DLP statuses
      */
-    function updateDlpEligibilityThreshold(uint256 newDlpEligibilityThreshold) external override onlyRole(ADMIN_ROLE) {
+    function updateDlpEligibilityThreshold(
+        uint256 newDlpEligibilityThreshold
+    ) external override onlyRole(MAINTAINER_ROLE) {
         dlpEligibilityThreshold = newDlpEligibilityThreshold;
 
         for (uint256 index = 0; index < _eligibleDlpsList.length(); index++) {
@@ -499,7 +513,7 @@ contract DLPRootImplementation is
      */
     function updateDlpSubEligibilityThreshold(
         uint256 newDlpSubEligibilityThreshold
-    ) external override onlyRole(ADMIN_ROLE) {
+    ) external override onlyRole(MAINTAINER_ROLE) {
         dlpSubEligibilityThreshold = newDlpSubEligibilityThreshold;
 
         for (uint256 index = 0; index < _eligibleDlpsList.length(); index++) {
@@ -514,32 +528,32 @@ contract DLPRootImplementation is
         emit DlpSubEligibilityThresholdUpdated(newDlpSubEligibilityThreshold);
     }
 
-    function updateEpochDlpsLimit(uint256 newEpochDlpsLimit) external override onlyRole(ADMIN_ROLE) {
+    function updateEpochDlpsLimit(uint256 newEpochDlpsLimit) external override onlyRole(MAINTAINER_ROLE) {
         epochDlpsLimit = newEpochDlpsLimit;
         emit EpochDlpsLimitUpdated(newEpochDlpsLimit);
     }
 
-    function updateStakeWithdrawalDelay(uint256 newStakeWithdrawalDelay) external override onlyRole(ADMIN_ROLE) {
+    function updateStakeWithdrawalDelay(uint256 newStakeWithdrawalDelay) external override onlyRole(MAINTAINER_ROLE) {
         _checkpointPush(_stakeWithdrawalDelayCheckpoints, newStakeWithdrawalDelay);
         emit StakeWithdrawalDelayUpdated(newStakeWithdrawalDelay);
     }
 
-    function updateRewardClaimDelay(uint256 newRewardClaimDelay) external override onlyRole(ADMIN_ROLE) {
+    function updateRewardClaimDelay(uint256 newRewardClaimDelay) external override onlyRole(MAINTAINER_ROLE) {
         _checkpointPush(_rewardClaimDelayCheckpoints, newRewardClaimDelay);
         emit RewardClaimDelayUpdated(newRewardClaimDelay);
     }
 
-    function updateEpochSize(uint256 newEpochSize) external override onlyRole(OWNER_ROLE) {
+    function updateEpochSize(uint256 newEpochSize) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         epochSize = newEpochSize;
         emit EpochSizeUpdated(newEpochSize);
     }
 
-    function updateEpochRewardAmount(uint256 newEpochRewardAmount) external override onlyRole(OWNER_ROLE) {
+    function updateEpochRewardAmount(uint256 newEpochRewardAmount) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         epochRewardAmount = newEpochRewardAmount;
         emit EpochRewardAmountUpdated(newEpochRewardAmount);
     }
 
-    function updateTrustedForwarder(address trustedForwarder) external onlyRole(ADMIN_ROLE) {
+    function updateTrustedForwarder(address trustedForwarder) external onlyRole(MAINTAINER_ROLE) {
         _trustedForwarder = trustedForwarder;
     }
 
