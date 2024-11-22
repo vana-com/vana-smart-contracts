@@ -1,11 +1,11 @@
 # Data Liquidity Pool (DLP)
 
 ## Table of Contents
-1. [Introduction](#introduction)
-2. [Overview](#overview)
-3. [Flow](#flow)
-4. [Installation](#installation)
-5. [DLP Contracts](#dlp-contracts)
+1. [Introduction](#1-introduction)
+2. [Overview](#2-overview)
+3. [Flow](#3-flow)
+4. [Installation](#4-installation)
+5. [DLP Contracts](#5-dlp-contracts)
     - [DataLiquidityPool](#dataliquiditypool)
     - [DAT (Data Access Token)](#dat-data-access-token)
 
@@ -40,9 +40,9 @@ Satori: [0xF084Ca24B4E29Aa843898e0B12c465fAFD089965](https://satori.vanascan.io/
 
 The DLP Root contract manages the registration and reward distribution for Data Liquidity Pools (DLPs) in the Vana ecosystem. It operates on an epoch-based system, where the top 16 most staked DLPs and their stakers receive rewards at the end of each epoch. The contract allows users to stake VANA tokens as guarantors for DLPs, with rewards distributed based on the staking position at the beginning of each epoch.
 
-Moksha:  [0x896af4A3dA3F2C226AE121dC1a00c20Ee1aA5691](https://moksha.vanascan.io/address/0x896af4A3dA3F2C226AE121dC1a00c20Ee1aA5691)
+Moksha:  [0xff14346dF2B8Fd0c95BF34f1c92e49417b508AD5](https://moksha.vanascan.io/address/0xff14346dF2B8Fd0c95BF34f1c92e49417b508AD5)
 
-Satori: [0x896af4A3dA3F2C226AE121dC1a00c20Ee1aA5691](https://satori.vanascan.io/address/0x896af4A3dA3F2C226AE121dC1a00c20Ee1aA5691)
+Satori: [0xff14346dF2B8Fd0c95BF34f1c92e49417b508AD5](https://satori.vanascan.io/address/0xff14346dF2B8Fd0c95BF34f1c92e49417b508AD5)
 
 ### [Data Liquidity Pool & DLPToken](https://docs.vana.org/vana/welcome-to-vana/what-is-data-liquidity-pool)
 
