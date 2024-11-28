@@ -1,8 +1,9 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
@@ -12,12 +13,15 @@ import "./interfaces/DataRegistryStorageV1.sol";
 contract DataRegistryImplementation is
     UUPSUpgradeable,
     PausableUpgradeable,
-    Ownable2StepUpgradeable,
+    AccessControlUpgradeable,
     MulticallUpgradeable,
+    ERC2771ContextUpgradeable,
     DataRegistryStorageV1
 {
     using ECDSA for bytes32;
     using MessageHashUtils for bytes32;
+
+    bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
 
     /**
      * @notice Triggered when a file has been added
@@ -47,7 +51,7 @@ contract DataRegistryImplementation is
     error NotFileOwner();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
+    constructor() ERC2771ContextUpgradeable(address(0)) {
         _disableInitializers();
     }
 
@@ -56,12 +60,16 @@ contract DataRegistryImplementation is
      *
      * @param ownerAddress                      address of the owner
      */
-    function initialize(address ownerAddress) external initializer {
-        __Ownable2Step_init();
+    function initialize(address trustedForwarderAddress, address ownerAddress) external initializer {
+        __AccessControl_init();
         __UUPSUpgradeable_init();
         __Pausable_init();
 
-        _transferOwnership(ownerAddress);
+        _trustedForwarder = trustedForwarderAddress;
+
+        _setRoleAdmin(MAINTAINER_ROLE, DEFAULT_ADMIN_ROLE);
+        _grantRole(DEFAULT_ADMIN_ROLE, ownerAddress);
+        _grantRole(MAINTAINER_ROLE, ownerAddress);
     }
 
     /**
@@ -70,7 +78,36 @@ contract DataRegistryImplementation is
      *
      * @param newImplementation                  new implementation
      */
-    function _authorizeUpgrade(address newImplementation) internal virtual override onlyOwner {}
+    function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
+
+    function _msgSender()
+        internal
+        view
+        override(ContextUpgradeable, ERC2771ContextUpgradeable)
+        returns (address sender)
+    {
+        return ERC2771ContextUpgradeable._msgSender();
+    }
+
+    function _msgData() internal view override(ContextUpgradeable, ERC2771ContextUpgradeable) returns (bytes calldata) {
+        return ERC2771ContextUpgradeable._msgData();
+    }
+
+    function _contextSuffixLength()
+        internal
+        view
+        override(ContextUpgradeable, ERC2771ContextUpgradeable)
+        returns (uint256)
+    {
+        return ERC2771ContextUpgradeable._contextSuffixLength();
+    }
+
+    /**
+     * @dev Returns the address of the trusted forwarder.
+     */
+    function trustedForwarder() public view virtual override returns (address) {
+        return _trustedForwarder;
+    }
 
     /**
      * @notice Returns the version of the contract
@@ -80,16 +117,25 @@ contract DataRegistryImplementation is
     }
 
     /**
+     * @notice Update the trusted forwarder
+     *
+     * @param trustedForwarderAddress                  address of the trusted forwarder
+     */
+    function updateTrustedForwarder(address trustedForwarderAddress) external onlyRole(MAINTAINER_ROLE) {
+        _trustedForwarder = trustedForwarderAddress;
+    }
+
+    /**
      * @dev Pauses the contract
      */
-    function pause() external override onlyOwner {
+    function pause() external override onlyRole(MAINTAINER_ROLE) {
         _pause();
     }
 
     /**
      * @dev Unpauses the contract
      */
-    function unpause() external override onlyOwner {
+    function unpause() external override onlyRole(MAINTAINER_ROLE) {
         _unpause();
     }
 
@@ -135,7 +181,7 @@ contract DataRegistryImplementation is
      * @return uint256                          id of the file
      */
     function addFile(string memory url) external override whenNotPaused returns (uint256) {
-        return _addFile(url, msg.sender);
+        return _addFile(url, _msgSender());
     }
 
     /**
@@ -183,7 +229,7 @@ contract DataRegistryImplementation is
      * @param key                               encryption key for the account
      */
     function addFilePermission(uint256 fileId, address account, string memory key) external override whenNotPaused {
-        if (msg.sender != _files[fileId].ownerAddress) {
+        if (_msgSender() != _files[fileId].ownerAddress) {
             revert NotFileOwner();
         }
 

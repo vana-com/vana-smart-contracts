@@ -21,19 +21,27 @@ module.exports = {
     },
   },
   networks: {
-    hardhat: {},
+    hardhat: {
+      allowUnlimitedContractSize: true,
+    },
     moksha: {
       url: process.env.MOKSHA_RPC_URL || "",
       chainId: 14800,
       accounts:
-        process.env.DEPLOYER_PRIVATE_KEY !== undefined ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
+        process.env.DEPLOYER_PRIVATE_KEY !== undefined
+          ? [process.env.DEPLOYER_PRIVATE_KEY]
+          : [],
+      allowUnlimitedContractSize: true,
     },
     satori: {
       url: process.env.SATORI_RPC_URL || "",
       chainId: 14801,
       accounts:
-        process.env.DEPLOYER_PRIVATE_KEY !== undefined ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
-    }
+        process.env.DEPLOYER_PRIVATE_KEY !== undefined
+          ? [process.env.DEPLOYER_PRIVATE_KEY]
+          : [],
+      allowUnlimitedContractSize: true,
+    },
   },
   etherscan: {
     apiKey: {
@@ -48,7 +56,7 @@ module.exports = {
         urls: {
           apiURL: "https://api.moksha.vanascan.io/api/",
           browserURL: "https://moksha.vanascan.io",
-        }
+        },
       },
       {
         network: "satori",
@@ -56,9 +64,9 @@ module.exports = {
         urls: {
           apiURL: process.env.SATORI_API_URL || "",
           browserURL: process.env.SATORI_BROWSER_URL || "",
-        }
-      }
-    ]
+        },
+      },
+    ],
   },
   sourcify: {
     enabled: false,

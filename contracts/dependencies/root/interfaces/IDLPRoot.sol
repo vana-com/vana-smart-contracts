@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
@@ -36,6 +36,7 @@ interface IDLPRoot {
         uint256 rewardAmount; // Rewards allocated to this DLP
         uint256 stakersPercentage; // % going to stakers vs treasury
         uint256 totalStakesScore; // Sum of weighted stake scores
+        bool rewardClaimed; // True if reward has been claimed
     }
 
     struct Epoch {
@@ -86,6 +87,7 @@ interface IDLPRoot {
     // Additional view functions
     function minStakeAmount() external view returns (uint256);
     function minDlpStakersPercentage() external view returns (uint256);
+    function maxDlpStakersPercentage() external view returns (uint256);
     function minDlpRegistrationStake() external view returns (uint256);
     function dlpEligibilityThreshold() external view returns (uint256);
     function dlpSubEligibilityThreshold() external view returns (uint256);
@@ -108,6 +110,7 @@ interface IDLPRoot {
         DlpStatus status;
         uint256 registrationBlockNumber;
         uint256 stakeAmount;
+        uint256[] epochIds;
     }
     function dlps(uint256 index) external view returns (DlpInfo memory);
     function dlpsByAddress(address dlpAddress) external view returns (DlpInfo memory);
@@ -119,8 +122,11 @@ interface IDLPRoot {
         uint256 rewardAmount; // 0 if not top DLP or epoch not finished
         uint256 stakersPercentage; // 0 if not top DLP
         uint256 totalStakesScore; // 0 if not top DLP
+        bool rewardClaimed;
     }
     function dlpEpochs(uint256 dlpId, uint256 epochId) external view returns (DlpEpochInfo memory);
+    function stakerListCount() external view returns (uint256);
+    function stakerListAt(uint256 index) external view returns (address);
     function stakerDlpsListCount(address stakerAddress) external view returns (uint256);
     function stakerDlpsListAt(address stakerAddress, uint256 index) external view returns (uint256);
     function stakerDlpsListValues(address stakerAddress) external view returns (uint256[] memory);
@@ -140,12 +146,14 @@ interface IDLPRoot {
 
     // Core functionality
     function topDlpIds(uint256 numberOfDlps) external returns (uint256[] memory);
-    function calculateStakeClaimableAmount(uint256 stakeId) external view returns (uint256);
+    function calculateStakeClaimableAmount(uint256 stakeId) external returns (uint256);
 
     struct DlpRewardApy {
         uint256 dlpId;
-        uint256 rewardAPYs;
+        uint256 APY; //annual percentage yield
+        uint256 EPY; //epoch percentage yield
     }
+
     function estimatedDlpRewardPercentages(uint256[] memory dlpIds) external view returns (DlpRewardApy[] memory);
 
     // Admin functions
@@ -157,6 +165,7 @@ interface IDLPRoot {
     function updateEpochRewardAmount(uint256 newEpochRewardAmount) external;
     function updateMinStakeAmount(uint256 newMinStakeAmount) external;
     function updateMinDlpStakersPercentage(uint256 newMinDlpStakersPercentage) external;
+    function updateMaxDlpStakersPercentage(uint256 newMaxDlpStakersPercentage) external;
     function updateMinDlpRegistrationStake(uint256 newMinStakeAmount) external;
     function updateDlpEligibilityThreshold(uint256 newDlpEligibilityThreshold) external;
     function updateDlpSubEligibilityThreshold(uint256 newDlpSubEligibilityThreshold) external;

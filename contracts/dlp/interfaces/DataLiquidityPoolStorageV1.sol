@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
 import "./IDataLiquidityPool.sol";
@@ -9,6 +9,7 @@ import "./IDataLiquidityPool.sol";
  * contract which implements DataLiquidityPoolStorageV1
  */
 abstract contract DataLiquidityPoolStorageV1 is IDataLiquidityPool {
+    address internal _trustedForwarder;
     string public override name;
     IDataRegistry public override dataRegistry;
     IERC20 public override token;

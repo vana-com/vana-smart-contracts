@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
 import "./ITeePool.sol";
@@ -9,6 +9,7 @@ import "./ITeePool.sol";
  * contract which implements TeePoolStorageV1
  */
 abstract contract TeePoolStorageV1 is ITeePool {
+    address internal _trustedForwarder;
     IDataRegistry public override dataRegistry;
 
     uint256 public override jobsCount;

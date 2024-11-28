@@ -148,6 +148,10 @@ Before deploying or interacting with the contracts, you need to set up your envi
 
 `OWNER_ADDRESS`: The Ethereum address that will be set as the owner of the deployed contracts. This address will have special privileges in the contracts. (E.g. **0x853407D0C625Ce7E43C0a2596fBc470C3a6f8305**)
 
+<a id="env-truested_forwarder_address"></a>
+`TRESTED_FORWARDER_ADDRESS`: The address of the trusted forwarder contract. This contract is used for gasless transactions. (E.g. **0x853407D0C625Ce7E43C0a2596fBc470C3a6f8305**). Read [gelato documentation](https://docs.gelato.network/web3-services/relay/supported-networks#new-deployments-oct-2024) for more details.  
+The integration with gelato is optional, you can set this parameter to 0x0000000000000000000000000000000000000000 if you don't want to use it.
+
 `DLP_NAME`: The name of your Data Liquidity Pool. Choose a descriptive name for your DLP. (E.g. **CookieDLP**)
 
 Here’s an improved version of your README part for better clarity and professionalism:
@@ -264,6 +268,7 @@ Initializes the contract with the given parameters.
 
 **Parameters:**
 - `params`: A struct containing initialization parameters
+    - `truestedForwarder`: The address of the trusted forwarder contract. See [this section](#env-truested_forwarder_address) for more details.
     - `ownerAddress`: The address of the contract owner. (E.g. **0x853407D0C625Ce7E43C0a2596fBc470C3a6f8305**)
     - `tokenAddress`: The address of the ERC20 token used for rewards. (E.g. **0xF3D9A139a7ba707843dD4f1FDfE0F9E55D9D8d6b**)
     - `dataRegistryAddress`: The address of the data registry contract. (E.g. **0xEA882bb75C54DE9A08bC46b46c396727B4BFe9a5**)

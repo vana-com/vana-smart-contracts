@@ -13,6 +13,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const [deployer] = await ethers.getSigners();
 
   const ownerAddress = process.env.OWNER_ADDRESS ?? deployer.address;
+  const trustedForwarder =
+    process.env.TRUSTED_FORWARDER_ADDRESS ?? deployer.address;
 
   const tokenContractName = "DAT";
   const tokenName = process.env.DLP_TOKEN_NAME ?? "Custom Data Autonomy Token";
@@ -46,6 +48,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const token = await ethers.getContractAt("DAT", tokenDeploy.address);
 
   const params = {
+    trustedForwarder: trustedForwarder,
     ownerAddress: ownerAddress,
     name: dlpName,
     dataRegistryAddress: dataRegistryContractAddress,
@@ -68,6 +71,13 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     proxyDeploy.proxyAddress,
   );
 
+  await verifyProxy(
+    proxyDeploy.proxyAddress,
+    proxyDeploy.implementationAddress,
+    proxyDeploy.initializeData,
+    proxyContractPath,
+  );
+
   console.log(``);
   console.log(``);
   console.log(``);
@@ -77,7 +87,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   console.log(`********** Mint tokens **********`);
   const txMint = await token
     .connect(deployer)
-    .mint(deployer, parseEther(100000000));
+    .mint(deployer, parseEther(1000000));
   await txMint.wait();
 
   const txApprove = await token
@@ -85,22 +95,23 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     .approve(dlp, parseEther(1000000));
   await txApprove.wait();
 
+  await new Promise((resolve) => setTimeout(resolve, 10000));
+
   const txAddRewards = await dlp
     .connect(deployer)
     .addRewardsForContributors(parseEther(1000000));
+  await txAddRewards.wait();
+
+  const txTransferOwnership = await token
+    .connect(deployer)
+    .transferOwnership(ownerAddress);
+  await txTransferOwnership.wait();
 
   await verifyContract(tokenDeploy.address, [
     tokenName,
     tokenSymbol,
-    ownerAddress,
+    deployer.address,
   ]);
-
-  await verifyProxy(
-    proxyDeploy.proxyAddress,
-    proxyDeploy.implementationAddress,
-    proxyDeploy.initializeData,
-    proxyContractPath,
-  );
 
   return;
 };

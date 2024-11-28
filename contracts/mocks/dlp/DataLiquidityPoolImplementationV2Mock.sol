@@ -10,7 +10,7 @@ contract DataLiquidityPoolImplementationV2Mock is DataLiquidityPoolImplementatio
      *
      * @param newImplementation                  new implementation
      */
-    function _authorizeUpgrade(address newImplementation) internal virtual override onlyOwner {}
+    function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     /**
      * return the version of the contract

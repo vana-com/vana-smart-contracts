@@ -1,8 +1,9 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/access/Ownable2StepUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
@@ -11,13 +12,16 @@ import "./interfaces/TeePoolStorageV1.sol";
 contract TeePoolImplementation is
     UUPSUpgradeable,
     PausableUpgradeable,
-    Ownable2StepUpgradeable,
+    AccessControlUpgradeable,
     ReentrancyGuardUpgradeable,
     MulticallUpgradeable,
+    ERC2771ContextUpgradeable,
     TeePoolStorageV1
 {
     using EnumerableSet for EnumerableSet.AddressSet;
     using EnumerableSet for EnumerableSet.UintSet;
+
+    bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
 
     /**
      * @notice Triggered when a job has been submitted
@@ -80,38 +84,43 @@ contract TeePoolImplementation is
     error TransferFailed();
 
     modifier onlyActiveTee() {
-        if (!(_tees[msg.sender].status == TeeStatus.Active)) {
+        if (!(_tees[_msgSender()].status == TeeStatus.Active)) {
             revert TeeNotActive();
         }
         _;
     }
 
     /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() {
+    constructor() ERC2771ContextUpgradeable(address(0)) {
         _disableInitializers();
     }
 
     /**
      * @notice Initialize the contract
      *
+     * @param trustedForwarderAddress           address of the trusted forwarder
      * @param ownerAddress                      address of the owner
      * @param dataRegistryAddress               address of the data registry contract
      * @param initialCancelDelay                initial cancel delay
      */
     function initialize(
+        address trustedForwarderAddress,
         address ownerAddress,
         address dataRegistryAddress,
         uint256 initialCancelDelay
     ) external initializer {
-        __Ownable2Step_init();
+        __AccessControl_init();
         __UUPSUpgradeable_init();
         __Pausable_init();
         __ReentrancyGuard_init();
 
+        _trustedForwarder = trustedForwarderAddress;
         dataRegistry = IDataRegistry(dataRegistryAddress);
         cancelDelay = initialCancelDelay;
 
-        _transferOwnership(ownerAddress);
+        _setRoleAdmin(MAINTAINER_ROLE, DEFAULT_ADMIN_ROLE);
+        _grantRole(DEFAULT_ADMIN_ROLE, ownerAddress);
+        _grantRole(MAINTAINER_ROLE, ownerAddress);
     }
 
     /**
@@ -120,7 +129,33 @@ contract TeePoolImplementation is
      *
      * @param newImplementation                  new implementation
      */
-    function _authorizeUpgrade(address newImplementation) internal virtual override onlyOwner {}
+    function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
+
+    function _msgSender()
+        internal
+        view
+        override(ContextUpgradeable, ERC2771ContextUpgradeable)
+        returns (address sender)
+    {
+        return ERC2771ContextUpgradeable._msgSender();
+    }
+
+    function _msgData() internal view override(ContextUpgradeable, ERC2771ContextUpgradeable) returns (bytes calldata) {
+        return ERC2771ContextUpgradeable._msgData();
+    }
+
+    function _contextSuffixLength()
+        internal
+        view
+        override(ContextUpgradeable, ERC2771ContextUpgradeable)
+        returns (uint256)
+    {
+        return ERC2771ContextUpgradeable._contextSuffixLength();
+    }
+
+    function trustedForwarder() public view virtual override returns (address) {
+        return _trustedForwarder;
+    }
 
     /**
      * @notice Returns the version of the contract
@@ -251,14 +286,14 @@ contract TeePoolImplementation is
     /**
      * @dev Pauses the contract
      */
-    function pause() external override onlyOwner {
+    function pause() external override onlyRole(MAINTAINER_ROLE) {
         _pause();
     }
 
     /**
      * @dev Unpauses the contract
      */
-    function unpause() external override onlyOwner {
+    function unpause() external override onlyRole(MAINTAINER_ROLE) {
         _unpause();
     }
 
@@ -267,7 +302,7 @@ contract TeePoolImplementation is
      *
      * @param newDataRegistry                   new file registry
      */
-    function updateDataRegistry(IDataRegistry newDataRegistry) external override onlyOwner {
+    function updateDataRegistry(IDataRegistry newDataRegistry) external override onlyRole(MAINTAINER_ROLE) {
         dataRegistry = newDataRegistry;
     }
 
@@ -276,7 +311,7 @@ contract TeePoolImplementation is
      *
      * @param newTeeFee                         new fee
      */
-    function updateTeeFee(uint256 newTeeFee) external override onlyOwner {
+    function updateTeeFee(uint256 newTeeFee) external override onlyRole(MAINTAINER_ROLE) {
         teeFee = newTeeFee;
     }
 
@@ -285,8 +320,17 @@ contract TeePoolImplementation is
      *
      * @param newCancelDelay                    new cancel delay
      */
-    function updateCancelDelay(uint256 newCancelDelay) external override onlyOwner {
+    function updateCancelDelay(uint256 newCancelDelay) external override onlyRole(MAINTAINER_ROLE) {
         cancelDelay = newCancelDelay;
+    }
+
+    /**
+     * @notice Update the trusted forwarder
+     *
+     * @param trustedForwarderAddress                  address of the trusted forwarder
+     */
+    function updateTrustedForwarder(address trustedForwarderAddress) external onlyRole(MAINTAINER_ROLE) {
+        _trustedForwarder = trustedForwarderAddress;
     }
 
     /**
@@ -296,7 +340,11 @@ contract TeePoolImplementation is
      * @param url                               url of the tee
      * @param publicKey                         public key of the tee
      */
-    function addTee(address teeAddress, string calldata url, string calldata publicKey) external override onlyOwner {
+    function addTee(
+        address teeAddress,
+        string calldata url,
+        string calldata publicKey
+    ) external override onlyRole(MAINTAINER_ROLE) {
         if (_activeTeeList.contains(teeAddress)) {
             revert TeeAlreadyAdded();
         }
@@ -314,7 +362,7 @@ contract TeePoolImplementation is
      *
      * @param teeAddress                        address of the tee
      */
-    function removeTee(address teeAddress) external override onlyOwner {
+    function removeTee(address teeAddress) external override onlyRole(MAINTAINER_ROLE) {
         if (!_activeTeeList.contains(teeAddress)) {
             revert TeeNotActive();
         }
@@ -346,7 +394,7 @@ contract TeePoolImplementation is
         _jobs[jobsCountTemp].fileId = fileId;
         _jobs[jobsCountTemp].bidAmount = msg.value;
         _jobs[jobsCountTemp].addedTimestamp = block.timestamp;
-        _jobs[jobsCountTemp].ownerAddress = msg.sender;
+        _jobs[jobsCountTemp].ownerAddress = _msgSender();
         _jobs[jobsCountTemp].status = JobStatus.Submitted;
         _jobs[jobsCountTemp].teeAddress = teeAddress;
 
@@ -373,7 +421,7 @@ contract TeePoolImplementation is
      */
     function cancelJob(uint256 jobId) external override nonReentrant {
         Job storage job = _jobs[jobId];
-        if (job.ownerAddress != msg.sender) {
+        if (job.ownerAddress != _msgSender()) {
             revert NotJobOwner();
         }
 
@@ -388,7 +436,7 @@ contract TeePoolImplementation is
         job.status = JobStatus.Canceled;
         _tees[job.teeAddress].jobIdsList.remove(jobId);
 
-        (bool success, ) = payable(msg.sender).call{value: job.bidAmount}("");
+        (bool success, ) = payable(_msgSender()).call{value: job.bidAmount}("");
         if (!success) {
             revert TransferFailed();
         }
@@ -409,38 +457,38 @@ contract TeePoolImplementation is
             revert InvalidJobStatus();
         }
 
-        if (job.teeAddress != msg.sender) {
+        if (job.teeAddress != _msgSender()) {
             revert InvalidJobTee();
         }
 
         dataRegistry.addProof(job.fileId, proof);
 
-        _tees[msg.sender].amount += job.bidAmount;
+        _tees[_msgSender()].amount += job.bidAmount;
 
-        _tees[msg.sender].jobIdsList.remove(jobId);
+        _tees[_msgSender()].jobIdsList.remove(jobId);
 
         job.status = JobStatus.Completed;
 
-        emit ProofAdded(msg.sender, jobId, job.fileId);
+        emit ProofAdded(_msgSender(), jobId, job.fileId);
     }
 
     /**
      * @notice method used by tees for claiming their rewards
      */
     function claim() external nonReentrant {
-        uint256 amount = _tees[msg.sender].amount - _tees[msg.sender].withdrawnAmount;
+        uint256 amount = _tees[_msgSender()].amount - _tees[_msgSender()].withdrawnAmount;
 
         if (amount == 0) {
             revert NothingToClaim();
         }
 
-        _tees[msg.sender].withdrawnAmount = _tees[msg.sender].amount;
+        _tees[_msgSender()].withdrawnAmount = _tees[_msgSender()].amount;
 
-        (bool success, ) = payable(msg.sender).call{value: amount}("");
+        (bool success, ) = payable(_msgSender()).call{value: amount}("");
         if (!success) {
             revert TransferFailed();
         }
 
-        emit Claimed(msg.sender, amount);
+        emit Claimed(_msgSender(), amount);
     }
 }
