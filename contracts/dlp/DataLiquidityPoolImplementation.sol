@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -29,8 +29,7 @@ contract DataLiquidityPoolImplementation is
 
     using SafeERC20 for IERC20;
 
-    bytes32 public constant OWNER_ROLE = keccak256("OWNER_ROLE");
-    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
 
     /**
      * @notice Triggered when a reward has been requested for a file
@@ -131,9 +130,9 @@ contract DataLiquidityPoolImplementation is
         proofInstruction = params.proofInstruction;
         fileRewardFactor = params.fileRewardFactor;
 
-        _setRoleAdmin(ADMIN_ROLE, OWNER_ROLE);
-        _grantRole(OWNER_ROLE, params.ownerAddress);
-        _grantRole(ADMIN_ROLE, params.ownerAddress);
+        _setRoleAdmin(MAINTAINER_ROLE, DEFAULT_ADMIN_ROLE);
+        _grantRole(DEFAULT_ADMIN_ROLE, params.ownerAddress);
+        _grantRole(MAINTAINER_ROLE, params.ownerAddress);
     }
 
     /**
@@ -142,7 +141,7 @@ contract DataLiquidityPoolImplementation is
      *
      * @param newImplementation                  new implementation
      */
-    function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(OWNER_ROLE) {}
+    function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     function _msgSender()
         internal
@@ -254,14 +253,14 @@ contract DataLiquidityPoolImplementation is
     /**
      * @dev Pauses the contract
      */
-    function pause() external override onlyRole(OWNER_ROLE) {
+    function pause() external override onlyRole(DEFAULT_ADMIN_ROLE) {
         _pause();
     }
 
     /**
      * @dev Unpauses the contract
      */
-    function unpause() external override onlyRole(OWNER_ROLE) {
+    function unpause() external override onlyRole(DEFAULT_ADMIN_ROLE) {
         _unpause();
     }
 
@@ -270,7 +269,7 @@ contract DataLiquidityPoolImplementation is
      *
      * @param newFileRewardFactor                new file reward factor
      */
-    function updateFileRewardFactor(uint256 newFileRewardFactor) external override onlyRole(OWNER_ROLE) {
+    function updateFileRewardFactor(uint256 newFileRewardFactor) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         fileRewardFactor = newFileRewardFactor;
 
         emit FileRewardFactorUpdated(newFileRewardFactor);
@@ -281,7 +280,7 @@ contract DataLiquidityPoolImplementation is
      *
      * @param newTeePool                new tee pool
      */
-    function updateTeePool(address newTeePool) external override onlyRole(OWNER_ROLE) {
+    function updateTeePool(address newTeePool) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         teePool = ITeePool(newTeePool);
 
         emit TeePoolUpdated(newTeePool);
@@ -292,7 +291,9 @@ contract DataLiquidityPoolImplementation is
      *
      * @param newProofInstruction                new proof instruction
      */
-    function updateProofInstruction(string calldata newProofInstruction) external override onlyRole(OWNER_ROLE) {
+    function updateProofInstruction(
+        string calldata newProofInstruction
+    ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         proofInstruction = newProofInstruction;
 
         emit ProofInstructionUpdated(newProofInstruction);
@@ -303,7 +304,7 @@ contract DataLiquidityPoolImplementation is
      *
      * @param newPublicKey                new public key
      */
-    function updatePublicKey(string calldata newPublicKey) external override onlyRole(OWNER_ROLE) {
+    function updatePublicKey(string calldata newPublicKey) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         publicKey = newPublicKey;
 
         emit PublicKeyUpdated(newPublicKey);
@@ -312,10 +313,10 @@ contract DataLiquidityPoolImplementation is
     /**
      * @notice Update the trusted forwarder
      *
-     * @param trustedForwarder                  address of the trusted forwarder
+     * @param trustedForwarderAddress                  address of the trusted forwarder
      */
-    function updateTrustedForwarder(address trustedForwarder) external onlyRole(OWNER_ROLE) {
-        _trustedForwarder = trustedForwarder;
+    function updateTrustedForwarder(address trustedForwarderAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _trustedForwarder = trustedForwarderAddress;
     }
 
     /**
@@ -381,7 +382,7 @@ contract DataLiquidityPoolImplementation is
      * @notice Adds rewards for contributors
      */
     function addRewardsForContributors(uint256 contributorsRewardAmount) external override nonReentrant {
-        token.safeTransferFrom(msg.sender, address(this), contributorsRewardAmount);
+        token.safeTransferFrom(_msgSender(), address(this), contributorsRewardAmount);
         totalContributorsRewardAmount += contributorsRewardAmount;
     }
 }

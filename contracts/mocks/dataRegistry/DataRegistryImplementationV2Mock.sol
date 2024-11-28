@@ -10,7 +10,7 @@ contract DataRegistryImplementationV2Mock is DataRegistryImplementation {
      *
      * @param newImplementation                  new implementation
      */
-    function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(OWNER_ROLE) {}
+    function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     /**
      * return the version of the contract

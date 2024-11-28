@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -21,8 +21,7 @@ contract TeePoolImplementation is
     using EnumerableSet for EnumerableSet.AddressSet;
     using EnumerableSet for EnumerableSet.UintSet;
 
-    bytes32 public constant OWNER_ROLE = keccak256("OWNER_ROLE");
-    bytes32 public constant ADMIN_ROLE = keccak256("ADMIN_ROLE");
+    bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
 
     /**
      * @notice Triggered when a job has been submitted
@@ -85,7 +84,7 @@ contract TeePoolImplementation is
     error TransferFailed();
 
     modifier onlyActiveTee() {
-        if (!(_tees[msg.sender].status == TeeStatus.Active)) {
+        if (!(_tees[_msgSender()].status == TeeStatus.Active)) {
             revert TeeNotActive();
         }
         _;
@@ -99,12 +98,13 @@ contract TeePoolImplementation is
     /**
      * @notice Initialize the contract
      *
+     * @param trustedForwarderAddress           address of the trusted forwarder
      * @param ownerAddress                      address of the owner
      * @param dataRegistryAddress               address of the data registry contract
      * @param initialCancelDelay                initial cancel delay
      */
     function initialize(
-        address trustedForwarder,
+        address trustedForwarderAddress,
         address ownerAddress,
         address dataRegistryAddress,
         uint256 initialCancelDelay
@@ -114,13 +114,13 @@ contract TeePoolImplementation is
         __Pausable_init();
         __ReentrancyGuard_init();
 
-        _trustedForwarder = trustedForwarder;
+        _trustedForwarder = trustedForwarderAddress;
         dataRegistry = IDataRegistry(dataRegistryAddress);
         cancelDelay = initialCancelDelay;
 
-        _setRoleAdmin(ADMIN_ROLE, OWNER_ROLE);
-        _grantRole(OWNER_ROLE, ownerAddress);
-        _grantRole(ADMIN_ROLE, ownerAddress);
+        _setRoleAdmin(MAINTAINER_ROLE, DEFAULT_ADMIN_ROLE);
+        _grantRole(DEFAULT_ADMIN_ROLE, ownerAddress);
+        _grantRole(MAINTAINER_ROLE, ownerAddress);
     }
 
     /**
@@ -129,7 +129,7 @@ contract TeePoolImplementation is
      *
      * @param newImplementation                  new implementation
      */
-    function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(OWNER_ROLE) {}
+    function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     function _msgSender()
         internal
@@ -286,14 +286,14 @@ contract TeePoolImplementation is
     /**
      * @dev Pauses the contract
      */
-    function pause() external override onlyRole(ADMIN_ROLE) {
+    function pause() external override onlyRole(MAINTAINER_ROLE) {
         _pause();
     }
 
     /**
      * @dev Unpauses the contract
      */
-    function unpause() external override onlyRole(ADMIN_ROLE) {
+    function unpause() external override onlyRole(MAINTAINER_ROLE) {
         _unpause();
     }
 
@@ -302,7 +302,7 @@ contract TeePoolImplementation is
      *
      * @param newDataRegistry                   new file registry
      */
-    function updateDataRegistry(IDataRegistry newDataRegistry) external override onlyRole(ADMIN_ROLE) {
+    function updateDataRegistry(IDataRegistry newDataRegistry) external override onlyRole(MAINTAINER_ROLE) {
         dataRegistry = newDataRegistry;
     }
 
@@ -311,7 +311,7 @@ contract TeePoolImplementation is
      *
      * @param newTeeFee                         new fee
      */
-    function updateTeeFee(uint256 newTeeFee) external override onlyRole(ADMIN_ROLE) {
+    function updateTeeFee(uint256 newTeeFee) external override onlyRole(MAINTAINER_ROLE) {
         teeFee = newTeeFee;
     }
 
@@ -320,17 +320,17 @@ contract TeePoolImplementation is
      *
      * @param newCancelDelay                    new cancel delay
      */
-    function updateCancelDelay(uint256 newCancelDelay) external override onlyRole(ADMIN_ROLE) {
+    function updateCancelDelay(uint256 newCancelDelay) external override onlyRole(MAINTAINER_ROLE) {
         cancelDelay = newCancelDelay;
     }
 
     /**
      * @notice Update the trusted forwarder
      *
-     * @param trustedForwarder                  address of the trusted forwarder
+     * @param trustedForwarderAddress                  address of the trusted forwarder
      */
-    function updateTrustedForwarder(address trustedForwarder) external onlyRole(ADMIN_ROLE) {
-        _trustedForwarder = trustedForwarder;
+    function updateTrustedForwarder(address trustedForwarderAddress) external onlyRole(MAINTAINER_ROLE) {
+        _trustedForwarder = trustedForwarderAddress;
     }
 
     /**
@@ -344,7 +344,7 @@ contract TeePoolImplementation is
         address teeAddress,
         string calldata url,
         string calldata publicKey
-    ) external override onlyRole(ADMIN_ROLE) {
+    ) external override onlyRole(MAINTAINER_ROLE) {
         if (_activeTeeList.contains(teeAddress)) {
             revert TeeAlreadyAdded();
         }
@@ -362,7 +362,7 @@ contract TeePoolImplementation is
      *
      * @param teeAddress                        address of the tee
      */
-    function removeTee(address teeAddress) external override onlyRole(ADMIN_ROLE) {
+    function removeTee(address teeAddress) external override onlyRole(MAINTAINER_ROLE) {
         if (!_activeTeeList.contains(teeAddress)) {
             revert TeeNotActive();
         }
@@ -394,7 +394,7 @@ contract TeePoolImplementation is
         _jobs[jobsCountTemp].fileId = fileId;
         _jobs[jobsCountTemp].bidAmount = msg.value;
         _jobs[jobsCountTemp].addedTimestamp = block.timestamp;
-        _jobs[jobsCountTemp].ownerAddress = msg.sender;
+        _jobs[jobsCountTemp].ownerAddress = _msgSender();
         _jobs[jobsCountTemp].status = JobStatus.Submitted;
         _jobs[jobsCountTemp].teeAddress = teeAddress;
 
@@ -421,7 +421,7 @@ contract TeePoolImplementation is
      */
     function cancelJob(uint256 jobId) external override nonReentrant {
         Job storage job = _jobs[jobId];
-        if (job.ownerAddress != msg.sender) {
+        if (job.ownerAddress != _msgSender()) {
             revert NotJobOwner();
         }
 
@@ -436,7 +436,7 @@ contract TeePoolImplementation is
         job.status = JobStatus.Canceled;
         _tees[job.teeAddress].jobIdsList.remove(jobId);
 
-        (bool success, ) = payable(msg.sender).call{value: job.bidAmount}("");
+        (bool success, ) = payable(_msgSender()).call{value: job.bidAmount}("");
         if (!success) {
             revert TransferFailed();
         }
@@ -457,38 +457,38 @@ contract TeePoolImplementation is
             revert InvalidJobStatus();
         }
 
-        if (job.teeAddress != msg.sender) {
+        if (job.teeAddress != _msgSender()) {
             revert InvalidJobTee();
         }
 
         dataRegistry.addProof(job.fileId, proof);
 
-        _tees[msg.sender].amount += job.bidAmount;
+        _tees[_msgSender()].amount += job.bidAmount;
 
-        _tees[msg.sender].jobIdsList.remove(jobId);
+        _tees[_msgSender()].jobIdsList.remove(jobId);
 
         job.status = JobStatus.Completed;
 
-        emit ProofAdded(msg.sender, jobId, job.fileId);
+        emit ProofAdded(_msgSender(), jobId, job.fileId);
     }
 
     /**
      * @notice method used by tees for claiming their rewards
      */
     function claim() external nonReentrant {
-        uint256 amount = _tees[msg.sender].amount - _tees[msg.sender].withdrawnAmount;
+        uint256 amount = _tees[_msgSender()].amount - _tees[_msgSender()].withdrawnAmount;
 
         if (amount == 0) {
             revert NothingToClaim();
         }
 
-        _tees[msg.sender].withdrawnAmount = _tees[msg.sender].amount;
+        _tees[_msgSender()].withdrawnAmount = _tees[_msgSender()].amount;
 
-        (bool success, ) = payable(msg.sender).call{value: amount}("");
+        (bool success, ) = payable(_msgSender()).call{value: amount}("");
         if (!success) {
             revert TransferFailed();
         }
 
-        emit Claimed(msg.sender, amount);
+        emit Claimed(_msgSender(), amount);
     }
 }

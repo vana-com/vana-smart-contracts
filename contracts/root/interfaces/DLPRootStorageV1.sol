@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
 import "./IDLPRoot.sol";
@@ -42,4 +42,6 @@ abstract contract DLPRootStorageV1 is IDLPRoot {
     // Stake tracking
     uint256 public override stakesCount;
     mapping(uint256 stakeId => Stake stake) internal _stakes;
+
+    uint256 public override maxDlpStakersPercentage; // Max % of rewards to stakers (in 1e18)
 }
