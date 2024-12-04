@@ -90,6 +90,7 @@ contract DataLiquidityPoolImplementation is
     event TeePoolUpdated(address newTeePool);
 
     error FileAlreadyAdded();
+    error InvalidScore();
     error InvalidAttestator();
     error InvalidProof();
 
@@ -339,6 +340,10 @@ contract DataLiquidityPoolImplementation is
         }
 
         IDataRegistry.FileResponse memory registryFile = dataRegistry.files(fileId);
+
+        if (fileProof.data.score > 1e18 || fileProof.data.score == 0) {
+            revert InvalidScore();
+        }
 
         bytes32 _messageHash = keccak256(
             abi.encodePacked(
