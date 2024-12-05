@@ -76,7 +76,7 @@ Bob wants to become a data contributor for DLP1. Here's the step-by-step process
 3. TEE operators see Bob's job and create an attestation for that file based on the instructions required for validating the file in relation to DLP1.
 4. This proof is saved in the DataRegistry.  
    E.g.https://moksha.vanascan.io/tx/0x2f4dba67e90685429b73a43e74fe839e580c9e50f60ce5d460b19f88f56a2e99?tab=index
-5. Bob must grant access to the DLP to read the data (by encrypting the file with the specific pubicKey of DLP1).  
+5. Bob must grant access to the DLP to read the data (by encrypting the file with the specific publicKey of DLP1).  
    E.g.https://moksha.vanascan.io/tx/0xfeeda337eeb60367a8332a664087cbef5b4e7f0882af30e36c5259c43a7042cc
 
    This step can be done by Bob in the first step by passing the permission along with the file.  
@@ -160,7 +160,7 @@ Before deploying or interacting with the contracts, you need to set up your envi
 
 `DLP_NAME`: The name of your Data Liquidity Pool. Choose a descriptive name for your DLP.
 
-`DLP_PUBLIC_KEY`: A pubic key for your DLP. This is used for encryption purposes. Make sure to generate a strong, unique key.
+`DLP_PUBLIC_KEY`: A public key for your DLP. This is used for encryption purposes. Make sure to generate a strong, unique key.
 
 `DLP_TOKEN_NAME`: The name of the token associated with your DLP. This will be visible in token listings.
 
@@ -1701,7 +1701,7 @@ Initializes the contract with the given parameters.
     - `dataRegistryAddress`: The address of the data registry contract
     - `teePoolAddress`: The address of the TEE pool contract
     - `name`: The name of the data liquidity pool
-    - `pubicKey`: The pubic key for the pool
+    - `publicKey`: The public key for the pool
     - `proofInstruction`: The instruction for generating proofs
     - `fileRewardFactor`: The factor used to calculate file rewards
 
@@ -1893,16 +1893,16 @@ Updates the proof instruction used for validating proofs.
 ---
 
 ```solidity
-function updatePubicKey(string calldata newPubicKey) external
+function updatePublicKey(string calldata newPublicKey) external
 ```
-Updates the pubic key of the pool.
+Updates the public key of the pool.
 
 **Parameters:**
-- `newPubicKey`: The new pubic key
+- `newPublicKey`: The new public key
 
 **Restrictions:** Can only be called by the contract owner
 
-**Events Emitted:** `PubicKeyUpdated`
+**Events Emitted:** `PublicKeyUpdated`
 
 **Errors:**
 - `OwnableUnauthorizedAccount`: Thrown if called by any account other than the owner
