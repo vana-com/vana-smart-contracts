@@ -1,4 +1,4 @@
-import { deployments, ethers } from "hardhat";
+import { ethers } from "hardhat";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { DeployFunction } from "hardhat-deploy/types";
 import { deployProxy, verifyProxy } from "./helpers";
@@ -11,13 +11,19 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const [deployer] = await ethers.getSigners();
 
   const ownerAddress = process.env.OWNER_ADDRESS ?? deployer.address;
+  const dataRegistryContractAddress =
+    process.env.DATA_REGISTRY_CONTRACT_ADDRESS ?? ethers.ZeroAddress;
+  const trustedForwarderAddress =
+    process.env.TRUSTED_FORWARDER_ADDRESS ?? ethers.ZeroAddress;
 
-  const dataRegistry = await ethers.getContractAt(
-    "DataRegistryImplementation",
-    (await deployments.get("DataRegistryProxy")).address,
-  );
+  const initialCancelDelay = 100; // 100 blocks
 
-  const initializeParams = [ownerAddress, dataRegistry.target, 100];
+  const initializeParams = [
+    trustedForwarderAddress,
+    ownerAddress,
+    dataRegistryContractAddress,
+    initialCancelDelay,
+  ];
 
   const proxyDeploy = await deployProxy(
     deployer,

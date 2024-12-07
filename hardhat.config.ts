@@ -22,33 +22,54 @@ module.exports = {
   },
   networks: {
     hardhat: {},
+    islander: {
+      url: process.env.ISLANDER_RPC_URL || "",
+      accounts:
+        process.env.DEPLOYER_PRIVATE_KEY !== undefined
+          ? [process.env.DEPLOYER_PRIVATE_KEY]
+          : [],
+      allowUnlimitedContractSize: true,
+    },
     moksha: {
       url: process.env.MOKSHA_RPC_URL || "",
       chainId: 14800,
       accounts:
-        process.env.DEPLOYER_PRIVATE_KEY !== undefined ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
+        process.env.DEPLOYER_PRIVATE_KEY !== undefined
+          ? [process.env.DEPLOYER_PRIVATE_KEY]
+          : [],
     },
     satori: {
       url: process.env.SATORI_RPC_URL || "",
       chainId: 14801,
       accounts:
-        process.env.DEPLOYER_PRIVATE_KEY !== undefined ? [process.env.DEPLOYER_PRIVATE_KEY] : [],
-    }
+        process.env.DEPLOYER_PRIVATE_KEY !== undefined
+          ? [process.env.DEPLOYER_PRIVATE_KEY]
+          : [],
+    },
   },
   etherscan: {
     apiKey: {
       // Is not required by blockscout. Can be any non-empty string
+      islander: "abc",
       moksha: "abc",
       satori: "abc",
     },
     customChains: [
+      {
+        network: "islander",
+        chainId: 1480,
+        urls: {
+          apiURL: process.env.ISLANDER_API_URL || "",
+          browserURL: process.env.ISLANDER_BROWSER_URL || "",
+        },
+      },
       {
         network: "moksha",
         chainId: 14800,
         urls: {
           apiURL: "https://api.moksha.vanascan.io/api/",
           browserURL: "https://moksha.vanascan.io",
-        }
+        },
       },
       {
         network: "satori",
@@ -56,9 +77,9 @@ module.exports = {
         urls: {
           apiURL: process.env.SATORI_API_URL || "",
           browserURL: process.env.SATORI_BROWSER_URL || "",
-        }
-      }
-    ]
+        },
+      },
+    ],
   },
   sourcify: {
     enabled: false,

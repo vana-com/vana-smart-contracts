@@ -1,5 +1,4 @@
 import { deployments, ethers, run, upgrades } from "hardhat";
-import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 
 export async function getUUPSImplementationAddress(
@@ -124,8 +123,6 @@ export async function deployProxy(
     "initialize",
     initializeParams,
   );
-
-  console.log(initializeData);
 
   const proxyDeploy = await deployments.deploy(proxyContractName, {
     from: deployer.address,
