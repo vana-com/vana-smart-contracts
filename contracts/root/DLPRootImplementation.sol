@@ -84,6 +84,7 @@ contract DLPRootImplementation is
     error InvalidDlpId();
     error InvalidDlpStatus();
     error InvalidAddress();
+    error InvalidName();
     error NotDlpOwner();
     error NotStakeOwner();
     error NothingToClaim();
@@ -253,6 +254,10 @@ contract DLPRootImplementation is
         return dlps(dlpIds[dlpAddress]);
     }
 
+    function dlpsByName(string calldata dlpName) external view override returns (DlpInfo memory) {
+        return dlps(dlpNameToId[dlpName]);
+    }
+
     function eligibleDlpsListValues() external view override returns (uint256[] memory) {
         return _eligibleDlpsList.values();
     }
@@ -312,10 +317,10 @@ contract DLPRootImplementation is
             });
     }
 
-    function stakerListCount() external view returns (uint256) {
+    function stakersListCount() external view returns (uint256) {
         return _stakersList.length();
     }
-    function stakerListAt(uint256 index) external view returns (address) {
+    function stakersListAt(uint256 index) external view returns (address) {
         return _stakersList.at(index);
     }
 
@@ -329,6 +334,25 @@ contract DLPRootImplementation is
 
     function stakerDlpsListValues(address staker) external view override returns (uint256[] memory) {
         return _stakers[staker].dlpIds.values();
+    }
+
+    function stakerStakesListCount(address stakerAddress) external view returns (uint256) {
+        return _stakers[stakerAddress].stakeIds.length();
+    }
+
+    function stakerStakesListAt(address stakerAddress, uint256 index) external view returns (uint256) {
+        return _stakers[stakerAddress].stakeIds.at(index);
+    }
+    function stakerStakesListValues(address stakerAddress) external view returns (uint256[] memory) {
+        return _stakers[stakerAddress].stakeIds.values();
+    }
+
+    function stakerTotalStakeAmount(address stakerAddress) external view returns (uint256) {
+        return _stakers[stakerAddress].totalStakeAmount;
+    }
+
+    function stakerDlpStakeAmount(address stakerAddress, uint256 dlpId) external view returns (uint256) {
+        return _stakers[stakerAddress].dlpStakeAmounts[dlpId];
     }
 
     /**
@@ -578,6 +602,18 @@ contract DLPRootImplementation is
         _trustedForwarder = trustedForwarderAddress;
     }
 
+    function overrideEpoch(
+        uint256 epochId,
+        uint256 startBlock,
+        uint256 endBlock,
+        uint256 rewardAmount
+    ) external override onlyRole(MAINTAINER_ROLE) {
+        Epoch storage epoch = _epochs[epochId];
+        epoch.startBlock = startBlock;
+        epoch.endBlock = endBlock;
+        epoch.rewardAmount = rewardAmount;
+    }
+
     /**
      * @notice Updates stake scores for DLPs in past epochs
      */
@@ -611,7 +647,7 @@ contract DLPRootImplementation is
      */
     function overrideEpochDlpsTotalStakesScore(
         EpochDlpsTotalStakesScore memory stakeScore
-    ) external override onlyRole(MANAGER_ROLE) {
+    ) external override onlyRole(MAINTAINER_ROLE) {
         Epoch storage epoch = _epochs[stakeScore.epochId];
         if (_dlps[stakeScore.dlpId].dlpAddress == address(0)) {
             revert InvalidDlpId();
@@ -825,6 +861,10 @@ contract DLPRootImplementation is
 
         Staker storage staker = _stakers[stakerAddress];
         staker.dlpIds.add(dlpId);
+        staker.dlpStakeAmounts[dlpId] += amount;
+        staker.stakeIds.add(stakesCount);
+        staker.totalStakeAmount += amount;
+
         _stakersList.add(stakerAddress);
         _checkpointAdd(dlp.stakeAmountCheckpoints, amount);
 
@@ -855,6 +895,10 @@ contract DLPRootImplementation is
         if (stake.endBlock != 0) {
             revert StakeAlreadyClosed();
         }
+
+        Staker storage staker = _stakers[stakerAddress];
+        staker.dlpStakeAmounts[stake.dlpId] -= stake.amount;
+        staker.totalStakeAmount -= stake.amount;
 
         Dlp storage dlp = _dlps[stake.dlpId];
         _checkpointAdd(dlp.unstakeAmountCheckpoints, stake.amount);
@@ -920,6 +964,10 @@ contract DLPRootImplementation is
             revert InvalidDlpStatus();
         }
 
+        if (dlpNameToId[registrationInfo.name] != 0 || bytes(registrationInfo.name).length == 0) {
+            revert InvalidName();
+        }
+
         if (
             registrationInfo.stakersPercentage < minDlpStakersPercentage ||
             registrationInfo.stakersPercentage > maxDlpStakersPercentage
@@ -947,6 +995,8 @@ contract DLPRootImplementation is
         dlp.registrationBlockNumber = block.number;
 
         dlpIds[registrationInfo.dlpAddress] = dlpId;
+
+        dlpNameToId[registrationInfo.name] = dlpId;
 
         _createStake(registrationInfo.ownerAddress, dlpId, msg.value);
 

@@ -21,7 +21,9 @@ module.exports = {
     },
   },
   networks: {
-    hardhat: {},
+    hardhat: {
+      allowUnlimitedContractSize: true,
+    },
     islander: {
       url: process.env.ISLANDER_RPC_URL || "",
       accounts:

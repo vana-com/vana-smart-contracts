@@ -61,6 +61,9 @@ interface IDLPRoot {
 
     struct Staker {
         EnumerableSet.UintSet dlpIds; // DLPs staked on by this staker
+        mapping(uint256 dlpId => uint256 dlpStakeAmount) dlpStakeAmounts;
+        EnumerableSet.UintSet stakeIds; // Stakes made by this staker
+        uint256 totalStakeAmount;
     }
 
     // View functions for contract state and configuration
@@ -115,6 +118,8 @@ interface IDLPRoot {
     function dlps(uint256 index) external view returns (DlpInfo memory);
     function dlpsByAddress(address dlpAddress) external view returns (DlpInfo memory);
     function dlpIds(address dlpAddress) external view returns (uint256);
+    function dlpNameToId(string calldata dlpName) external view returns (uint256);
+    function dlpsByName(string calldata dlpName) external view returns (DlpInfo memory);
 
     struct DlpEpochInfo {
         uint256 stakeAmount; // 0 if not a top DLP
@@ -125,11 +130,16 @@ interface IDLPRoot {
         bool rewardClaimed;
     }
     function dlpEpochs(uint256 dlpId, uint256 epochId) external view returns (DlpEpochInfo memory);
-    function stakerListCount() external view returns (uint256);
-    function stakerListAt(uint256 index) external view returns (address);
+    function stakersListCount() external view returns (uint256);
+    function stakersListAt(uint256 index) external view returns (address);
     function stakerDlpsListCount(address stakerAddress) external view returns (uint256);
     function stakerDlpsListAt(address stakerAddress, uint256 index) external view returns (uint256);
     function stakerDlpsListValues(address stakerAddress) external view returns (uint256[] memory);
+    function stakerStakesListCount(address stakerAddress) external view returns (uint256);
+    function stakerStakesListAt(address stakerAddress, uint256 index) external view returns (uint256);
+    function stakerStakesListValues(address stakerAddress) external view returns (uint256[] memory);
+    function stakerTotalStakeAmount(address stakerAddress) external view returns (uint256);
+    function stakerDlpStakeAmount(address stakerAddress, uint256 dlpId) external view returns (uint256);
     function stakesCount() external view returns (uint256);
 
     struct StakeInfo {
@@ -183,6 +193,7 @@ interface IDLPRoot {
     // Epoch management
     function createEpochs() external;
     function createEpochsUntilBlockNumber(uint256 blockNumber) external;
+    function overrideEpoch(uint256 epochId, uint256 startBlock, uint256 endBlock, uint256 rewardAmount) external;
 
     struct DlpRegistration {
         address dlpAddress;
