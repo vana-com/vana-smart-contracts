@@ -53,9 +53,9 @@ contract DAT is ERC20, ERC20Permit, ERC20Votes, Ownable2Step {
     error UnauthorizedAdminAction(address account);
 
     /**
-     * @dev The caller account is blocked
+     * @dev The account is blocked
      */
-    error UnauthorizedUserAction(address account);
+    error AccountBlocked();
 
     modifier whenMintIsAllowed() {
         if (mintBlocked) {
@@ -71,9 +71,9 @@ contract DAT is ERC20, ERC20Permit, ERC20Votes, Ownable2Step {
         _;
     }
 
-    modifier whenNotBlocked(address from) {
-        if (_blockList.contains(from)) {
-            revert UnauthorizedUserAction(msg.sender);
+    modifier whenNotBlocked(address from, address to) {
+        if (_blockList.contains(from) || _blockList.contains(to)) {
+            revert AccountBlocked();
         }
         _;
     }
@@ -117,8 +117,60 @@ contract DAT is ERC20, ERC20Permit, ERC20Votes, Ownable2Step {
         address from,
         address to,
         uint256 amount
-    ) internal override(ERC20, ERC20Votes) whenNotBlocked(from) {
+    ) internal override(ERC20, ERC20Votes) whenNotBlocked(from, to) {
         super._update(from, to, amount);
+    }
+
+    /**
+     * @dev Override _delegate to add a check for blocked addresses
+     */
+    function _delegate(
+        address account,
+        address delegatee
+    ) internal virtual override whenNotBlocked(account, delegatee) {
+        super._delegate(account, delegatee);
+    }
+
+    /**
+     * @dev Override _delegate to add a check for blocked addresses
+     */
+    function _transferVotingUnits(
+        address from,
+        address to,
+        uint256 amount
+    ) internal virtual override whenNotBlocked(from, to) {
+        super._transferVotingUnits(from, to, amount);
+    }
+
+    /**
+     * @dev Override _getVotingUnits to return 0 for blocked addresses
+     */
+    function _getVotingUnits(address account) internal view override returns (uint256) {
+        if (_blockList.contains(account)) {
+            return 0;
+        }
+        return super._getVotingUnits(account);
+    }
+
+    /**
+     * @dev Returns the current amount of votes that `account` has.
+     */
+    function getVotes(address account) public view virtual override returns (uint256) {
+        if (_blockList.contains(account)) {
+            return 0;
+        }
+
+        return super.getVotes(account);
+    }
+
+    /**
+     * @dev Override getPastVotes to return 0 for blocked addresses
+     */
+    function getPastVotes(address account, uint256 timepoint) public view override returns (uint256) {
+        if (_blockList.contains(account)) {
+            return 0;
+        }
+        return super.getPastVotes(account, timepoint);
     }
 
     /**
@@ -165,6 +217,8 @@ contract DAT is ERC20, ERC20Permit, ERC20Votes, Ownable2Step {
      * @dev Adds an address to the blockList. This address is not able to transfer any more
      */
     function blockAddress(address addressToBeBlocked) external virtual onlyAdmin {
+        _delegate(addressToBeBlocked, address(0));
+
         _blockList.add(addressToBeBlocked);
 
         emit AddressBlocked(addressToBeBlocked);

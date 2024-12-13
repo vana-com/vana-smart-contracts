@@ -378,7 +378,7 @@ contract TeePoolImplementation is
      *
      * @param fileId                            id of the file
      */
-    function requestContributionProof(uint256 fileId) public payable override {
+    function requestContributionProof(uint256 fileId) public payable override whenNotPaused {
         if (msg.value < teeFee) {
             revert InsufficientFee();
         }
@@ -410,7 +410,7 @@ contract TeePoolImplementation is
      *
      * @param fileId                            id of the file
      */
-    function submitJob(uint256 fileId) external payable override {
+    function submitJob(uint256 fileId) external payable override whenNotPaused {
         requestContributionProof(fileId);
     }
 
@@ -419,7 +419,7 @@ contract TeePoolImplementation is
      *
      * @param jobId                            id of the job
      */
-    function cancelJob(uint256 jobId) external override nonReentrant {
+    function cancelJob(uint256 jobId) external override nonReentrant whenNotPaused {
         Job storage job = _jobs[jobId];
         if (job.ownerAddress != _msgSender()) {
             revert NotJobOwner();
@@ -450,7 +450,10 @@ contract TeePoolImplementation is
      * @param jobId                             id of the job
      * @param proof                             proof for the file
      */
-    function addProof(uint256 jobId, IDataRegistry.Proof memory proof) external payable override onlyActiveTee {
+    function addProof(
+        uint256 jobId,
+        IDataRegistry.Proof memory proof
+    ) external payable override onlyActiveTee whenNotPaused {
         Job storage job = _jobs[jobId];
 
         if (job.status != JobStatus.Submitted) {
@@ -475,7 +478,7 @@ contract TeePoolImplementation is
     /**
      * @notice method used by tees for claiming their rewards
      */
-    function claim() external nonReentrant {
+    function claim() external nonReentrant whenNotPaused {
         uint256 amount = _tees[_msgSender()].amount - _tees[_msgSender()].withdrawnAmount;
 
         if (amount == 0) {

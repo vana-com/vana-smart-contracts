@@ -4,7 +4,6 @@ pragma solidity 0.8.24;
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
@@ -17,7 +16,6 @@ contract DLPRootImplementation is
     PausableUpgradeable,
     AccessControlUpgradeable,
     ReentrancyGuardUpgradeable,
-    MulticallUpgradeable,
     ERC2771ContextUpgradeable,
     DLPRootStorageV1
 {
@@ -125,52 +123,53 @@ contract DLPRootImplementation is
         uint256 epochRewardAmount;
     }
 
-    function initialize(InitParams memory params) external initializer {
-        __AccessControl_init();
-        __UUPSUpgradeable_init();
-        __ReentrancyGuard_init();
-        __Pausable_init();
-        __Multicall_init();
+    //    function initialize(InitParams memory params) external initializer {
+    //        __AccessControl_init();
+    //        __UUPSUpgradeable_init();
+    //        __ReentrancyGuard_init();
+    //        __Pausable_init();
+    //
+    //        if (
+    //            params.minDlpStakersPercentage < 1e16 ||
+    //            params.maxDlpStakersPercentage > 100e18 ||
+    //            params.minDlpStakersPercentage > params.maxDlpStakersPercentage ||
+    //            params.epochDlpsLimit > params.eligibleDlpsLimit ||
+    //            params.minStakeAmount > params.minDlpRegistrationStake ||
+    //            params.minDlpRegistrationStake > params.dlpSubEligibilityThreshold ||
+    //            params.dlpSubEligibilityThreshold > params.dlpEligibilityThreshold
+    //        ) {
+    //            revert InvalidParam();
+    //        }
+    //
+    //        _trustedForwarder = params.trustedForwarder;
+    //        eligibleDlpsLimit = params.eligibleDlpsLimit;
+    //        epochDlpsLimit = params.epochDlpsLimit;
+    //        minStakeAmount = params.minStakeAmount;
+    //        minDlpStakersPercentage = params.minDlpStakersPercentage;
+    //        maxDlpStakersPercentage = params.maxDlpStakersPercentage;
+    //        minDlpRegistrationStake = params.minDlpRegistrationStake;
+    //        dlpEligibilityThreshold = params.dlpEligibilityThreshold;
+    //        dlpSubEligibilityThreshold = params.dlpSubEligibilityThreshold;
+    //        _checkpointPush(_stakeWithdrawalDelayCheckpoints, params.stakeWithdrawalDelay);
+    //        _checkpointPush(_rewardClaimDelayCheckpoints, params.rewardClaimDelay);
+    //        epochSize = params.epochSize;
+    //        daySize = params.daySize;
+    //        epochRewardAmount = params.epochRewardAmount;
+    //
+    //        // Initialize first epoch
+    //        Epoch storage epoch0 = _epochs[0];
+    //        epoch0.startBlock = Math.min(params.startBlock - 2, block.number);
+    //        epoch0.endBlock = params.startBlock - 1;
+    //        epoch0.isFinalised = true;
+    //
+    //        _setRoleAdmin(MAINTAINER_ROLE, DEFAULT_ADMIN_ROLE);
+    //        _setRoleAdmin(MANAGER_ROLE, MAINTAINER_ROLE);
+    //        _grantRole(DEFAULT_ADMIN_ROLE, params.ownerAddress);
+    //        _grantRole(MAINTAINER_ROLE, params.ownerAddress);
+    //        _grantRole(MANAGER_ROLE, params.ownerAddress);
+    //    }
 
-        if (
-            params.minDlpStakersPercentage < 1e16 ||
-            params.maxDlpStakersPercentage > 100e18 ||
-            params.minDlpStakersPercentage > params.maxDlpStakersPercentage ||
-            params.epochDlpsLimit > params.eligibleDlpsLimit ||
-            params.minStakeAmount > params.minDlpRegistrationStake ||
-            params.minDlpRegistrationStake > params.dlpSubEligibilityThreshold ||
-            params.dlpSubEligibilityThreshold > params.dlpEligibilityThreshold
-        ) {
-            revert InvalidParam();
-        }
-
-        _trustedForwarder = params.trustedForwarder;
-        eligibleDlpsLimit = params.eligibleDlpsLimit;
-        epochDlpsLimit = params.epochDlpsLimit;
-        minStakeAmount = params.minStakeAmount;
-        minDlpStakersPercentage = params.minDlpStakersPercentage;
-        maxDlpStakersPercentage = params.maxDlpStakersPercentage;
-        minDlpRegistrationStake = params.minDlpRegistrationStake;
-        dlpEligibilityThreshold = params.dlpEligibilityThreshold;
-        dlpSubEligibilityThreshold = params.dlpSubEligibilityThreshold;
-        _checkpointPush(_stakeWithdrawalDelayCheckpoints, params.stakeWithdrawalDelay);
-        _checkpointPush(_rewardClaimDelayCheckpoints, params.rewardClaimDelay);
-        epochSize = params.epochSize;
-        daySize = params.daySize;
-        epochRewardAmount = params.epochRewardAmount;
-
-        // Initialize first epoch
-        Epoch storage epoch0 = _epochs[0];
-        epoch0.startBlock = Math.min(params.startBlock - 2, block.number);
-        epoch0.endBlock = params.startBlock - 1;
-        epoch0.isFinalised = true;
-
-        _setRoleAdmin(MAINTAINER_ROLE, DEFAULT_ADMIN_ROLE);
-        _setRoleAdmin(MANAGER_ROLE, MAINTAINER_ROLE);
-        _grantRole(DEFAULT_ADMIN_ROLE, params.ownerAddress);
-        _grantRole(MAINTAINER_ROLE, params.ownerAddress);
-        _grantRole(MANAGER_ROLE, params.ownerAddress);
-    }
+    receive() external payable {}
 
     function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
@@ -284,6 +283,10 @@ contract DLPRootImplementation is
                 endBlock: stake.endBlock,
                 lastClaimedEpochId: _dlps[stake.dlpId].epochIds[stake.lastClaimedIndexEpochId]
             });
+    }
+
+    function stakeClaimedAmounts(uint256 stakeId, uint256 epochId) external view override returns (uint256) {
+        return _stakes[stakeId].claimedAmounts[epochId];
     }
 
     function epochs(uint256 epochId) external view override returns (EpochInfo memory) {
@@ -1065,10 +1068,10 @@ contract DLPRootImplementation is
             uint256 rewardAmount = (((epochDlp.rewardAmount * epochDlp.stakersPercentage) / 100e18) * stakeScore) /
                 epochDlp.totalStakesScore;
 
-            uint256 numberOfDays = 1 + (block.number - epoch.endBlock) / daySize;
+            uint256 numberOfBlocks = block.number - epoch.endBlock;
 
-            if (rewardClaimDelayTmp > 0 && numberOfDays < rewardClaimDelayTmp) {
-                rewardAmount = (rewardAmount * numberOfDays) / rewardClaimDelayTmp;
+            if (rewardClaimDelayTmp > 0 && numberOfBlocks < rewardClaimDelayTmp) {
+                rewardAmount = (rewardAmount * numberOfBlocks) / rewardClaimDelayTmp;
             } else if (isClaim) {
                 stake.lastClaimedIndexEpochId = epochToClaimIndex;
             }

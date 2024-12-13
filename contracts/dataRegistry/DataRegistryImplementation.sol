@@ -49,6 +49,7 @@ contract DataRegistryImplementation is
     event PermissionGranted(uint256 indexed fileId, address indexed account);
 
     error NotFileOwner();
+    error FileUrlAlreadyUsed();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() ERC2771ContextUpgradeable(address(0)) {
@@ -153,6 +154,15 @@ contract DataRegistryImplementation is
     }
 
     /**
+     * @notice Get fileId by URL
+     * @param url The URL to look up
+     * @return fileId The ID of the file (0 if not found)
+     */
+    function fileIdByUrl(string memory url) external view override returns (uint256) {
+        return _urlHashToFileId[keccak256(abi.encodePacked(url))];
+    }
+
+    /**
      * @notice Returns the proof of the file
      *
      * @param fileId                            id of the file
@@ -246,9 +256,17 @@ contract DataRegistryImplementation is
     function _addFile(string memory url, address ownerAddress) internal returns (uint256) {
         uint256 cachedFilesCount = ++filesCount;
 
+        bytes32 urlHash = keccak256(abi.encodePacked(url));
+
+        if (_urlHashToFileId[urlHash] != 0) {
+            revert FileUrlAlreadyUsed();
+        }
+
         _files[cachedFilesCount].ownerAddress = ownerAddress;
         _files[cachedFilesCount].url = url;
         _files[cachedFilesCount].addedAtBlock = block.number;
+
+        _urlHashToFileId[urlHash] = cachedFilesCount;
 
         emit FileAdded(cachedFilesCount, ownerAddress, url);
 

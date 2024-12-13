@@ -39,6 +39,7 @@ interface IDataRegistry {
     function version() external pure returns (uint256);
     function filesCount() external view returns (uint256);
     function files(uint256 index) external view returns (FileResponse memory);
+    function fileIdByUrl(string memory url) external view returns (uint256);
     function fileProofs(uint256 fileId, uint256 index) external view returns (Proof memory);
     function filePermissions(uint256 fileId, address account) external view returns (string memory);
     function pause() external;

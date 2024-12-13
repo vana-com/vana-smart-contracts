@@ -153,6 +153,7 @@ interface IDLPRoot {
         uint256 lastClaimedEpochId;
     }
     function stakes(uint256 stakeId) external view returns (StakeInfo memory);
+    function stakeClaimedAmounts(uint256 stakeId, uint256 epochId) external view returns (uint256);
 
     // Core functionality
     function topDlpIds(uint256 numberOfDlps) external returns (uint256[] memory);
