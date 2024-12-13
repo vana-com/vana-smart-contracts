@@ -6,8 +6,6 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
 import "./interfaces/DataRegistryStorageV1.sol";
 
 contract DataRegistryImplementation is
@@ -18,9 +16,6 @@ contract DataRegistryImplementation is
     ERC2771ContextUpgradeable,
     DataRegistryStorageV1
 {
-    using ECDSA for bytes32;
-    using MessageHashUtils for bytes32;
-
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
 
     /**
