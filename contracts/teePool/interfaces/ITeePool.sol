@@ -76,5 +76,5 @@ interface ITeePool {
     function requestContributionProof(uint256 fileId) external payable;
     function submitJob(uint256 fileId) external payable;
     function cancelJob(uint256 jobId) external;
-    function addProof(uint256 fileId, IDataRegistry.Proof memory proof) external payable;
+    function addProof(uint256 fileId, IDataRegistry.Proof memory proof) external;
 }

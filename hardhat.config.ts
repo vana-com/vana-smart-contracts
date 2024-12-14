@@ -7,10 +7,6 @@ import * as dotenv from "dotenv";
 dotenv.config();
 
 const config: HardhatUserConfig = {
-  solidity: "0.8.24",
-};
-
-module.exports = {
   solidity: {
     version: "0.8.24",
     settings: {
@@ -98,7 +94,6 @@ module.exports = {
   gasReporter: {
     enabled: true,
     excludeContracts: ["mocks", "tests"],
-    include: ["../node_module/@openzeppelin/contracts-upgradeable"],
   },
 };
 export default config;

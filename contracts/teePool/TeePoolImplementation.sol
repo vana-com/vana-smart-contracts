@@ -450,10 +450,7 @@ contract TeePoolImplementation is
      * @param jobId                             id of the job
      * @param proof                             proof for the file
      */
-    function addProof(
-        uint256 jobId,
-        IDataRegistry.Proof memory proof
-    ) external payable override onlyActiveTee whenNotPaused {
+    function addProof(uint256 jobId, IDataRegistry.Proof memory proof) external override onlyActiveTee whenNotPaused {
         Job storage job = _jobs[jobId];
 
         if (job.status != JobStatus.Submitted) {
