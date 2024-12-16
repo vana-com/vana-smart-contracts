@@ -60,7 +60,7 @@ contract MultisendImplementation is
         }
     }
 
-    function multisendWithDifferentAmounts(uint256[] amounts, address payable[] memory recipients) public payable nonReentrant {
+    function multisendWithDifferentAmounts(uint256[] memory amounts, address payable[] memory recipients) public payable nonReentrant {
         if (amounts.length != recipients.length) {
             revert LengthMismatch();
         }
