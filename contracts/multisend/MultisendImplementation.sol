@@ -18,6 +18,7 @@ contract MultisendImplementation is
 
     error InvalidAmount();
     error InvalidAllowance();
+    error LengthMismatch();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -56,6 +57,22 @@ contract MultisendImplementation is
             //            }
 
             recipients[i].call{value: amount}("");
+        }
+    }
+
+    function multisendWithDifferentAmounts(uint256[] amounts, address payable[] memory recipients) public payable nonReentrant {
+        if (amounts.length != recipients.length) {
+            revert LengthMismatch();
+        }
+
+        uint256 remainingAmount = msg.value;
+
+        for (uint256 i = 0; i < recipients.length; i++) {
+            if (remainingAmount < amounts[i]) {
+                revert InvalidAmount();
+            }
+            remainingAmount -= amounts[i];
+            recipients[i].call{value: amount[i]}("");
         }
     }
 
