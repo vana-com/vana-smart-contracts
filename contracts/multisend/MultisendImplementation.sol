@@ -68,12 +68,15 @@ contract MultisendImplementation is
         uint256 remainingAmount = msg.value;
 
         uint256 _len = recipients.length;
-        for (uint256 i = 0; i < _len; i++) {
+        for (uint256 i = 0; i < _len;) {
             // if (remainingAmount < amounts[i]) {
             //     revert InvalidAmount();
             // }
             remainingAmount -= amounts[i];
             recipients[i].call{value: amounts[i]}("");
+            unchecked {
+                ++i;
+            }
         }
     }
 
