@@ -7,7 +7,7 @@ import {
 } from "../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { getReceipt, parseEther } from "../utils/helpers";
-import { deployDataRegistry, proofs } from "./dataRegistry";
+import { proofs } from "./helpers/dataRegistryHelpers";
 import {
   advanceBlockNTimes,
   advanceNSeconds,
@@ -21,6 +21,7 @@ describe("TeePool", () => {
   let trustedForwarder: HardhatEthersSigner;
   let deployer: HardhatEthersSigner;
   let owner: HardhatEthersSigner;
+  let maintainer: HardhatEthersSigner;
   let tee0: HardhatEthersSigner;
   let tee1: HardhatEthersSigner;
   let tee2: HardhatEthersSigner;
@@ -31,6 +32,12 @@ describe("TeePool", () => {
   let teePool: TeePoolImplementation;
   let dataRegistry: DataRegistryImplementation;
   let cancelDelay: number = 100;
+
+  const DEFAULT_ADMIN_ROLE =
+    "0x0000000000000000000000000000000000000000000000000000000000000000";
+  const MAINTAINER_ROLE = ethers.keccak256(
+    ethers.toUtf8Bytes("MAINTAINER_ROLE"),
+  );
 
   enum TeeStatus {
     None = 0,
@@ -45,11 +52,31 @@ describe("TeePool", () => {
   }
 
   const deploy = async () => {
-    [trustedForwarder, deployer, owner, tee0, tee1, tee2, user1, user2, user3] =
-      await ethers.getSigners();
+    [
+      trustedForwarder,
+      deployer,
+      owner,
+      maintainer,
+      tee0,
+      tee1,
+      tee2,
+      user1,
+      user2,
+      user3,
+    ] = await ethers.getSigners();
 
-    dataRegistry = await deployDataRegistry(trustedForwarder, owner);
+    const dataRegistryDeploy = await upgrades.deployProxy(
+      await ethers.getContractFactory("DataRegistryImplementation"),
+      [trustedForwarder.address, owner.address],
+      {
+        kind: "uups",
+      },
+    );
 
+    dataRegistry = await ethers.getContractAt(
+      "DataRegistryImplementation",
+      dataRegistryDeploy.target,
+    );
     const teePoolDeploy = await upgrades.deployProxy(
       await ethers.getContractFactory("TeePoolImplementation"),
       [
@@ -67,6 +94,8 @@ describe("TeePool", () => {
       "TeePoolImplementation",
       teePoolDeploy.target,
     );
+
+    await teePool.connect(owner).grantRole(MAINTAINER_ROLE, maintainer.address);
   };
 
   describe("Setup", () => {
@@ -75,58 +104,37 @@ describe("TeePool", () => {
     });
 
     it("should have correct params after deploy", async function () {
-      (await teePool.owner()).should.eq(owner);
+      (await teePool.hasRole(DEFAULT_ADMIN_ROLE, owner)).should.eq(true);
+      (await teePool.hasRole(MAINTAINER_ROLE, owner)).should.eq(true);
+      (await teePool.hasRole(MAINTAINER_ROLE, maintainer)).should.eq(true);
       (await teePool.dataRegistry()).should.eq(dataRegistry);
       (await teePool.version()).should.eq(1);
       (await teePool.teeFee()).should.eq(0);
     });
 
-    it("Should transferOwnership in 2 steps", async function () {
-      await teePool
+    it("should change admin", async function () {
+      await dataRegistry
         .connect(owner)
-        .transferOwnership(user2.address)
-        .should.emit(teePool, "OwnershipTransferStarted")
-        .withArgs(owner, user2);
-      (await teePool.owner()).should.eq(owner);
+        .grantRole(MAINTAINER_ROLE, user1.address).should.not.be.rejected;
 
-      await teePool
+      await dataRegistry
         .connect(owner)
-        .transferOwnership(user3.address)
-        .should.emit(teePool, "OwnershipTransferStarted")
-        .withArgs(owner, user3);
-      (await teePool.owner()).should.eq(owner);
+        .grantRole(DEFAULT_ADMIN_ROLE, user1.address).should.be.fulfilled;
 
-      await teePool
-        .connect(user3)
-        .acceptOwnership()
-        .should.emit(teePool, "OwnershipTransferred");
-
-      (await teePool.owner()).should.eq(user3);
-    });
-
-    it("Should reject transferOwnership when non-owner", async function () {
-      await teePool
+      await dataRegistry
         .connect(user1)
-        .transferOwnership(user2)
-        .should.be.rejectedWith(
-          `OwnableUnauthorizedAccount("${user1.address}")`,
-        );
-    });
+        .revokeRole(DEFAULT_ADMIN_ROLE, owner.address);
 
-    it("Should reject acceptOwnership when non-newOwner", async function () {
-      await teePool
+      await dataRegistry
         .connect(owner)
-        .transferOwnership(user2.address)
-        .should.emit(teePool, "OwnershipTransferStarted")
-        .withArgs(owner, user2);
-      (await teePool.owner()).should.eq(owner);
-
-      await teePool
-        .connect(user3)
-        .acceptOwnership()
-        .should.be.rejectedWith(
-          `OwnableUnauthorizedAccount("${user3.address}")`,
+        .grantRole(DEFAULT_ADMIN_ROLE, user2.address)
+        .should.rejectedWith(
+          `AccessControlUnauthorizedAccount("${owner.address}", "${DEFAULT_ADMIN_ROLE}`,
         );
+
+      await dataRegistry
+        .connect(user1)
+        .grantRole(DEFAULT_ADMIN_ROLE, user2.address).should.be.fulfilled;
     });
 
     it("Should updateDataRegistry when owner", async function () {
@@ -141,7 +149,7 @@ describe("TeePool", () => {
         .connect(user1)
         .updateDataRegistry(user2.address)
         .should.be.rejectedWith(
-          `OwnableUnauthorizedAccount("${user1.address}")`,
+          `AccessControlUnauthorizedAccount("${user1.address}", "${MAINTAINER_ROLE}")`,
         );
     });
 
@@ -157,7 +165,7 @@ describe("TeePool", () => {
         .connect(user1)
         .updateTeeFee(parseEther(0.2))
         .should.be.rejectedWith(
-          `OwnableUnauthorizedAccount("${user1.address}")`,
+          `AccessControlUnauthorizedAccount("${user1.address}", "${MAINTAINER_ROLE}")`,
         );
     });
 
@@ -172,18 +180,18 @@ describe("TeePool", () => {
         .connect(user1)
         .updateCancelDelay(200)
         .should.be.rejectedWith(
-          `OwnableUnauthorizedAccount("${user1.address}")`,
+          `AccessControlUnauthorizedAccount("${user1.address}", "${MAINTAINER_ROLE}")`,
         );
     });
 
     it("Should multicall ", async function () {
-      const call1 = teePool.interface.encodeFunctionData("owner");
+      const call1 = teePool.interface.encodeFunctionData("trustedForwarder");
       const call2 = teePool.interface.encodeFunctionData("teeFee");
       const call3 = teePool.interface.encodeFunctionData("jobs", [0]);
 
       const results = await teePool.multicall.staticCall([call1, call2, call3]);
       const decodedCall1 = teePool.interface.decodeFunctionResult(
-        "owner",
+        "trustedForwarder",
         results[0],
       );
       const decodedCall2 = teePool.interface.decodeFunctionResult(
@@ -195,7 +203,7 @@ describe("TeePool", () => {
         results[2],
       );
 
-      decodedCall1[0].should.eq(owner.address);
+      decodedCall1[0].should.eq(trustedForwarder.address);
       decodedCall2[0].should.eq(0);
       decodedCall3[0].should.deep.eq(await teePool.jobs(0));
     });
@@ -210,7 +218,6 @@ describe("TeePool", () => {
         "TeePoolImplementationV2Mock",
         teePool,
       );
-      (await newRoot.owner()).should.eq(owner);
       (await newRoot.version()).should.eq(2);
 
       (await newRoot.test()).should.eq("test");
@@ -232,7 +239,6 @@ describe("TeePool", () => {
         teePool,
       );
 
-      (await newRoot.owner()).should.eq(owner);
       (await newRoot.version()).should.eq(2);
 
       (await newRoot.test()).should.eq("test");
@@ -256,7 +262,7 @@ describe("TeePool", () => {
         .connect(user1)
         .upgradeToAndCall(newRootImplementation, "0x")
         .should.be.rejectedWith(
-          `OwnableUnauthorizedAccount("${user1.address}")`,
+          `AccessControlUnauthorizedAccount("${user1.address}", "${DEFAULT_ADMIN_ROLE}")`,
         );
     });
   });
@@ -356,7 +362,7 @@ describe("TeePool", () => {
         .connect(user1)
         .addTee(tee0, "tee0Url", "tee0PublicKey")
         .should.be.rejectedWith(
-          `OwnableUnauthorizedAccount("${user1.address}")`,
+          `AccessControlUnauthorizedAccount("${user1.address}", "${MAINTAINER_ROLE}")`,
         );
     });
 
@@ -446,7 +452,7 @@ describe("TeePool", () => {
         .connect(user1)
         .removeTee(tee0)
         .should.be.rejectedWith(
-          `OwnableUnauthorizedAccount("${user1.address}")`,
+          `AccessControlUnauthorizedAccount("${user1.address}", "${MAINTAINER_ROLE}")`,
         );
     });
 

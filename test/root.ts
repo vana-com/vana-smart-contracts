@@ -2,10 +2,7 @@ import chai, { should } from "chai";
 import chaiAsPromised from "chai-as-promised";
 import { ethers, network, upgrades } from "hardhat";
 import { BaseWallet, Wallet } from "ethers";
-import {
-  DAOVotingHelperImplementation,
-  DLPRootImplementation,
-} from "../typechain-types";
+import { DLPRootImplementation } from "../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import {
   advanceBlockNTimes,
@@ -13,7 +10,6 @@ import {
   getCurrentBlockNumber,
 } from "../utils/timeAndBlockManipulation";
 import { getReceipt, parseEther } from "../utils/helpers";
-import { randomInt } from "node:crypto";
 
 chai.use(chaiAsPromised);
 should();
@@ -117,8 +113,6 @@ describe("DLPRoot", () => {
   let deployBlock: number;
   let startBlock: number;
   let epochRewardAmount = parseEther(2);
-
-  const rootInitialBalance = parseEther(0);
 
   const DEFAULT_ADMIN_ROLE =
     "0x0000000000000000000000000000000000000000000000000000000000000000";
@@ -5378,29 +5372,6 @@ describe("DLPRoot", () => {
         .connect(user1)
         .claimStakesReward([2])
         .should.be.rejectedWith("EnforcedPause()");
-    });
-  });
-
-  describe("Claim stakes reward - rewardClaimDelay > 0", () => {
-    let daoVotingHelper: DAOVotingHelperImplementation;
-
-    beforeEach(async () => {
-      await deploy();
-
-      const daoHelperDeploy = await upgrades.deployProxy(
-        await ethers.getContractFactory("DAOVotingHelperImplementation"),
-        [owner.address, root.target],
-        {
-          kind: "uups",
-        },
-      );
-
-      daoVotingHelper = await ethers.getContractAt(
-        "DAOVotingHelperImplementation",
-        daoHelperDeploy.target,
-      );
-
-      await root.connect(owner).updateMinStakeAmount(1);
     });
   });
 });

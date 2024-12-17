@@ -8,7 +8,7 @@ import {
   TeePoolImplementation,
 } from "../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { deployDataRegistry, Proof, proofs, signProof } from "./dataRegistry";
+import { Proof, proofs, signProof } from "./helpers/dataRegistryHelpers";
 import { parseEther } from "../utils/helpers";
 
 chai.use(chaiAsPromised);
@@ -44,6 +44,12 @@ describe("DataLiquidityPool", () => {
   const proofInstruction =
     "https://ipfs.io/ipfs/qf34f34q4fq3fgdsgjgbdugsgwegqlgqhfejrfqjfwjfeql3u4iq4u47ll1";
 
+  const DEFAULT_ADMIN_ROLE =
+    "0x0000000000000000000000000000000000000000000000000000000000000000";
+  const MAINTAINER_ROLE = ethers.keccak256(
+    ethers.toUtf8Bytes("MAINTAINER_ROLE"),
+  );
+
   const deploy = async () => {
     [
       trustedForwarder,
@@ -65,7 +71,18 @@ describe("DataLiquidityPool", () => {
     ]);
     dat = await ethers.getContractAt("DAT", datDeploy.target);
 
-    dataRegistry = await deployDataRegistry(trustedForwarder, owner);
+    const dataRegistryDeploy = await upgrades.deployProxy(
+      await ethers.getContractFactory("DataRegistryImplementation"),
+      [trustedForwarder.address, owner.address],
+      {
+        kind: "uups",
+      },
+    );
+
+    dataRegistry = await ethers.getContractAt(
+      "DataRegistryImplementation",
+      dataRegistryDeploy.target,
+    );
 
     const teePoolDeploy = await upgrades.deployProxy(
       await ethers.getContractFactory("TeePoolImplementation"),
@@ -93,6 +110,7 @@ describe("DataLiquidityPool", () => {
       await ethers.getContractFactory("DataLiquidityPoolImplementation"),
       [
         {
+          trustedForwarder: trustedForwarder.address,
           ownerAddress: owner.address,
           tokenAddress: dat.target,
           dataRegistryAddress: dataRegistry.target,
@@ -124,7 +142,8 @@ describe("DataLiquidityPool", () => {
 
     it("should have correct params after deploy", async function () {
       (await dlp.name()).should.eq(dlpName);
-      (await dlp.owner()).should.eq(owner);
+      (await dataRegistry.hasRole(DEFAULT_ADMIN_ROLE, owner)).should.eq(true);
+      (await dataRegistry.hasRole(MAINTAINER_ROLE, owner)).should.eq(true);
       (await dlp.token()).should.eq(dat);
       (await dlp.teePool()).should.eq(teePool);
       (await dlp.dataRegistry()).should.eq(dataRegistry);
@@ -148,7 +167,7 @@ describe("DataLiquidityPool", () => {
         .connect(user1)
         .pause()
         .should.be.rejectedWith(
-          `OwnableUnauthorizedAccount("${user1.address}")`,
+          `AccessControlUnauthorizedAccount("${user1.address}", "${DEFAULT_ADMIN_ROLE}")`,
         );
       (await dlp.paused()).should.be.equal(false);
     });
@@ -169,7 +188,7 @@ describe("DataLiquidityPool", () => {
         .connect(user1)
         .unpause()
         .should.be.rejectedWith(
-          `OwnableUnauthorizedAccount("${user1.address}")`,
+          `AccessControlUnauthorizedAccount("${user1.address}", "${DEFAULT_ADMIN_ROLE}")`,
         );
       (await dlp.paused()).should.be.equal(true);
     });
@@ -189,7 +208,7 @@ describe("DataLiquidityPool", () => {
         .connect(user1)
         .updateFileRewardFactor(fileRewardFactor + 1n)
         .should.be.rejectedWith(
-          `OwnableUnauthorizedAccount("${user1.address}")`,
+          `AccessControlUnauthorizedAccount("${user1.address}", "${DEFAULT_ADMIN_ROLE}")`,
         );
 
       (await dlp.fileRewardFactor()).should.eq(fileRewardFactor);
@@ -206,7 +225,7 @@ describe("DataLiquidityPool", () => {
         .connect(user1)
         .updateTeePool(user1)
         .should.be.rejectedWith(
-          `OwnableUnauthorizedAccount("${user1.address}")`,
+          `AccessControlUnauthorizedAccount("${user1.address}", "${DEFAULT_ADMIN_ROLE}")`,
         );
 
       (await dlp.fileRewardFactor()).should.eq(fileRewardFactor);
@@ -227,7 +246,7 @@ describe("DataLiquidityPool", () => {
         .connect(user1)
         .updatePublicKey("newPublicKey")
         .should.be.rejectedWith(
-          `OwnableUnauthorizedAccount("${user1.address}")`,
+          `AccessControlUnauthorizedAccount("${user1.address}", "${DEFAULT_ADMIN_ROLE}")`,
         );
     });
 
@@ -246,40 +265,28 @@ describe("DataLiquidityPool", () => {
         .connect(user1)
         .updateProofInstruction("newProofInstruction")
         .should.be.rejectedWith(
-          `OwnableUnauthorizedAccount("${user1.address}")`,
+          `AccessControlUnauthorizedAccount("${user1.address}", "${DEFAULT_ADMIN_ROLE}")`,
         );
     });
 
-    it("Should transferOwnership in 2 steps", async function () {
-      await dlp
-        .connect(owner)
-        .transferOwnership(user2.address)
-        .should.emit(dlp, "OwnershipTransferStarted")
-        .withArgs(owner, user2);
-      (await dlp.owner()).should.eq(owner);
+    it("should change admin", async function () {
+      await dlp.connect(owner).grantRole(MAINTAINER_ROLE, user1.address).should
+        .not.be.rejected;
+
+      await dlp.connect(owner).grantRole(DEFAULT_ADMIN_ROLE, user1.address)
+        .should.be.fulfilled;
+
+      await dlp.connect(user1).revokeRole(DEFAULT_ADMIN_ROLE, owner.address);
 
       await dlp
         .connect(owner)
-        .transferOwnership(user3.address)
-        .should.emit(dlp, "OwnershipTransferStarted")
-        .withArgs(owner, user3);
-      (await dlp.owner()).should.eq(owner);
-
-      await dlp
-        .connect(user3)
-        .acceptOwnership()
-        .should.emit(dlp, "OwnershipTransferred");
-
-      (await dlp.owner()).should.eq(user3);
-    });
-
-    it("Should reject transferOwnership when non-owner", async function () {
-      await dlp
-        .connect(user1)
-        .transferOwnership(user2)
-        .should.be.rejectedWith(
-          `OwnableUnauthorizedAccount("${user1.address}")`,
+        .updateFileRewardFactor(fileRewardFactor + 1n)
+        .should.rejectedWith(
+          `AccessControlUnauthorizedAccount("${owner.address}", "${DEFAULT_ADMIN_ROLE}`,
         );
+
+      await dlp.connect(user1).updateFileRewardFactor(fileRewardFactor + 1n)
+        .should.be.fulfilled;
     });
 
     it("Should upgradeTo when owner", async function () {
@@ -297,7 +304,6 @@ describe("DataLiquidityPool", () => {
       );
 
       (await newDlp.name()).should.eq(dlpName);
-      (await newDlp.owner()).should.eq(owner);
       (await newDlp.paused()).should.eq(false);
       (await newDlp.fileRewardFactor()).should.eq(fileRewardFactor);
       (await newDlp.version()).should.eq(2);
@@ -322,7 +328,6 @@ describe("DataLiquidityPool", () => {
       );
 
       (await newDlp.name()).should.eq(dlpName);
-      (await newDlp.owner()).should.eq(owner);
       (await newDlp.paused()).should.eq(false);
       (await newDlp.fileRewardFactor()).should.eq(fileRewardFactor);
       (await newDlp.version()).should.eq(2);
@@ -351,7 +356,7 @@ describe("DataLiquidityPool", () => {
         .connect(user1)
         .upgradeToAndCall(newDlpImplementation, "0x")
         .should.be.rejectedWith(
-          `OwnableUnauthorizedAccount("${user1.address}")`,
+          `AccessControlUnauthorizedAccount("${user1.address}", "${DEFAULT_ADMIN_ROLE}")`,
         );
     });
   });

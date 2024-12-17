@@ -238,13 +238,13 @@ describe("ERC20", () => {
       const mintAmount = parseEther("100");
       const transferAmount = parseEther("20");
 
+      await dat.connect(owner).mint(user2, mintAmount).should.be.fulfilled;
+
       await dat
         .connect(admin)
         .blockAddress(user2)
         .should.emit(dat, "AddressBlocked")
         .withArgs(user2);
-
-      await dat.connect(owner).mint(user2, mintAmount).should.be.fulfilled;
 
       (await dat.balanceOf(user2)).should.eq(mintAmount);
       (await dat.balanceOf(user3)).should.eq(0);
@@ -253,7 +253,7 @@ describe("ERC20", () => {
       await dat
         .connect(user2)
         .transfer(user2, parseEther("20"))
-        .should.rejectedWith(`UnauthorizedUserAction("${user2.address}")`);
+        .should.rejectedWith(`AccountBlocked()`);
 
       (await dat.balanceOf(user2)).should.eq(mintAmount);
       (await dat.balanceOf(user3)).should.eq(0);
@@ -264,13 +264,13 @@ describe("ERC20", () => {
       const mintAmount = parseEther("100");
       const transferAmount = parseEther("20");
 
+      await dat.connect(owner).mint(user2, mintAmount).should.be.fulfilled;
+
       await dat
         .connect(admin)
         .blockAddress(user2)
         .should.emit(dat, "AddressBlocked")
         .withArgs(user2);
-
-      await dat.connect(owner).mint(user2, mintAmount).should.be.fulfilled;
 
       (await dat.balanceOf(user2)).should.eq(mintAmount);
       (await dat.balanceOf(user3)).should.eq(0);
@@ -279,7 +279,7 @@ describe("ERC20", () => {
       await dat
         .connect(user2)
         .transfer(user2, parseEther("20"))
-        .should.rejectedWith(`UnauthorizedUserAction("${user2.address}")`);
+        .should.rejectedWith(`AccountBlocked()`);
 
       (await dat.balanceOf(user2)).should.eq(mintAmount);
       (await dat.balanceOf(user3)).should.eq(0);
@@ -300,6 +300,61 @@ describe("ERC20", () => {
       (await dat.balanceOf(user2)).should.eq(mintAmount - transferAmount);
       (await dat.balanceOf(user3)).should.eq(transferAmount);
       (await dat.totalSupply()).should.eq(mintAmount);
+    });
+  });
+
+  describe("DLPT - voting", () => {
+    before(async function () {});
+
+    beforeEach(async () => {
+      await deploy();
+    });
+
+    it("should delegate", async function () {
+      await dat.connect(owner).mint(user1.address, parseEther("100"));
+
+      await dat.connect(user1).delegate(user2.address);
+
+      (await dat.delegates(user1.address)).should.eq(user2.address);
+
+      (await dat.getVotes(user1.address)).should.eq(0);
+      (await dat.getVotes(user2.address)).should.eq(parseEther("100"));
+    });
+
+    it("should have 0 votes when blocked", async function () {
+      await dat.connect(owner).mint(user1.address, parseEther("100"));
+
+      await dat.connect(user1).delegate(user1.address);
+      (await dat.getVotes(user1.address)).should.eq(parseEther("100"));
+
+      await dat.connect(admin).blockAddress(user1.address);
+
+      (await dat.getVotes(user1.address)).should.eq(0);
+    });
+
+    it("should reject delegate when blocked", async function () {
+      await dat.connect(owner).mint(user1.address, parseEther("100"));
+
+      await dat.connect(admin).blockAddress(user1.address);
+
+      await dat
+        .connect(user1)
+        .delegate(user2.address)
+        .should.rejectedWith("AccountBlocked()");
+
+      (await dat.getVotes(user1.address)).should.eq(0);
+      (await dat.getVotes(user2.address)).should.eq(0);
+    });
+
+    it("should cancel delegate when blocked", async function () {
+      await dat.connect(owner).mint(user1.address, parseEther("100"));
+
+      await dat.connect(user1).delegate(user2.address);
+
+      await dat.connect(admin).blockAddress(user1.address);
+
+      (await dat.getVotes(user1.address)).should.eq(0);
+      (await dat.getVotes(user2.address)).should.eq(0);
     });
   });
 });
