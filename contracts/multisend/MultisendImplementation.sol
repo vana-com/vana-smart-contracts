@@ -46,47 +46,82 @@ contract MultisendImplementation is
      */
     function _authorizeUpgrade(address newImplementation) internal virtual override onlyOwner {}
 
-    function multisendVana(uint256 amount, address payable[] memory recipients) public payable nonReentrant {
-        if (msg.value != amount * recipients.length) {
+    function multisendVana(uint256 amount, address payable[] calldata recipients) external payable nonReentrant {
+        uint256 length = recipients.length;
+
+        if (msg.value != amount * length) {
             revert InvalidAmount();
         }
 
-        for (uint256 i = 0; i < recipients.length; i++) {
-            //            if (recipients[i].balance > amount) {
-            //                continue;
-            //            }
-
+        for (uint256 i = 0; i < length; ) {
             recipients[i].call{value: amount}("");
+            unchecked {
+                ++i;
+            }
         }
     }
 
-    function multisendWithDifferentAmounts(uint256[] amounts, address payable[] memory recipients) public payable nonReentrant {
-        if (amounts.length != recipients.length) {
+    function multisendVanaWithDifferentAmounts(
+        uint256[] calldata amounts,
+        address payable[] calldata recipients
+    ) external payable nonReentrant {
+        uint256 length = recipients.length;
+
+        if (amounts.length != length) {
             revert LengthMismatch();
         }
 
         uint256 remainingAmount = msg.value;
 
-        for (uint256 i = 0; i < recipients.length; i++) {
-            if (remainingAmount < amounts[i]) {
-                revert InvalidAmount();
-            }
+        for (uint256 i = 0; i < length; ) {
             remainingAmount -= amounts[i];
-            recipients[i].call{value: amount[i]}("");
+            recipients[i].call{value: amounts[i]}("");
+            unchecked {
+                ++i;
+            }
+        }
+
+        if (remainingAmount > 0) {
+            payable(msg.sender).transfer(remainingAmount);
         }
     }
 
-    function multisendToken(IERC20 token, uint256 amount, address[] memory recipients) public nonReentrant {
-        if (token.balanceOf(msg.sender) < amount * recipients.length) {
+    function multisendTokenWithDifferentAmounts(
+        IERC20 token,
+        uint256[] calldata amounts,
+        address payable[] calldata recipients
+    ) external nonReentrant {
+        uint256 length = recipients.length;
+
+        if (amounts.length != length) {
+            revert LengthMismatch();
+        }
+
+        for (uint256 i = 0; i < length; ) {
+            token.safeTransferFrom(msg.sender, recipients[i], amounts[i]);
+
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    function multisendToken(IERC20 token, uint256 amount, address[] memory recipients) external nonReentrant {
+        uint256 length = recipients.length;
+
+        if (token.balanceOf(msg.sender) < amount * length) {
             revert InvalidAmount();
         }
 
-        if (token.allowance(msg.sender, address(this)) != amount * recipients.length) {
+        if (token.allowance(msg.sender, address(this)) != amount * length) {
             revert InvalidAllowance();
         }
 
-        for (uint256 i = 0; i < recipients.length; i++) {
+        for (uint256 i = 0; i < length; ) {
             token.safeTransferFrom(msg.sender, recipients[i], amount);
+            unchecked {
+                ++i;
+            }
         }
     }
 }
