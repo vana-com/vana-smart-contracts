@@ -6,16 +6,21 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import "./interfaces/DataRegistryStorageV1.sol";
+import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
+import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import "./interfaces/DLPRootTreasuryStorageV1.sol";
 
-contract DataRegistryImplementation is
+contract DLPRootTreasuryImplementationOld is
     UUPSUpgradeable,
     PausableUpgradeable,
     AccessControlUpgradeable,
     MulticallUpgradeable,
     ERC2771ContextUpgradeable,
-    DataRegistryStorageV1
+    DLPRootTreasuryStorageV1
 {
+    using ECDSA for bytes32;
+    using MessageHashUtils for bytes32;
+
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
 
     /**
@@ -32,10 +37,8 @@ contract DataRegistryImplementation is
      *
      * @param fileId                            id of the file
      * @param proofIndex                        index of the proof
-     * @param dlpId                             id of the DLP
-     * @param score                             score of the proof
      */
-    event ProofAdded(uint256 indexed fileId, uint256 indexed proofIndex, uint256 indexed dlpId, uint256 score);
+    event ProofAdded(uint256 indexed fileId, uint256 indexed proofIndex);
 
     /**
      * @notice Triggered when user has authorized an account to access the file
@@ -46,7 +49,6 @@ contract DataRegistryImplementation is
     event PermissionGranted(uint256 indexed fileId, address indexed account);
 
     error NotFileOwner();
-    error FileUrlAlreadyUsed();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() ERC2771ContextUpgradeable(address(0)) {
@@ -151,15 +153,6 @@ contract DataRegistryImplementation is
     }
 
     /**
-     * @notice Get fileId by URL
-     * @param url The URL to look up
-     * @return fileId The ID of the file (0 if not found)
-     */
-    function fileIdByUrl(string memory url) external view override returns (uint256) {
-        return _urlHashToFileId[keccak256(abi.encodePacked(url))];
-    }
-
-    /**
      * @notice Returns the proof of the file
      *
      * @param fileId                            id of the file
@@ -225,7 +218,7 @@ contract DataRegistryImplementation is
 
         _files[fileId].proofs[cachedProofCount] = proof;
 
-        emit ProofAdded(fileId, cachedProofCount, proof.data.dlpId, proof.data.score);
+        emit ProofAdded(fileId, cachedProofCount);
     }
 
     /**
@@ -253,17 +246,9 @@ contract DataRegistryImplementation is
     function _addFile(string memory url, address ownerAddress) internal returns (uint256) {
         uint256 cachedFilesCount = ++filesCount;
 
-        bytes32 urlHash = keccak256(abi.encodePacked(url));
-
-        if (_urlHashToFileId[urlHash] != 0) {
-            revert FileUrlAlreadyUsed();
-        }
-
         _files[cachedFilesCount].ownerAddress = ownerAddress;
         _files[cachedFilesCount].url = url;
         _files[cachedFilesCount].addedAtBlock = block.number;
-
-        _urlHashToFileId[urlHash] = cachedFilesCount;
 
         emit FileAdded(cachedFilesCount, ownerAddress, url);
 

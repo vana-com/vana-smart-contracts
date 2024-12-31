@@ -3,6 +3,8 @@ pragma solidity 0.8.24;
 
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "@openzeppelin/contracts/utils/structs/Checkpoints.sol";
+import {IDLPRootMetrics} from "../../rootMetrics/interfaces/IDLPRootMetrics.sol";
+import {IDLPRootTreasury} from "../../rootTreasury/interfaces/IDLPRootTreasury.sol";
 
 interface IDLPRoot {
     // DLP lifecycle states from registration to deregistration
@@ -68,6 +70,9 @@ interface IDLPRoot {
 
     // View functions for contract state and configuration
     function version() external pure returns (uint256);
+    function dlpRootMetrics() external view returns (IDLPRootMetrics);
+    function dlpRootRewardsTreasury() external view returns (IDLPRootTreasury);
+    function dlpRootStakesTreasury() external view returns (IDLPRootTreasury);
     function epochDlpsLimit() external view returns (uint256);
     function eligibleDlpsLimit() external view returns (uint256);
     function epochSize() external view returns (uint256);
@@ -154,6 +159,7 @@ interface IDLPRoot {
     }
     function stakes(uint256 stakeId) external view returns (StakeInfo memory);
     function stakeClaimedAmounts(uint256 stakeId, uint256 epochId) external view returns (uint256);
+    function dlpEpochStakeAmount(uint256 dlpId, uint256 epochId) external view returns (uint256);
 
     // Core functionality
     function topDlpIds(uint256 numberOfDlps) external returns (uint256[] memory);
@@ -181,7 +187,10 @@ interface IDLPRoot {
     function updateDlpEligibilityThreshold(uint256 newDlpEligibilityThreshold) external;
     function updateDlpSubEligibilityThreshold(uint256 newDlpSubEligibilityThreshold) external;
     function updateStakeWithdrawalDelay(uint256 newStakeWithdrawalDelay) external;
-    function updateRewardClaimDelay(uint256 newSRewardClaimDelay) external;
+    function updateRewardClaimDelay(uint256 newRewardClaimDelay) external;
+    function updateDlpRootMetrics(address newDlpRootMetricsAddress) external;
+    function updateDlpRootRewardsTreasury(address newDlpRootRewardsTreasuryAddress) external;
+    function updateDlpRootStakesTreasury(address newDlpRootStakesTreasuryAddress) external;
 
     struct EpochDlpsTotalStakesScore {
         uint256 epochId;
@@ -194,6 +203,7 @@ interface IDLPRoot {
     // Epoch management
     function createEpochs() external;
     function createEpochsUntilBlockNumber(uint256 blockNumber) external;
+    function distributeEpochRewards(uint256 epochId) external;
     function overrideEpoch(uint256 epochId, uint256 startBlock, uint256 endBlock, uint256 rewardAmount) external;
 
     struct DlpRegistration {
