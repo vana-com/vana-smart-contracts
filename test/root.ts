@@ -5,6 +5,7 @@ import { BaseWallet, Wallet } from "ethers";
 import {
   DLPRootImplementation,
   DLPRootMetricsImplementation,
+  DLPRootStakeImplementation,
   DLPRootTreasuryImplementation,
 } from "../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
@@ -75,7 +76,6 @@ describe("DLPRoot", () => {
   }
 
   enum RatingType {
-    None,
     Stake,
     Performance,
   }
@@ -115,6 +115,7 @@ describe("DLPRoot", () => {
   let metrics: DLPRootMetricsImplementation;
   let rewardsTreasury: DLPRootTreasuryImplementation;
   let stakesTreasury: DLPRootTreasuryImplementation;
+  let stakeImplementation: DLPRootStakeImplementation;
 
   const epochDlpsLimit = 3;
   const eligibleDlpsLimit = 500;
@@ -267,6 +268,11 @@ describe("DLPRoot", () => {
     stakesTreasury = await ethers.getContractAt(
       "DLPRootTreasuryImplementation",
       dlpRootStakesTreasuryDeploy.target,
+    );
+
+    stakeImplementation = await ethers.deployContract(
+      "DLPRootStakeImplementation",
+      [],
     );
 
     await root.connect(owner).grantRole(MAINTAINER_ROLE, maintainer);
@@ -610,7 +616,7 @@ describe("DLPRoot", () => {
       await advanceToEpochN(1);
       await root.connect(owner).createEpochs();
 
-      (await root.epochs(1)).reward.should.eq(epochRewardAmount);
+      (await root.epochs(1)).rewardAmount.should.eq(epochRewardAmount);
 
       await root
         .connect(owner)
@@ -620,7 +626,7 @@ describe("DLPRoot", () => {
 
       (await root.epochRewardAmount()).should.eq(123);
 
-      (await root.epochs(1)).reward.should.eq(epochRewardAmount);
+      (await root.epochs(1)).rewardAmount.should.eq(epochRewardAmount);
     });
 
     it("should reject updateEpochSize when non-maintainer", async function () {
@@ -2519,13 +2525,13 @@ describe("DLPRoot", () => {
       const epoch1 = await root.epochs(1);
       epoch1.startBlock.should.eq(startBlock);
       epoch1.endBlock.should.eq(startBlock + epochSize - 1);
-      epoch1.reward.should.eq(epochRewardAmount);
+      epoch1.rewardAmount.should.eq(epochRewardAmount);
       epoch1.dlpIds.should.deep.eq([]);
 
       let epoch2 = await root.epochs(2);
       epoch2.startBlock.should.eq(0);
       epoch2.endBlock.should.eq(0);
-      epoch2.reward.should.eq(0);
+      epoch2.rewardAmount.should.eq(0);
       epoch2.dlpIds.should.deep.eq([]);
 
       await root
@@ -2544,7 +2550,7 @@ describe("DLPRoot", () => {
       epoch2 = await root.epochs(2);
       epoch2.startBlock.should.eq(startBlock + epochSize);
       epoch2.endBlock.should.eq(startBlock + 2 * epochSize - 1);
-      epoch2.reward.should.eq(epochRewardAmount);
+      epoch2.rewardAmount.should.eq(epochRewardAmount);
       epoch2.dlpIds.should.deep.eq([]);
     });
 
@@ -2575,13 +2581,13 @@ describe("DLPRoot", () => {
       const epoch1 = await root.epochs(1);
       epoch1.startBlock.should.eq(startBlock);
       epoch1.endBlock.should.eq(startBlock + epochSize - 1);
-      epoch1.reward.should.eq(epochRewardAmount);
+      epoch1.rewardAmount.should.eq(epochRewardAmount);
       epoch1.dlpIds.should.deep.eq([]);
 
       const epoch2 = await root.epochs(2);
       epoch2.startBlock.should.eq(startBlock + epochSize);
       epoch2.endBlock.should.eq(startBlock + 2 * epochSize - 1);
-      epoch2.reward.should.eq(epochRewardAmount * 2n);
+      epoch2.rewardAmount.should.eq(epochRewardAmount * 2n);
       epoch2.dlpIds.should.deep.eq([]);
     });
 
@@ -2612,13 +2618,13 @@ describe("DLPRoot", () => {
       const epoch1 = await root.epochs(1);
       epoch1.startBlock.should.eq(startBlock);
       epoch1.endBlock.should.eq(startBlock + epochSize - 1);
-      epoch1.reward.should.eq(epochRewardAmount);
+      epoch1.rewardAmount.should.eq(epochRewardAmount);
       epoch1.dlpIds.should.deep.eq([]);
 
       const epoch2 = await root.epochs(2);
       epoch2.startBlock.should.eq(startBlock + epochSize);
       epoch2.endBlock.should.eq(startBlock + 4 * epochSize - 1);
-      epoch2.reward.should.eq(epochRewardAmount);
+      epoch2.rewardAmount.should.eq(epochRewardAmount);
       epoch2.dlpIds.should.deep.eq([]);
     });
 
@@ -2658,19 +2664,19 @@ describe("DLPRoot", () => {
       const epoch1 = await root.epochs(1);
       epoch1.startBlock.should.eq(startBlock);
       epoch1.endBlock.should.eq(startBlock + epochSize - 1);
-      epoch1.reward.should.eq(epochRewardAmount);
+      epoch1.rewardAmount.should.eq(epochRewardAmount);
       epoch1.dlpIds.should.deep.eq([]);
 
       const epoch2 = await root.epochs(2);
       epoch2.startBlock.should.eq(startBlock + epochSize);
       epoch2.endBlock.should.eq(startBlock + 2 * epochSize - 1);
-      epoch2.reward.should.eq(epochRewardAmount);
+      epoch2.rewardAmount.should.eq(epochRewardAmount);
       epoch2.dlpIds.should.deep.eq([]);
 
       const epoch3 = await root.epochs(3);
       epoch3.startBlock.should.eq(startBlock + 2 * epochSize);
       epoch3.endBlock.should.eq(startBlock + 3 * epochSize - 1);
-      epoch3.reward.should.eq(epochRewardAmount);
+      epoch3.rewardAmount.should.eq(epochRewardAmount);
       epoch3.dlpIds.should.deep.eq([]);
     });
 
@@ -2710,19 +2716,19 @@ describe("DLPRoot", () => {
       const epoch1 = await root.epochs(1);
       epoch1.startBlock.should.eq(startBlock);
       epoch1.endBlock.should.eq(startBlock + epochSize - 1);
-      epoch1.reward.should.eq(epochRewardAmount);
+      epoch1.rewardAmount.should.eq(epochRewardAmount);
       epoch1.dlpIds.should.deep.eq([]);
 
       const epoch2 = await root.epochs(2);
       epoch2.startBlock.should.eq(startBlock + epochSize);
       epoch2.endBlock.should.eq(startBlock + 2 * epochSize - 1);
-      epoch2.reward.should.eq(epochRewardAmount);
+      epoch2.rewardAmount.should.eq(epochRewardAmount);
       epoch2.dlpIds.should.deep.eq([]);
 
       const epoch3 = await root.epochs(3);
       epoch3.startBlock.should.eq(startBlock + 2 * epochSize);
       epoch3.endBlock.should.eq(startBlock + 3 * epochSize - 1);
-      epoch3.reward.should.eq(epochRewardAmount);
+      epoch3.rewardAmount.should.eq(epochRewardAmount);
       epoch3.dlpIds.should.deep.eq([]);
     });
 
@@ -2748,7 +2754,7 @@ describe("DLPRoot", () => {
       const epoch1 = await root.epochs(1);
       epoch1.startBlock.should.eq(startBlock);
       epoch1.endBlock.should.eq(startBlock + epochSize - 1);
-      epoch1.reward.should.eq(epochRewardAmount);
+      epoch1.rewardAmount.should.eq(epochRewardAmount);
       epoch1.dlpIds.should.deep.eq([]);
     });
 
@@ -2816,13 +2822,13 @@ describe("DLPRoot", () => {
       let epoch1 = await root.epochs(1);
       epoch1.startBlock.should.eq(startBlock);
       epoch1.endBlock.should.eq(startBlock + epochSize - 1);
-      epoch1.reward.should.eq(epochRewardAmount);
+      epoch1.rewardAmount.should.eq(epochRewardAmount);
       epoch1.dlpIds.should.deep.eq([]);
 
       let epoch2 = await root.epochs(2);
       epoch2.startBlock.should.eq(0);
       epoch2.endBlock.should.eq(0);
-      epoch2.reward.should.eq(0);
+      epoch2.rewardAmount.should.eq(0);
       epoch2.dlpIds.should.deep.eq([]);
 
       (await root.topDlpIds(epochDlpsLimit)).should.deep.eq([1n]);
@@ -2847,7 +2853,7 @@ describe("DLPRoot", () => {
       epoch2 = await root.epochs(2);
       epoch2.startBlock.should.eq(startBlock + epochSize);
       epoch2.endBlock.should.eq(startBlock + 2 * epochSize - 1);
-      epoch2.reward.should.eq(epochRewardAmount);
+      epoch2.rewardAmount.should.eq(epochRewardAmount);
       epoch2.dlpIds.should.deep.eq([]);
 
       const dlp1Epoch1 = await root.dlpEpochs(1, 1);
@@ -2881,13 +2887,13 @@ describe("DLPRoot", () => {
       let epoch1 = await root.epochs(1);
       epoch1.startBlock.should.eq(startBlock);
       epoch1.endBlock.should.eq(startBlock + epochSize - 1);
-      epoch1.reward.should.eq(epochRewardAmount);
+      epoch1.rewardAmount.should.eq(epochRewardAmount);
       epoch1.dlpIds.should.deep.eq([]);
 
       let epoch2 = await root.epochs(2);
       epoch2.startBlock.should.eq(0);
       epoch2.endBlock.should.eq(0);
-      epoch2.reward.should.eq(0);
+      epoch2.rewardAmount.should.eq(0);
       epoch2.dlpIds.should.deep.eq([]);
 
       (await root.topDlpIds(epochDlpsLimit)).should.deep.eq([1n]);
@@ -2912,7 +2918,7 @@ describe("DLPRoot", () => {
       epoch2 = await root.epochs(2);
       epoch2.startBlock.should.eq(startBlock + epochSize);
       epoch2.endBlock.should.eq(startBlock + 2 * epochSize - 1);
-      epoch2.reward.should.eq(epochRewardAmount);
+      epoch2.rewardAmount.should.eq(epochRewardAmount);
       epoch2.dlpIds.should.deep.eq([]);
 
       const dlp1Epoch1 = await root.dlpEpochs(1, 1);
@@ -2938,7 +2944,7 @@ describe("DLPRoot", () => {
       epoch2 = await root.epochs(2);
       epoch2.startBlock.should.eq(startBlock + epochSize);
       epoch2.endBlock.should.eq(startBlock + 2 * epochSize - 1);
-      epoch2.reward.should.eq(epochRewardAmount);
+      epoch2.rewardAmount.should.eq(epochRewardAmount);
       epoch2.dlpIds.should.deep.eq([1n]);
 
       const dlp1Epoch2 = await root.dlpEpochs(1, 2);
@@ -2971,7 +2977,7 @@ describe("DLPRoot", () => {
       let epoch1 = await root.epochs(1);
       epoch1.startBlock.should.eq(startBlock);
       epoch1.endBlock.should.eq(startBlock + epochSize - 1);
-      epoch1.reward.should.eq(epochRewardAmount);
+      epoch1.rewardAmount.should.eq(epochRewardAmount);
       epoch1.dlpIds.should.deep.eq([]);
 
       (await root.topDlpIds(epochDlpsLimit)).should.deep.eq([5n, 4n, 3n]);
@@ -3017,7 +3023,7 @@ describe("DLPRoot", () => {
       let epoch1 = await root.epochs(1);
       epoch1.startBlock.should.eq(startBlock);
       epoch1.endBlock.should.eq(startBlock + epochSize - 1);
-      epoch1.reward.should.eq(epochRewardAmount);
+      epoch1.rewardAmount.should.eq(epochRewardAmount);
       epoch1.dlpIds.should.deep.eq([]);
 
       (await root.topDlpIds(epochDlpsLimit)).should.deep.eq([2n, 3n, 4n]);
@@ -3062,7 +3068,7 @@ describe("DLPRoot", () => {
       let epoch1 = await root.epochs(1);
       epoch1.startBlock.should.eq(startBlock);
       epoch1.endBlock.should.eq(startBlock + epochSize - 1);
-      epoch1.reward.should.eq(epochRewardAmount);
+      epoch1.rewardAmount.should.eq(epochRewardAmount);
       epoch1.dlpIds.should.deep.eq([]);
 
       (await root.topDlpIds(epochDlpsLimit)).should.deep.eq([2n, 3n, 1n]);
@@ -3107,7 +3113,7 @@ describe("DLPRoot", () => {
       let epoch1 = await root.epochs(1);
       epoch1.startBlock.should.eq(startBlock);
       epoch1.endBlock.should.eq(startBlock + epochSize - 1);
-      epoch1.reward.should.eq(epochRewardAmount);
+      epoch1.rewardAmount.should.eq(epochRewardAmount);
       epoch1.dlpIds.should.deep.eq([]);
 
       (await root.topDlpIds(epochDlpsLimit)).should.deep.eq([]);
@@ -3150,7 +3156,7 @@ describe("DLPRoot", () => {
       let epoch1 = await root.epochs(1);
       epoch1.startBlock.should.eq(startBlock);
       epoch1.endBlock.should.eq(startBlock + epochSize - 1);
-      epoch1.reward.should.eq(epochRewardAmount);
+      epoch1.rewardAmount.should.eq(epochRewardAmount);
       epoch1.dlpIds.should.deep.eq([]);
 
       (await root.topDlpIds(epochDlpsLimit)).should.deep.eq([5n, 2n]);
@@ -3195,7 +3201,7 @@ describe("DLPRoot", () => {
       let epoch1 = await root.epochs(1);
       epoch1.startBlock.should.eq(startBlock);
       epoch1.endBlock.should.eq(startBlock + epochSize - 1);
-      epoch1.reward.should.eq(epochRewardAmount);
+      epoch1.rewardAmount.should.eq(epochRewardAmount);
       epoch1.dlpIds.should.deep.eq([]);
 
       (await root.topDlpIds(epochDlpsLimit)).should.deep.eq([5n, 4n, 3n]);
@@ -3236,7 +3242,7 @@ describe("DLPRoot", () => {
       let epoch2 = await root.epochs(2);
       epoch2.startBlock.should.eq(startBlock + epochSize);
       epoch2.endBlock.should.eq(startBlock + 2 * epochSize - 1);
-      epoch2.reward.should.eq(epochRewardAmount);
+      epoch2.rewardAmount.should.eq(epochRewardAmount);
       epoch2.dlpIds.should.deep.eq([1n, 5n, 4n]);
 
       (await root.dlps(1)).epochIds.should.deep.eq([2n]);
@@ -3312,13 +3318,13 @@ describe("DLPRoot", () => {
       const epoch1 = await root.epochs(1);
       epoch1.startBlock.should.eq(startBlock);
       epoch1.endBlock.should.eq(startBlock + epochSize - 1);
-      epoch1.reward.should.eq(epochRewardAmount);
+      epoch1.rewardAmount.should.eq(epochRewardAmount);
       epoch1.dlpIds.should.deep.eq(topStakes);
 
       const epoch2 = await root.epochs(2);
       epoch2.startBlock.should.eq(startBlock + epochSize);
       epoch2.endBlock.should.eq(startBlock + 2 * epochSize - 1);
-      epoch2.reward.should.eq(epochRewardAmount);
+      epoch2.rewardAmount.should.eq(epochRewardAmount);
       epoch2.dlpIds.should.deep.eq([]);
     });
 
@@ -3331,7 +3337,7 @@ describe("DLPRoot", () => {
       const epoch1 = await root.epochs(1);
       epoch1.startBlock.should.eq(1);
       epoch1.endBlock.should.eq(2);
-      epoch1.reward.should.eq(3);
+      epoch1.rewardAmount.should.eq(3);
     });
 
     it("should revert overrideEpoch when not maintainer", async function () {
@@ -3469,15 +3475,15 @@ describe("DLPRoot", () => {
         .emit(root, "StakeCreated")
         .withArgs(2, user1, 1, stakeAmount)
         .and.emit(root, "EpochCreated")
-        .withArgs(1, epoch1.startBlock, epoch1.endBlock, epoch1.reward)
+        .withArgs(1, epoch1.startBlock, epoch1.endBlock, epoch1.rewardAmount)
         .and.emit(root, "EpochCreated")
-        .withArgs(2, epoch2.startBlock, epoch2.endBlock, epoch2.reward)
+        .withArgs(2, epoch2.startBlock, epoch2.endBlock, epoch2.rewardAmount)
         .and.emit(root, "EpochCreated")
-        .withArgs(3, epoch3.startBlock, epoch3.endBlock, epoch3.reward)
+        .withArgs(3, epoch3.startBlock, epoch3.endBlock, epoch3.rewardAmount)
         .and.emit(root, "EpochCreated")
-        .withArgs(4, epoch4.startBlock, epoch4.endBlock, epoch4.reward)
+        .withArgs(4, epoch4.startBlock, epoch4.endBlock, epoch4.rewardAmount)
         .and.emit(root, "EpochCreated")
-        .withArgs(5, epoch5.startBlock, epoch5.endBlock, epoch5.reward);
+        .withArgs(5, epoch5.startBlock, epoch5.endBlock, epoch5.rewardAmount);
 
       (await root.epochsCount()).should.eq(5);
     });
@@ -4531,15 +4537,15 @@ describe("DLPRoot", () => {
         .emit(root, "StakeWithdrawn")
         .withArgs(2)
         .and.emit(root, "EpochCreated")
-        .withArgs(1, epoch1.startBlock, epoch1.endBlock, epoch1.reward)
+        .withArgs(1, epoch1.startBlock, epoch1.endBlock, epoch1.rewardAmount)
         .and.emit(root, "EpochCreated")
-        .withArgs(2, epoch2.startBlock, epoch2.endBlock, epoch2.reward)
+        .withArgs(2, epoch2.startBlock, epoch2.endBlock, epoch2.rewardAmount)
         .and.emit(root, "EpochCreated")
-        .withArgs(3, epoch3.startBlock, epoch3.endBlock, epoch3.reward)
+        .withArgs(3, epoch3.startBlock, epoch3.endBlock, epoch3.rewardAmount)
         .and.emit(root, "EpochCreated")
-        .withArgs(4, epoch4.startBlock, epoch4.endBlock, epoch4.reward)
+        .withArgs(4, epoch4.startBlock, epoch4.endBlock, epoch4.rewardAmount)
         .and.emit(root, "EpochCreated")
-        .withArgs(5, epoch5.startBlock, epoch5.endBlock, epoch5.reward);
+        .withArgs(5, epoch5.startBlock, epoch5.endBlock, epoch5.rewardAmount);
 
       (await root.epochsCount()).should.eq(5);
     });
@@ -5700,7 +5706,12 @@ describe("DLPRoot", () => {
       const stake2ClaimableAmount =
         await root.calculateStakeClaimableAmount.staticCall(2);
 
-      (await root.dlpEpochs(1, 1)).rewardAmount.should.eq(dlp1Epoch1Reward);
+      (await root.dlpEpochs(1, 1)).rewardAmount.should.eq(
+        dlp1Epoch1Reward - dlp1Epoch1StakersReward,
+      );
+      (await root.dlpEpochs(1, 1)).stakersRewardAmount.should.eq(
+        dlp1Epoch1StakersReward,
+      );
       (await root.dlpEpochs(1, 1)).stakeAmount.should.eq(
         3n * dlpEligibilityThreshold,
       );

@@ -5,7 +5,6 @@ import {IDLPRoot} from "../../root/interfaces/IDLPRoot.sol";
 
 interface IDLPRootMetrics {
     enum RatingType {
-        None,
         Stake,
         Performance
     }
@@ -46,15 +45,18 @@ interface IDLPRootMetrics {
     function topDlps(
         uint256 epochId,
         uint256 numberOfDlps,
-        uint256[] memory dlpIds
+        uint256[] memory dlpIds,
+        uint256[] memory customRatingPercentages
     ) external view returns (DlpRating[] memory);
     function topDlpIds(
         uint256 epochId,
         uint256 numberOfDlps,
-        uint256[] memory dlpIds
+        uint256[] memory dlpIds,
+        uint256[] memory customRatingPercentages
     ) external view returns (uint256[] memory);
     function estimatedDlpRewardPercentages(
-        uint256[] memory dlpIds
+        uint256[] memory dlpIds,
+        uint256[] memory customRatingPercentages
     ) external view returns (IDLPRoot.DlpRewardApy[] memory);
     function getMultiplier(uint256 index) external pure returns (uint256);
     function pause() external;

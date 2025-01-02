@@ -35,8 +35,8 @@ interface IDLPRoot {
     }
 
     struct EpochDlp {
-        uint256 rewardAmount; // Rewards allocated to this DLP
-        uint256 stakersPercentage; // % going to stakers vs treasury
+        uint256 rewardAmount; // Rewards allocated to the DLP owner
+        uint256 stakersRewardAmount; //Rewards allocated to the stakers of the DLP
         uint256 totalStakesScore; // Sum of weighted stake scores
         bool rewardClaimed; // True if reward has been claimed
     }
@@ -86,7 +86,7 @@ interface IDLPRoot {
     struct EpochInfo {
         uint256 startBlock;
         uint256 endBlock;
-        uint256 reward;
+        uint256 rewardAmount;
         bool isFinalised;
         uint256[] dlpIds;
     }
@@ -133,6 +133,7 @@ interface IDLPRoot {
         uint256 stakersPercentage; // 0 if not top DLP
         uint256 totalStakesScore; // 0 if not top DLP
         bool rewardClaimed;
+        uint256 stakersRewardAmount;
     }
     function dlpEpochs(uint256 dlpId, uint256 epochId) external view returns (DlpEpochInfo memory);
     function stakersListCount() external view returns (uint256);
@@ -203,7 +204,12 @@ interface IDLPRoot {
     // Epoch management
     function createEpochs() external;
     function createEpochsUntilBlockNumber(uint256 blockNumber) external;
-    function distributeEpochRewards(uint256 epochId) external;
+    struct EpochDlpReward {
+        uint256 dlpId;
+        uint256 rewardAmount;
+        uint256 stakersRewardAmount;
+    }
+    function distributeEpochRewards(uint256 epochId, EpochDlpReward[] memory epochDlpRewards) external;
     function overrideEpoch(uint256 epochId, uint256 startBlock, uint256 endBlock, uint256 rewardAmount) external;
 
     struct DlpRegistration {
