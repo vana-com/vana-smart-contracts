@@ -51,7 +51,7 @@ contract DLPRootTreasuryImplementation is
     function transferVana(
         address payable to,
         uint256 value
-    ) external override onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
+    ) external override whenNotPaused onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
         (bool success, ) = to.call{value: value}("");
 
         return success;

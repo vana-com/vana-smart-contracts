@@ -8,6 +8,8 @@ import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "./interfaces/DLPRootStorageV1.sol";
 
+import "hardhat/console.sol";
+
 contract DLPRootImplementation is
     UUPSUpgradeable,
     PausableUpgradeable,
@@ -101,11 +103,16 @@ contract DLPRootImplementation is
     error SafeCastOverflowedUintDowncast(uint8 bits, uint256 value);
 
     modifier onlyDlpOwner(uint256 dlpId) {
-        if (_dlps[dlpId].ownerAddress != _msgSender()) {
+        if (_dlps[dlpId].ownerAddress != msg.sender) {
             revert NotDlpOwner();
         }
         _;
     }
+
+    //    modifier onlyRole(bytes32 role) {
+    //        _checkRole(role, msg.sender);
+    //        _;
+    //    }
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() ERC2771ContextUpgradeable(address(0)) {
@@ -201,6 +208,10 @@ contract DLPRootImplementation is
         returns (uint256)
     {
         return ERC2771ContextUpgradeable._contextSuffixLength();
+    }
+
+    function _checkRole(bytes32 role) internal view override {
+        _checkRole(role, msg.sender);
     }
 
     /**
@@ -406,7 +417,7 @@ contract DLPRootImplementation is
      * @notice Gets top DLP IDs by rating (performanceRating + stakeRating)
      * @dev Uses insertion sort to maintain ordered list
      */
-    function topDlpIds(uint256 numberOfDlps) public view override returns (uint256[] memory) {
+    function topDlpIds(uint256 numberOfDlps) external view override returns (uint256[] memory) {
         uint256[] memory percentages = new uint256[](2);
         percentages[0] = dlpRootMetrics.ratingPercentages(IDLPRootMetrics.RatingType.Stake);
         percentages[1] = dlpRootMetrics.ratingPercentages(IDLPRootMetrics.RatingType.Performance);
@@ -886,7 +897,11 @@ contract DLPRootImplementation is
         _stakersList.add(stakerAddress);
         _checkpointAdd(dlp.stakeAmountCheckpoints, amount);
 
-        payable(address(dlpRootStakesTreasury)).call{value: msg.value}("");
+        (bool success, ) = payable(address(dlpRootStakesTreasury)).call{value: msg.value}("");
+
+        if (!success) {
+            revert TransferFailed();
+        }
 
         emit StakeCreated(stakesCount, stakerAddress, dlpId, amount);
 
@@ -1189,14 +1204,22 @@ contract DLPRootImplementation is
     // this method will be deleted; it will be used only for migration
     function transferVanaToStakesTreasury(uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (address(dlpRootStakesTreasury) != address(0)) {
-            payable(address(dlpRootStakesTreasury)).call{value: amount}("");
+            (bool success, ) = payable(address(dlpRootStakesTreasury)).call{value: amount}("");
+
+            if (!success) {
+                revert TransferFailed();
+            }
         }
     }
 
     // this method will be deleted; it will be used only for migration
     function transferVanaToRewardsTreasury(uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
         if (address(dlpRootRewardsTreasury) != address(0)) {
-            payable(address(dlpRootRewardsTreasury)).call{value: amount}("");
+            (bool success, ) = payable(address(dlpRootRewardsTreasury)).call{value: amount}("");
+
+            if (!success) {
+                revert TransferFailed();
+            }
         }
     }
 }
