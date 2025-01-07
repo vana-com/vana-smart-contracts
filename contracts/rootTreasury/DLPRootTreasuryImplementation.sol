@@ -45,7 +45,9 @@ contract DLPRootTreasuryImplementation is
     }
 
     function updateDlpRoot(address dlpRootAddress) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        _revokeRole(DEFAULT_ADMIN_ROLE, address(dlpRoot));
         dlpRoot = IDLPRoot(dlpRootAddress);
+        _grantRole(DEFAULT_ADMIN_ROLE, dlpRootAddress);
     }
 
     function transferVana(

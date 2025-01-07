@@ -4,8 +4,6 @@ import { ethers, upgrades } from "hardhat";
 import { DataRegistryImplementation } from "../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { getCurrentBlockNumber } from "../utils/timeAndBlockManipulation";
-import { parseEther } from "../utils/helpers";
-import { Wallet } from "ethers";
 import { proofs } from "./helpers/dataRegistryHelpers";
 
 chai.use(chaiAsPromised);

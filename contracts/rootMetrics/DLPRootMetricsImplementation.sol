@@ -136,16 +136,14 @@ contract DLPRootMetricsImplementation is
 
         for (uint256 i = 0; i < dlpIdsCount; ) {
             uint256 currentDlpId = dlpIds[i];
-            uint256 currentStakeRating = totalStakeAmount > 0
-                ? (1e18 * dlpRoot.dlpEpochStakeAmount(currentDlpId, epochId)) / totalStakeAmount
-                : 0;
-            uint256 currentPerformanceRating = totalPerformanceRating > 0
-                ? (1e18 * _epochs[epochId].dlps[currentDlpId].performanceRating) / totalPerformanceRating
-                : 0;
-            uint256 currentRating = (customRatingPercentages[uint256(RatingType.Stake)] *
-                currentStakeRating +
-                customRatingPercentages[uint256(RatingType.Performance)] *
-                currentPerformanceRating) / 1e20;
+
+            uint256 currentRating = calculateDlpRating(
+                currentDlpId,
+                epochId,
+                totalStakeAmount,
+                totalPerformanceRating,
+                customRatingPercentages
+            );
 
             uint256 position = numberOfDlps;
             for (uint256 j = 0; j < numberOfDlps; ) {
@@ -214,22 +212,41 @@ contract DLPRootMetricsImplementation is
     ) external view override returns (IDLPRoot.DlpRewardApy[] memory) {
         uint256 epochId = dlpRoot.epochsCount();
 
-        IDLPRootMetrics.DlpRating[] memory topDlps = topDlps(
+        IDLPRootMetrics.DlpRating[] memory topDlpsList = topDlps(
             epochId,
             dlpRoot.epochDlpsLimit(),
             dlpRoot.eligibleDlpsListValues(),
             customRatingPercentages
         );
 
+        uint256 i;
         uint256 totalTopDlpsStakeAmount;
         uint256 totalTopDlpsPerformanceRating;
         uint256 totalTopDlpsRating;
 
-        // Calculate total stake amount for top DLPs
-        for (uint256 i = 0; i < topDlps.length; ) {
-            totalTopDlpsStakeAmount += dlpRoot.dlpEpochStakeAmount(dlpIds[i], epochId);
-            totalTopDlpsPerformanceRating += _epochs[epochId].dlps[dlpIds[i]].performanceRating;
-            totalTopDlpsRating = topDlps[i].rating;
+        // Calculate total amount and ratings for top DLPs
+        for (i = 0; i < topDlpsList.length; ) {
+            totalTopDlpsStakeAmount += dlpRoot.dlpEpochStakeAmount(topDlpsList[i].dlpId, epochId);
+            totalTopDlpsPerformanceRating += _epochs[epochId].dlps[topDlpsList[i].dlpId].performanceRating;
+
+            unchecked {
+                ++i;
+            }
+        }
+
+        uint256 dlpRating;
+        uint256 dlpId;
+        // Calculate total amount and ratings for top DLPs
+        for (i = 0; i < topDlpsList.length; ) {
+            dlpId = topDlpsList[i].dlpId;
+
+            totalTopDlpsRating += calculateDlpRating(
+                dlpId,
+                epochId,
+                totalTopDlpsStakeAmount,
+                totalTopDlpsPerformanceRating,
+                customRatingPercentages
+            );
 
             unchecked {
                 ++i;
@@ -238,19 +255,16 @@ contract DLPRootMetricsImplementation is
 
         IDLPRoot.DlpRewardApy[] memory result = new IDLPRoot.DlpRewardApy[](dlpIds.length);
 
-        for (uint256 i = 0; i < dlpIds.length; ) {
-            uint256 dlpId = dlpIds[i];
+        for (i = 0; i < dlpIds.length; ) {
+            dlpId = dlpIds[i];
 
-            uint256 dlpStakeRating = totalTopDlpsStakeAmount > 0
-                ? (1e18 * dlpRoot.dlpEpochStakeAmount(dlpId, epochId)) / totalTopDlpsStakeAmount
-                : 0;
-            uint256 dlpPerformanceRating = totalTopDlpsPerformanceRating > 0
-                ? (1e18 * _epochs[epochId].dlps[dlpId].performanceRating) / totalTopDlpsPerformanceRating
-                : 0;
-            uint256 dlpRating = customRatingPercentages[uint256(RatingType.Stake)] *
-                dlpStakeRating +
-                (customRatingPercentages[uint256(RatingType.Performance)] * dlpPerformanceRating) /
-                1e20;
+            dlpRating = calculateDlpRating(
+                dlpId,
+                epochId,
+                totalTopDlpsStakeAmount,
+                totalTopDlpsPerformanceRating,
+                customRatingPercentages
+            );
 
             uint256 dlpReward = (dlpRating * dlpRoot.epochRewardAmount()) / totalTopDlpsRating;
             uint256 epy = (dlpRoot.dlps(dlpId).stakersPercentageEpoch * dlpReward) /
@@ -347,9 +361,7 @@ contract DLPRootMetricsImplementation is
     }
 
     function updateDlpRoot(address dlpRootAddress) external override onlyRole(MAINTAINER_ROLE) {
-        _revokeRole(DEFAULT_ADMIN_ROLE, address(dlpRoot));
         dlpRoot = IDLPRoot(dlpRootAddress);
-        _grantRole(DEFAULT_ADMIN_ROLE, dlpRootAddress);
     }
 
     function updateTrustedForwarder(address trustedForwarderAddress) external onlyRole(MAINTAINER_ROLE) {
@@ -424,6 +436,7 @@ contract DLPRootMetricsImplementation is
                     ++i;
                 }
             }
+
             _calculateEpochRewards(epochId, dlpIds);
         }
     }
@@ -431,7 +444,7 @@ contract DLPRootMetricsImplementation is
     function updateRatingPercentages(
         uint256 stakeRatingPercentage,
         uint256 performanceRatingPercentage
-    ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+    ) external override onlyRole(MAINTAINER_ROLE) {
         _updateRatingPercentages(stakeRatingPercentage, performanceRatingPercentage);
     }
 
@@ -464,7 +477,7 @@ contract DLPRootMetricsImplementation is
 
         // Calculate total stake amount for top DLPs
         for (uint256 i = 0; i < topDlps.length; ) {
-            totalTopDlpsRating = topDlps[i].rating;
+            totalTopDlpsRating += topDlps[i].rating;
 
             unchecked {
                 ++i;
@@ -502,5 +515,25 @@ contract DLPRootMetricsImplementation is
         }
 
         dlpRoot.distributeEpochRewards(epochId, epochDlpRewards);
+    }
+
+    function calculateDlpRating(
+        uint256 dlpId,
+        uint256 epochId,
+        uint256 totalDlpsStakeAmount,
+        uint256 totalDlpsPerformanceRating,
+        uint256[] memory customRatingPercentages
+    ) public view returns (uint256) {
+        uint256 dlpStakeRating = totalDlpsStakeAmount > 0
+            ? (1e18 * dlpRoot.dlpEpochStakeAmount(dlpId, epochId)) / totalDlpsStakeAmount
+            : 0;
+        uint256 dlpPerformanceRating = totalDlpsPerformanceRating > 0
+            ? (1e18 * _epochs[epochId].dlps[dlpId].performanceRating) / totalDlpsPerformanceRating
+            : 0;
+        return
+            (customRatingPercentages[uint256(RatingType.Stake)] *
+                dlpStakeRating +
+                customRatingPercentages[uint256(RatingType.Performance)] *
+                dlpPerformanceRating) / 1e20;
     }
 }

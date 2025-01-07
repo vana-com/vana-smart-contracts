@@ -8,8 +8,6 @@ import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "./interfaces/DLPRootStorageV1.sol";
 
-import "hardhat/console.sol";
-
 contract DLPRootImplementation is
     UUPSUpgradeable,
     PausableUpgradeable,
@@ -24,6 +22,7 @@ contract DLPRootImplementation is
 
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
     bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
+    bytes32 public constant DLP_ROOT_METRICS_ROLE = keccak256("DLP_ROOT_METRICS_ROLE");
 
     // Key events for DLP lifecycle and operations
     event DlpRegistered(
@@ -108,11 +107,6 @@ contract DLPRootImplementation is
         }
         _;
     }
-
-    //    modifier onlyRole(bytes32 role) {
-    //        _checkRole(role, msg.sender);
-    //        _;
-    //    }
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() ERC2771ContextUpgradeable(address(0)) {
@@ -582,7 +576,7 @@ contract DLPRootImplementation is
     function distributeEpochRewards(
         uint256 epochId,
         EpochDlpReward[] memory epochDlpRewards
-    ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+    ) external override onlyRole(DLP_ROOT_METRICS_ROLE) {
         Epoch storage epoch = _epochs[epochId];
 
         epoch.isFinalised = true;

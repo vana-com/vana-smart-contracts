@@ -139,6 +139,9 @@ describe("DLPRoot", () => {
     ethers.toUtf8Bytes("MAINTAINER_ROLE"),
   );
   const MANAGER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("MANAGER_ROLE"));
+  const DLP_ROOT_METRICS_ROLE = ethers.keccak256(
+    ethers.toUtf8Bytes("DLP_ROOT_METRICS_ROLE"),
+  );
 
   type DlpInfo = {
     dlpAddress: BaseWallet;
@@ -279,7 +282,7 @@ describe("DLPRoot", () => {
     await metrics.connect(owner).grantRole(MAINTAINER_ROLE, maintainer);
     await metrics.connect(owner).grantRole(MANAGER_ROLE, manager);
 
-    await root.connect(owner).grantRole(DEFAULT_ADMIN_ROLE, metrics);
+    await root.connect(owner).grantRole(DLP_ROOT_METRICS_ROLE, metrics);
 
     dlpInfo = {
       1: {
@@ -476,7 +479,7 @@ describe("DLPRoot", () => {
       (await root.hasRole(MANAGER_ROLE, owner)).should.eq(true);
       (await root.hasRole(MAINTAINER_ROLE, maintainer)).should.eq(true);
       (await root.hasRole(MANAGER_ROLE, manager)).should.eq(true);
-      (await root.hasRole(DEFAULT_ADMIN_ROLE, metrics)).should.eq(true);
+      (await root.hasRole(DLP_ROOT_METRICS_ROLE, metrics)).should.eq(true);
       (await root.eligibleDlpsLimit()).should.eq(eligibleDlpsLimit);
       (await root.epochDlpsLimit()).should.eq(epochDlpsLimit);
       (await root.minDlpRegistrationStake()).should.eq(minDlpRegistrationStake);
