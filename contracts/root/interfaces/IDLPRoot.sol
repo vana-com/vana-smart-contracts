@@ -3,6 +3,8 @@ pragma solidity 0.8.24;
 
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "@openzeppelin/contracts/utils/structs/Checkpoints.sol";
+import {IDLPRootMetrics} from "../../rootMetrics/interfaces/IDLPRootMetrics.sol";
+import {IDLPRootTreasury} from "../../rootTreasury/interfaces/IDLPRootTreasury.sol";
 
 interface IDLPRoot {
     // DLP lifecycle states from registration to deregistration
@@ -33,8 +35,8 @@ interface IDLPRoot {
     }
 
     struct EpochDlp {
-        uint256 rewardAmount; // Rewards allocated to this DLP
-        uint256 stakersPercentage; // % going to stakers vs treasury
+        uint256 rewardAmount; // Rewards allocated to the DLP owner
+        uint256 stakersRewardAmount; //Rewards allocated to the stakers of the DLP
         uint256 totalStakesScore; // Sum of weighted stake scores
         bool rewardClaimed; // True if reward has been claimed
     }
@@ -68,6 +70,9 @@ interface IDLPRoot {
 
     // View functions for contract state and configuration
     function version() external pure returns (uint256);
+    function dlpRootMetrics() external view returns (IDLPRootMetrics);
+    function dlpRootRewardsTreasury() external view returns (IDLPRootTreasury);
+    function dlpRootStakesTreasury() external view returns (IDLPRootTreasury);
     function epochDlpsLimit() external view returns (uint256);
     function eligibleDlpsLimit() external view returns (uint256);
     function epochSize() external view returns (uint256);
@@ -81,7 +86,7 @@ interface IDLPRoot {
     struct EpochInfo {
         uint256 startBlock;
         uint256 endBlock;
-        uint256 reward;
+        uint256 rewardAmount;
         bool isFinalised;
         uint256[] dlpIds;
     }
@@ -128,6 +133,7 @@ interface IDLPRoot {
         uint256 stakersPercentage; // 0 if not top DLP
         uint256 totalStakesScore; // 0 if not top DLP
         bool rewardClaimed;
+        uint256 stakersRewardAmount;
     }
     function dlpEpochs(uint256 dlpId, uint256 epochId) external view returns (DlpEpochInfo memory);
     function stakersListCount() external view returns (uint256);
@@ -154,6 +160,7 @@ interface IDLPRoot {
     }
     function stakes(uint256 stakeId) external view returns (StakeInfo memory);
     function stakeClaimedAmounts(uint256 stakeId, uint256 epochId) external view returns (uint256);
+    function dlpEpochStakeAmount(uint256 dlpId, uint256 epochId) external view returns (uint256);
 
     // Core functionality
     function topDlpIds(uint256 numberOfDlps) external returns (uint256[] memory);
@@ -161,8 +168,8 @@ interface IDLPRoot {
 
     struct DlpRewardApy {
         uint256 dlpId;
-        uint256 APY; //annual percentage yield
-        uint256 EPY; //epoch percentage yield
+        uint256 APY; //annual percentage yield for stakers
+        uint256 EPY; //epoch percentage yield for stakers
     }
 
     function estimatedDlpRewardPercentages(uint256[] memory dlpIds) external view returns (DlpRewardApy[] memory);
@@ -181,7 +188,10 @@ interface IDLPRoot {
     function updateDlpEligibilityThreshold(uint256 newDlpEligibilityThreshold) external;
     function updateDlpSubEligibilityThreshold(uint256 newDlpSubEligibilityThreshold) external;
     function updateStakeWithdrawalDelay(uint256 newStakeWithdrawalDelay) external;
-    function updateRewardClaimDelay(uint256 newSRewardClaimDelay) external;
+    function updateRewardClaimDelay(uint256 newRewardClaimDelay) external;
+    function updateDlpRootMetrics(address newDlpRootMetricsAddress) external;
+    function updateDlpRootRewardsTreasury(address newDlpRootRewardsTreasuryAddress) external;
+    function updateDlpRootStakesTreasury(address newDlpRootStakesTreasuryAddress) external;
 
     struct EpochDlpsTotalStakesScore {
         uint256 epochId;
@@ -194,6 +204,12 @@ interface IDLPRoot {
     // Epoch management
     function createEpochs() external;
     function createEpochsUntilBlockNumber(uint256 blockNumber) external;
+    struct EpochDlpReward {
+        uint256 dlpId;
+        uint256 rewardAmount;
+        uint256 stakersRewardAmount;
+    }
+    function distributeEpochRewards(uint256 epochId, EpochDlpReward[] memory epochDlpRewards) external;
     function overrideEpoch(uint256 epochId, uint256 startBlock, uint256 endBlock, uint256 rewardAmount) external;
 
     struct DlpRegistration {

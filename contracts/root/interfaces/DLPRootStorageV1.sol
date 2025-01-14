@@ -46,4 +46,8 @@ abstract contract DLPRootStorageV1 is IDLPRoot {
     uint256 public override maxDlpStakersPercentage; // Max % of rewards to stakers (in 1e18)
 
     mapping(string dlpName => uint256 dlpId) public override dlpNameToId;
+
+    IDLPRootMetrics public override dlpRootMetrics;
+    IDLPRootTreasury public override dlpRootRewardsTreasury;
+    IDLPRootTreasury public override dlpRootStakesTreasury;
 }
