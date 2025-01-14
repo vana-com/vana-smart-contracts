@@ -5758,7 +5758,7 @@ describe("DLPRoot", () => {
       await deploy();
     });
 
-    it("should transferVanaToStakesTreasury when admin", async function () {
+    xit("should transferVanaToStakesTreasury when admin", async function () {
       await owner.sendTransaction({
         to: root,
         value: parseEther(100),

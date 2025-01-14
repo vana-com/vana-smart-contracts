@@ -113,8 +113,6 @@ contract DLPRootImplementation is
         _disableInitializers();
     }
 
-    receive() external payable {}
-
     struct InitParams {
         address trustedForwarder;
         address payable ownerAddress;
