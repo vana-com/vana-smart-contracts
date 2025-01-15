@@ -4,8 +4,6 @@ import { ethers, upgrades } from "hardhat";
 import { DataRegistryImplementation } from "../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { getCurrentBlockNumber } from "../utils/timeAndBlockManipulation";
-import { parseEther } from "../utils/helpers";
-import { Wallet } from "ethers";
 import { proofs } from "./helpers/dataRegistryHelpers";
 
 chai.use(chaiAsPromised);
@@ -289,7 +287,7 @@ describe("DataRegistry", () => {
         .connect(tee1)
         .addProof(1, proofs[1])
         .should.emit(dataRegistry, "ProofAdded")
-        .withArgs(1, 1);
+        .withArgs(1, 1, proofs[1].data.dlpId, proofs[1].data.score);
 
       const file1Proof1 = await dataRegistry.fileProofs(1, 1);
       file1Proof1.signature.should.eq(proofs[1].signature);
@@ -307,13 +305,13 @@ describe("DataRegistry", () => {
         .connect(tee1)
         .addProof(1, proofs[1])
         .should.emit(dataRegistry, "ProofAdded")
-        .withArgs(1, 1);
+        .withArgs(1, 1, proofs[1].data.dlpId, proofs[1].data.score);
 
       await dataRegistry
         .connect(tee2)
         .addProof(1, proofs[2])
         .should.emit(dataRegistry, "ProofAdded")
-        .withArgs(1, 2);
+        .withArgs(1, 2, proofs[2].data.dlpId, proofs[2].data.score);
 
       const file1Proof1 = await dataRegistry.fileProofs(1, 1);
       file1Proof1.signature.should.eq(proofs[1].signature);
@@ -341,12 +339,12 @@ describe("DataRegistry", () => {
         .connect(tee1)
         .addProof(2, proofs[1])
         .should.emit(dataRegistry, "ProofAdded")
-        .withArgs(2, 1);
+        .withArgs(2, 1, proofs[1].data.dlpId, proofs[1].data.score);
       await dataRegistry
         .connect(tee1)
         .addProof(3, proofs[2])
         .should.emit(dataRegistry, "ProofAdded")
-        .withArgs(3, 1);
+        .withArgs(3, 1, proofs[2].data.dlpId, proofs[2].data.score);
 
       const file1Proof1 = await dataRegistry.fileProofs(1, 1);
       file1Proof1.signature.should.eq("0x");

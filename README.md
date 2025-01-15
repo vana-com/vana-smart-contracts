@@ -1,22 +1,25 @@
 # Data Liquidity Pool (DLP)
 
 ## Table of Contents
-1. [Introduction](#introduction)
-2. [Overview](#overview)
-3. [Installation](#installation)
-4. [Flow](#flow)
-5. [Contracts](#contracts)
-    - [Vana Core Contracts](#vana-core-contracts)
-      - [DataRegistry](#dataregistry)
-      - [TeePool](#teePool)
-      - [DLPRoot](#DLPRoot)
-      - [Deposit](#deposit)
-    - [DLP Template Contracts](#dlp-template-contracts)
-      - [DataLiquidityPool](#dataliquiditypool)
-      - [DAT (Data Access Token)](#dat-data-access-token)
-    - [Utilities Contracts](#utilities-contracts)
-      - [Multisend](#multisend) 
-6. [Audit](#audit)
+1. [Introduction](#1-Introduction)
+2. [Overview](#2-overview)
+3. [Flow](#3-flow)
+4. [Installation](#4-installation)
+5. [Contracts](#5-contracts)
+   - [Vana Core Contracts](#vana-core-contracts)
+      - [DataRegistry](#contracts-data-registry)
+      - [TeePool](#contracts-tee-pool)
+      - [DLPRoot](#contracts-dlp-root)
+      - [DLPRootMetrics](#contracts-dlp-root-metrics)
+      - [DLPRootTreasuries](#contracts-dlp-root-treasuries)
+      - [Deposit](#contracts-deposit)
+   - [DLP Template Contracts](#dlp-template-contracts)
+      - [DataLiquidityPool](#contracts-data-liquidity-pool)
+      - [DAT (Data Access Token)](##contracts-dat)
+   - [Utilities Contracts](#utilities-contracts)
+      - [Multisend](#contracts-multisend)
+      - [Multicall3](#contracts-multicall3)
+6. [Audit](#6-audit)
 
 
 ## 1. Introduction
@@ -26,7 +29,9 @@ Vana turns data into currency to push the frontiers of decentralized AI. It is a
 
 ## 2. Overview
 
-### [Data Registry Contract](https://docs.vana.org/vana/core-concepts/key-elements/smart-contracts#data-registry-contract)
+### Data Registry Contract
+
+The data registry is the main entry point for data in the Vana network.
 
 The data registry contract functions as a central repository for managing all data within the network, functioning as a comprehensive file catalog. It allows users to add new files to the system, with each file receiving a unique identifier for future reference.
 
@@ -34,25 +39,69 @@ The contract manages access control for these files, enabling file owners to gra
 
 Moksha: [0xEA882bb75C54DE9A08bC46b46c396727B4BFe9a5](https://moksha.vanascan.io/address/0xEA882bb75C54DE9A08bC46b46c396727B4BFe9a5)
 
-Satori: [0xEA882bb75C54DE9A08bC46b46c396727B4BFe9a5](https://satori.vanascan.io/address/0xEA882bb75C54DE9A08bC46b46c396727B4BFe9a5)
+Vana mainnet: [0xEA882bb75C54DE9A08bC46b46c396727B4BFe9a5](https://vanascan.io/address/0xEA882bb75C54DE9A08bC46b46c396727B4BFe9a5)
 
-### [TEE Pool Contract](https://docs.vana.org/vana/core-concepts/key-elements/smart-contracts#tee-pool-contract)
+### TEE Pool Contract
 
-The TEE Pool contract manages and coordinates the TEE Validators and serves as an escrow for holding fees associated with validation tasks. Users pay a fee to submit data for validation, and the contract ensures that the validators process the data and provide proof of validation.
+The TEE Pool orchestrates TEEs in the Satya Network.
+
+The Satya Network specializes in the validation of data contributions to DataDAOs, running their Proof of Contribution. These validators operate within a Trusted Execution Environment (TEE), ensuring that data can be validated securely and privately. This allows for privacy-preserving validation, where the data being processed is shielded from both the validator and external parties.
+
+The TEE Pool contract manages and coordinates the TEE Validators and serves as an escrow for holding fees associated with validation tasks. Users pay a fee to submit data for validation, and the contract ensures that the validators process the data and provide proof of validation. The contract also allows the owner to add or remove validators, and it securely holds and disburses the fees related to these validation services.
 
 Moksha: [0xF084Ca24B4E29Aa843898e0B12c465fAFD089965](https://moksha.vanascan.io/address/0xF084Ca24B4E29Aa843898e0B12c465fAFD089965)
 
-Satori: [0xF084Ca24B4E29Aa843898e0B12c465fAFD089965](https://satori.vanascan.io/address/0xF084Ca24B4E29Aa843898e0B12c465fAFD089965)
+Vana mainnet: [0xF084Ca24B4E29Aa843898e0B12c465fAFD089965](https://vanascan.io/address/0xF084Ca24B4E29Aa843898e0B12c465fAFD089965)
 
-### [Root Network Contract](https://docs.vana.org/vana/core-concepts/key-elements/smart-contracts#root-network-contract)
+### Root Network Contract
 
-The DLP Root contract manages the registration and reward distribution for Data Liquidity Pools (DLPs) in the Vana ecosystem. It operates on an epoch-based system, where the top 16 most staked DLPs and their stakers receive rewards at the end of each epoch. The contract allows users to stake VANA tokens as guarantors for DLPs, with rewards distributed based on the staking position at the beginning of each epoch.
+The DLPRoot contract serves as the central hub in the Vana ecosystem, orchestrating a complex system of DataDAO management, staking operations, and reward distribution through its interaction with DLPRootMetrics and specialized treasury contracts. Operating on an epoch-based system, it works in tandem with DLPRootMetrics to identify and reward the most valuable DataDAOs based on both their stake amounts and performance metrics. The contract manages two separate treasury relationships: the DLPRootStakesTreasury for holding staked VANA tokens, and the DLPRootRewardsTreasury for distributing rewards to both DataDAOs and their stakers.
+
+DataDAOs enter the system through a registration process that requires a minimum initial stake, which is held in the DLPRootStakesTreasury. As they accumulate more stake, DataDAOs can progress through three status tiers: Registered, SubEligible, and Eligible, with automatic transitions based on stake thresholds. This tiered system ensures that only DataDAOs with significant skin in the game can compete for top positions and rewards. To maintain flexibility and attract stakers, DataDAO owners can set custom reward percentages within defined bounds, determining how rewards are split between the DataDAO treasury and its stakers.
+
+The epoch mechanism drives the system's dynamics, with each epoch having a fixed duration in blocks. At epoch boundaries, DLPRootMetrics finalizes performance ratings, which combine with stake amounts to determine the epoch's top DataDAOs. The DLPRoot then orchestrates reward distribution through the DLPRootRewardsTreasury, ensuring that both DataDAO treasuries and their stakers receive their designated portions. To prevent exploitation, the system implements stake withdrawal delays and requires manual reward claims, while still allowing users to stake across multiple DataDAOs for portfolio diversification.
+
+Throughout this process, the contract maintains a careful balance of security and flexibility, with role-based access control governing critical functions and automated processes handling routine operations. The integration between DLPRoot, DLPRootMetrics, and the treasury contracts creates a robust ecosystem that incentivizes both long-term commitment through staking and high performance through measurable metrics.
 
 Moksha:  [0xff14346dF2B8Fd0c95BF34f1c92e49417b508AD5](https://moksha.vanascan.io/address/0xff14346dF2B8Fd0c95BF34f1c92e49417b508AD5)
 
-Satori: [0xff14346dF2B8Fd0c95BF34f1c92e49417b508AD5](https://satori.vanascan.io/address/0xff14346dF2B8Fd0c95BF34f1c92e49417b508AD5)
+Vana mainnet: [0xff14346dF2B8Fd0c95BF34f1c92e49417b508AD5](https://vanascan.io/address/0xff14346dF2B8Fd0c95BF34f1c92e49417b508AD5)
 
-### [Data Liquidity Pool & DLPToken](https://docs.vana.org/vana/welcome-to-vana/what-is-data-liquidity-pool)
+### DLPRootMetrics Contract
+
+The DLPRootMetrics contract manages DataDAO performance ratings and DLP reward distributiion.
+
+The DLPRootMetrics contract calculates and tracks performance metrics for DataDAOs in the Vana ecosystem, working alongside the DLP Root contract to determine reward distribution. It uses a dual-rating system that combines stake amounts with performance metrics, where each DataDAO receives a performance rating every epoch based on their activities and contributions.
+
+The contract implements a weighted scoring system where both stake amount and performance metrics influence the final rating, with configurable percentages for each component. This ensures that DataDAOs are incentivized not just to maintain high stake amounts, but also to perform well in their operations. Performance ratings are submitted by Vana Oracle and become final at the end of each epoch, determining the reward distribution among the top DataDAOs.
+
+To promote long-term engagement, the system includes a multiplier mechanism that increases based on staking duration, reaching up to 300% after 64 days of staking. This multiplier affects the stake score component of the rating, while the performance component is determined by the DataDAO's actual operations and effectiveness. The contract allows for dynamic updates to performance ratings within an epoch until finalization, ensuring the system can adapt to changing conditions while maintaining security through role-based access control.
+
+Moksha:  [0xbb532917B6407c060Afd9Cb7d53527eCb91d6662](https://moksha.vanascan.io/address/0xbb532917B6407c060Afd9Cb7d53527eCb91d6662)
+
+Vana mainnet: [0xbb532917B6407c060Afd9Cb7d53527eCb91d6662](https://vanascan.io/address/0xbb532917B6407c060Afd9Cb7d53527eCb91d6662)
+
+### DLPRootTreasuries
+
+The DLPRootTreasury contracts securely manage staked and reward VANA tokens in the DLPRoot
+
+The DLPRootTreasury contracts, consisting of DLPRootStakesTreasury and DLPRootRewardsTreasury, serve as the financial backbone of the DLPRoot system, each managing distinct aspects of VANA token flows. The DLPRootStakesTreasury securely holds all staked VANA tokens, processing deposits from both DataDAO registrations and user staking operations, while implementing strict withdrawal controls to prevent manipulation and ensure system stability.
+
+The DLPRootRewardsTreasury complements this by managing the reward distribution process, holding VANA tokens allocated for epoch rewards and facilitating their distribution to both DataDAO treasuries and stakers. This separation of concerns ensures that staked tokens remain secure and isolated from reward operations, while maintaining efficient reward distribution channels for the ecosystem's incentive mechanisms.
+
+By operating as separate entities but working in concert, these treasury contracts create a robust financial infrastructure that supports the DLPRoot's staking and reward mechanics. The dual-treasury design enables clear tracking of token flows and provides enhanced security through compartmentalization, ensuring that stake-related operations and reward distributions are handled through their respective dedicated pathways.
+
+DlpRootStakesTreasury:  
+Moksha:  [0x52c3260ED5C235fcA43524CF508e29c897318775](https://moksha.vanascan.io/address/0x52c3260ED5C235fcA43524CF508e29c897318775)
+
+Vana mainnet: [0x52c3260ED5C235fcA43524CF508e29c897318775](https://vanascan.io/address/0x52c3260ED5C235fcA43524CF508e29c897318775)
+
+DlpRootRewardsTreasury:  
+Moksha:  [0xDBFb6B8b9E2eCAEbdE64d665cD553dB81e524479](https://moksha.vanascan.io/address/0xDBFb6B8b9E2eCAEbdE64d665cD553dB81e524479)
+
+Vana mainnet: [0xDBFb6B8b9E2eCAEbdE64d665cD553dB81e524479](https://vanascan.io/address/0xDBFb6B8b9E2eCAEbdE64d665cD553dB81e524479)
+
+### Data Liquidity Pool & DLPToken
 
 A Data Liquidity Pool (DLP) is a core component of the Vana ecosystem, designed to transform raw data into a liquid asset. It functions as a smart contract on the Vana blockchain that allows users to monetize, control, and govern their data in a decentralized manner. Each DLP can have its own token, providing contributors with ongoing rewards and governance rights.
 
@@ -60,6 +109,18 @@ A Data Liquidity Pool (DLP) is a core component of the Vana ecosystem, designed 
 
 ### Multisend
 The multisend contract allows users to send multiple transactions in a single call. This is useful for batch operations such as distributing rewards/gas fees to multiple addresses. The contract is designed to optimize gas usage and reduce the number of transactions required for these operations.
+
+Moksha:  [0x8807e8BCDFbaA8c2761760f3FBA37F6f7F2C5b2d](https://moksha.vanascan.io/address/0x8807e8BCDFbaA8c2761760f3FBA37F6f7F2C5b2d)
+
+Vana mainnet: [0x8807e8BCDFbaA8c2761760f3FBA37F6f7F2C5b2d](https://vanascan.io/address/0x8807e8BCDFbaA8c2761760f3FBA37F6f7F2C5b2d)
+
+### Multicall3
+The Multicall3 contract is a direct implementation of the widely-used [mds1's Multicall3 contract](#https://github.com/mds1/multicall), enabling batching of multiple smart contract calls into a single transaction to reduce gas costs and improve efficiency. It provides various aggregation methods with configurable error handling and supports value transfers, making it a powerful tool for complex operations within the Vana ecosystem. The contract includes multiple call aggregation patterns - from simple batching requiring all calls to succeed, to sophisticated methods allowing per-call failure handling and ETH value attachments. This makes it particularly valuable for operations requiring interaction with multiple contracts or performing bulk operations like reward distributions and state updates.
+
+Moksha:  [0xD8d2dFca27E8797fd779F8547166A2d3B29d360E](https://moksha.vanascan.io/address/0xD8d2dFca27E8797fd779F8547166A2d3B29d360E)
+
+Vana mainnet: [0xD8d2dFca27E8797fd779F8547166A2d3B29d360E](https://vanascan.io/address/0xD8d2dFca27E8797fd779F8547166A2d3B29d360E)
+
 
 ## 3. Flow
 
@@ -108,7 +169,7 @@ E.g.  https://moksha.vanascan.io/tx/0x84532d83be589ec1c13d9de04e426dcc7c54652060
 
 #### DLP Selection Process
 
-1. At the beginning of each epoch, the top 16 DLPs are selected based on their total staked amount.
+1. At the end of each epoch, the top 16 DLPs are selected based on their total staked amount.
 2. Only these 16 DLPs participate in that epoch.
 3. Other DLPs can compete for future epochs by accumulating more stakes.
 
@@ -116,8 +177,8 @@ E.g.  https://moksha.vanascan.io/tx/0x84532d83be589ec1c13d9de04e426dcc7c54652060
 
 1. At the end of each epoch, rewards are distributed to the 16 participating DLPs based on their performance during the epoch.
 2. For each DLP:
-    - A portion of the reward goes to the DLP owner.
-    - The rest is reserved for the DLP's stakers (as per the `stakersPercentage`).
+   - A portion of the reward goes to the DLP owner.
+   - The rest is reserved for the DLP's stakers (as per the `stakersPercentage`).
 3. Staker rewards are not distributed automatically; each staker must claim their rewards individually.
 
 #### Data Contributor Rewards
@@ -125,9 +186,9 @@ E.g.  https://moksha.vanascan.io/tx/0x84532d83be589ec1c13d9de04e426dcc7c54652060
 - Each DLP is responsible for rewarding its data contributors.
 - The method and currency for these rewards are at the discretion of each DLP.
 - In the DLP template from this repository:
-    - The DLP uses its own currency for rewards.
-    - Reward amount is proportional to the score of the uploaded file.
-    - More details can be found in the specific DLP documentation.
+   - The DLP uses its own currency for rewards.
+   - Reward amount is proportional to the score of the uploaded file.
+   - More details can be found in the specific DLP documentation.
 
 #### Flexibility in Reward Mechanisms
 
@@ -159,9 +220,8 @@ Before deploying or interacting with the contracts, you need to set up your envi
 `OWNER_ADDRESS`: The Ethereum address that will be set as the owner of the deployed contracts. This address will have special privileges in the contracts.
 
 <a id="env-truested_forwarder_address"></a>
-`TRESTED_FORWARDER_ADDRESS`: The address of the trusted forwarder contract. This contract is used for gasless transactions. (E.g. **0x853407D0C625Ce7E43C0a2596fBc470C3a6f8305**). Read [gelato documentation](https://docs.gelato.network/web3-services/relay/supported-networks#new-deployments-oct-2024) for more details.  
+`TRUSTED_FORWARDER_ADDRESS`: The address of the trusted forwarder contract. This contract is used for gasless transactions. (E.g. **0x853407D0C625Ce7E43C0a2596fBc470C3a6f8305**). Read [gelato documentation](https://docs.gelato.network/web3-services/relay/supported-networks#new-deployments-oct-2024) for more details.  
 The integration with gelato is optional, you can set this parameter to 0x0000000000000000000000000000000000000000 if you don't want to use it.
-
 
 `DLP_NAME`: The name of your Data Liquidity Pool. Choose a descriptive name for your DLP.
 
@@ -198,6 +258,16 @@ npx hardhat deploy --network moksha --tags DLPDeploy
 #### DLPRoot
 ```bash
 npx hardhat deploy --network moksha --tags DLPRootDeploy
+```
+
+#### DLPRootMetrics
+```bash
+npx hardhat deploy --network moksha --tags DLPRootMetricsDeploy
+```
+
+#### DLPRootMetrics
+```bash
+npx hardhat deploy --network moksha --tags DLPRootTreasuryDeploy
 ```
 
 #### DataRegistry
@@ -254,21 +324,23 @@ Upon successful registration:
 
 ### Vana Core Contracts
 
+<a id="contracts-data-registry"></a>
 ### DataRegistry
 
 ```solidity
-function initialize(address ownerAddress) external initializer
+function initialize(address trustedForwarderAddress, address ownerAddress) external initializer
 ```
 
 Initializes the contract.
 
 Parameters:
-- `ownerAddress`: Address of the owner.
+- `trustedForwarderAddress`: Address of the trusted forwarder
+- `ownerAddress`: Address of the owner
 
 Restrictions:
-- Can only be called once due to the `initializer` modifier.
+- Can only be called once due to the `initializer` modifier
 
-Events: None.
+Events: None
 
 ---
 
@@ -278,44 +350,31 @@ function version() external pure returns (uint256)
 
 Returns the version of the contract.
 
-Parameters: None.
+Parameters: None
 
-Return Value:
-- `uint256`: The version number (1 for this implementation).
+Returns:
+- `uint256`: The version number (1 for this implementation)
 
-Restrictions: None.
+Restrictions: None
 
-Events: None.
-
----
-
-```solidity
-function pause() external
-```
-
-Pauses the contract.
-
-Parameters: None.
-
-Restrictions:
-- Can only be called by the contract owner.
-
-Events: None.
+Events: None
 
 ---
 
 ```solidity
-function unpause() external
+function filesCount() external view returns (uint256)
 ```
 
-Unpauses the contract.
+Returns the total number of files in the registry.
 
-Parameters: None.
+Parameters: None
 
-Restrictions:
-- Can only be called by the contract owner.
+Returns:
+- `uint256`: Total number of files
 
-Events: None.
+Restrictions: None
+
+Events: None
 
 ---
 
@@ -326,14 +385,36 @@ function files(uint256 fileId) external view returns (FileResponse memory)
 Returns information about a file.
 
 Parameters:
-- `fileId`: ID of the file.
+- `fileId`: ID of the file
 
-Return Value:
-- `FileResponse`: A struct containing file information (id, url, ownerAddress, addedAtBlock).
+Returns:
+- `FileResponse`: Struct containing:
+   - id: File ID
+   - ownerAddress: Owner's address
+   - url: File URL
+   - addedAtBlock: Block number when file was added
 
-Restrictions: None.
+Restrictions: None
 
-Events: None.
+Events: None
+
+---
+
+```solidity
+function fileIdByUrl(string memory url) external view returns (uint256)
+```
+
+Returns the ID of a file by its URL.
+
+Parameters:
+- `url`: URL of the file
+
+Returns:
+- `uint256`: File ID (0 if not found)
+
+Restrictions: None
+
+Events: None
 
 ---
 
@@ -341,18 +422,18 @@ Events: None.
 function fileProofs(uint256 fileId, uint256 index) external view returns (Proof memory)
 ```
 
-Returns the proof of a file.
+Returns the proof for a file at given index.
 
 Parameters:
-- `fileId`: ID of the file.
-- `index`: Index of the proof.
+- `fileId`: ID of the file
+- `index`: Index of the proof
 
-Return Value:
-- `Proof`: A struct containing proof information.
+Returns:
+- `Proof`: Struct containing proof signature and data
 
-Restrictions: None.
+Restrictions: None
 
-Events: None.
+Events: None
 
 ---
 
@@ -363,15 +444,45 @@ function filePermissions(uint256 fileId, address account) external view returns 
 Returns permissions for a file.
 
 Parameters:
-- `fileId`: ID of the file.
-- `account`: Address of the account.
+- `fileId`: ID of the file
+- `account`: Address of the account
 
-Return Value:
-- `string`: The encryption key for the account.
+Returns:
+- `string`: The encryption key for the account
 
-Restrictions: None.
+Restrictions: None
 
-Events: None.
+Events: None
+
+---
+
+```solidity
+function pause() external
+```
+
+Pauses the contract.
+
+Parameters: None
+
+Restrictions:
+- Can only be called by address with MAINTAINER_ROLE
+
+Events: None
+
+---
+
+```solidity
+function unpause() external
+```
+
+Unpauses the contract.
+
+Parameters: None
+
+Restrictions:
+- Can only be called by address with MAINTAINER_ROLE
+
+Events: None
 
 ---
 
@@ -382,13 +493,14 @@ function addFile(string memory url) external returns (uint256)
 Adds a file to the registry.
 
 Parameters:
-- `url`: URL of the file.
+- `url`: URL of the file
 
-Return Value:
-- `uint256`: ID of the newly added file.
+Returns:
+- `uint256`: ID of the newly added file
 
 Restrictions:
-- Contract must not be paused.
+- Contract must not be paused
+- URL must not already be used
 
 Events:
 - `FileAdded(uint256 indexed fileId, address indexed ownerAddress, string url)`
@@ -396,24 +508,30 @@ Events:
 ---
 
 ```solidity
-function addFileWithPermissions(string memory url, address ownerAddress, Permission[] memory permissions) external returns (uint256)
+function addFileWithPermissions(
+    string memory url,
+    address ownerAddress,
+    Permission[] memory permissions
+) external returns (uint256)
 ```
 
 Adds a file to the registry with permissions.
 
 Parameters:
-- `url`: URL of the file.
-- `ownerAddress`: Address of the owner.
-- `permissions`: Array of Permission structs containing account addresses and encryption keys.
+- `url`: URL of the file
+- `ownerAddress`: Address of the owner
+- `permissions`: Array of Permission structs containing account addresses and encryption keys
 
-Return Value:
-- `uint256`: ID of the newly added file.
+Returns:
+- `uint256`: ID of the newly added file
 
-Restrictions: None.
+Restrictions:
+- Contract must not be paused
+- URL must not already be used
 
 Events:
 - `FileAdded(uint256 indexed fileId, address indexed ownerAddress, string url)`
-- `PermissionGranted(uint256 indexed fileId, address indexed account)` (for each permission)
+- `PermissionGranted(uint256 indexed fileId, address indexed account)` for each permission
 
 ---
 
@@ -424,14 +542,16 @@ function addProof(uint256 fileId, Proof memory proof) external
 Adds a proof to a file.
 
 Parameters:
-- `fileId`: ID of the file.
-- `proof`: Proof struct containing signature and proof data.
+- `fileId`: ID of the file
+- `proof`: Proof struct containing:
+   - signature: Proof signature
+   - data: ProofData struct with score, dlpId, metadata, proofUrl, and instruction
 
 Restrictions:
-- Contract must not be paused.
+- Contract must not be paused
 
 Events:
-- `ProofAdded(uint256 indexed fileId, uint256 indexed proofIndex)`
+- `ProofAdded(uint256 indexed fileId, uint256 indexed proofIndex, uint256 indexed dlpId, uint256 score)`
 
 ---
 
@@ -442,21 +562,41 @@ function addFilePermission(uint256 fileId, address account, string memory key) e
 Adds permissions for an account to access a file.
 
 Parameters:
-- `fileId`: ID of the file.
-- `account`: Address of the account to grant permission.
-- `key`: Encryption key for the account.
+- `fileId`: ID of the file
+- `account`: Address of the account to grant permission
+- `key`: Encryption key for the account
 
 Restrictions:
-- Contract must not be paused.
-- Can only be called by the file owner.
+- Contract must not be paused
+- Can only be called by the file owner
 
 Events:
 - `PermissionGranted(uint256 indexed fileId, address indexed account)`
 
+---
+
+```solidity
+function updateTrustedForwarder(address trustedForwarderAddress) external
+```
+
+Updates the trusted forwarder address.
+
+Parameters:
+- `trustedForwarderAddress`: New trusted forwarder address
+
+Restrictions:
+- Can only be called by address with MAINTAINER_ROLE
+
+Events: None
+
+---
+
+<a id="contracts-tee-pool"></a>
 ### TeePool
 
 ```solidity
 function initialize(
+    address trustedForwarderAddress,
     address ownerAddress,
     address dataRegistryAddress,
     uint256 initialCancelDelay
@@ -466,9 +606,10 @@ function initialize(
 Initializes the contract.
 
 Parameters:
-- `ownerAddress`: Address of the owner
+- `trustedForwarderAddress`: Address of trusted forwarder for meta-transactions
+- `ownerAddress`: Address of the contract owner
 - `dataRegistryAddress`: Address of the data registry contract
-- `initialCancelDelay`: Initial cancel delay
+- `initialCancelDelay`: Initial cancel delay period
 
 Restrictions:
 - Can only be called once due to the `initializer` modifier
@@ -487,50 +628,76 @@ Returns:
 ---
 
 ```solidity
+function dataRegistry() external view returns (IDataRegistry)
+```
+
+Returns the address of the data registry contract.
+
+Returns:
+- `IDataRegistry`: The data registry contract interface
+
+---
+
+```solidity
+function cancelDelay() external view returns (uint256)
+```
+
+Returns the delay period required before canceling a job.
+
+Returns:
+- `uint256`: The cancel delay period in seconds
+
+---
+
+```solidity
+function jobsCount() external view returns (uint256)
+```
+
+Returns the total number of jobs created.
+
+Returns:
+- `uint256`: Total number of jobs
+
+---
+
+```solidity
 function jobs(uint256 jobId) external view returns (Job memory)
 ```
 
-Returns the details of the job.
+Returns the details of a specific job.
 
 Parameters:
 - `jobId`: ID of the job
 
 Returns:
-- `Job`: Details of the job (struct containing jobId, fileId, bidAmount, status, addedTimestamp, ownerAddress, teeAddress)
+- Job struct containing:
+   - `fileId`: ID of the file to validate
+   - `bidAmount`: Amount paid for validation
+   - `status`: Current job status
+   - `addedTimestamp`: When job was created
+   - `ownerAddress`: Job creator address
+   - `teeAddress`: Assigned TEE address
 
 ---
 
 ```solidity
-function tees(address teeAddress) public view returns (TeeInfo memory)
+function tees(address teeAddress) external view returns (TeeInfo memory)
 ```
 
-Returns the details of the TEE.
+Returns information about a TEE validator.
 
 Parameters:
 - `teeAddress`: Address of the TEE
 
 Returns:
-- `TeeInfo`: Details of the TEE (struct containing teeAddress, url, status, amount, withdrawnAmount, jobsCount, publicKey)
-
----
-
-```solidity
-function teeJobIdsPaginated(
-    address teeAddress,
-    uint256 start,
-    uint256 limit
-) external view returns (uint256[] memory)
-```
-
-Returns a paginated list of jobs for the given TEE.
-
-Parameters:
-- `teeAddress`: Address of the TEE
-- `start`: Start index
-- `limit`: Limit of jobs to return
-
-Returns:
-- `uint256[]`: List of job IDs
+- TeeInfo struct containing:
+   - `teeAddress`: TEE's address
+   - `url`: TEE's endpoint URL
+   - `status`: Current TEE status
+   - `amount`: Total earnings
+   - `withdrawnAmount`: Withdrawn earnings
+   - `jobsCount`: Number of jobs processed
+   - `publicKey`: TEE's public key
 
 ---
 
@@ -538,10 +705,10 @@ Returns:
 function teesCount() external view returns (uint256)
 ```
 
-Returns the number of TEEs.
+Returns the total number of TEEs (both active and removed).
 
 Returns:
-- `uint256`: Number of TEEs
+- `uint256`: Total number of TEEs
 
 ---
 
@@ -549,10 +716,10 @@ Returns:
 function teeList() external view returns (address[] memory)
 ```
 
-Returns the list of TEEs.
+Returns the list of all TEE addresses.
 
 Returns:
-- `address[]`: List of TEE addresses
+- `address[]`: Array of all TEE addresses
 
 ---
 
@@ -560,13 +727,13 @@ Returns:
 function teeListAt(uint256 index) external view returns (TeeInfo memory)
 ```
 
-Returns the details of the TEE at the given index.
+Returns information about the TEE at a specific index.
 
 Parameters:
-- `index`: Index of the TEE
+- `index`: Index in the TEE list
 
 Returns:
-- `TeeInfo`: Details of the TEE
+- `TeeInfo`: Information about the TEE at that index
 
 ---
 
@@ -585,10 +752,10 @@ Returns:
 function activeTeeList() external view returns (address[] memory)
 ```
 
-Returns the list of active TEEs.
+Returns the list of active TEE addresses.
 
 Returns:
-- `address[]`: List of active TEE addresses
+- `address[]`: Array of active TEE addresses
 
 ---
 
@@ -596,13 +763,13 @@ Returns:
 function activeTeeListAt(uint256 index) external view returns (TeeInfo memory)
 ```
 
-Returns the details of the active TEE at the given index.
+Returns information about the active TEE at a specific index.
 
 Parameters:
-- `index`: Index of the active TEE
+- `index`: Index in the active TEE list
 
 Returns:
-- `TeeInfo`: Details of the active TEE
+- `TeeInfo`: Information about the active TEE at that index
 
 ---
 
@@ -610,13 +777,44 @@ Returns:
 function isTee(address teeAddress) external view returns (bool)
 ```
 
-Checks if the given address is an active TEE.
+Checks if an address is an active TEE.
 
 Parameters:
 - `teeAddress`: Address to check
 
 Returns:
-- `bool`: True if the address is an active TEE, false otherwise
+- `bool`: True if address is an active TEE, false otherwise
+
+---
+
+```solidity
+function teeFee() external view returns (uint256)
+```
+
+Returns the current fee required for validation requests.
+
+Returns:
+- `uint256`: Current TEE fee amount
+
+---
+
+```solidity
+function teeJobIdsPaginated(
+    address teeAddress,
+    uint256 start,
+    uint256 limit
+) external view returns (uint256[] memory)
+```
+
+Returns a paginated list of jobs for a specific TEE.
+
+Parameters:
+- `teeAddress`: Address of the TEE
+- `start`: Starting index
+- `limit`: Maximum number of jobs to return
+
+Returns:
+- `uint256[]`: Array of job IDs
 
 ---
 
@@ -624,13 +822,13 @@ Returns:
 function fileJobIds(uint256 fileId) external view returns (uint256[] memory)
 ```
 
-Returns a list of job IDs for the given file.
+Returns all jobs associated with a file.
 
 Parameters:
 - `fileId`: ID of the file
 
 Returns:
-- `uint256[]`: List of job IDs
+- `uint256[]`: Array of job IDs for the file
 
 ---
 
@@ -641,7 +839,7 @@ function pause() external
 Pauses the contract.
 
 Restrictions:
-- Can only be called by the owner
+- Can only be called by MAINTAINER_ROLE
 
 ---
 
@@ -652,21 +850,21 @@ function unpause() external
 Unpauses the contract.
 
 Restrictions:
-- Can only be called by the owner
+- Can only be called by MAINTAINER_ROLE
 
 ---
 
 ```solidity
-function updateDataRegistry(IDataRegistry newDataRegistry) external
+function updateDataRegistry(IDataRegistry dataRegistry) external
 ```
 
-Updates the data registry.
+Updates the data registry contract address.
 
 Parameters:
-- `newDataRegistry`: New data registry address
+- `dataRegistry`: New data registry contract address
 
 Restrictions:
-- Can only be called by the owner
+- Can only be called by MAINTAINER_ROLE
 
 ---
 
@@ -674,13 +872,13 @@ Restrictions:
 function updateTeeFee(uint256 newTeeFee) external
 ```
 
-Updates the TEE fee.
+Updates the validation fee amount.
 
 Parameters:
 - `newTeeFee`: New fee amount
 
 Restrictions:
-- Can only be called by the owner
+- Can only be called by MAINTAINER_ROLE
 
 ---
 
@@ -688,13 +886,13 @@ Restrictions:
 function updateCancelDelay(uint256 newCancelDelay) external
 ```
 
-Updates the cancel delay.
+Updates the job cancellation delay period.
 
 Parameters:
-- `newCancelDelay`: New cancel delay duration
+- `newCancelDelay`: New delay period in seconds
 
 Restrictions:
-- Can only be called by the owner
+- Can only be called by MAINTAINER_ROLE
 
 ---
 
@@ -706,17 +904,18 @@ function addTee(
 ) external
 ```
 
-Adds a TEE to the pool.
+Registers a new TEE validator.
 
 Parameters:
-- `teeAddress`: Address of the TEE
-- `url`: URL of the TEE
-- `publicKey`: Public key of the TEE
+- `teeAddress`: TEE's address
+- `url`: TEE's endpoint URL
+- `publicKey`: TEE's public key
 
 Restrictions:
-- Can only be called by the owner
+- Can only be called by MAINTAINER_ROLE
+- TEE must not already be active
 
-Events emitted:
+Events:
 - `TeeAdded(address indexed teeAddress)`
 
 ---
@@ -725,33 +924,35 @@ Events emitted:
 function removeTee(address teeAddress) external
 ```
 
-Removes a TEE from the pool.
+Removes a TEE validator.
 
 Parameters:
-- `teeAddress`: Address of the TEE to remove
+- `teeAddress`: Address of TEE to remove
 
 Restrictions:
-- Can only be called by the owner
+- Can only be called by MAINTAINER_ROLE
+- TEE must be active
 
-Events emitted:
+Events:
 - `TeeRemoved(address indexed teeAddress)`
 
 ---
 
 ```solidity
-function requestContributionProof(uint256 fileId) public payable
+function requestContributionProof(uint256 fileId) external payable
 ```
 
-Adds a contribution proof request.
+Submits a new validation job request.
 
 Parameters:
-- `fileId`: ID of the file
+- `fileId`: ID of file needing validation
 
 Restrictions:
-- Requires payment of at least the TEE fee
+- Contract must not be paused
+- Payment must meet minimum fee
 - At least one active TEE must exist
 
-Events emitted:
+Events:
 - `JobSubmitted(uint256 indexed jobId, uint256 indexed fileId, address teeAddress, uint256 bidAmount)`
 
 ---
@@ -760,10 +961,10 @@ Events emitted:
 function submitJob(uint256 fileId) external payable
 ```
 
-Submits a contribution proof request (alias for `requestContributionProof`).
+Alias for requestContributionProof.
 
 Parameters:
-- `fileId`: ID of the file
+- `fileId`: ID of file needing validation
 
 ---
 
@@ -771,63 +972,81 @@ Parameters:
 function cancelJob(uint256 jobId) external
 ```
 
-Cancels a contribution proof request.
+Cancels a validation job request.
 
 Parameters:
-- `jobId`: ID of the job to cancel
+- `jobId`: ID of job to cancel
 
 Restrictions:
-- Can only be called by the job owner
+- Only callable by job owner
 - Job must be in Submitted status
-- Cancel delay must have passed
+- Cancel delay period must have passed
 
-Events emitted:
+Events:
 - `JobCanceled(uint256 indexed jobId)`
 
 ---
 
 ```solidity
-function addProof(uint256 jobId, IDataRegistry.Proof memory proof) external payable
+function addProof(uint256 jobId, IDataRegistry.Proof memory proof) external
 ```
 
-Adds a proof to the file.
+Submits validation proof for a job.
 
 Parameters:
 - `jobId`: ID of the job
-- `proof`: Proof for the file
+- `proof`: Validation proof data
 
 Restrictions:
-- Can only be called by an active TEE
+- Only callable by assigned active TEE
 - Job must be in Submitted status
-- Caller must be the assigned TEE for the job
+- Caller must be the assigned TEE
 
-Events emitted:
+Events:
 - `ProofAdded(address indexed attestator, uint256 indexed jobId, uint256 indexed fileId)`
 
 ---
 
-```solidity
-function claim() external
-```
-
-Method used by TEEs for claiming their rewards.
-
-Restrictions:
-- Can only be called by a TEE with unclaimed rewards
-
-Events emitted:
-- `Claimed(address indexed teeAddress, uint256 amount)`
-
+<a id="contracts-dlp-root"></a>
 ### DLPRoot
 
+The DLPRoot contract serves as the central hub in the Vana ecosystem, orchestrating a complex system of DataDAO management, staking operations, and reward distribution through its interaction with DLPRootMetrics and specialized treasury contracts. Operating on an epoch-based system, it works in tandem with DLPRootMetrics to identify and reward the most valuable DataDAOs based on both their stake amounts and performance metrics. The contract manages two separate treasury relationships: the DLPRootStakesTreasury for holding staked VANA tokens, and the DLPRootRewardsTreasury for distributing rewards to both DataDAOs and their stakers.
+
+DataDAOs enter the system through a registration process that requires a minimum initial stake, which is held in the DLPRootStakesTreasury. As they accumulate more stake, DataDAOs can progress through three status tiers: Registered, SubEligible, and Eligible, with automatic transitions based on stake thresholds. This tiered system ensures that only DataDAOs with significant skin in the game can compete for top positions and rewards. To maintain flexibility and attract stakers, DataDAO owners can set custom reward percentages within defined bounds, determining how rewards are split between the DataDAO treasury and its stakers.
+
+The epoch mechanism drives the system's dynamics, with each epoch having a fixed duration in blocks. At epoch boundaries, DLPRootMetrics finalizes performance ratings, which combine with stake amounts to determine the epoch's top DataDAOs. The DLPRoot then orchestrates reward distribution through the DLPRootRewardsTreasury, ensuring that both DataDAO treasuries and their stakers receive their designated portions. To prevent exploitation, the system implements stake withdrawal delays and requires manual reward claims, while still allowing users to stake across multiple DataDAOs for portfolio diversification.
+
 ```solidity
-function version() external pure returns (uint256)
+struct InitParams {
+    address trustedForwarder;
+    address payable ownerAddress;
+    uint256 eligibleDlpsLimit;
+    uint256 epochDlpsLimit;
+    uint256 minStakeAmount;
+    uint256 minDlpStakersPercentage;
+    uint256 maxDlpStakersPercentage;
+    uint256 minDlpRegistrationStake;
+    uint256 dlpEligibilityThreshold;
+    uint256 dlpSubEligibilityThreshold;
+    uint256 stakeWithdrawalDelay;
+    uint256 rewardClaimDelay;
+    uint256 startBlock;
+    uint256 epochSize;
+    uint256 daySize;
+    uint256 epochRewardAmount;
+}
+
+function initialize(InitParams memory params) external initializer
 ```
 
-Returns the version of the contract.
+Initializes the contract with configuration parameters.
 
-**Returns:**
-- `uint256`: The version number of the contract.
+Parameters:
+- `params`: Struct containing initialization parameters including owner address, limits, thresholds and delays
+
+Restrictions:
+- Can only be called once due to initializer modifier
+- Parameter values must meet specific validation rules
 
 ---
 
@@ -837,8 +1056,8 @@ function numberOfTopDlps() external view returns (uint256)
 
 Returns the number of top DLPs.
 
-**Returns:**
-- `uint256`: The number of top DLPs.
+Returns:
+- `uint256`: The number of top DLPs
 
 ---
 
@@ -848,8 +1067,8 @@ function maxNumberOfRegisteredDlps() external view returns (uint256)
 
 Returns the maximum number of registered DLPs.
 
-**Returns:**
-- `uint256`: The maximum number of registered DLPs.
+Returns:
+- `uint256`: The maximum number of registered DLPs
 
 ---
 
@@ -859,8 +1078,8 @@ function epochSize() external view returns (uint256)
 
 Returns the size of each epoch in blocks.
 
-**Returns:**
-- `uint256`: The size of each epoch in blocks.
+Returns:
+- `uint256`: The size of each epoch in blocks
 
 ---
 
@@ -870,110 +1089,8 @@ function registeredDlps() external view returns (uint256[] memory)
 
 Returns an array of registered DLP IDs.
 
-**Returns:**
-- `uint256[] memory`: An array containing the IDs of registered DLPs.
-
----
-
-```solidity
-function epochsCount() external view returns (uint256)
-```
-
-Returns the total number of epochs.
-
-**Returns:**
-- `uint256`: The total number of epochs.
-
----
-
-```solidity
-function epochs(uint256 epochId) external view returns (EpochInfo memory)
-```
-
-Returns information about a specific epoch.
-
-**Parameters:**
-- `epochId`: The ID of the epoch to query.
-
-**Returns:**
-- `EpochInfo memory`: A struct containing epoch information (startBlock, endBlock, reward, isFinalised, dlpIds).
-
----
-
-```solidity
-function minDlpStakeAmount() external view returns (uint256)
-```
-
-Returns the minimum stake amount required for a DLP.
-
-**Returns:**
-- `uint256`: The minimum stake amount for a DLP.
-
----
-
-```solidity
-function totalDlpsRewardAmount() external view returns (uint256)
-```
-
-Returns the total reward amount for all DLPs.
-
-**Returns:**
-- `uint256`: The total reward amount for all DLPs.
-
----
-
-```solidity
-function epochRewardAmount() external view returns (uint256)
-```
-
-Returns the reward amount for each epoch.
-
-**Returns:**
-- `uint256`: The reward amount for each epoch.
-
----
-
-```solidity
-function ttfPercentage() external view returns (uint256)
-```
-
-Returns the percentage for Total Transactions Facilitated (TTF) in performance calculation.
-
-**Returns:**
-- `uint256`: The TTF percentage.
-
----
-
-```solidity
-function tfcPercentage() external view returns (uint256)
-```
-
-Returns the percentage for Total Transaction Fees Created (TFC) in performance calculation.
-
-**Returns:**
-- `uint256`: The TFC percentage.
-
----
-
-```solidity
-function vduPercentage() external view returns (uint256)
-```
-
-Returns the percentage for Verified Data Uploads (VDU) in performance calculation.
-
-**Returns:**
-- `uint256`: The VDU percentage.
-
----
-
-```solidity
-function uwPercentage() external view returns (uint256)
-```
-
-Returns the percentage for Unique Wallets (UW) in performance calculation.
-
-**Returns:**
-- `uint256`: The UW percentage.
+Returns:
+- `uint256[] memory`: Array of registered DLP IDs
 
 ---
 
@@ -983,8 +1100,8 @@ function dlpsCount() external view returns (uint256)
 
 Returns the total number of DLPs.
 
-**Returns:**
-- `uint256`: The total number of DLPs.
+Returns:
+- `uint256`: Total number of DLPs
 
 ---
 
@@ -994,11 +1111,11 @@ function dlps(uint256 index) external view returns (DlpResponse memory)
 
 Returns information about a DLP by its index.
 
-**Parameters:**
-- `index`: The index of the DLP.
+Parameters:
+- `index`: Index of the DLP
 
-**Returns:**
-- `DlpResponse memory`: A struct containing DLP information.
+Returns:
+- `DlpResponse`: Struct containing DLP information
 
 ---
 
@@ -1008,11 +1125,25 @@ function dlpsByAddress(address dlpAddress) external view returns (DlpResponse me
 
 Returns information about a DLP by its address.
 
-**Parameters:**
-- `dlpAddress`: The address of the DLP.
+Parameters:
+- `dlpAddress`: Address of the DLP
 
-**Returns:**
-- `DlpResponse memory`: A struct containing DLP information.
+Returns:
+- `DlpResponse`: Struct containing DLP information
+
+---
+
+```solidity
+function dlpsByName(string calldata dlpName) external view returns (DlpInfo memory)
+```
+
+Returns information about a DLP by its name.
+
+Parameters:
+- `dlpName`: Name of the DLP
+
+Returns:
+- `DlpInfo`: Struct containing DLP information
 
 ---
 
@@ -1022,11 +1153,11 @@ function dlpIds(address dlpAddress) external view returns (uint256)
 
 Returns the ID of a DLP given its address.
 
-**Parameters:**
-- `dlpAddress`: The address of the DLP.
+Parameters:
+- `dlpAddress`: Address of the DLP
 
-**Returns:**
-- `uint256`: The ID of the DLP.
+Returns:
+- `uint256`: ID of the DLP
 
 ---
 
@@ -1036,12 +1167,12 @@ function dlpEpochs(uint256 dlpId, uint256 epochId) external view returns (DlpEpo
 
 Returns information about a DLP's performance in a specific epoch.
 
-**Parameters:**
-- `dlpId`: The ID of the DLP.
-- `epochId`: The ID of the epoch.
+Parameters:
+- `dlpId`: ID of the DLP
+- `epochId`: ID of the epoch
 
-**Returns:**
-- `DlpEpochInfo memory`: A struct containing DLP epoch information.
+Returns:
+- `DlpEpochInfo`: Struct containing DLP epoch information
 
 ---
 
@@ -1051,285 +1182,99 @@ function stakerDlpsListCount(address stakerAddress) external view returns (uint2
 
 Returns the number of DLPs a staker has staked in.
 
-**Parameters:**
-- `stakerAddress`: The address of the staker.
+Parameters:
+- `stakerAddress`: Address of the staker
 
-**Returns:**
-- `uint256`: The number of DLPs the staker has staked in.
-
----
-
-```solidity
-function stakerDlpsList(address stakerAddress) external view returns (StakerDlpInfo[] memory)
-```
-
-Returns information about all DLPs a staker has staked in.
-
-**Parameters:**
-- `stakerAddress`: The address of the staker.
-
-**Returns:**
-- `StakerDlpInfo[] memory`: An array of structs containing staker DLP information.
+Returns:
+- `uint256`: Number of DLPs staked in
 
 ---
 
 ```solidity
-function stakerDlps(address stakerAddress, uint256 dlpId) external view returns (StakerDlpInfo memory)
+struct DlpRegistration {
+    address dlpAddress;
+    address ownerAddress;
+    address payable treasuryAddress;
+    uint256 stakersPercentage;
+    string name;
+    string iconUrl;
+    string website;
+    string metadata;
+}
+
+function registerDlp(DlpRegistration calldata registrationInfo) external payable
 ```
 
-Returns information about a specific DLP a staker has staked in.
+Registers a new DLP with metadata and initial stake.
 
-**Parameters:**
-- `stakerAddress`: The address of the staker.
-- `dlpId`: The ID of the DLP.
+Parameters:
+- `registrationInfo`: DLP configuration including addresses, stake split and metadata
 
-**Returns:**
-- `StakerDlpInfo memory`: A struct containing staker DLP information.
+Restrictions:
+- Contract must not be paused
+- Initial stake must be >= minDlpRegistrationStake
+- Name must be unique and non-empty
+- Stakers percentage must be between min and max allowed values
+
+Events:
+- `DlpRegistered`
+- `StakeCreated`
 
 ---
 
 ```solidity
-function stakerDlpEpochs(address stakerAddress, uint256 dlpId, uint256 epochId) external view returns (StakerDlpEpochInfo memory)
+function updateDlp(uint256 dlpId, DlpRegistration calldata dlpUpdateInfo) external
 ```
 
-Returns information about a staker's performance in a specific DLP and epoch.
+Updates an existing DLP's information.
 
-**Parameters:**
-- `stakerAddress`: The address of the staker.
-- `dlpId`: The ID of the DLP.
-- `epochId`: The ID of the epoch.
+Parameters:
+- `dlpId`: ID of the DLP to update
+- `dlpUpdateInfo`: New DLP configuration
 
-**Returns:**
-- `StakerDlpEpochInfo memory`: A struct containing staker DLP epoch information.
+Restrictions:
+- Can only be called by DLP owner
+- Cannot change DLP address
+- Stakers percentage must be within allowed range
+
+Events:
+- `DlpUpdated`
 
 ---
 
 ```solidity
-function topDlpIds(uint256 numberOfDlps) external returns (uint256[] memory)
+function closeStakes(uint256[] memory stakeIds) external
 ```
 
-Returns the IDs of the top performing DLPs.
+Closes multiple stakes in one transaction.
 
-**Parameters:**
-- `numberOfDlps`: The number of top DLPs to return.
+Parameters:
+- `stakeIds`: Array of stake IDs to close
 
-**Returns:**
-- `uint256[] memory`: An array of top DLP IDs.
+Restrictions:
+- Must be stake owner
+- Stakes must not be already closed
+
+Events:
+- `StakeClosed` for each stake
 
 ---
 
 ```solidity
-function unstakebleAmount(address stakerAddress, uint256 dlpId) external returns (uint256)
+function withdrawStakes(uint256[] memory stakeIds) external
 ```
 
-Returns the amount a staker can unstake from a specific DLP.
+Withdraws multiple closed stakes.
 
-**Parameters:**
-- `stakerAddress`: The address of the staker.
-- `dlpId`: The ID of the DLP.
+Parameters:
+- `stakeIds`: Array of stake IDs to withdraw
 
-**Returns:**
-- `uint256`: The amount that can be unstaked.
+Restrictions:
+- Stakes must be closed
+- Withdrawal delay period must have passed
 
----
-
-```solidity
-function claimableAmount(address stakerAddress, uint256 dlpId) external returns (uint256)
-```
-
-Returns the amount of rewards a staker can claim from a specific DLP.
-
-**Parameters:**
-- `stakerAddress`: The address of the staker.
-- `dlpId`: The ID of the DLP.
-
-**Returns:**
-- `uint256`: The amount of rewards that can be claimed.
-
----
-
-```solidity
-function pause() external
-```
-
-Pauses the contract. Can only be called by the owner.
-
-**Emits:** `Paused` event
-
----
-
-```solidity
-function unpause() external
-```
-
-Unpauses the contract. Can only be called by the owner.
-
-**Emits:** `Unpaused` event
-
----
-
-```solidity
-function updateNumberOfTopDlps(uint256 newNumberOfTopDlps) external
-```
-
-Updates the number of top DLPs. Can only be called by the owner.
-
-**Parameters:**
-- `newNumberOfTopDlps`: The new number of top DLPs.
-
-**Emits:** `NumberOfTopDlpsUpdated` event
-
----
-
-```solidity
-function updateMaxNumberOfRegisteredDlps(uint256 newMaxNumberOfRegisteredDlps) external
-```
-
-Updates the maximum number of registered DLPs. Can only be called by the owner.
-
-**Parameters:**
-- `newMaxNumberOfRegisteredDlps`: The new maximum number of registered DLPs.
-
-**Emits:** `MaxNumberOfRegisteredDlpsUpdated` event
-
----
-
-```solidity
-function updateEpochSize(uint256 newEpochSize) external
-```
-
-Updates the epoch size. Can only be called by the owner.
-
-**Parameters:**
-- `newEpochSize`: The new epoch size in blocks.
-
-**Emits:** `EpochSizeUpdated` event
-
----
-
-```solidity
-function updateEpochRewardAmount(uint256 newEpochRewardAmount) external
-```
-
-Updates the epoch reward amount. Can only be called by the owner.
-
-**Parameters:**
-- `newEpochRewardAmount`: The new epoch reward amount.
-
-**Emits:** `EpochRewardAmountUpdated` event
-
----
-
-```solidity
-function updateMinDlpStakeAmount(uint256 newMinStakeAmount) external
-```
-
-Updates the minimum DLP stake amount. Can only be called by the owner.
-
-**Parameters:**
-- `newMinStakeAmount`: The new minimum stake amount for DLPs.
-
-**Emits:** `MinDlpStakeAmountUpdated` event
-
----
-
-```solidity
-function updatePerformancePercentages(uint256 newTtfPercentage, uint256 newTfcPercentage, uint256 newVduPercentage, uint256 newUwPercentage) external
-```
-
-Updates the performance percentages. Can only be called by the owner.
-
-**Parameters:**
-- `newTtfPercentage`: The new TTF percentage.
-- `newTfcPercentage`: The new TFC percentage.
-- `newVduPercentage`: The new VDU percentage.
-- `newUwPercentage`: The new UW percentage.
-
-**Restrictions:**
-- The sum of all percentages must equal 100e18.
-
-**Emits:** `PerformancePercentagesUpdated` event
-
----
-
-```solidity
-function createEpochs() external
-```
-
-Creates epochs until the current block number.
-
-**Emits:** `EpochCreated` event for each new epoch
-
----
-
-```solidity
-function createEpochsUntilBlockNumber(uint256 blockNumber) external
-```
-
-Creates epochs until a specific block number.
-
-**Parameters:**
-- `blockNumber`: The block number to create epochs until.
-
-**Emits:** `EpochCreated` event for each new epoch
-
----
-
-```solidity
-function registerDlp(address dlpAddress, address payable ownerAddress, uint256 stakersPercentage) external payable
-```
-
-Registers a new DLP.
-
-**Parameters:**
-- `dlpAddress`: The address of the DLP.
-- `ownerAddress`: The address of the DLP owner.
-- `stakersPercentage`: The percentage of rewards to be distributed to stakers.
-
-**Restrictions:**
-- The contract must not be paused.
-- The number of registered DLPs must be less than the maximum allowed.
-- The stake amount must be greater than or equal to the minimum required.
-
-**Emits:** `DlpRegistered` event
-
----
-
-```solidity
-function registerDlpWithGrant(address dlpAddress, address payable ownerAddress, uint256 stakersPercentage) external payable
-```
-
-Registers a new DLP with a grant.
-
-**Parameters:**
-- `dlpAddress`: The address of the DLP.
-- `ownerAddress`: The address of the DLP owner.
-- `stakersPercentage`: The percentage of rewards to be distributed to stakers.
-
-**Restrictions:**
-- The contract must not be paused.
-- The number of registered DLPs must be less than the maximum allowed.
-- The stake amount must be greater than or equal to the minimum required.
-
-**Emits:** `DlpRegistered` event
-
----
-
-```solidity
-function updateDlpStakersPercentage(uint256 dlpId, uint256 stakersPercentage) external
-```
-
-Updates the stakers percentage for a DLP. Can only be called by the DLP owner.
-
-**Parameters:**
-- `dlpId`: The ID of the DLP.
-- `stakersPercentage`: The new percentage of rewards to be distributed to stakers.
-
-**Restrictions:**
-- Can only be called by the DLP owner.
-- The new percentage must be less than or equal to 100e18.
-
-**Emits:** `DlpStakersPercentageUpdated` event
+Events:
+- `StakeWithdrawn` for each stake
 
 ---
 
@@ -1337,98 +1282,18 @@ Updates the stakers percentage for a DLP. Can only be called by the DLP owner.
 function deregisterDlp(uint256 dlpId) external
 ```
 
-Deregisters a DLP. Can only be called by the DLP owner.
+Deregisters a DLP.
 
-**Parameters:**
-- `dlpId`: The ID of the DLP to deregister.
+Parameters:
+- `dlpId`: ID of the DLP
 
-**Restrictions:**
-- Can only be called by the DLP owner.
-- The DLP must be in the Registered status.
+Restrictions:
+- Must be DLP owner
+- DLP must be in valid status
+- Contract must not be paused
 
-**Emits:** `DlpDeregistered` event
-
----
-
-```solidity
-function distributeStakeAfterDeregistration(uint256 dlpId, uint256 dlpOwnerAmount) external
-```
-
-Distributes the stake after deregistration of a granted DLP. Can only be called by the contract owner.
-
-**Parameters:**
-- `dlpId`: The ID of the deregistered DLP.
-- `dlpOwnerAmount`: The amount to distribute to the DLP owner.
-
-**Restrictions:**
-- Can only be called by the contract owner.
-- The DLP must be in the Deregistered status.
-
----
-
-```solidity
-function saveEpochPerformances(uint256 epochId, DlpPerformance[] memory dlpPerformances, bool isFinalised) external
-```
-
-Saves the performances of top DLPs for a specific epoch and calculates the rewards. Can only be called by the contract owner.
-
-**Parameters:**
-- `epochId`: The ID of the epoch.
-- `dlpPerformances`: An array of DLP performance structs.
-- `isFinalised`: Whether the epoch is being finalised.
-
-**Restrictions:**
-- Can only be called by the contract owner.
-- The epoch must not be already finalised.
-- If finalising, the previous epoch must be finalised and the current epoch must have ended.
-
-**Emits:** `EpochPerformancesSaved` event
-
----
-
-```solidity
-function addRewardForDlps() external payable
-```
-
-Adds rewards for DLPs.
-
-**Restrictions:**
-- The contract must not be paused.
-
----
-
-```solidity
-function claimRewardUntilEpoch(uint256 dlpId, uint256 lastEpochToClaim) external
-```
-
-Claims rewards for a DLP until a specific epoch.
-
-**Parameters:**
-- `dlpId`: The ID of the DLP.
-- `lastEpochToClaim`: The last epoch to claim rewards for.
-
-**Restrictions:**
-- The contract must not be paused.
-- There must be rewards to claim.
-
-**Emits:** `StakerDlpEpochRewardClaimed` event for each claimed epoch
-
----
-
-```solidity
-function claimReward(uint256 dlpId) external
-```
-
-Claims all available rewards for a DLP.
-
-**Parameters:**
-- `dlpId`: The ID of the DLP.
-
-**Restrictions:**
-- The contract must not be paused.
-- There must be rewards to claim.
-
-**Emits:** `StakerDlpEpochRewardClaimed` event for each claimed epoch
+Events:
+- `DlpDeregistered`
 
 ---
 
@@ -1436,16 +1301,18 @@ Claims all available rewards for a DLP.
 function stake(uint256 dlpId) external payable
 ```
 
-Stakes tokens for a specific DLP.
+Stakes tokens in a DLP.
 
-**Parameters:**
-- `dlpId`: The ID of the DLP to stake for.
+Parameters:
+- `dlpId`: ID of the DLP
 
-**Restrictions:**
-- The DLP must be in the Registered status.
-- The current epoch must be created.
+Restrictions:
+- DLP must be in Registered status
+- Current epoch must be created
+- Stake amount must meet minimum
 
-**Emits:** `Staked` event
+Events:
+- `Staked`
 
 ---
 
@@ -1453,17 +1320,18 @@ Stakes tokens for a specific DLP.
 function unstake(uint256 dlpId, uint256 amount) external
 ```
 
-Unstakes tokens from a specific DLP.
+Unstakes tokens from a DLP.
 
-**Parameters:**
-- `dlpId`: The ID of the DLP to unstake from.
-- `amount`: The amount of tokens to unstake.
+Parameters:
+- `dlpId`: ID of the DLP
+- `amount`: Amount to unstake
 
-**Restrictions:**
-- The amount must be less than or equal to the unstakeable amount.
-- The current epoch must be created.
+Restrictions:
+- Amount must be <= unstakeable amount
+- Current epoch must be created
 
-**Emits:** `Unstaked` event
+Events:
+- `Unstaked`
 
 ---
 
@@ -1471,49 +1339,405 @@ Unstakes tokens from a specific DLP.
 function estimatedDlpReward(uint256 dlpId) external view returns (uint256 historyRewardEstimation, uint256 stakeRewardEstimation)
 ```
 
-Gets the estimated rewards for a DLP's stakes.
+Gets estimated rewards for a DLP.
 
-**Parameters:**
-- `dlpId`: The ID of the DLP.
+Parameters:
+- `dlpId`: ID of the DLP
 
-**Returns:**
-- `historyRewardEstimation`: Percentage estimated reward per epoch based on the data from the last epoch in which the DLP was part of.
-- `stakeRewardEstimation`: Percentage estimated reward per epoch based on the total stake amount and reward from the current epoch.
+Returns:
+- `historyRewardEstimation`: Estimated reward based on history
+- `stakeRewardEstimation`: Estimated reward based on current stake
 
-**Note:** Percentages are scaled by 1e18.
-
----
-
-```solidity
-function initialize(InitParams memory params) external initializer
-```
-
-Initializes the contract. Can only be called once.
-
-**Parameters:**
-- `params`: A struct containing initialization parameters including owner address, max number of registered DLPs, number of top DLPs, minimum DLP stake amount, start block, epoch size, epoch reward amount, and performance percentages.
-
-**Restrictions:**
-- Can only be called once due to the `initializer` modifier.
-- The sum of all performance percentages must equal 100e18.
+Note: Both return values are scaled by 1e18
 
 ---
 
 ```solidity
-function _authorizeUpgrade(address newImplementation) internal virtual override onlyOwner
+function calculateStakeScore(uint256 stakeAmount, uint256 stakeStartBlock, uint256 blockNumber) public view returns (uint256)
 ```
 
-Internal function to authorize an upgrade to a new implementation. Can only be called by the owner.
+Calculates a stake's score based on amount and duration.
 
-**Parameters:**
-- `newImplementation`: The address of the new implementation contract.
+Parameters:
+- `stakeAmount`: Amount staked
+- `stakeStartBlock`: Block when staked
+- `blockNumber`: Block to calculate for
 
-**Restrictions:**
-- Can only be called by the contract owner.
+Returns:
+- Score including duration multiplier
+
+---
+
+```solidity
+function createEpochs() external
+function createEpochsUntilBlockNumber(uint256 blockNumber) external
+```
+
+Creates new epochs up to current block or specified block number.
+
+Parameters:
+- `blockNumber`: Target block number (for second function)
+
+Restrictions:
+- Contract must not be paused
+
+Events:
+- `EpochCreated` for each new epoch
+
+The contract maintains role-based access control:
+- DEFAULT_ROLE_ADMIN: System administration and contract upgrades
+- MAINTAINER_ROLE: System maintenance and parameter updates
+- MANAGER_ROLE: Epoch scores and performance metrics
+
 
 ---  
-  
 
+<a id="contracts-dlp-root-metrics"></a>
+### DLPRootMetrics
+
+```solidity
+function initialize(
+    address trustedForwarderAddress,
+    address ownerAddress,
+    address dlpRootAddress,
+    uint256 stakeRatingPercentage,
+    uint256 performanceRatingPercentage
+) external initializer
+```
+
+Initializes the contract with required parameters.
+
+Parameters:
+- `trustedForwarderAddress`: Address of the trusted forwarder for meta-transactions
+- `ownerAddress`: Address of the contract owner
+- `dlpRootAddress`: Address of the DLPRoot contract
+- `stakeRatingPercentage`: Initial percentage for stake rating
+- `performanceRatingPercentage`: Initial percentage for performance rating
+
+Restrictions:
+- Can only be called once due to `initializer` modifier
+- Sum of rating percentages must equal 100e18
+
+---
+
+```solidity
+function epochs(uint256 epochId) external view returns (EpochInfo memory)
+```
+
+Returns information about a specific epoch.
+
+Parameters:
+- `epochId`: ID of the epoch to query
+
+Returns:
+- `EpochInfo`: Struct containing total performance rating and finalized status
+
+---
+
+```solidity
+function epochDlps(uint256 epochId, uint256 dlpId) external view returns (EpochDlpInfo memory)
+```
+
+Returns information about a specific DLP's performance in an epoch.
+
+Parameters:
+- `epochId`: ID of the epoch
+- `dlpId`: ID of the DLP
+
+Returns:
+- `EpochDlpInfo`: Struct containing performance rating
+
+---
+
+```solidity
+function topDlps(
+    uint256 epochId,
+    uint256 numberOfDlps,
+    uint256[] memory dlpIds,
+    uint256[] memory customRatingPercentages
+) external view returns (DlpRating[] memory)
+```
+
+Returns top performing DLPs based on combined stake and performance ratings.
+
+Parameters:
+- `epochId`: ID of the epoch
+- `numberOfDlps`: Maximum number of DLPs to return
+- `dlpIds`: Array of DLP IDs to consider
+- `customRatingPercentages`: Custom percentages for stake and performance ratings
+
+Returns:
+- Array of `DlpRating` structs containing DLP IDs and their ratings
+
+---
+
+```solidity
+function estimatedDlpRewardPercentages(
+    uint256[] memory dlpIds,
+    uint256[] memory customRatingPercentages
+) external view returns (IDLPRoot.DlpRewardApy[] memory)
+```
+
+Calculates estimated reward percentages for given DLPs.
+
+Parameters:
+- `dlpIds`: Array of DLP IDs to calculate rewards for
+- `customRatingPercentages`: Custom percentages for stake and performance ratings
+
+Returns:
+- Array of `DlpRewardApy` structs containing EPY and APY calculations
+
+---
+
+```solidity
+function getMultiplier(uint256 index) external pure returns (uint256)
+```
+
+Returns the stake score multiplier based on duration.
+
+Parameters:
+- `index`: Duration index (0-63)
+
+Returns:
+- Multiplier value (100-300)
+
+---
+
+```solidity
+function saveEpochPerformanceRatings(
+    uint256 epochId,
+    bool shouldFinalize,
+    DlpPerformanceRating[] memory dlpPerformanceRatings
+) external
+```
+
+Saves or updates performance ratings for DLPs in an epoch.
+
+Parameters:
+- `epochId`: ID of the epoch
+- `shouldFinalize`: Whether to finalize the epoch
+- `dlpPerformanceRatings`: Array of performance ratings for DLPs
+
+Restrictions:
+- Can only be called by addresses with MANAGER_ROLE
+- Contract must not be paused
+- Epoch must not be already finalized
+- If finalizing, epoch must have ended
+
+Events Emitted:
+- `EpochPerformanceRatingsSaved`
+- `DlpEpochPerformanceRatingSaved` for each DLP
+
+---
+
+```solidity
+function updateRatingPercentages(
+    uint256 stakeRatingPercentage,
+    uint256 performanceRatingPercentage
+) external
+```
+
+Updates the percentages used for stake and performance ratings.
+
+Parameters:
+- `stakeRatingPercentage`: New percentage for stake rating
+- `performanceRatingPercentage`: New percentage for performance rating
+
+Restrictions:
+- Can only be called by addresses with MAINTAINER_ROLE
+- Sum of percentages must equal 100e18
+
+Events Emitted:
+- `RatingPercentagesUpdated` for each rating type
+
+---
+
+```solidity
+function pause() external
+```
+
+Pauses the contract operations.
+
+Restrictions:
+- Can only be called by addresses with MAINTAINER_ROLE
+
+---
+
+```solidity
+function unpause() external
+```
+
+Unpauses the contract operations.
+
+Restrictions:
+- Can only be called by addresses with MAINTAINER_ROLE
+
+---
+
+```solidity
+function updateDlpRoot(address dlpRootAddress) external
+```
+
+Updates the DLPRoot contract address.
+
+Parameters:
+- `dlpRootAddress`: New DLPRoot contract address
+
+Restrictions:
+- Can only be called by addresses with MAINTAINER_ROLE
+
+---
+
+```solidity
+function updateTrustedForwarder(address trustedForwarderAddress) external
+```
+
+Updates the trusted forwarder address for meta-transactions.
+
+Parameters:
+- `trustedForwarderAddress`: New trusted forwarder address
+
+Restrictions:
+- Can only be called by addresses with MAINTAINER_ROLE
+
+___
+
+<a id="contracts-dlp-root-treasuries"></a>
+### DLPRootTreasuries
+
+The DLPRoot system uses two treasury contracts to manage different types of funds:
+1. DLPRootStakesTreasury: Manages the staked VANA tokens
+2. DLPRootRewardsTreasury: Manages the rewards for DLP creators and stakers
+
+Both treasuries share the same implementation but serve different purposes in the ecosystem.
+
+```solidity
+function initialize(address ownerAddress, address dlpRootAddress) external initializer
+```
+
+Initializes the treasury contract.
+
+Parameters:
+- `ownerAddress`: Address that will be granted the DEFAULT_ADMIN_ROLE
+- `dlpRootAddress`: Address of the DLPRoot contract
+
+Restrictions:
+- Can only be called once due to `initializer` modifier
+- Both the owner and DLPRoot addresses are granted DEFAULT_ADMIN_ROLE
+
+---
+
+```solidity
+function version() external pure returns (uint256)
+```
+
+Returns the version of the contract.
+
+Returns:
+- `uint256`: The version number (1 for current implementation)
+
+---
+
+```solidity
+function dlpRoot() external view returns (IDLPRoot)
+```
+
+Returns the address of the DLPRoot contract.
+
+Returns:
+- `IDLPRoot`: The DLPRoot contract interface
+
+---
+
+```solidity
+function transferVana(address payable to, uint256 value) external returns (bool)
+```
+
+Transfers VANA tokens to a specified address.
+
+Parameters:
+- `to`: Recipient address
+- `value`: Amount of VANA to transfer
+
+Returns:
+- `bool`: True if the transfer was successful
+
+Restrictions:
+- Can only be called by addresses with DEFAULT_ADMIN_ROLE
+- Contract must not be paused
+
+---
+
+```solidity
+function updateDlpRoot(address dlpRootAddress) external
+```
+
+Updates the DLPRoot contract address.
+
+Parameters:
+- `dlpRootAddress`: New DLPRoot contract address
+
+Restrictions:
+- Can only be called by addresses with DEFAULT_ADMIN_ROLE
+
+Effects:
+- Revokes DEFAULT_ADMIN_ROLE from old DLPRoot address
+- Grants DEFAULT_ADMIN_ROLE to new DLPRoot address
+
+---
+
+```solidity
+function pause() external
+```
+
+Pauses the contract operations.
+
+Restrictions:
+- Can only be called by addresses with DEFAULT_ADMIN_ROLE
+
+---
+
+```solidity
+function unpause() external
+```
+
+Unpauses the contract operations.
+
+Restrictions:
+- Can only be called by addresses with DEFAULT_ADMIN_ROLE
+
+---
+
+```solidity
+receive() external payable
+```
+
+Allows the contract to receive VANA tokens.
+
+Parameters: None
+
+Restrictions: None
+
+---
+
+The treasuries function as secure vaults for different types of funds in the DLP ecosystem:
+
+1. **DLPRootStakesTreasury**:
+   - Holds staked VANA tokens from DLP owners and stakers
+   - Manages stake withdrawals after delay periods
+   - Ensures stake security and withdrawal restrictions
+
+2. **DLPRootRewardsTreasury**:
+   - Holds VANA tokens allocated for rewards
+   - Distributes rewards to DLPs and their stakers
+   - Manages reward calculations and distributions based on performance metrics
+
+Both treasuries are controlled by the DLPRoot contract through the DEFAULT_ADMIN_ROLE, ensuring secure and coordinated fund management in the ecosystem.
+
+___
+
+
+<a id="contracts-deposit"></a>
 ### Deposit
 
 This is a rewrite of the Eth2.0 deposit contract in Solidity. It is used to process deposits for validators in the Eth2.0 network.
@@ -1684,6 +1908,8 @@ Returns:
 
 ### DLP Template Contracts
 
+
+<a id="contracts-data-liquidity-pool"></a>
 ### DataLiquidityPool
 
 This contract is designed to be upgradeable using the Universal Upgradeable Proxy Standard (UUPS) pattern. This allows for future improvements while maintaining the contract's state and address.
@@ -1701,14 +1927,19 @@ Initializes the contract with the given parameters.
 
 **Parameters:**
 - `params`: A struct containing initialization parameters
-    - `ownerAddress`: The address of the contract owner
-    - `tokenAddress`: The address of the ERC20 token used for rewards
-    - `dataRegistryAddress`: The address of the data registry contract
-    - `teePoolAddress`: The address of the TEE pool contract
-    - `name`: The name of the data liquidity pool
-    - `publicKey`: The public key for the pool
-    - `proofInstruction`: The instruction for generating proofs
-    - `fileRewardFactor`: The factor used to calculate file rewards
+   - `trustedForwarder`: The address of the trusted forwarder contract. See [this section](#env-truested_forwarder_address) for more details.
+   - `ownerAddress`: The address of the contract owner. (E.g. **0x853407D0C625Ce7E43C0a2596fBc470C3a6f8305**)
+   - `tokenAddress`: The address of the ERC20 token used for rewards. (E.g. **0xF3D9A139a7ba707843dD4f1FDfE0F9E55D9D8d6b**)
+   - `dataRegistryAddress`: The address of the data registry contract. (E.g. **0xEA882bb75C54DE9A08bC46b46c396727B4BFe9a5**)
+   - `teePoolAddress`: The address of the TEE pool contract. (E.g. **0xF084Ca24B4E29Aa843898e0B12c465fAFD089965**)
+   - `name`: The name of the data liquidity pool. (E.g. **CookieDLP**)
+   - `publicKey`: A public key for your DLP, used for encryption purposes. See [this section](#env-dlp-public-key) for more details.
+   - `proofInstruction`: The instruction for generating proofs. (E.g. **https://github.com/vana-com/vana-satya-proof-template/releases/download/v24/gsc-my-proof-24.tar.gz**)
+   - `fileRewardFactor`: The factor used to calculate file rewards. (E.g. **2e18** => the reward multiplier is 2)
+
+
+Tee validators calculate a total score for the files they verify, based on the set of instructions executed to generate the proof. This score ranges between 0 and 1 (i.e., between 0 and 1e18). At the end, the dataContributor will receive a reward. DLP_FILE_REWARD_FACTOR is used to convert the score into the amount of DLP tokens the data contributor receives for their file. Essentially, the reward is calculated using the formula:  
+```reward = fileScore * DLP_FILE_REWARD_FACTOR ```
 
 **Restrictions:** Can only be called once during contract deployment
 
@@ -1886,7 +2117,7 @@ function updateProofInstruction(string calldata newProofInstruction) external
 Updates the proof instruction used for validating proofs.
 
 **Parameters:**
-- `newProofInstruction`: The new proof instruction
+- `newProofInstruction`: The new proof instruction.
 
 **Restrictions:** Can only be called by the contract owner
 
@@ -1903,7 +2134,7 @@ function updatePublicKey(string calldata newPublicKey) external
 Updates the public key of the pool.
 
 **Parameters:**
-- `newPublicKey`: The new public key
+- `newPublicKey`: The new public key (E.g. **0x04bfcab8282071e4c17b3ae235928ec9dd9fb8e2b2f981c56c4a5215c9e7a1fcf1a84924476b8b56f17f719d3d3b729688bb7c39a60b00414d53ae8491df5791fa**)
 
 **Restrictions:** Can only be called by the contract owner
 
@@ -1960,7 +2191,8 @@ Adds rewards to the pool for contributors.
 
 ---
 
-### DAT (Data Access Token)
+<a id="contracts-dat"></a>
+### DAT (Data Autonomy Token)
 
 
 The DAT contract is an ERC20 token with additional governance features, including ERC20Permit for gasless approvals and ERC20Votes for on-chain voting capabilities. It also includes custom functionality for minting control and address blocking.
@@ -2146,6 +2378,7 @@ Events Emitted:
 
 ### Utilities Contracts
 
+<a id="contracts-multisend"></a>
 ### Multisend
 
 ```solidity
@@ -2287,6 +2520,177 @@ Errors:
 Events:
 - `OwnershipTransferred(address indexed previousOwner, address indexed newOwner)`
 
-## 6. Audit
 
-https://hashlock.com/audits/vana
+<a id="contracts-multicall3"></a>
+### Multicall3
+
+The Multicall3 contract allows batching of multiple smart contract calls into a single transaction, providing gas efficiency and atomicity. It supports various types of batch calls with different failure handling mechanisms.
+
+```solidity
+function aggregate(Call[] calldata calls) public payable returns (uint256 blockNumber, bytes[] memory returnData)
+```
+
+Executes multiple calls and requires all of them to succeed.
+
+Parameters:
+- `calls`: Array of Call structs containing target addresses and call data
+
+Returns:
+- `blockNumber`: Block number where calls were executed
+- `returnData`: Array of return data from each call
+
+Restrictions:
+- All calls must succeed or the entire transaction reverts
+
+---
+
+```solidity
+function tryAggregate(bool requireSuccess, Call[] calldata calls) public payable returns (Result[] memory returnData)
+```
+
+Executes multiple calls with configurable failure handling.
+
+Parameters:
+- `requireSuccess`: If true, requires all calls to succeed
+- `calls`: Array of Call structs containing target addresses and call data
+
+Returns:
+- `returnData`: Array of Result structs containing success status and return data
+
+---
+
+```solidity
+function aggregate3(Call3[] calldata calls) public payable returns (Result[] memory returnData)
+```
+
+Enhanced version of aggregate that allows specifying failure handling per call.
+
+Parameters:
+- `calls`: Array of Call3 structs containing target address, allowFailure flag, and call data
+
+Returns:
+- `returnData`: Array of Result structs containing success status and return data
+
+---
+
+```solidity
+function aggregate3Value(Call3Value[] calldata calls) public payable returns (Result[] memory returnData)
+```
+
+Executes multiple calls with ETH value attached to each call.
+
+Parameters:
+- `calls`: Array of Call3Value structs containing target address, allowFailure flag, value, and call data
+
+Returns:
+- `returnData`: Array of Result structs containing success status and return data
+
+Restrictions:
+- Total msg.value must match sum of all call values
+
+---
+
+```solidity
+function getBlockHash(uint256 blockNumber) public view returns (bytes32 blockHash)
+```
+
+Returns the block hash for a given block number.
+
+Parameters:
+- `blockNumber`: Block number to get hash for
+
+Returns:
+- `blockHash`: Hash of the specified block
+
+---
+
+```solidity
+function getCurrentBlockDifficulty() public view returns (uint256 difficulty)
+```
+
+Returns the current block difficulty.
+
+Returns:
+- `difficulty`: Current block difficulty
+
+---
+
+```solidity
+function getCurrentBlockGasLimit() public view returns (uint256 gaslimit)
+```
+
+Returns the current block gas limit.
+
+Returns:
+- `gaslimit`: Current block gas limit
+
+---
+
+```solidity
+function getCurrentBlockCoinbase() public view returns (address coinbase)
+```
+
+Returns the current block's coinbase address.
+
+Returns:
+- `coinbase`: Current block coinbase address
+
+---
+
+```solidity
+function getEthBalance(address addr) public view returns (uint256 balance)
+```
+
+Returns the ETH balance of a given address.
+
+Parameters:
+- `addr`: Address to check balance for
+
+Returns:
+- `balance`: ETH balance of the address
+
+---
+
+```solidity
+function getLastBlockHash() public view returns (bytes32 blockHash)
+```
+
+Returns the block hash of the previous block.
+
+Returns:
+- `blockHash`: Hash of the previous block
+
+---
+
+```solidity
+function getBasefee() public view returns (uint256 basefee)
+```
+
+Returns the current block's base fee.
+
+Returns:
+- `basefee`: Current block base fee
+
+Restrictions:
+- Only available on chains that implement the BASEFEE opcode
+
+---
+
+```solidity
+function getChainId() public view returns (uint256 chainid)
+```
+
+Returns the current chain ID.
+
+Returns:
+- `chainid`: Current chain ID
+
+___
+
+### 6. Audit
+
+All contracts have been thoroughly audited by two reputable blockchain security firms: Hashlock and Nethermind. Multiple audit rounds have been conducted over time, with each significant smart contract update undergoing its own audit process to ensure security as the protocol evolved and new features were added.
+
+For detailed audit reports, please visit:
+- https://hashlock.com/audits/vana
+- https://www.nethermind.io/smart-contract-audits
