@@ -20,8 +20,8 @@ const config: HardhatUserConfig = {
     hardhat: {
       allowUnlimitedContractSize: true,
     },
-    islander: {
-      url: process.env.ISLANDER_RPC_URL || "",
+    vana: {
+      url: process.env.VANA_RPC_URL || "",
       accounts:
         process.env.DEPLOYER_PRIVATE_KEY !== undefined
           ? [process.env.DEPLOYER_PRIVATE_KEY]
@@ -48,17 +48,17 @@ const config: HardhatUserConfig = {
   etherscan: {
     apiKey: {
       // Is not required by blockscout. Can be any non-empty string
-      islander: "abc",
+      vana: "abc",
       moksha: "abc",
       satori: "abc",
     },
     customChains: [
       {
-        network: "islander",
+        network: "vana",
         chainId: 1480,
         urls: {
-          apiURL: process.env.ISLANDER_API_URL || "",
-          browserURL: process.env.ISLANDER_BROWSER_URL || "",
+          apiURL: process.env.VANA_API_URL || "",
+          browserURL: process.env.VANA_BROWSER_URL || "",
         },
       },
       {
