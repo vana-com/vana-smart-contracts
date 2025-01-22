@@ -166,6 +166,10 @@ contract DataLiquidityPoolImplementation is
         return ERC2771ContextUpgradeable._contextSuffixLength();
     }
 
+    function _checkRole(bytes32 role) internal view override {
+        _checkRole(role, msg.sender);
+    }
+
     /**
      * @dev Returns the address of the trusted forwarder.
      */

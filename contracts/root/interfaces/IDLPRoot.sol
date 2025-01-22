@@ -32,6 +32,7 @@ interface IDLPRoot {
         Checkpoints.Trace208 unstakeAmountCheckpoints; // Historical unstake amounts
         uint256 epochIdsCount; // Number of participated epochs
         mapping(uint256 index => uint256 epochIds) epochIds;
+        bool isVerified;
     }
 
     struct EpochDlp {
@@ -74,7 +75,6 @@ interface IDLPRoot {
     function dlpRootRewardsTreasury() external view returns (IDLPRootTreasury);
     function dlpRootStakesTreasury() external view returns (IDLPRootTreasury);
     function epochDlpsLimit() external view returns (uint256);
-    function eligibleDlpsLimit() external view returns (uint256);
     function epochSize() external view returns (uint256);
     function daySize() external view returns (uint256);
     function eligibleDlpsListValues() external view returns (uint256[] memory);
@@ -119,8 +119,9 @@ interface IDLPRoot {
         uint256 registrationBlockNumber;
         uint256 stakeAmount;
         uint256[] epochIds;
+        bool isVerified;
     }
-    function dlps(uint256 index) external view returns (DlpInfo memory);
+    function dlps(uint256 dlpId) external view returns (DlpInfo memory);
     function dlpsByAddress(address dlpAddress) external view returns (DlpInfo memory);
     function dlpIds(address dlpAddress) external view returns (uint256);
     function dlpNameToId(string calldata dlpName) external view returns (uint256);
@@ -178,7 +179,6 @@ interface IDLPRoot {
     function pause() external;
     function unpause() external;
     function updateEpochDlpsLimit(uint256 newEpochDlpsLimit) external;
-    function updateEligibleDlpsLimit(uint256 newEligibleDlpsLimit) external;
     function updateEpochSize(uint256 newEpochSize) external;
     function updateEpochRewardAmount(uint256 newEpochRewardAmount) external;
     function updateMinStakeAmount(uint256 newMinStakeAmount) external;
@@ -225,6 +225,7 @@ interface IDLPRoot {
 
     // DLP lifecycle management
     function registerDlp(DlpRegistration calldata registrationInfo) external payable;
+    function updateDlpVerification(uint256 dlpId, bool isVerified) external;
     function updateDlp(uint256 dlpId, DlpRegistration calldata dlpUpdateInfo) external;
     function deregisterDlp(uint256 dlpId) external;
 

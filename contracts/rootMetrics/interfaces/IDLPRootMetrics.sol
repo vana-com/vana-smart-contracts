@@ -10,6 +10,7 @@ interface IDLPRootMetrics {
     }
     struct EpochDlp {
         uint256 performanceRating;
+        uint256 stakeAmountAdjustment;
     }
 
     struct Epoch {
@@ -30,6 +31,7 @@ interface IDLPRootMetrics {
 
     struct EpochDlpInfo {
         uint256 performanceRating;
+        uint256 stakeAmountAdjustment;
     }
 
     struct DlpPerformanceRating {
@@ -48,20 +50,39 @@ interface IDLPRootMetrics {
         uint256[] memory dlpIds,
         uint256[] memory customRatingPercentages
     ) external view returns (DlpRating[] memory);
+    function topDlpsDefaultPercentages(
+        uint256 epochId,
+        uint256 numberOfDlps,
+        uint256[] memory dlpIds
+    ) external view returns (DlpRating[] memory);
     function topDlpIds(
         uint256 epochId,
         uint256 numberOfDlps,
         uint256[] memory dlpIds,
         uint256[] memory customRatingPercentages
     ) external view returns (uint256[] memory);
+    function topDlpIdsDefaultPercentages(
+        uint256 epochId,
+        uint256 numberOfDlps,
+        uint256[] memory dlpIds
+    ) external view returns (uint256[] memory);
     function estimatedDlpRewardPercentages(
         uint256[] memory dlpIds,
         uint256[] memory customRatingPercentages
+    ) external view returns (IDLPRoot.DlpRewardApy[] memory);
+    function estimatedDlpRewardPercentagesDefault(
+        uint256[] memory dlpIds
     ) external view returns (IDLPRoot.DlpRewardApy[] memory);
     function getMultiplier(uint256 index) external pure returns (uint256);
     function pause() external;
     function unpause() external;
     function updateDlpRoot(address dlpRootAddress) external;
+    function updateEpochDlpStakeAmountAdjustment(
+        uint256 epochId,
+        uint256 dlpId,
+        uint256 adjustment,
+        bool isAddition
+    ) external;
     function saveEpochPerformanceRatings(
         uint256 epochId,
         bool shouldFinalize,

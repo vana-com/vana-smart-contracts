@@ -31,11 +31,20 @@ contract DataRegistryImplementation is
      * @notice Triggered when user has added an proof to the file
      *
      * @param fileId                            id of the file
+     * @param ownerAddress                      file owner address
      * @param proofIndex                        index of the proof
      * @param dlpId                             id of the DLP
      * @param score                             score of the proof
+     * @param proofUrl                          url of the proof
      */
-    event ProofAdded(uint256 indexed fileId, uint256 indexed proofIndex, uint256 indexed dlpId, uint256 score);
+    event ProofAdded(
+        uint256 indexed fileId,
+        address indexed ownerAddress,
+        uint256 proofIndex,
+        uint256 indexed dlpId,
+        uint256 score,
+        string proofUrl
+    );
 
     /**
      * @notice Triggered when user has authorized an account to access the file
@@ -98,6 +107,10 @@ contract DataRegistryImplementation is
         returns (uint256)
     {
         return ERC2771ContextUpgradeable._contextSuffixLength();
+    }
+
+    function _checkRole(bytes32 role) internal view override {
+        _checkRole(role, msg.sender);
     }
 
     /**
@@ -225,7 +238,14 @@ contract DataRegistryImplementation is
 
         _files[fileId].proofs[cachedProofCount] = proof;
 
-        emit ProofAdded(fileId, cachedProofCount, proof.data.dlpId, proof.data.score);
+        emit ProofAdded(
+            fileId,
+            _files[fileId].ownerAddress,
+            cachedProofCount,
+            proof.data.dlpId,
+            proof.data.score,
+            proof.data.proofUrl
+        );
     }
 
     /**
