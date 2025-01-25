@@ -19,18 +19,20 @@ contract DLPRootMetricsImplementation is
     bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
     bytes32 public constant DLP_ROOT_ROLE = keccak256("DLP_ROOT_ROLE");
 
+    event EpochFinalised(uint256 indexed epochId);
     event EpochPerformanceRatingsSaved(uint256 indexed epochId, uint256 totalPerformanceRating, bool isFinalized);
     event DlpEpochPerformanceRatingSaved(uint256 indexed epochId, uint256 indexed dlpId, uint256 performanceRating);
     event RatingPercentagesUpdated(RatingType ratingType, uint256 percentage);
 
-    error EpochAlreadyFinalized();
+    error EpochAlreadyFinalised();
     error EpochNotEndedYet();
     error InvalidPerformanceRating();
     error InvalidEpoch();
     error AllEligibleDlpsMustHavePerformanceRatings();
     error InvalidRatingPercentages();
     error EpochRewardsAlreadyDistributed();
-    error DlpMustBeVerified(uint256 dlpId);
+    error DlpMustBeEligibleAndVerified(uint256 dlpId);
+    error InvalidFoundationWalletAddress();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() ERC2771ContextUpgradeable(address(0)) {
@@ -96,9 +98,20 @@ contract DLPRootMetricsImplementation is
         return 1;
     }
 
+    function foundationWalletAddress() external view override returns (address payable) {
+        if (_foundationWalletAddress == address(0)) {
+            revert InvalidFoundationWalletAddress();
+        }
+        return _foundationWalletAddress;
+    }
+
     function epochs(uint256 epochId) external view override returns (EpochInfo memory) {
         Epoch storage epoch = _epochs[epochId];
-        return EpochInfo({totalPerformanceRating: epoch.totalPerformanceRating, finalized: epoch.finalized});
+        return
+            EpochInfo({
+                totalPerformanceRating: epoch.totalPerformanceRating,
+                finalized: dlpRoot.epochs(epochId).isFinalised
+            });
     }
 
     function epochDlps(uint256 epochId, uint256 dlpId) external view override returns (EpochDlpInfo memory) {
@@ -424,6 +437,12 @@ contract DLPRootMetricsImplementation is
         dlpRoot = IDLPRoot(dlpRootAddress);
     }
 
+    function updateFoundationWalletAddress(
+        address payable foundationWalletAddress
+    ) external override onlyRole(MAINTAINER_ROLE) {
+        _foundationWalletAddress = foundationWalletAddress;
+    }
+
     function updateTrustedForwarder(address trustedForwarderAddress) external onlyRole(MAINTAINER_ROLE) {
         _trustedForwarder = trustedForwarderAddress;
     }
@@ -452,8 +471,8 @@ contract DLPRootMetricsImplementation is
 
     /**
      * @notice Saves or updates epoch performanceRatings for DLPs
-     * @param epochId                The epoch ID to save performanceRatings for
-     * @param shouldFinalize         If true, the epoch will be finalized and no more performanceRatings can be saved
+     * @param epochId                 The epoch ID to save performanceRatings for
+     * @param shouldFinalize          deprecated; we need to keep these parameter until we can remove them from the performance microservice
      * @param dlpPerformanceRatings   Array of DLP performanceRatings to save
      */
     function saveEpochPerformanceRatings(
@@ -463,16 +482,8 @@ contract DLPRootMetricsImplementation is
     ) external override onlyRole(MANAGER_ROLE) whenNotPaused {
         Epoch storage epoch = _epochs[epochId];
 
-        if (epoch.finalized) {
-            revert EpochAlreadyFinalized();
-        }
-
-        // If trying to lock performanceRatings, verify epoch has ended
-        if (shouldFinalize) {
-            IDLPRoot.EpochInfo memory rootEpoch = dlpRoot.epochs(epochId);
-            if (rootEpoch.endBlock >= block.number) {
-                revert EpochNotEndedYet();
-            }
+        if (dlpRoot.epochs(epochId).isFinalised) {
+            revert EpochAlreadyFinalised();
         }
 
         uint256 dlpPerformanceRatingsLength = dlpPerformanceRatings.length;
@@ -497,27 +508,28 @@ contract DLPRootMetricsImplementation is
 
         epoch.totalPerformanceRating = totalPerformanceRating;
 
-        emit EpochPerformanceRatingsSaved(epochId, totalPerformanceRating, shouldFinalize);
+        emit EpochPerformanceRatingsSaved(epochId, totalPerformanceRating, false);
+    }
 
-        if (shouldFinalize) {
-            epoch.finalized = true;
+    /**
+     * @notice Saves or updates epoch performanceRatings for DLPs
+     * @param epochId                The epoch ID to save performanceRatings for
+     */
+    function finalizeEpoch(uint256 epochId) external override onlyRole(MAINTAINER_ROLE) whenNotPaused {
+        Epoch storage epoch = _epochs[epochId];
 
-            uint256[] memory dlpIds = new uint256[](dlpPerformanceRatingsLength);
-
-            for (uint256 i = 0; i < dlpPerformanceRatingsLength; ) {
-                IDLPRoot.DlpInfo memory dlp = dlpRoot.dlps(dlpPerformanceRatings[i].dlpId);
-                if (!dlp.isVerified) {
-                    revert DlpMustBeVerified(dlpPerformanceRatings[i].dlpId);
-                }
-
-                dlpIds[i] = dlpPerformanceRatings[i].dlpId;
-                unchecked {
-                    ++i;
-                }
-            }
-
-            _calculateEpochRewards(epochId, dlpIds);
+        if (dlpRoot.epochs(epochId).isFinalised) {
+            revert EpochAlreadyFinalised();
         }
+
+        IDLPRoot.EpochInfo memory rootEpoch = dlpRoot.epochs(epochId);
+        if (rootEpoch.endBlock >= block.number) {
+            revert EpochNotEndedYet();
+        }
+
+        emit EpochFinalised(epochId);
+
+        _calculateEpochRewards(epochId, dlpRoot.eligibleDlpsListValues());
     }
 
     function updateRatingPercentages(
@@ -525,6 +537,26 @@ contract DLPRootMetricsImplementation is
         uint256 performanceRatingPercentage
     ) external override onlyRole(MAINTAINER_ROLE) {
         _updateRatingPercentages(stakeRatingPercentage, performanceRatingPercentage);
+    }
+
+    function calculateDlpRating(
+        uint256 dlpId,
+        uint256 epochId,
+        uint256 totalDlpsStakeAmount,
+        uint256 totalDlpsPerformanceRating,
+        uint256[] memory customRatingPercentages
+    ) public view returns (uint256) {
+        uint256 dlpStakeRating = totalDlpsStakeAmount > 0
+            ? (1e18 * _dlpEpochStakeAmount(dlpId, epochId)) / totalDlpsStakeAmount
+            : 0;
+        uint256 dlpPerformanceRating = totalDlpsPerformanceRating > 0
+            ? (1e18 * _epochs[epochId].dlps[dlpId].performanceRating) / totalDlpsPerformanceRating
+            : 0;
+        return
+            (customRatingPercentages[uint256(RatingType.Stake)] *
+                dlpStakeRating +
+                customRatingPercentages[uint256(RatingType.Performance)] *
+                dlpPerformanceRating) / 1e20;
     }
 
     function _updateRatingPercentages(uint256 stakeRatingPercentage, uint256 performanceRatingPercentage) internal {
@@ -610,26 +642,6 @@ contract DLPRootMetricsImplementation is
         }
 
         dlpRoot.distributeEpochRewards(epochId, epochDlpRewards);
-    }
-
-    function calculateDlpRating(
-        uint256 dlpId,
-        uint256 epochId,
-        uint256 totalDlpsStakeAmount,
-        uint256 totalDlpsPerformanceRating,
-        uint256[] memory customRatingPercentages
-    ) public view returns (uint256) {
-        uint256 dlpStakeRating = totalDlpsStakeAmount > 0
-            ? (1e18 * _dlpEpochStakeAmount(dlpId, epochId)) / totalDlpsStakeAmount
-            : 0;
-        uint256 dlpPerformanceRating = totalDlpsPerformanceRating > 0
-            ? (1e18 * _epochs[epochId].dlps[dlpId].performanceRating) / totalDlpsPerformanceRating
-            : 0;
-        return
-            (customRatingPercentages[uint256(RatingType.Stake)] *
-                dlpStakeRating +
-                customRatingPercentages[uint256(RatingType.Performance)] *
-                dlpPerformanceRating) / 1e20;
     }
 
     function _dlpEpochStakeAmount(uint256 dlpId, uint256 epochId) internal view returns (uint256) {

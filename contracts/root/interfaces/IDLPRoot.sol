@@ -58,7 +58,7 @@ interface IDLPRoot {
         uint256 startBlock;
         uint256 endBlock; // 0 if active
         bool withdrawn;
-        uint256 lastClaimedIndexEpochId;
+        uint256 lastClaimedIndexEpochId; //todo: rename to lastClaimedEpochId
         mapping(uint256 epochId => uint256 claimedAmount) claimedAmounts;
     }
 
@@ -166,6 +166,11 @@ interface IDLPRoot {
     // Core functionality
     function topDlpIds(uint256 numberOfDlps) external returns (uint256[] memory);
     function calculateStakeClaimableAmount(uint256 stakeId) external returns (uint256);
+    function calculateStakeScore(
+        uint256 stakeAmount,
+        uint256 stakeStartBlock,
+        uint256 blockNumber
+    ) external view returns (uint256);
 
     struct DlpRewardApy {
         uint256 dlpId;
@@ -182,11 +187,15 @@ interface IDLPRoot {
     function updateEpochSize(uint256 newEpochSize) external;
     function updateEpochRewardAmount(uint256 newEpochRewardAmount) external;
     function updateMinStakeAmount(uint256 newMinStakeAmount) external;
-    function updateMinDlpStakersPercentage(uint256 newMinDlpStakersPercentage) external;
-    function updateMaxDlpStakersPercentage(uint256 newMaxDlpStakersPercentage) external;
+    function updateDlpStakersPercentages(
+        uint256 newMinDlpStakersPercentage,
+        uint256 newMaxDlpStakersPercentage
+    ) external;
     function updateMinDlpRegistrationStake(uint256 newMinStakeAmount) external;
-    function updateDlpEligibilityThreshold(uint256 newDlpEligibilityThreshold) external;
-    function updateDlpSubEligibilityThreshold(uint256 newDlpSubEligibilityThreshold) external;
+    function updateDlpEligibilityThresholds(
+        uint256 newDlpSubEligibilityThreshold,
+        uint256 newDlpEligibilityThreshold
+    ) external;
     function updateStakeWithdrawalDelay(uint256 newStakeWithdrawalDelay) external;
     function updateRewardClaimDelay(uint256 newRewardClaimDelay) external;
     function updateDlpRootMetrics(address newDlpRootMetricsAddress) external;

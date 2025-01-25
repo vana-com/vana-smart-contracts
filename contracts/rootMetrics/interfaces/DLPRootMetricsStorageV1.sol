@@ -15,4 +15,6 @@ abstract contract DLPRootMetricsStorageV1 is IDLPRootMetrics {
     mapping(uint256 epochId => Epoch) internal _epochs;
 
     mapping(RatingType ratingType => uint256 percentage) public override ratingPercentages;
+
+    address payable internal _foundationWalletAddress;
 }

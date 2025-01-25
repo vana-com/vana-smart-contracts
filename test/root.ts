@@ -87,7 +87,7 @@ describe("DLPRoot", () => {
   };
 
   let trustedForwarder: HardhatEthersSigner;
-  let deployer: HardhatEthersSigner;
+  let foundation: HardhatEthersSigner;
   let owner: HardhatEthersSigner;
   let maintainer: HardhatEthersSigner;
   let manager: HardhatEthersSigner;
@@ -165,11 +165,11 @@ describe("DLPRoot", () => {
     });
 
     [
-      trustedForwarder,
-      deployer,
       owner,
       maintainer,
       manager,
+      trustedForwarder,
+      foundation,
       user1,
       user2,
       user3,
@@ -211,17 +211,16 @@ describe("DLPRoot", () => {
     await root.connect(owner).updateEpochDlpsLimit(epochDlpsLimit);
     await root
       .connect(owner)
-      .updateMaxDlpStakersPercentage(maxDlpStakersPercentage);
+      .updateDlpStakersPercentages(
+        minDlpStakersPercentage,
+        maxDlpStakersPercentage,
+      );
     await root
       .connect(owner)
-      .updateMinDlpStakersPercentage(minDlpStakersPercentage);
-
-    await root
-      .connect(owner)
-      .updateDlpEligibilityThreshold(dlpEligibilityThreshold);
-    await root
-      .connect(owner)
-      .updateDlpSubEligibilityThreshold(dlpSubEligibilityThreshold);
+      .updateDlpEligibilityThresholds(
+        dlpSubEligibilityThreshold,
+        dlpEligibilityThreshold,
+      );
     await root
       .connect(owner)
       .updateMinDlpRegistrationStake(minDlpRegistrationStake);
@@ -290,7 +289,9 @@ describe("DLPRoot", () => {
     await metrics.connect(owner).grantRole(MANAGER_ROLE, manager);
 
     await root.connect(owner).grantRole(DLP_ROOT_METRICS_ROLE, metrics);
+
     await metrics.connect(owner).grantRole(DLP_ROOT_ROLE, root); /////////
+    await metrics.connect(maintainer).updateFoundationWalletAddress(foundation); /////////
 
     dlpInfo = {
       1: {
@@ -516,11 +517,12 @@ describe("DLPRoot", () => {
   async function saveDefaultEpochPerformanceRatings(epochId: number) {
     await metrics.connect(manager).saveEpochPerformanceRatings(
       epochId,
-      true,
+      false,
       (await root.eligibleDlpsListValues()).map((id) =>
         dlpPerformanceRating(id, 1n),
       ),
     );
+    await metrics.connect(maintainer).finalizeEpoch(epochId);
   }
 
   describe("Setup", () => {
@@ -690,20 +692,45 @@ describe("DLPRoot", () => {
       (await root.minStakeAmount()).should.eq(minStakeAmount);
     });
 
-    it("should updateMinDlpStakersPercentage when maintainer", async function () {
+    it("should updateDlpStakersPercentages when maintainer", async function () {
+      await registerNDlpsExtended(
+        [
+          minDlpRegistrationStake,
+          minDlpRegistrationStake,
+          minDlpRegistrationStake,
+          minDlpRegistrationStake,
+          minDlpRegistrationStake,
+        ],
+        [
+          parseEther(50),
+          parseEther(90),
+          parseEther(61),
+          parseEther(62),
+          parseEther(61.5),
+        ],
+      );
       await root
         .connect(maintainer)
-        .updateMinDlpStakersPercentage(parseEther(51))
+        .updateDlpStakersPercentages(parseEther(61), parseEther(62))
         .should.emit(root, "MinDlpStakersPercentageUpdated")
-        .withArgs(parseEther(51));
+        .withArgs(parseEther(61))
+        .and.emit(root, "MaxDlpStakersPercentageUpdated")
+        .withArgs(parseEther(62));
 
-      (await root.minDlpStakersPercentage()).should.eq(parseEther(51));
+      (await root.minDlpStakersPercentage()).should.eq(parseEther(61));
+      (await root.maxDlpStakersPercentage()).should.eq(parseEther(62));
+
+      (await root.dlps(1)).stakersPercentage.should.eq(parseEther(61));
+      (await root.dlps(2)).stakersPercentage.should.eq(parseEther(62));
+      (await root.dlps(3)).stakersPercentage.should.eq(parseEther(61));
+      (await root.dlps(4)).stakersPercentage.should.eq(parseEther(62));
+      (await root.dlps(5)).stakersPercentage.should.eq(parseEther(61.5));
     });
 
-    it("should reject updateMinDlpStakersPercentage when non-maintainer", async function () {
+    it("should reject updateDlpStakersPercentages when non-maintainer", async function () {
       await root
         .connect(manager)
-        .updateMinDlpStakersPercentage(parseEther(0.2))
+        .updateDlpStakersPercentages(parseEther(0.2), parseEther(0.3))
         .should.be.rejectedWith(
           `AccessControlUnauthorizedAccount("${manager.address}", "${MAINTAINER_ROLE}")`,
         );
@@ -732,48 +759,28 @@ describe("DLPRoot", () => {
       (await root.minDlpRegistrationStake()).should.eq(minDlpRegistrationStake);
     });
 
-    it("should updateDlpEligibilityThreshold when maintainer", async function () {
+    it("should updateDlpEligibilityThresholds when maintainer", async function () {
       await root
         .connect(maintainer)
-        .updateDlpEligibilityThreshold(parseEther(101))
-        .should.emit(root, "DlpEligibilityThresholdUpdated")
+        .updateDlpEligibilityThresholds(parseEther(99), parseEther(101))
+        .should.emit(root, "DlpSubEligibilityThresholdUpdated")
+        .withArgs(parseEther(99))
+        .and.emit(root, "DlpEligibilityThresholdUpdated")
         .withArgs(parseEther(101));
 
+      (await root.dlpSubEligibilityThreshold()).should.eq(parseEther(99));
       (await root.dlpEligibilityThreshold()).should.eq(parseEther(101));
     });
 
-    it("should reject updateDlpEligibilityThreshold when non-maintainer", async function () {
+    it("should reject updateDlpEligibilityThresholds when non-maintainer", async function () {
       await root
         .connect(manager)
-        .updateDlpEligibilityThreshold(parseEther(101))
+        .updateDlpEligibilityThresholds(parseEther(101), parseEther(101))
         .should.be.rejectedWith(
           `AccessControlUnauthorizedAccount("${manager.address}", "${MAINTAINER_ROLE}")`,
         );
 
       (await root.dlpEligibilityThreshold()).should.eq(dlpEligibilityThreshold);
-    });
-
-    it("should updateDlpSubEligibilityThreshold when maintainer", async function () {
-      await root
-        .connect(maintainer)
-        .updateDlpSubEligibilityThreshold(parseEther(51))
-        .should.emit(root, "DlpSubEligibilityThresholdUpdated")
-        .withArgs(parseEther(51));
-
-      (await root.dlpSubEligibilityThreshold()).should.eq(parseEther(51));
-    });
-
-    it("should reject updateDlpSubEligibilityThreshold when non-maintainer", async function () {
-      await root
-        .connect(manager)
-        .updateDlpSubEligibilityThreshold(parseEther(51))
-        .should.be.rejectedWith(
-          `AccessControlUnauthorizedAccount("${manager.address}", "${MAINTAINER_ROLE}")`,
-        );
-
-      (await root.dlpSubEligibilityThreshold()).should.eq(
-        dlpSubEligibilityThreshold,
-      );
     });
 
     it("should updateStakeWithdrawalDelay when maintainer", async function () {
@@ -2219,64 +2226,6 @@ describe("DLPRoot", () => {
     });
   });
 
-  describe("Update DLP sub-eligibility threshold", () => {
-    beforeEach(async () => {
-      await deploy();
-    });
-
-    it("should updateDlpSubEligibilityThreshold when maintainer", async function () {
-      const newThreshold = parseEther(51);
-
-      await root
-        .connect(maintainer)
-        .updateDlpSubEligibilityThreshold(newThreshold)
-        .should.emit(root, "DlpSubEligibilityThresholdUpdated")
-        .withArgs(newThreshold);
-
-      (await root.dlpSubEligibilityThreshold()).should.eq(newThreshold);
-    });
-
-    it("should reject updateDlpSubEligibilityThreshold when non-maintainer", async function () {
-      const newThreshold = parseEther(51);
-
-      await root
-        .connect(manager)
-        .updateDlpSubEligibilityThreshold(newThreshold)
-        .should.be.rejectedWith(
-          `AccessControlUnauthorizedAccount("${manager.address}", "${MAINTAINER_ROLE}")`,
-        );
-
-      (await root.dlpSubEligibilityThreshold()).should.eq(
-        dlpSubEligibilityThreshold,
-      );
-    });
-
-    it("should updateDlpEligibilityThreshold when maintainer", async function () {
-      const newThreshold = parseEther(101);
-
-      await root
-        .connect(maintainer)
-        .updateDlpEligibilityThreshold(newThreshold)
-        .should.emit(root, "DlpEligibilityThresholdUpdated")
-        .withArgs(newThreshold);
-
-      (await root.dlpEligibilityThreshold()).should.eq(newThreshold);
-    });
-
-    it("should reject updateDlpEligibilityThreshold when non-maintainer", async function () {
-      const newThreshold = parseEther(101);
-
-      await root
-        .connect(manager)
-        .updateDlpEligibilityThreshold(newThreshold)
-        .should.be.rejectedWith(
-          `AccessControlUnauthorizedAccount("${manager.address}", "${MAINTAINER_ROLE}")`,
-        );
-
-      (await root.dlpEligibilityThreshold()).should.eq(dlpEligibilityThreshold);
-    });
-  });
-
   describe("Epochs", () => {
     beforeEach(async () => {
       await deploy();
@@ -3035,8 +2984,7 @@ describe("DLPRoot", () => {
       await root.connect(owner).updateEpochDlpsLimit(16);
       await root.connect(owner).updateMinStakeAmount(1);
       await root.connect(owner).updateMinDlpRegistrationStake(1);
-      await root.connect(owner).updateDlpSubEligibilityThreshold(1);
-      await root.connect(owner).updateDlpEligibilityThreshold(1);
+      await root.connect(owner).updateDlpEligibilityThresholds(1, 1);
       const stakes = generateStakes(100, parseEther(1), parseEther(2));
       const topStakes = getTopKStakes(stakes, 16);
       await registerNDlps(stakes);
@@ -3076,7 +3024,7 @@ describe("DLPRoot", () => {
 
       await root.connect(owner).updateEpochDlpsLimit(32);
       await root.connect(owner).updateMinDlpRegistrationStake(1);
-      await root.connect(owner).updateDlpEligibilityThreshold(1);
+      await root.connect(owner).updateDlpEligibilityThresholds(1, 1);
       const stakes = generateStakes(1000, parseEther(1), parseEther(2));
       const topStakes = getTopKStakes(stakes, 32);
       await registerNDlps(stakes);
@@ -4573,10 +4521,10 @@ describe("DLPRoot", () => {
         .updateMinDlpRegistrationStake(minDlpRegistrationStake);
       await root
         .connect(owner)
-        .updateDlpSubEligibilityThreshold(minDlpRegistrationStake);
-      await root
-        .connect(owner)
-        .updateDlpEligibilityThreshold(minDlpRegistrationStake);
+        .updateDlpEligibilityThresholds(
+          minDlpRegistrationStake,
+          minDlpRegistrationStake,
+        );
     });
 
     const topDlpTests = [
@@ -5629,9 +5577,9 @@ describe("DLPRoot", () => {
       await deploy();
 
       await root.connect(owner).updateRewardClaimDelay(0);
-      await root
-        .connect(owner)
-        .updateMinDlpStakersPercentage(minDlpStakersPercentage);
+      await root;
+      // .connect(owner)
+      // .updateMinDlpStakersPercentage(minDlpStakersPercentage);
 
       await owner.sendTransaction({
         to: rewardsTreasury,
@@ -5938,8 +5886,9 @@ describe("DLPRoot", () => {
 
       it("should saveEpochPerformanceRatings after epoch.endBlock", async function () {
         await root.connect(owner).updateEpochDlpsLimit(3);
-        await root.connect(owner).updateMinDlpStakersPercentage(parseEther(40));
-        await root.connect(owner).updateMaxDlpStakersPercentage(parseEther(80));
+        await root
+          .connect(owner)
+          .updateDlpStakersPercentages(parseEther(40), parseEther(80));
 
         const dlp1StakersPercentage = parseEther(40);
         const dlp2StakersPercentage = parseEther(60);
@@ -5969,7 +5918,7 @@ describe("DLPRoot", () => {
 
         const tx = await metrics
           .connect(manager)
-          .saveEpochPerformanceRatings(1, true, [
+          .saveEpochPerformanceRatings(1, false, [
             {
               dlpId: 1n,
               performanceRating: parseEther(0.7),
@@ -5994,7 +5943,7 @@ describe("DLPRoot", () => {
 
         tx.should
           .emit(metrics, "EpochPerformanceRatingsSaved")
-          .withArgs(1, parseEther(1), true)
+          .withArgs(1, parseEther(1), false)
           .and.emit(metrics, "DlpEpochPerformanceRatingSaved")
           .withArgs(1, 1, parseEther(0.7))
           .and.emit(metrics, "DlpEpochPerformanceRatingSaved")
@@ -6005,6 +5954,8 @@ describe("DLPRoot", () => {
           .withArgs(1, 4, parseEther(0.0))
           .and.emit(metrics, "DlpEpochPerformanceRatingSaved")
           .withArgs(1, 5, parseEther(0.05));
+
+        await metrics.connect(maintainer).finalizeEpoch(1);
 
         const epoch = await metrics.epochs(1);
         epoch.totalPerformanceRating.should.eq(
@@ -6174,8 +6125,7 @@ describe("DLPRoot", () => {
         await root.connect(owner).updateEpochDlpsLimit(16);
         await root
           .connect(owner)
-          .updateDlpSubEligibilityThreshold(parseEther(1));
-        await root.connect(owner).updateDlpEligibilityThreshold(parseEther(1));
+          .updateDlpEligibilityThresholds(parseEther(1), parseEther(1));
 
         await registerNDlps(generateStakes(200, parseEther(1), parseEther(2)));
 
@@ -6322,41 +6272,6 @@ describe("DLPRoot", () => {
           .should.be.rejectedWith(
             `AccessControlUnauthorizedAccount("${user1.address}", "${MANAGER_ROLE}")`,
           );
-      });
-
-      it("should reject saveEpochPerformanceRatings with shouldFinalize when dlpNotVerified", async function () {
-        await register5Dlps();
-
-        await advanceToEpochN(2);
-        await root.connect(owner).createEpochs();
-
-        await root.connect(maintainer).updateDlpVerification(1, false);
-
-        await metrics
-          .connect(manager)
-          .saveEpochPerformanceRatings(1, true, [
-            {
-              dlpId: 1n,
-              performanceRating: parseEther(100),
-            },
-            {
-              dlpId: 2n,
-              performanceRating: parseEther(200),
-            },
-            {
-              dlpId: 3n,
-              performanceRating: parseEther(300),
-            },
-            {
-              dlpId: 4n,
-              performanceRating: parseEther(400),
-            },
-            {
-              dlpId: 5n,
-              performanceRating: parseEther(500),
-            },
-          ])
-          .should.be.rejectedWith(`DlpMustBeVerified(1)`);
       });
     });
   });
@@ -6885,7 +6800,7 @@ describe("DLPRoot", () => {
       //   "16";
       await metrics
         .connect(adminWallet)
-        .saveEpochPerformanceRatings(1, true, [
+        .saveEpochPerformanceRatings(1, false, [
           dlpPerformanceRating(1, 0n),
           dlpPerformanceRating(6, 0n),
           dlpPerformanceRating(7, 0n),
