@@ -153,6 +153,10 @@ contract TeePoolImplementation is
         return ERC2771ContextUpgradeable._contextSuffixLength();
     }
 
+    function _checkRole(bytes32 role) internal view override {
+        _checkRole(role, msg.sender);
+    }
+
     function trustedForwarder() public view virtual override returns (address) {
         return _trustedForwarder;
     }

@@ -32,6 +32,7 @@ interface IDLPRoot {
         Checkpoints.Trace208 unstakeAmountCheckpoints; // Historical unstake amounts
         uint256 epochIdsCount; // Number of participated epochs
         mapping(uint256 index => uint256 epochIds) epochIds;
+        bool isVerified;
     }
 
     struct EpochDlp {
@@ -57,7 +58,7 @@ interface IDLPRoot {
         uint256 startBlock;
         uint256 endBlock; // 0 if active
         bool withdrawn;
-        uint256 lastClaimedIndexEpochId;
+        uint256 lastClaimedIndexEpochId; //todo: rename to lastClaimedEpochId
         mapping(uint256 epochId => uint256 claimedAmount) claimedAmounts;
     }
 
@@ -74,7 +75,6 @@ interface IDLPRoot {
     function dlpRootRewardsTreasury() external view returns (IDLPRootTreasury);
     function dlpRootStakesTreasury() external view returns (IDLPRootTreasury);
     function epochDlpsLimit() external view returns (uint256);
-    function eligibleDlpsLimit() external view returns (uint256);
     function epochSize() external view returns (uint256);
     function daySize() external view returns (uint256);
     function eligibleDlpsListValues() external view returns (uint256[] memory);
@@ -119,8 +119,9 @@ interface IDLPRoot {
         uint256 registrationBlockNumber;
         uint256 stakeAmount;
         uint256[] epochIds;
+        bool isVerified;
     }
-    function dlps(uint256 index) external view returns (DlpInfo memory);
+    function dlps(uint256 dlpId) external view returns (DlpInfo memory);
     function dlpsByAddress(address dlpAddress) external view returns (DlpInfo memory);
     function dlpIds(address dlpAddress) external view returns (uint256);
     function dlpNameToId(string calldata dlpName) external view returns (uint256);
@@ -165,6 +166,11 @@ interface IDLPRoot {
     // Core functionality
     function topDlpIds(uint256 numberOfDlps) external returns (uint256[] memory);
     function calculateStakeClaimableAmount(uint256 stakeId) external returns (uint256);
+    function calculateStakeScore(
+        uint256 stakeAmount,
+        uint256 stakeStartBlock,
+        uint256 blockNumber
+    ) external view returns (uint256);
 
     struct DlpRewardApy {
         uint256 dlpId;
@@ -178,15 +184,18 @@ interface IDLPRoot {
     function pause() external;
     function unpause() external;
     function updateEpochDlpsLimit(uint256 newEpochDlpsLimit) external;
-    function updateEligibleDlpsLimit(uint256 newEligibleDlpsLimit) external;
     function updateEpochSize(uint256 newEpochSize) external;
     function updateEpochRewardAmount(uint256 newEpochRewardAmount) external;
     function updateMinStakeAmount(uint256 newMinStakeAmount) external;
-    function updateMinDlpStakersPercentage(uint256 newMinDlpStakersPercentage) external;
-    function updateMaxDlpStakersPercentage(uint256 newMaxDlpStakersPercentage) external;
+    function updateDlpStakersPercentages(
+        uint256 newMinDlpStakersPercentage,
+        uint256 newMaxDlpStakersPercentage
+    ) external;
     function updateMinDlpRegistrationStake(uint256 newMinStakeAmount) external;
-    function updateDlpEligibilityThreshold(uint256 newDlpEligibilityThreshold) external;
-    function updateDlpSubEligibilityThreshold(uint256 newDlpSubEligibilityThreshold) external;
+    function updateDlpEligibilityThresholds(
+        uint256 newDlpSubEligibilityThreshold,
+        uint256 newDlpEligibilityThreshold
+    ) external;
     function updateStakeWithdrawalDelay(uint256 newStakeWithdrawalDelay) external;
     function updateRewardClaimDelay(uint256 newRewardClaimDelay) external;
     function updateDlpRootMetrics(address newDlpRootMetricsAddress) external;
@@ -225,6 +234,7 @@ interface IDLPRoot {
 
     // DLP lifecycle management
     function registerDlp(DlpRegistration calldata registrationInfo) external payable;
+    function updateDlpVerification(uint256 dlpId, bool isVerified) external;
     function updateDlp(uint256 dlpId, DlpRegistration calldata dlpUpdateInfo) external;
     function deregisterDlp(uint256 dlpId) external;
 
