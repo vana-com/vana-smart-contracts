@@ -13,8 +13,6 @@ abstract contract DLPRootCoreStorageV1 is IDLPRootCore {
     uint256 public override dlpEligibilityThreshold; // Min stake for full eligibility
     uint256 public override dlpSubEligibilityThreshold; // Min stake for sub-eligibility
 
-    uint256 public override daySize; // Blocks per day
-
     uint256 public override dlpsCount;
     mapping(uint256 dlpId => Dlp dlp) internal _dlps;
     mapping(address dlpAddress => uint256 dlpId) public override dlpIds;

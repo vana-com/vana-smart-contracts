@@ -62,15 +62,18 @@ contract DLPRootEpochImplementation is
         _disableInitializers();
     }
 
-    function initialize(address ownerAddress, address dlpRootAddress) external initializer {
+    function initialize(address ownerAddress, address dlpRootAddress, uint256 daySizeInBlocks) external initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
         __ReentrancyGuard_init();
         __Pausable_init();
 
         dlpRoot = IDLPRoot(dlpRootAddress);
+        daySize = daySizeInBlocks;
 
         _grantRole(DEFAULT_ADMIN_ROLE, ownerAddress);
+        _grantRole(MAINTAINER_ROLE, ownerAddress);
+        _grantRole(DLP_ROOT_ROLE, dlpRootAddress);
     }
 
     function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
@@ -90,30 +93,30 @@ contract DLPRootEpochImplementation is
             });
     }
 
-    function dlpEpochs(uint256 dlpId, uint256 epochId) external view override returns (DlpEpochInfo memory) {
+    function epochDlps(uint256 epochId, uint256 dlpId) external view override returns (EpochDlpInfo memory) {
         Epoch storage epoch = _epochs[epochId];
         EpochDlp memory epochDlp = epoch.dlps[dlpId];
 
-        Dlp storage dlp = _dlps[dlpId];
+        IDLPRootCore.DlpInfo memory dlp = dlpRoot.dlpRootCore().dlps(dlpId);
 
-        uint256 stakersPercentageEpoch = dlp.registrationBlockNumber > epoch.startBlock
-            ? dlp.stakersPercentageCheckpoints.at(0)._value
-            : dlp.stakersPercentageCheckpoints.upperLookup(uint48(epoch.startBlock));
+        //        uint256 stakersPercentageEpoch = dlp.registrationBlockNumber > epoch.startBlock
+        //            ? dlp.stakersPercentageCheckpoints.at(0)._value
+        //            : dlp.stakersPercentageCheckpoints.upperLookup(uint48(epoch.startBlock));
 
         return
-            DlpEpochInfo({
-                stakeAmount: _dlpComputedStakeAmountByBlock(dlpId, uint48(epoch.endBlock)),
+            EpochDlpInfo({
+                stakeAmount: dlpRoot.dlpRootCore().dlpComputedStakeAmountByBlock(dlpId, uint48(epoch.endBlock)),
                 isTopDlp: epoch.dlpIds.contains(dlpId),
                 rewardAmount: epochDlp.rewardAmount,
-                stakersPercentage: stakersPercentageEpoch,
+                stakersPercentage: dlp.stakersPercentage, //stakersPercentageEpoch,
                 totalStakesScore: epochDlp.totalStakesScore,
                 rewardClaimed: epochDlp.rewardClaimed,
                 stakersRewardAmount: epochDlp.stakersRewardAmount
             });
     }
 
-    function dlpEpochStakeAmount(uint256 dlpId, uint256 epochId) external view override returns (uint256) {
-        return _dlpComputedStakeAmountByBlock(dlpId, uint48(_epochs[epochId].endBlock));
+    function epochDlpStakeAmount(uint256 epochId, uint256 dlpId) external view override returns (uint256) {
+        return dlpRoot.dlpRootCore().dlpComputedStakeAmountByBlock(dlpId, uint48(_epochs[epochId].endBlock));
     }
 
     function pause() external override onlyRole(MAINTAINER_ROLE) {
@@ -168,7 +171,7 @@ contract DLPRootEpochImplementation is
         uint256 index;
         uint256 dlpId;
         EpochDlp storage epochDlp;
-        Dlp storage dlp;
+        //        Dlp storage dlp;
 
         uint256 epochDlpsCount = epochDlpRewards.length;
 
@@ -177,8 +180,8 @@ contract DLPRootEpochImplementation is
             dlpId = epochDlpRewards[index].dlpId;
 
             epoch.dlpIds.add(dlpId);
-            dlp = _dlps[dlpId];
-            dlp.epochIds[++dlp.epochIdsCount] = epochId;
+            //            dlp = _dlps[dlpId];
+            //            dlp.epochIds[++dlp.epochIdsCount] = epochId;
 
             epochDlp = epoch.dlps[dlpId];
             epochDlp.rewardAmount = epochDlpRewards[index].rewardAmount;
@@ -223,7 +226,9 @@ contract DLPRootEpochImplementation is
             Epoch storage epoch = _epochs[stakeScore[i].epochId];
             EpochDlp storage epochDlp = epoch.dlps[stakeScore[i].dlpId];
 
-            if (_dlps[stakeScore[i].dlpId].dlpAddress == address(0)) {
+            IDLPRootCore.DlpInfo memory dlp = dlpRoot.dlpRootCore().dlps(stakeScore[i].dlpId);
+
+            if (dlp.dlpAddress == address(0)) {
                 revert InvalidDlpId();
             }
 
@@ -252,7 +257,9 @@ contract DLPRootEpochImplementation is
         EpochDlpsTotalStakesScore memory stakeScore
     ) external override onlyRole(MAINTAINER_ROLE) {
         Epoch storage epoch = _epochs[stakeScore.epochId];
-        if (_dlps[stakeScore.dlpId].dlpAddress == address(0)) {
+
+        IDLPRootCore.DlpInfo memory dlp = dlpRoot.dlpRootCore().dlps(stakeScore.dlpId);
+        if (dlp.dlpAddress == address(0)) {
             revert InvalidDlpId();
         }
 

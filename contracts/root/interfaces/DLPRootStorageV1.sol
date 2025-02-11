@@ -11,31 +11,31 @@ import {IDLPRootDeprecated} from "./IDLPRootDeprecated.sol";
  */
 abstract contract DLPRootStorageV1 is IDLPRoot, IDLPRootDeprecated {
     address internal _trustedForwarder;
-    uint256 internal eligibleDlpsLimit; // not used anymore
-    uint256 internal epochDlpsLimit; // moved to DLPRootCore
+    uint256 private eligibleDlpsLimit; // not used anymore
+    uint256 private epochDlpsLimit; // moved to DLPRootEpoch
     uint256 public override minStakeAmount; // Minimum stake allowed
-    uint256 internal minDlpStakersPercentage; // moved to DLPRootCore
-    uint256 internal minDlpRegistrationStake; // moved to DLPRootCore
-    uint256 internal dlpEligibilityThreshold; //moved to DLPRootCore
-    uint256 internal dlpSubEligibilityThreshold; // moved to DLPRootCore
+    uint256 private minDlpStakersPercentage; // moved to DLPRootCore
+    uint256 private minDlpRegistrationStake; // moved to DLPRootCore
+    uint256 private dlpEligibilityThreshold; //moved to DLPRootCore
+    uint256 private dlpSubEligibilityThreshold; // moved to DLPRootCore
 
     // Historical values tracked using checkpoints
     Checkpoints.Trace208 internal _stakeWithdrawalDelayCheckpoints;
     Checkpoints.Trace208 internal _rewardClaimDelayCheckpoints;
 
-    uint256 internal epochRewardAmount; // moved to DLPRootCore
-    uint256 internal epochSize; // moved to DLPRootCore
-    uint256 internal daySize; // moved to DLPRootCore
+    uint256 private epochRewardAmount; // moved to DLPRootEpoch
+    uint256 private epochSize; // moved to DLPRootEpoch
+    uint256 private daySize; // moved to DLPRootCore
 
     // DLP management
-    uint256 internal dlpsCount; // moved to DLPRootCore
-    mapping(uint256 dlpId => Dlp dlp) internal _dlps; // moved to DLPRootCore
-    mapping(address dlpAddress => uint256 dlpId) internal dlpIds; // moved to DLPRootCore
-    EnumerableSet.UintSet internal _eligibleDlpsList; // moved to DLPRootCore
+    uint256 private dlpsCount; // moved to DLPRootCore
+    mapping(uint256 dlpId => Dlp dlp) private _dlps; // moved to DLPRootCore
+    mapping(address dlpAddress => uint256 dlpId) private dlpIds; // moved to DLPRootCore
+    EnumerableSet.UintSet private _eligibleDlpsList; // moved to DLPRootCore
 
     // Epoch tracking
-    uint256 internal epochsCount; // moved to DLPRootCore
-    mapping(uint256 epochId => Epoch epoch) internal _epochs; // moved to DLPRootCore
+    uint256 private epochsCount; // moved to DLPRootEpoch
+    mapping(uint256 epochId => Epoch epoch) private _epochs; // moved to DLPRootEpoch
 
     // Staker management
     EnumerableSet.AddressSet internal _stakersList;
@@ -45,9 +45,9 @@ abstract contract DLPRootStorageV1 is IDLPRoot, IDLPRootDeprecated {
     uint256 public override stakesCount;
     mapping(uint256 stakeId => Stake stake) internal _stakes;
 
-    uint256 internal maxDlpStakersPercentage; // moved to DLPRootCore
+    uint256 private maxDlpStakersPercentage; // moved to DLPRootCore
 
-    mapping(string dlpName => uint256 dlpId) internal dlpNameToId; // moved to DLPRootCore
+    mapping(string dlpName => uint256 dlpId) private dlpNameToId; // moved to DLPRootCore
 
     IDLPRootMetrics public override dlpRootMetrics;
     IDLPRootTreasury public override dlpRootRewardsTreasury;

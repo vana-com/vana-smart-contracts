@@ -4,6 +4,8 @@ pragma solidity 0.8.24;
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "@openzeppelin/contracts/utils/structs/Checkpoints.sol";
 import {IDLPRoot} from "../../root/interfaces/IDLPRoot.sol";
+import {IDLPRootEpoch} from "../../rootEpoch/interfaces/IDLPRootEpoch.sol";
+import {IDLPRootMetrics} from "../../rootMetrics/interfaces/IDLPRootMetrics.sol";
 
 interface IDLPRootCore {
     // DLP lifecycle states from registration to deregistration
@@ -29,8 +31,6 @@ interface IDLPRootCore {
         uint256 registrationBlockNumber;
         Checkpoints.Trace208 stakeAmountCheckpoints; // Historical stake amounts
         Checkpoints.Trace208 unstakeAmountCheckpoints; // Historical unstake amounts
-        uint256 epochIdsCount; // Number of participated epochs
-        mapping(uint256 index => uint256 epochIds) epochIds;
         bool isVerified;
     }
 
@@ -62,7 +62,6 @@ interface IDLPRootCore {
         DlpStatus status;
         uint256 registrationBlockNumber;
         uint256 stakeAmount;
-        uint256[] epochIds;
         bool isVerified;
     }
     function dlps(uint256 dlpId) external view returns (DlpInfo memory);
@@ -71,16 +70,7 @@ interface IDLPRootCore {
     function dlpNameToId(string calldata dlpName) external view returns (uint256);
     function dlpsByName(string calldata dlpName) external view returns (DlpInfo memory);
 
-    // Core functionality
-    function topDlpIds(uint256 numberOfDlps) external returns (uint256[] memory);
-
-    struct DlpRewardApy {
-        uint256 dlpId;
-        uint256 APY; //annual percentage yield for stakers
-        uint256 EPY; //epoch percentage yield for stakers
-    }
-
-    function estimatedDlpRewardPercentages(uint256[] memory dlpIds) external view returns (DlpRewardApy[] memory);
+    function dlpComputedStakeAmountByBlock(uint256 dlpId, uint48 checkBlock) external view returns (uint256);
 
     // Admin functions
     function pause() external;
@@ -112,4 +102,6 @@ interface IDLPRootCore {
     function updateDlpVerification(uint256 dlpId, bool isVerified) external;
     function updateDlp(uint256 dlpId, DlpRegistration calldata dlpUpdateInfo) external;
     function deregisterDlp(uint256 dlpId) external;
+    function addDlpStake(uint256 dlpId, uint256 amount) external;
+    function removeDlpStake(uint256 dlpId, uint256 amount) external;
 }

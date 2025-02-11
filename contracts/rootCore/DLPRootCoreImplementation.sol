@@ -102,6 +102,8 @@ contract DLPRootCoreImplementation is
         dlpRoot = IDLPRoot(dlpRootAddress);
 
         _grantRole(DEFAULT_ADMIN_ROLE, ownerAddress);
+        _grantRole(MAINTAINER_ROLE, ownerAddress);
+        _grantRole(DLP_ROOT_ROLE, dlpRootAddress);
     }
 
     function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
@@ -121,14 +123,6 @@ contract DLPRootCoreImplementation is
         //            ? dlp.stakersPercentageCheckpoints.at(0)._value
         //            : dlp.stakersPercentageCheckpoints.upperLookup(uint48(epoch.startBlock));
 
-        uint256[] memory epochIds = new uint256[](dlp.epochIdsCount);
-        for (uint256 i = 1; i <= dlp.epochIdsCount; ) {
-            epochIds[i - 1] = dlp.epochIds[i];
-            unchecked {
-                ++i;
-            }
-        }
-
         return
             DlpInfo({
                 id: dlp.id,
@@ -144,9 +138,14 @@ contract DLPRootCoreImplementation is
                 status: dlp.status,
                 registrationBlockNumber: dlp.registrationBlockNumber,
                 stakeAmount: _dlpComputedStakeAmount(dlpId),
-                epochIds: epochIds,
                 isVerified: dlp.isVerified
             });
+    }
+
+    function dlpComputedStakeAmountByBlock(uint256 dlpId, uint48 checkBlock) external view override returns (uint256) {
+        return
+            _dlps[dlpId].stakeAmountCheckpoints.upperLookup(checkBlock) -
+            _dlps[dlpId].unstakeAmountCheckpoints.upperLookup(checkBlock);
     }
 
     function dlpsByAddress(address dlpAddress) external view override returns (DlpInfo memory) {
@@ -167,29 +166,6 @@ contract DLPRootCoreImplementation is
 
     function eligibleDlpsListAt(uint256 index) external view override returns (uint256) {
         return _eligibleDlpsList.at(index);
-    }
-
-    /**
-     * @notice Estimates reward percentages for given DLPs
-     * @dev Calculates based on ratings and current epoch parameters
-     */
-    function estimatedDlpRewardPercentages(
-        uint256[] memory dlpIds
-    ) external view override returns (DlpRewardApy[] memory) {
-        return dlpRoot.dlpRootMetrics().estimatedDlpRewardPercentagesDefault(dlpIds);
-    }
-
-    /**
-     * @notice Gets top DLP IDs by rating (performanceRating + stakeRating)
-     * @dev Uses insertion sort to maintain ordered list
-     */
-    function topDlpIds(uint256 numberOfDlps) external view override returns (uint256[] memory) {
-        return
-            dlpRoot.dlpRootMetrics().topDlpIdsDefaultPercentages(
-                dlpRoot.dlpRootEpoch().epochsCount(),
-                numberOfDlps,
-                _eligibleDlpsList.values()
-            );
     }
 
     function pause() external override onlyRole(MAINTAINER_ROLE) {
@@ -287,7 +263,7 @@ contract DLPRootCoreImplementation is
     function registerDlp(
         DlpRegistration calldata registrationInfo
     ) external payable override whenNotPaused nonReentrant {
-        dlpRoot.dlpRootEpoch().createEpochs();
+        _dlpRootEpoch().createEpochs();
         _registerDlp(registrationInfo);
     }
 
@@ -322,7 +298,7 @@ contract DLPRootCoreImplementation is
         uint256 dlpId,
         DlpRegistration calldata dlpUpdateInfo
     ) external override whenNotPaused nonReentrant onlyDlpOwner(dlpId) {
-        dlpRoot.dlpRootEpoch().createEpochs();
+        _dlpRootEpoch().createEpochs();
 
         if (dlpUpdateInfo.ownerAddress == address(0) || dlpUpdateInfo.treasuryAddress == address(0)) {
             revert InvalidAddress();
@@ -372,7 +348,7 @@ contract DLPRootCoreImplementation is
      * @dev Only owner can deregister, must be in valid status
      */
     function deregisterDlp(uint256 dlpId) external override whenNotPaused nonReentrant onlyDlpOwner(dlpId) {
-        dlpRoot.dlpRootEpoch().createEpochs();
+        _dlpRootEpoch().createEpochs();
 
         Dlp storage dlp = _dlps[dlpId];
 
@@ -383,13 +359,61 @@ contract DLPRootCoreImplementation is
         dlp.status = DlpStatus.Deregistered;
         _eligibleDlpsList.remove(dlpId);
 
-        IDLPRootEpoch.EpochInfo memory epoch = dlpRoot.dlpRootEpoch().epochs(dlpRoot.dlpRootEpoch().epochsCount() - 1);
-
-        if (dlpRoot.dlpRootEpoch().epochsCount > 1 && !epoch.isFinalised) {
+        uint256 epochsCount = _dlpRootEpoch().epochsCount();
+        if (epochsCount > 1 && !_dlpRootEpoch().epochs(epochsCount - 1).isFinalised) {
             revert LastEpochMustBeFinalised();
         }
 
         emit DlpStatusUpdated(dlpId, DlpStatus.Deregistered);
+    }
+
+    function addDlpStake(uint256 dlpId, uint256 amount) external override onlyRole(DLP_ROOT_ROLE) {
+        Dlp storage dlp = _dlps[dlpId];
+        _checkpointAdd(dlp.stakeAmountCheckpoints, amount);
+
+        // Check if DLP becomes eligible
+        if (
+            dlp.isVerified &&
+            (dlp.status == DlpStatus.Registered || dlp.status == DlpStatus.SubEligible) &&
+            _dlpComputedStakeAmount(dlpId) >= dlpEligibilityThreshold
+        ) {
+            _eligibleDlpsList.add(dlpId);
+            dlp.status = DlpStatus.Eligible;
+
+            uint256 epochsCount = _dlpRootEpoch().epochsCount();
+            if (epochsCount > 1 && !_dlpRootEpoch().epochs(epochsCount - 1).isFinalised) {
+                revert LastEpochMustBeFinalised();
+            }
+
+            emit DlpStatusUpdated(dlpId, DlpStatus.Eligible);
+        }
+    }
+
+    function removeDlpStake(uint256 dlpId, uint256 amount) external override onlyRole(DLP_ROOT_ROLE) {
+        Dlp storage dlp = _dlps[dlpId];
+        _checkpointAdd(dlp.unstakeAmountCheckpoints, amount);
+
+        uint256 dlpStake = _dlpComputedStakeAmount(dlpId);
+
+        // Update DLP status based on remaining stake
+        if (
+            dlpStake < dlpSubEligibilityThreshold &&
+            (dlp.status == DlpStatus.SubEligible || dlp.status == DlpStatus.Eligible)
+        ) {
+            dlp.status = DlpStatus.Registered;
+            _eligibleDlpsList.remove(dlpId);
+
+            uint256 epochsCount = _dlpRootEpoch().epochsCount();
+            if (epochsCount > 1 && !_dlpRootEpoch().epochs(epochsCount - 1).isFinalised) {
+                revert LastEpochMustBeFinalised();
+            }
+
+            emit DlpStatusUpdated(dlpId, DlpStatus.Registered);
+        } else if (dlpStake < dlpEligibilityThreshold && dlp.status == DlpStatus.Eligible) {
+            dlp.status = DlpStatus.SubEligible;
+
+            emit DlpStatusUpdated(dlpId, DlpStatus.SubEligible);
+        }
     }
 
     /**
@@ -475,5 +499,20 @@ contract DLPRootCoreImplementation is
      */
     function _dlpComputedStakeAmount(uint256 dlpId) internal view returns (uint256) {
         return _dlps[dlpId].stakeAmountCheckpoints.latest() - _dlps[dlpId].unstakeAmountCheckpoints.latest();
+    }
+
+    function _dlpRootEpoch() internal view returns (IDLPRootEpoch) {
+        return dlpRoot.dlpRootEpoch();
+    }
+
+    function _dlpRootMetrics() internal view returns (IDLPRootMetrics) {
+        return dlpRoot.dlpRootMetrics();
+    }
+
+    /**
+     * @notice Helper function to add value to checkpoint
+     */
+    function _checkpointAdd(Checkpoints.Trace208 storage store, uint256 delta) private returns (uint208, uint208) {
+        return store.push(uint48(block.number), store.latest() + uint208(delta));
     }
 }

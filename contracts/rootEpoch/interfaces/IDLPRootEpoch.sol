@@ -3,10 +3,11 @@ pragma solidity 0.8.24;
 
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {IDLPRoot} from "../../root/interfaces/IDLPRoot.sol";
+import {IDLPRootCore} from "../../rootCore/interfaces/IDLPRootCore.sol";
 
 interface IDLPRootEpoch {
     struct EpochDlp {
-        uint256 rewardAmount; // Rewards allocated to the DLP owner
+        uint256 rewardAmount; // Rewards allocated to the DLP owner //todo: rename to ownerRewardAmount
         uint256 stakersRewardAmount; //Rewards allocated to the stakers of the DLP
         uint256 totalStakesScore; // Sum of weighted stake scores
         bool rewardClaimed; // True if reward has been claimed
@@ -40,18 +41,18 @@ interface IDLPRootEpoch {
     function epochs(uint256 epochId) external view returns (EpochInfo memory);
     function epochRewardAmount() external view returns (uint256);
 
-    struct DlpEpochInfo {
+    struct EpochDlpInfo {
         uint256 stakeAmount; // 0 if not a top DLP
         bool isTopDlp; // In top DLPs list this epoch
-        uint256 rewardAmount; // 0 if not top DLP or epoch not finished
+        uint256 rewardAmount; // 0 if not top DLP or epoch not finished todo: rename to ownerRewardAmount
         uint256 stakersPercentage; // 0 if not top DLP
         uint256 totalStakesScore; // 0 if not top DLP
         bool rewardClaimed;
         uint256 stakersRewardAmount;
     }
-    function dlpEpochs(uint256 dlpId, uint256 epochId) external view returns (DlpEpochInfo memory);
+    function epochDlps(uint256 epochId, uint256 dlpId) external view returns (EpochDlpInfo memory);
 
-    function dlpEpochStakeAmount(uint256 dlpId, uint256 epochId) external view returns (uint256);
+    function epochDlpStakeAmount(uint256 epochId, uint256 dlpI) external view returns (uint256);
 
     // Admin functions
     function pause() external;
@@ -74,7 +75,7 @@ interface IDLPRootEpoch {
     function createEpochsUntilBlockNumber(uint256 blockNumber) external;
     struct EpochDlpReward {
         uint256 dlpId;
-        uint256 rewardAmount;
+        uint256 rewardAmount; //todo: rename to ownerRewardAmount
         uint256 stakersRewardAmount;
     }
     function distributeEpochRewards(uint256 epochId, EpochDlpReward[] memory epochDlpRewards) external;

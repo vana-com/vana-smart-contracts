@@ -17,6 +17,7 @@ interface IDLPRoot {
         bool withdrawn;
         uint256 lastClaimedIndexEpochId; //todo: rename to lastClaimedEpochId
         mapping(uint256 epochId => uint256 claimedAmount) claimedAmounts;
+        uint256 movedAmount; // Amount moved to new stake
     }
 
     struct Staker {
@@ -84,10 +85,11 @@ interface IDLPRoot {
     function updateDlpRootStakesTreasury(address newDlpRootStakesTreasuryAddress) external;
 
     // Staking and rewards
-    function claimStakeRewardUntilEpoch(uint256 stakeId, uint256 lastEpochToClaim) external;
-    function claimStakesReward(uint256[] memory stakeIds) external;
     function createStake(uint256 dlpId) external payable;
     function createStakeOnBehalf(uint256 dlpId, address stakeOwner) external payable;
     function closeStakes(uint256[] memory stakeIds) external;
     function withdrawStakes(uint256[] memory stakeIds) external;
+    function migrateStake(uint256 stakeId, uint256 newDlpId, uint256 newAmount) external;
+    function claimStakesReward(uint256[] memory stakeIds) external;
+    function claimStakeRewardUntilEpoch(uint256 stakeId, uint256 lastEpochToClaim) external;
 }
