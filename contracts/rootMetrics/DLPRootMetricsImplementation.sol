@@ -8,6 +8,8 @@ import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts/utils/math/Math.sol";
 import "./interfaces/DLPRootMetricsStorageV1.sol";
 
+import "hardhat/console.sol"; //todo: remove this
+
 contract DLPRootMetricsImplementation is
     UUPSUpgradeable,
     PausableUpgradeable,
@@ -110,7 +112,7 @@ contract DLPRootMetricsImplementation is
         return
             EpochInfo({
                 totalPerformanceRating: epoch.totalPerformanceRating,
-                finalized: dlpRoot.epochs(epochId).isFinalised
+                finalized: dlpRoot.dlpRootEpoch().epochs(epochId).isFinalised
             });
     }
 
@@ -253,13 +255,13 @@ contract DLPRootMetricsImplementation is
     function estimatedDlpRewardPercentages(
         uint256[] memory dlpIds,
         uint256[] memory customRatingPercentages
-    ) public view override returns (IDLPRoot.DlpRewardApy[] memory) {
-        uint256 epochId = dlpRoot.epochsCount();
+    ) public view override returns (DlpRewardApy[] memory) {
+        uint256 epochId = dlpRoot.dlpRootEpoch().epochsCount();
 
         IDLPRootMetrics.DlpRating[] memory topDlpsList = topDlps(
             epochId,
-            dlpRoot.epochDlpsLimit(),
-            dlpRoot.eligibleDlpsListValues(),
+            dlpRoot.dlpRootEpoch().epochDlpsLimit(),
+            dlpRoot.dlpRootCore().eligibleDlpsListValues(),
             customRatingPercentages
         );
 
@@ -297,7 +299,7 @@ contract DLPRootMetricsImplementation is
             }
         }
 
-        IDLPRoot.DlpRewardApy[] memory result = new IDLPRoot.DlpRewardApy[](dlpIds.length);
+        DlpRewardApy[] memory result = new DlpRewardApy[](dlpIds.length);
 
         for (i = 0; i < dlpIds.length; ) {
             dlpId = dlpIds[i];
@@ -310,14 +312,14 @@ contract DLPRootMetricsImplementation is
                 customRatingPercentages
             );
 
-            uint256 dlpReward = (dlpRating * dlpRoot.epochRewardAmount()) / totalTopDlpsRating;
-            uint256 epy = (dlpRoot.dlps(dlpId).stakersPercentageEpoch * dlpReward) /
+            uint256 dlpReward = (dlpRating * dlpRoot.dlpRootEpoch().epochRewardAmount()) / totalTopDlpsRating;
+            uint256 epy = (dlpRoot.dlpRootCore().dlps(dlpId).stakersPercentageEpoch * dlpReward) /
                 _dlpEpochStakeAmount(dlpId, epochId);
 
-            result[i] = IDLPRoot.DlpRewardApy({
+            result[i] = DlpRewardApy({
                 dlpId: dlpId,
                 EPY: epy,
-                APY: (epy * 365 * dlpRoot.daySize()) / dlpRoot.epochSize()
+                APY: (epy * 365 * dlpRoot.dlpRootEpoch().daySize()) / dlpRoot.dlpRootEpoch().epochSize() //todo: fix this
             });
 
             unchecked {
@@ -329,7 +331,7 @@ contract DLPRootMetricsImplementation is
 
     function estimatedDlpRewardPercentagesDefault(
         uint256[] memory dlpIds
-    ) public view override returns (IDLPRoot.DlpRewardApy[] memory) {
+    ) public view override returns (DlpRewardApy[] memory) {
         uint256[] memory percentages = new uint256[](2);
         percentages[0] = ratingPercentages[RatingType.Stake];
         percentages[1] = ratingPercentages[RatingType.Performance];
@@ -482,7 +484,7 @@ contract DLPRootMetricsImplementation is
     ) external override onlyRole(MANAGER_ROLE) whenNotPaused {
         Epoch storage epoch = _epochs[epochId];
 
-        if (dlpRoot.epochs(epochId).isFinalised) {
+        if (dlpRoot.dlpRootEpoch().epochs(epochId).isFinalised) {
             revert EpochAlreadyFinalised();
         }
 
@@ -516,20 +518,18 @@ contract DLPRootMetricsImplementation is
      * @param epochId                The epoch ID to save performanceRatings for
      */
     function finalizeEpoch(uint256 epochId) external override onlyRole(MAINTAINER_ROLE) whenNotPaused {
-        Epoch storage epoch = _epochs[epochId];
-
-        if (dlpRoot.epochs(epochId).isFinalised) {
+        if (dlpRoot.dlpRootEpoch().epochs(epochId).isFinalised) {
             revert EpochAlreadyFinalised();
         }
 
-        IDLPRoot.EpochInfo memory rootEpoch = dlpRoot.epochs(epochId);
+        IDLPRootEpoch.EpochInfo memory rootEpoch = dlpRoot.dlpRootEpoch().epochs(epochId);
         if (rootEpoch.endBlock >= block.number) {
             revert EpochNotEndedYet();
         }
 
         emit EpochFinalised(epochId);
 
-        _calculateEpochRewards(epochId, dlpRoot.eligibleDlpsListValues());
+        _calculateEpochRewards(epochId, dlpRoot.dlpRootCore().eligibleDlpsListValues());
     }
 
     function updateRatingPercentages(
@@ -572,7 +572,7 @@ contract DLPRootMetricsImplementation is
     }
 
     function _calculateEpochRewards(uint256 epochId, uint256[] memory dlpIds) internal {
-        IDLPRoot.EpochInfo memory epoch = dlpRoot.epochs(epochId);
+        IDLPRootEpoch.EpochInfo memory epoch = dlpRoot.dlpRootEpoch().epochs(epochId);
 
         if (epoch.isFinalised == true) {
             revert EpochRewardsAlreadyDistributed();
@@ -580,71 +580,52 @@ contract DLPRootMetricsImplementation is
 
         IDLPRootMetrics.DlpRating[] memory topDlps = topDlpsDefaultPercentages(
             epochId,
-            dlpRoot.epochDlpsLimit(),
+            dlpRoot.dlpRootEpoch().epochDlpsLimit(),
             dlpIds
         );
 
         uint256 totalTopDlpsRating;
-        uint256 totalTopDlpsSublinearRating;
 
         uint256 topDlpsCount = topDlps.length;
 
         uint256[] memory topDlpsStakerPercentages = new uint256[](topDlpsCount);
-        uint256[] memory topDlpsSublinearRatings = new uint256[](topDlpsCount);
 
         uint256 i;
 
-        // Calculate total stake amount for top DLPs
         for (i = 0; i < topDlpsCount; ) {
             totalTopDlpsRating += topDlps[i].rating;
-
-            topDlpsStakerPercentages[i] = dlpRoot.dlpEpochs(topDlps[i].dlpId, epochId).stakersPercentage;
-            topDlpsSublinearRatings[i] =
-                (Math.sqrt(topDlps[i].rating) * (100e18 - topDlpsStakerPercentages[i])) /
-                100e18;
-
-            totalTopDlpsSublinearRating += topDlpsSublinearRatings[i];
+            topDlpsStakerPercentages[i] = dlpRoot.dlpRootEpoch().epochDlps(epochId, topDlps[i].dlpId).stakersPercentage;
 
             unchecked {
                 ++i;
             }
         }
 
-        IDLPRoot.EpochDlpReward[] memory epochDlpRewards = new IDLPRoot.EpochDlpReward[](topDlpsCount);
+        IDLPRootEpoch.EpochDlpReward[] memory epochDlpRewards = new IDLPRootEpoch.EpochDlpReward[](topDlpsCount);
         uint256 totalDlpReward;
         uint256 stakersRewardAmount;
-        uint256 dlpCreatorsRewardAmount = epoch.rewardAmount;
 
         // calculate stakers rewards
         for (i = 0; i < topDlpsCount; ) {
             totalDlpReward = totalTopDlpsRating > 0 ? (topDlps[i].rating * epoch.rewardAmount) / totalTopDlpsRating : 0;
 
             stakersRewardAmount = (totalDlpReward * topDlpsStakerPercentages[i]) / 100e18;
-            dlpCreatorsRewardAmount -= stakersRewardAmount;
 
             epochDlpRewards[i].dlpId = topDlps[i].dlpId;
             epochDlpRewards[i].stakersRewardAmount = stakersRewardAmount;
+            epochDlpRewards[i].rewardAmount = totalDlpReward - stakersRewardAmount;
 
             unchecked {
                 ++i;
             }
         }
 
-        // calculate dlp creators rewards
-        for (i = 0; i < topDlpsCount; ) {
-            epochDlpRewards[i].rewardAmount =
-                (dlpCreatorsRewardAmount * topDlpsSublinearRatings[i]) /
-                totalTopDlpsSublinearRating;
-
-            unchecked {
-                ++i;
-            }
-        }
-
-        dlpRoot.distributeEpochRewards(epochId, epochDlpRewards);
+        dlpRoot.dlpRootEpoch().distributeEpochRewards(epochId, epochDlpRewards);
     }
 
     function _dlpEpochStakeAmount(uint256 dlpId, uint256 epochId) internal view returns (uint256) {
-        return dlpRoot.dlpEpochStakeAmount(dlpId, epochId) - _epochs[epochId].dlps[dlpId].stakeAmountAdjustment;
+        return
+            dlpRoot.dlpRootEpoch().epochDlpStakeAmount(epochId, dlpId) -
+            _epochs[epochId].dlps[dlpId].stakeAmountAdjustment;
     }
 }

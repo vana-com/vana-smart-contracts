@@ -2,6 +2,8 @@
 pragma solidity 0.8.24;
 
 import {IDLPRoot} from "../../root/interfaces/IDLPRoot.sol";
+import {IDLPRootCore} from "../../rootCore/interfaces/IDLPRootCore.sol";
+import {IDLPRootEpoch} from "../../rootEpoch/interfaces/IDLPRootEpoch.sol";
 
 interface IDLPRootMetrics {
     enum RatingType {
@@ -50,6 +52,12 @@ interface IDLPRootMetrics {
         bool fullRewardAmount;
     }
 
+    struct DlpRewardApy {
+        uint256 dlpId;
+        uint256 APY; //annual percentage yield for stakers
+        uint256 EPY; //epoch percentage yield for stakers
+    }
+
     function version() external pure returns (uint256);
     function dlpRoot() external view returns (IDLPRoot);
     function foundationWalletAddress() external view returns (address payable);
@@ -81,10 +89,10 @@ interface IDLPRootMetrics {
     function estimatedDlpRewardPercentages(
         uint256[] memory dlpIds,
         uint256[] memory customRatingPercentages
-    ) external view returns (IDLPRoot.DlpRewardApy[] memory);
+    ) external view returns (DlpRewardApy[] memory);
     function estimatedDlpRewardPercentagesDefault(
         uint256[] memory dlpIds
-    ) external view returns (IDLPRoot.DlpRewardApy[] memory);
+    ) external view returns (DlpRewardApy[] memory);
     function getMultiplier(uint256 index) external pure returns (uint256);
     function pause() external;
     function unpause() external;
