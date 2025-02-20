@@ -947,7 +947,14 @@ describe("TeePool", () => {
         .should.emit(teePool, "ProofAdded")
         .withArgs(tee1.address, 1, 1)
         .and.to.emit(dataRegistry, "ProofAdded")
-        .withArgs(1, 1);
+        .withArgs(
+          1,
+          user1,
+          1,
+          proofs[1].data.dlpId,
+          proofs[1].data.score,
+          proofs[1].data.proofUrl,
+        );
 
       const job1 = await teePool.jobs(1);
       job1.status.should.eq(JobStatus.Completed);
@@ -971,7 +978,14 @@ describe("TeePool", () => {
         .should.emit(teePool, "ProofAdded")
         .withArgs(tee1.address, 1, 1)
         .and.to.emit(dataRegistry, "ProofAdded")
-        .withArgs(1, 1);
+        .withArgs(
+          1,
+          user1,
+          1,
+          proofs[1].data.dlpId,
+          proofs[1].data.score,
+          proofs[1].data.proofUrl,
+        );
 
       const job1 = await teePool.jobs(1);
       job1.status.should.eq(JobStatus.Completed);
@@ -1295,7 +1309,14 @@ describe("TeePool", () => {
         .should.emit(teePool, "ProofAdded")
         .withArgs(tee1.address, 4, 5)
         .and.to.emit(dataRegistry, "ProofAdded")
-        .withArgs(5, 1);
+        .withArgs(
+          5,
+          user2,
+          1,
+          proofs[5].data.dlpId,
+          proofs[5].data.score,
+          proofs[5].data.proofUrl,
+        );
 
       const file5Proof1 = await dataRegistry.fileProofs(5, 1);
       file5Proof1.signature.should.eq(proofs[5].signature);
