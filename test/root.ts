@@ -114,7 +114,7 @@ describe("DLPRoot", () => {
   let user4: HardhatEthersSigner;
   let user5: HardhatEthersSigner;
 
-  let root: DLPRootImplementation;
+  let rootStaking: DLPRootImplementation;
   let rootMetrics: DLPRootMetricsImplementation;
   let rootCore: DLPRootCoreImplementation;
   let rootEpoch: DLPRootEpochImplementation;
@@ -203,7 +203,7 @@ describe("DLPRoot", () => {
       },
     );
 
-    root = await ethers.getContractAt(
+    rootStaking = await ethers.getContractAt(
       "DLPRootImplementation",
       dlpRootDeploy.target,
     );
@@ -211,9 +211,8 @@ describe("DLPRoot", () => {
     const dlpRootMetricsDeploy = await upgrades.deployProxy(
       await ethers.getContractFactory("DLPRootMetricsImplementation"),
       [
-        trustedForwarder.address,
         owner.address,
-        root.target,
+        rootStaking.target,
         stakeRatingPercentage,
         performanceRatingPercentage,
       ],
@@ -229,7 +228,7 @@ describe("DLPRoot", () => {
 
     const dlpRootCoreDeploy = await upgrades.deployProxy(
       await ethers.getContractFactory("DLPRootCoreImplementation"),
-      [owner.address, root.target],
+      [owner.address, rootStaking.target],
       {
         kind: "uups",
       },
@@ -242,7 +241,7 @@ describe("DLPRoot", () => {
 
     const dlpRootEpochDeploy = await upgrades.deployProxy(
       await ethers.getContractFactory("DLPRootEpochImplementation"),
-      [owner.address, root.target, daySize],
+      [owner.address, rootStaking.target, daySize],
       {
         kind: "uups",
       },
@@ -253,16 +252,12 @@ describe("DLPRoot", () => {
       dlpRootEpochDeploy.target,
     );
 
-    await root.connect(owner).grantRole(MAINTAINER_ROLE, owner);
-    await root.connect(owner).grantRole(MANAGER_ROLE, owner);
-
-    await root.connect(owner).updateTrustedForwarder(trustedForwarder);
-
-    // after
-
-    await root.connect(owner).updateDlpRootMetrics(rootMetrics);
-    await root.connect(owner).updateDlpRootCore(rootCore);
-    await root.connect(owner).updateDlpRootEpoch(rootEpoch);
+    await rootStaking.connect(owner).grantRole(MAINTAINER_ROLE, owner);
+    await rootStaking.connect(owner).grantRole(MANAGER_ROLE, owner);
+    await rootStaking.connect(owner).updateTrustedForwarder(trustedForwarder);
+    await rootStaking.connect(owner).updateDlpRootMetrics(rootMetrics);
+    await rootStaking.connect(owner).updateDlpRootCore(rootCore);
+    await rootStaking.connect(owner).updateDlpRootEpoch(rootEpoch);
 
     await rootEpoch.connect(owner).updateEpochDlpsLimit(epochDlpsLimit);
     await rootCore
@@ -280,9 +275,12 @@ describe("DLPRoot", () => {
     await rootCore
       .connect(owner)
       .updateMinDlpRegistrationStake(minDlpRegistrationStake);
-    await root.connect(owner).updateMinStakeAmount(minStakeAmount);
-    await root.connect(owner).updateStakeWithdrawalDelay(stakeWithdrawalDelay);
-    await root.connect(owner).updateRewardClaimDelay(rewardClaimDelay);
+    await rootStaking.connect(owner).updateMinStakeAmount(minStakeAmount);
+    await rootStaking
+      .connect(owner)
+      .updateStakeWithdrawalDelay(stakeWithdrawalDelay);
+    await rootStaking.connect(owner).updateRewardClaimDelay(rewardClaimDelay);
+
     await rootEpoch.connect(owner).updateEpochSize(epochSize);
     await rootEpoch.connect(owner).updateEpochRewardAmount(epochRewardAmount);
 
@@ -290,7 +288,7 @@ describe("DLPRoot", () => {
 
     const dlpRootRewardsTreasuryDeploy = await upgrades.deployProxy(
       await ethers.getContractFactory("DLPRootTreasuryImplementation"),
-      [owner.address, root.target],
+      [owner.address, rootStaking.target],
       {
         kind: "uups",
       },
@@ -303,7 +301,7 @@ describe("DLPRoot", () => {
 
     const dlpRootStakesTreasuryDeploy = await upgrades.deployProxy(
       await ethers.getContractFactory("DLPRootTreasuryImplementation"),
-      [owner.address, root.target],
+      [owner.address, rootStaking.target],
       {
         kind: "uups",
       },
@@ -314,14 +312,16 @@ describe("DLPRoot", () => {
       dlpRootStakesTreasuryDeploy.target,
     );
 
-    await root.connect(owner).grantRole(MAINTAINER_ROLE, maintainer);
-    await root.connect(owner).grantRole(MANAGER_ROLE, manager);
+    await rootStaking.connect(owner).grantRole(MAINTAINER_ROLE, maintainer);
+    await rootStaking.connect(owner).grantRole(MANAGER_ROLE, manager);
 
-    await root.connect(owner).updateDlpRootMetrics(rootMetrics);
-    await root.connect(owner).updateDlpRootRewardsTreasury(rewardsTreasury);
-    await root.connect(owner).updateDlpRootStakesTreasury(stakesTreasury);
-    await rootMetrics.connect(owner).grantRole(MAINTAINER_ROLE, maintainer);
-    await rootMetrics.connect(owner).grantRole(MANAGER_ROLE, manager);
+    await rootStaking.connect(owner).updateDlpRootMetrics(rootMetrics);
+    await rootStaking
+      .connect(owner)
+      .updateDlpRootRewardsTreasury(rewardsTreasury);
+    await rootStaking
+      .connect(owner)
+      .updateDlpRootStakesTreasury(stakesTreasury);
 
     await rewardsTreasury
       .connect(owner)
@@ -333,12 +333,16 @@ describe("DLPRoot", () => {
       .connect(owner)
       .grantRole(DLP_ROOT_METRICS_ROLE, rootMetrics);
 
-    await root.connect(owner).grantRole(DLP_ROOT_METRICS_ROLE, rootMetrics);
+    await rootStaking
+      .connect(owner)
+      .grantRole(DLP_ROOT_METRICS_ROLE, rootMetrics);
 
-    await rootMetrics.connect(owner).grantRole(DLP_ROOT_ROLE, root); /////////
+    await rootMetrics.connect(owner).grantRole(MAINTAINER_ROLE, maintainer);
+    await rootMetrics.connect(owner).grantRole(MANAGER_ROLE, manager);
+    await rootMetrics.connect(owner).grantRole(DLP_ROOT_ROLE, rootStaking);
     await rootMetrics
       .connect(maintainer)
-      .updateFoundationWalletAddress(foundation); /////////
+      .updateFoundationWalletAddress(foundation);
 
     dlpInfo = {
       1: {
@@ -565,7 +569,6 @@ describe("DLPRoot", () => {
   async function saveDefaultEpochPerformanceRatings(epochId: number) {
     await rootMetrics.connect(manager).saveEpochPerformanceRatings(
       epochId,
-      false,
       (await rootCore.eligibleDlpsListValues()).map((id) =>
         dlpPerformanceRating(id, 1n),
       ),
@@ -579,12 +582,14 @@ describe("DLPRoot", () => {
     });
 
     it("should have correct params after deploy", async function () {
-      (await root.hasRole(DEFAULT_ADMIN_ROLE, owner)).should.eq(true);
-      (await root.hasRole(MAINTAINER_ROLE, owner)).should.eq(true);
-      (await root.hasRole(MANAGER_ROLE, owner)).should.eq(true);
-      (await root.hasRole(MAINTAINER_ROLE, maintainer)).should.eq(true);
-      (await root.hasRole(MANAGER_ROLE, manager)).should.eq(true);
-      (await root.hasRole(DLP_ROOT_METRICS_ROLE, rootMetrics)).should.eq(true);
+      (await rootStaking.hasRole(DEFAULT_ADMIN_ROLE, owner)).should.eq(true);
+      (await rootStaking.hasRole(MAINTAINER_ROLE, owner)).should.eq(true);
+      (await rootStaking.hasRole(MANAGER_ROLE, owner)).should.eq(true);
+      (await rootStaking.hasRole(MAINTAINER_ROLE, maintainer)).should.eq(true);
+      (await rootStaking.hasRole(MANAGER_ROLE, manager)).should.eq(true);
+      (await rootStaking.hasRole(DLP_ROOT_METRICS_ROLE, rootMetrics)).should.eq(
+        true,
+      );
       (await rootEpoch.epochDlpsLimit()).should.eq(epochDlpsLimit);
       (await rootCore.minDlpRegistrationStake()).should.eq(
         minDlpRegistrationStake,
@@ -603,11 +608,11 @@ describe("DLPRoot", () => {
       );
       (await rootEpoch.epochSize()).should.eq(epochSize);
       (await rootEpoch.epochRewardAmount()).should.eq(epochRewardAmount);
-      (await root.paused()).should.eq(false);
-      (await root.version()).should.eq(4);
-      (await root.dlpRootMetrics()).should.eq(rootMetrics);
-      (await root.dlpRootRewardsTreasury()).should.eq(rewardsTreasury);
-      (await root.dlpRootStakesTreasury()).should.eq(stakesTreasury);
+      (await rootStaking.paused()).should.eq(false);
+      (await rootStaking.version()).should.eq(4);
+      (await rootStaking.dlpRootMetrics()).should.eq(rootMetrics);
+      (await rootStaking.dlpRootRewardsTreasury()).should.eq(rewardsTreasury);
+      (await rootStaking.dlpRootStakesTreasury()).should.eq(stakesTreasury);
 
       (await rootEpoch.epochsCount()).should.eq(0);
 
@@ -618,43 +623,43 @@ describe("DLPRoot", () => {
     });
 
     it("should pause when maintainer", async function () {
-      await root
+      await rootStaking
         .connect(maintainer)
         .pause()
-        .should.emit(root, "Paused")
+        .should.emit(rootStaking, "Paused")
         .withArgs(maintainer.address);
-      (await root.paused()).should.be.equal(true);
+      (await rootStaking.paused()).should.be.equal(true);
     });
 
     it("should reject pause when non-maintainer", async function () {
-      await root
+      await rootStaking
         .connect(manager)
         .pause()
         .should.be.rejectedWith(
           `AccessControlUnauthorizedAccount("${manager.address}", "${MAINTAINER_ROLE}")`,
         );
-      (await root.paused()).should.be.equal(false);
+      (await rootStaking.paused()).should.be.equal(false);
     });
 
     it("should unpause when maintainer", async function () {
-      await root.connect(maintainer).pause();
-      await root
+      await rootStaking.connect(maintainer).pause();
+      await rootStaking
         .connect(owner)
         .unpause()
-        .should.emit(root, "Unpaused")
+        .should.emit(rootStaking, "Unpaused")
         .withArgs(owner.address);
-      (await root.paused()).should.be.equal(false);
+      (await rootStaking.paused()).should.be.equal(false);
     });
 
     it("should reject unpause when non-maintainer", async function () {
-      await root.connect(owner).pause();
-      await root
+      await rootStaking.connect(owner).pause();
+      await rootStaking
         .connect(manager)
         .unpause()
         .should.be.rejectedWith(
           `AccessControlUnauthorizedAccount("${manager.address}", "${MAINTAINER_ROLE}")`,
         );
-      (await root.paused()).should.be.equal(true);
+      (await rootStaking.paused()).should.be.equal(true);
     });
 
     it("should updateEpochDlpsLimit when maintainer", async function () {
@@ -728,24 +733,24 @@ describe("DLPRoot", () => {
     });
 
     it("should updateMinStakeAmount when maintainer", async function () {
-      await root
+      await rootStaking
         .connect(maintainer)
         .updateMinStakeAmount(minStakeAmount + 1n)
-        .should.emit(root, "MinStakeAmountUpdated")
+        .should.emit(rootStaking, "MinStakeAmountUpdated")
         .withArgs(minStakeAmount + 1n);
 
-      (await root.minStakeAmount()).should.eq(minStakeAmount + 1n);
+      (await rootStaking.minStakeAmount()).should.eq(minStakeAmount + 1n);
     });
 
     it("should reject updateMinStakeAmount when non-maintainer", async function () {
-      await root
+      await rootStaking
         .connect(manager)
         .updateMinStakeAmount(minStakeAmount + 1n)
         .should.be.rejectedWith(
           `AccessControlUnauthorizedAccount("${manager.address}", "${MAINTAINER_ROLE}")`,
         );
 
-      (await root.minStakeAmount()).should.eq(minStakeAmount);
+      (await rootStaking.minStakeAmount()).should.eq(minStakeAmount);
     });
 
     it("should updateDlpStakersPercentages when maintainer", async function () {
@@ -846,89 +851,97 @@ describe("DLPRoot", () => {
     });
 
     it("should updateStakeWithdrawalDelay when maintainer", async function () {
-      await root
+      await rootStaking
         .connect(maintainer)
         .updateStakeWithdrawalDelay(stakeWithdrawalDelay + 1)
-        .should.emit(root, "StakeWithdrawalDelayUpdated")
+        .should.emit(rootStaking, "StakeWithdrawalDelayUpdated")
         .withArgs(stakeWithdrawalDelay + 1);
 
-      (await root.stakeWithdrawalDelay()).should.eq(stakeWithdrawalDelay + 1);
+      (await rootStaking.stakeWithdrawalDelay()).should.eq(
+        stakeWithdrawalDelay + 1,
+      );
     });
 
     it("should reject updateStakeWithdrawalDelay when non-maintainer", async function () {
-      await root
+      await rootStaking
         .connect(manager)
         .updateStakeWithdrawalDelay(stakeWithdrawalDelay + 1)
         .should.be.rejectedWith(
           `AccessControlUnauthorizedAccount("${manager.address}", "${MAINTAINER_ROLE}")`,
         );
 
-      (await root.stakeWithdrawalDelay()).should.eq(stakeWithdrawalDelay);
+      (await rootStaking.stakeWithdrawalDelay()).should.eq(
+        stakeWithdrawalDelay,
+      );
     });
 
     it("should updateTrustedForwarder when maintainer", async function () {
-      await root.connect(maintainer).updateTrustedForwarder(user1);
+      await rootStaking.connect(maintainer).updateTrustedForwarder(user1);
 
-      (await root.trustedForwarder()).should.eq(user1);
+      (await rootStaking.trustedForwarder()).should.eq(user1);
     });
 
     it("should reject updateTrustedForwarder when non-maintainer", async function () {
-      await root
+      await rootStaking
         .connect(manager)
         .updateTrustedForwarder(user1)
         .should.be.rejectedWith(
           `AccessControlUnauthorizedAccount("${manager.address}", "${MAINTAINER_ROLE}")`,
         );
 
-      (await root.trustedForwarder()).should.eq(trustedForwarder);
+      (await rootStaking.trustedForwarder()).should.eq(trustedForwarder);
     });
 
     it("should updateDlpRootMetrics when maintainer", async function () {
-      await root.connect(maintainer).updateDlpRootMetrics(user1);
+      await rootStaking.connect(maintainer).updateDlpRootMetrics(user1);
 
-      (await root.dlpRootMetrics()).should.eq(user1);
+      (await rootStaking.dlpRootMetrics()).should.eq(user1);
     });
 
     it("should reject updateDlpRootMetrics when non-maintainer", async function () {
-      await root
+      await rootStaking
         .connect(manager)
         .updateDlpRootMetrics(user1)
         .should.be.rejectedWith(
           `AccessControlUnauthorizedAccount("${manager.address}", "${MAINTAINER_ROLE}")`,
         );
 
-      (await root.dlpRootMetrics()).should.eq(rootMetrics);
+      (await rootStaking.dlpRootMetrics()).should.eq(rootMetrics);
     });
 
     it("should change admin", async function () {
-      await root.connect(owner).grantRole(MAINTAINER_ROLE, user1.address).should
-        .not.be.rejected;
+      await rootStaking.connect(owner).grantRole(MAINTAINER_ROLE, user1.address)
+        .should.not.be.rejected;
 
-      await root.connect(owner).grantRole(DEFAULT_ADMIN_ROLE, user1.address)
-        .should.be.fulfilled;
+      await rootStaking
+        .connect(owner)
+        .grantRole(DEFAULT_ADMIN_ROLE, user1.address).should.be.fulfilled;
 
-      await root.connect(user1).revokeRole(DEFAULT_ADMIN_ROLE, owner.address);
+      await rootStaking
+        .connect(user1)
+        .revokeRole(DEFAULT_ADMIN_ROLE, owner.address);
 
-      await root
+      await rootStaking
         .connect(owner)
         .updateDlpRootRewardsTreasury(dlp1Treasury)
         .should.rejectedWith(
           `AccessControlUnauthorizedAccount("${owner.address}", "${DEFAULT_ADMIN_ROLE}`,
         );
 
-      await root.connect(user1).updateDlpRootRewardsTreasury(dlp1Treasury)
-        .should.be.fulfilled;
+      await rootStaking
+        .connect(user1)
+        .updateDlpRootRewardsTreasury(dlp1Treasury).should.be.fulfilled;
     });
 
     it("should upgradeTo when owner", async function () {
       await upgrades.upgradeProxy(
-        root,
+        rootStaking,
         await ethers.getContractFactory("DLPRootImplementationV2Mock", owner),
       );
 
       const newRoot = await ethers.getContractAt(
         "DLPRootImplementationV2Mock",
-        root,
+        rootStaking,
       );
 
       (await newRoot.paused()).should.eq(false);
@@ -942,15 +955,15 @@ describe("DLPRoot", () => {
         "DLPRootImplementationV2Mock",
       );
 
-      await root
+      await rootStaking
         .connect(owner)
         .upgradeToAndCall(newRootImplementation, "0x")
-        .should.emit(root, "Upgraded")
+        .should.emit(rootStaking, "Upgraded")
         .withArgs(newRootImplementation);
 
       const newRoot = await ethers.getContractAt(
         "DLPRootImplementationV2Mock",
-        root,
+        rootStaking,
       );
 
       (await newRoot.paused()).should.eq(false);
@@ -962,7 +975,7 @@ describe("DLPRoot", () => {
     it("should reject upgradeTo when storage layout is incompatible", async function () {
       await upgrades
         .upgradeProxy(
-          root,
+          rootStaking,
           await ethers.getContractFactory("DLPRootImplementationV3Mock", owner),
         )
         .should.be.rejectedWith("New storage layout is incompatible");
@@ -973,7 +986,7 @@ describe("DLPRoot", () => {
         "DLPRootImplementationV2Mock",
       );
 
-      await root
+      await rootStaking
         .connect(user1)
         .upgradeToAndCall(newRootImplementation, "0x")
         .should.be.rejectedWith(
@@ -1012,7 +1025,7 @@ describe("DLPRoot", () => {
       const receipt = await getReceipt(tx);
 
       receipt.should
-        .emit(root, "DlpRegistered")
+        .emit(rootStaking, "DlpRegistered")
         .withArgs(
           1,
           dlp1,
@@ -1024,7 +1037,7 @@ describe("DLPRoot", () => {
           "dlp1Website",
           "dlp1Metadata",
         )
-        .emit(root, "StakeCreated")
+        .emit(rootStaking, "StakeCreated")
         .withArgs(1, dlp1Owner, 1, registrationAmount);
 
       (await rootCore.dlpsCount()).should.eq(1);
@@ -1085,7 +1098,7 @@ describe("DLPRoot", () => {
       await rootCore.connect(maintainer).updateDlpVerification(1, true);
 
       receipt.should
-        .emit(root, "DlpRegistered")
+        .emit(rootStaking, "DlpRegistered")
         .withArgs(
           1,
           dlp1,
@@ -1097,9 +1110,9 @@ describe("DLPRoot", () => {
           "dlp1Website",
           "dlp1Metadata",
         )
-        .emit(root, "StakeCreated")
+        .emit(rootStaking, "StakeCreated")
         .withArgs(1, dlp1Owner, 1, registrationAmount)
-        .emit(root, "DlpBecameEligible")
+        .emit(rootStaking, "DlpBecameEligible")
         .withArgs(1);
 
       (await rootCore.dlpsCount()).should.eq(1);
@@ -1160,7 +1173,7 @@ describe("DLPRoot", () => {
       const receipt = await getReceipt(tx);
 
       receipt.should
-        .emit(root, "DlpRegistered")
+        .emit(rootStaking, "DlpRegistered")
         .withArgs(
           1,
           dlp1,
@@ -1172,7 +1185,7 @@ describe("DLPRoot", () => {
           "dlp1Website",
           "dlp1Metadata",
         )
-        .emit(root, "StakeCreated")
+        .emit(rootStaking, "StakeCreated")
         .withArgs(1, dlp1Owner, 1, registrationAmount);
 
       (await rootCore.dlpsCount()).should.eq(1);
@@ -1205,7 +1218,7 @@ describe("DLPRoot", () => {
         registrationAmount,
       );
 
-      await root.connect(user1).createStake(1, {
+      await rootStaking.connect(user1).createStake(1, {
         value: dlpEligibilityThreshold - registrationAmount,
       });
 
@@ -1214,7 +1227,7 @@ describe("DLPRoot", () => {
       dlp1Info.status.should.eq(DlpStatus.Eligible);
       (await rootCore.eligibleDlpsListValues()).should.deep.eq([1n]);
 
-      await root.connect(user1).closeStakes([2]);
+      await rootStaking.connect(user1).closeStakes([2]);
 
       dlp1Info = await rootCore.dlps(1);
       dlp1Info.stakeAmount.should.eq(minDlpRegistrationStake);
@@ -1252,7 +1265,7 @@ describe("DLPRoot", () => {
       await rootCore.connect(maintainer).updateDlpVerification(1, true);
 
       receipt.should
-        .emit(root, "DlpRegistered")
+        .emit(rootStaking, "DlpRegistered")
         .withArgs(
           1,
           dlp1,
@@ -1264,9 +1277,9 @@ describe("DLPRoot", () => {
           "dlp1Website",
           "dlp1Metadata",
         )
-        .emit(root, "StakeCreated")
+        .emit(rootStaking, "StakeCreated")
         .withArgs(1, dlp1Owner, 1, registrationAmount)
-        .emit(root, "DlpBecameEligible")
+        .emit(rootStaking, "DlpBecameEligible")
         .withArgs(1);
 
       (await rootCore.dlpsCount()).should.eq(1);
@@ -1327,7 +1340,7 @@ describe("DLPRoot", () => {
       const receipt = await getReceipt(tx);
 
       receipt.should
-        .emit(root, "DlpRegistered")
+        .emit(rootStaking, "DlpRegistered")
         .withArgs(
           1,
           dlp1,
@@ -1339,7 +1352,7 @@ describe("DLPRoot", () => {
           "dlp1Website",
           "dlp1Metadata",
         )
-        .emit(root, "StakeCreated")
+        .emit(rootStaking, "StakeCreated")
         .withArgs(1, dlp1Owner, 1, registrationAmount);
 
       (await rootCore.dlpsCount()).should.eq(1);
@@ -1371,7 +1384,7 @@ describe("DLPRoot", () => {
         registrationAmount,
       );
 
-      const stake = await root.stakes(1);
+      const stake = await rootStaking.stakes(1);
       stake.id.should.eq(1);
       stake.stakerAddress.should.eq(dlp1Owner.address);
       stake.dlpId.should.eq(1);
@@ -1381,20 +1394,22 @@ describe("DLPRoot", () => {
       stake.withdrawn.should.eq(false);
       stake.lastClaimedEpochId.should.eq(0);
 
-      (await root.stakerDlpsListCount(dlp1Owner.address)).should.eq(1);
-      (await root.stakerDlpsListAt(dlp1Owner.address, 0)).should.eq(1);
-      (await root.stakerDlpsListValues(dlp1Owner.address)).should.deep.eq([1]);
+      (await rootStaking.stakerDlpsListCount(dlp1Owner.address)).should.eq(1);
+      (await rootStaking.stakerDlpsListAt(dlp1Owner.address, 0)).should.eq(1);
+      (
+        await rootStaking.stakerDlpsListValues(dlp1Owner.address)
+      ).should.deep.eq([1]);
 
-      (await root.stakerStakesListCount(dlp1Owner.address)).should.eq(1);
-      (await root.stakerStakesListAt(dlp1Owner.address, 0)).should.eq(1);
-      (await root.stakerStakesListValues(dlp1Owner.address)).should.deep.eq([
-        1,
-      ]);
+      (await rootStaking.stakerStakesListCount(dlp1Owner.address)).should.eq(1);
+      (await rootStaking.stakerStakesListAt(dlp1Owner.address, 0)).should.eq(1);
+      (
+        await rootStaking.stakerStakesListValues(dlp1Owner.address)
+      ).should.deep.eq([1]);
 
-      (await root.stakerDlpStakeAmount(dlp1Owner.address, 1)).should.eq(
+      (await rootStaking.stakerDlpStakeAmount(dlp1Owner.address, 1)).should.eq(
         registrationAmount,
       );
-      (await root.stakerTotalStakeAmount(dlp1Owner.address)).should.eq(
+      (await rootStaking.stakerTotalStakeAmount(dlp1Owner.address)).should.eq(
         registrationAmount,
       );
     });
@@ -1424,7 +1439,7 @@ describe("DLPRoot", () => {
       const receipt1 = await getReceipt(tx1);
 
       receipt1.should
-        .emit(root, "DlpRegistered")
+        .emit(rootStaking, "DlpRegistered")
         .withArgs(
           1,
           dlp1,
@@ -1436,7 +1451,7 @@ describe("DLPRoot", () => {
           "dlp1Website",
           "dlp1Metadata",
         )
-        .emit(root, "StakeCreated")
+        .emit(rootStaking, "StakeCreated")
         .withArgs(1, dlp1Owner, 1, registrationAmount);
 
       const tx2 = await rootCore.connect(user1).registerDlp(
@@ -1456,7 +1471,7 @@ describe("DLPRoot", () => {
       const receipt2 = await getReceipt(tx2);
 
       receipt2.should
-        .emit(root, "DlpRegistered")
+        .emit(rootStaking, "DlpRegistered")
         .withArgs(
           2,
           dlp2,
@@ -1468,7 +1483,7 @@ describe("DLPRoot", () => {
           "dlp2Website",
           "dlp2Metadata",
         )
-        .emit(root, "StakeCreated")
+        .emit(rootStaking, "StakeCreated")
         .withArgs(2, dlp2Owner, 2, registrationAmount);
 
       (await rootCore.dlpsCount()).should.eq(2);
@@ -1528,7 +1543,7 @@ describe("DLPRoot", () => {
     });
 
     it("should reject registerDlp when paused", async function () {
-      await root.connect(owner).pause();
+      await rootStaking.connect(owner).pause();
       await rootCore
         .connect(user1)
         .registerDlp(
@@ -1738,7 +1753,7 @@ describe("DLPRoot", () => {
       );
       const receipt1 = await getReceipt(tx1);
 
-      const stake1 = await root.stakes(1);
+      const stake1 = await rootStaking.stakes(1);
       stake1.id.should.eq(1);
       stake1.stakerAddress.should.eq(dlp1Owner.address);
       stake1.dlpId.should.eq(1);
@@ -1747,20 +1762,22 @@ describe("DLPRoot", () => {
       stake1.withdrawn.should.eq(false);
       stake1.lastClaimedEpochId.should.eq(0);
 
-      (await root.stakerDlpsListCount(dlp1Owner.address)).should.eq(1);
-      (await root.stakerDlpsListAt(dlp1Owner.address, 0)).should.eq(1);
-      (await root.stakerDlpsListValues(dlp1Owner.address)).should.deep.eq([1]);
+      (await rootStaking.stakerDlpsListCount(dlp1Owner.address)).should.eq(1);
+      (await rootStaking.stakerDlpsListAt(dlp1Owner.address, 0)).should.eq(1);
+      (
+        await rootStaking.stakerDlpsListValues(dlp1Owner.address)
+      ).should.deep.eq([1]);
 
-      (await root.stakerStakesListCount(dlp1Owner.address)).should.eq(1);
-      (await root.stakerStakesListAt(dlp1Owner.address, 0)).should.eq(1);
-      (await root.stakerStakesListValues(dlp1Owner.address)).should.deep.eq([
-        1,
-      ]);
+      (await rootStaking.stakerStakesListCount(dlp1Owner.address)).should.eq(1);
+      (await rootStaking.stakerStakesListAt(dlp1Owner.address, 0)).should.eq(1);
+      (
+        await rootStaking.stakerStakesListValues(dlp1Owner.address)
+      ).should.deep.eq([1]);
 
-      (await root.stakerDlpStakeAmount(dlp1Owner.address, 1)).should.eq(
+      (await rootStaking.stakerDlpStakeAmount(dlp1Owner.address, 1)).should.eq(
         minDlpRegistrationStake,
       );
-      (await root.stakerTotalStakeAmount(dlp1Owner.address)).should.eq(
+      (await rootStaking.stakerTotalStakeAmount(dlp1Owner.address)).should.eq(
         minDlpRegistrationStake,
       );
 
@@ -1777,7 +1794,7 @@ describe("DLPRoot", () => {
 
       (await rootCore.dlpsByAddress(dlp1)).should.deep.eq(dlp1Info);
 
-      const stake1After = await root.stakes(1);
+      const stake1After = await rootStaking.stakes(1);
       stake1After.id.should.eq(1);
       stake1After.stakerAddress.should.eq(dlp1Owner.address);
       stake1After.dlpId.should.eq(1);
@@ -1786,20 +1803,22 @@ describe("DLPRoot", () => {
       stake1After.withdrawn.should.eq(false);
       stake1After.lastClaimedEpochId.should.eq(0);
 
-      (await root.stakerDlpsListCount(dlp1Owner.address)).should.eq(1);
-      (await root.stakerDlpsListAt(dlp1Owner.address, 0)).should.eq(1);
-      (await root.stakerDlpsListValues(dlp1Owner.address)).should.deep.eq([1]);
+      (await rootStaking.stakerDlpsListCount(dlp1Owner.address)).should.eq(1);
+      (await rootStaking.stakerDlpsListAt(dlp1Owner.address, 0)).should.eq(1);
+      (
+        await rootStaking.stakerDlpsListValues(dlp1Owner.address)
+      ).should.deep.eq([1]);
 
-      (await root.stakerStakesListCount(dlp1Owner.address)).should.eq(1);
-      (await root.stakerStakesListAt(dlp1Owner.address, 0)).should.eq(1);
-      (await root.stakerStakesListValues(dlp1Owner.address)).should.deep.eq([
-        1,
-      ]);
+      (await rootStaking.stakerStakesListCount(dlp1Owner.address)).should.eq(1);
+      (await rootStaking.stakerStakesListAt(dlp1Owner.address, 0)).should.eq(1);
+      (
+        await rootStaking.stakerStakesListValues(dlp1Owner.address)
+      ).should.deep.eq([1]);
 
-      (await root.stakerDlpStakeAmount(dlp1Owner.address, 1)).should.eq(
+      (await rootStaking.stakerDlpStakeAmount(dlp1Owner.address, 1)).should.eq(
         minDlpRegistrationStake,
       );
-      (await root.stakerTotalStakeAmount(dlp1Owner.address)).should.eq(
+      (await rootStaking.stakerTotalStakeAmount(dlp1Owner.address)).should.eq(
         minDlpRegistrationStake,
       );
 
@@ -2346,7 +2365,7 @@ describe("DLPRoot", () => {
           `AccessControlUnauthorizedAccount("${manager.address}", "${MAINTAINER_ROLE}")`,
         );
 
-      (await root.dlpRootMetrics()).should.eq(rootMetrics);
+      (await rootStaking.dlpRootMetrics()).should.eq(rootMetrics);
     });
   });
 
@@ -2650,15 +2669,7 @@ describe("DLPRoot", () => {
     it("should createEpochs with one registered dlp #1", async function () {
       await advanceToEpochN(1);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([]);
+      (await rootMetrics.topDlps(epochDlpsLimit)).should.deep.eq([]);
       await rootEpoch
         .connect(owner)
         .createEpochs()
@@ -2685,16 +2696,7 @@ describe("DLPRoot", () => {
       epoch2.rewardAmount.should.eq(0);
       epoch2.dlpIds.should.deep.eq([]);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([1n]);
-
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([1n]);
       await rootEpoch
         .connect(owner)
         .createEpochs()
@@ -2722,7 +2724,7 @@ describe("DLPRoot", () => {
       const dlp1Epoch1 = await rootEpoch.epochDlps(1, 1);
       dlp1Epoch1.stakeAmount.should.eq(dlpEligibilityThreshold);
       dlp1Epoch1.isTopDlp.should.eq(true);
-      dlp1Epoch1.rewardAmount.should.eq(
+      dlp1Epoch1.ownerRewardAmount.should.eq(
         (epochRewardAmount * minDlpStakersPercentage) / parseEther(100),
       );
       dlp1Epoch1.stakersPercentage.should.eq(minDlpStakersPercentage);
@@ -2731,15 +2733,7 @@ describe("DLPRoot", () => {
     it("should createEpochs after dlpStakersPercentage changes", async function () {
       await advanceToEpochN(1);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([]);
       await rootEpoch
         .connect(owner)
         .createEpochs()
@@ -2771,15 +2765,7 @@ describe("DLPRoot", () => {
       epoch2.rewardAmount.should.eq(0);
       epoch2.dlpIds.should.deep.eq([]);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([1n]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([1n]);
       await rootEpoch
         .connect(owner)
         .createEpochs()
@@ -2807,7 +2793,7 @@ describe("DLPRoot", () => {
       const dlp1Epoch1 = await rootEpoch.epochDlps(1, 1);
       dlp1Epoch1.stakeAmount.should.eq(dlpEligibilityThreshold);
       dlp1Epoch1.isTopDlp.should.eq(true);
-      dlp1Epoch1.rewardAmount.should.eq(
+      dlp1Epoch1.ownerRewardAmount.should.eq(
         (epochRewardAmount * minDlpStakersPercentage) / parseEther(100),
       );
       // dlp1Epoch1.stakersPercentage.should.eq(minDlpStakersPercentage); todo: uncomment this line after fixing the bug
@@ -2835,7 +2821,7 @@ describe("DLPRoot", () => {
       const dlp1Epoch2 = await rootEpoch.epochDlps(2, 1);
       dlp1Epoch2.stakeAmount.should.eq(dlpEligibilityThreshold);
       dlp1Epoch2.isTopDlp.should.eq(true);
-      dlp1Epoch2.rewardAmount.should.eq(
+      dlp1Epoch2.ownerRewardAmount.should.eq(
         (epochRewardAmount * minDlpStakersPercentage) / parseEther(100),
       );
       dlp1Epoch2.stakersPercentage.should.eq(minDlpStakersPercentage + 1n);
@@ -2844,15 +2830,7 @@ describe("DLPRoot", () => {
     it("should createEpochs with multiple registered dlps #1", async function () {
       await advanceToEpochN(1);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([]);
       await rootEpoch
         .connect(owner)
         .createEpochs()
@@ -2875,15 +2853,11 @@ describe("DLPRoot", () => {
       epoch1.rewardAmount.should.eq(epochRewardAmount);
       epoch1.dlpIds.should.deep.eq([]);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([5n, 4n, 3n]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([
+        5n,
+        4n,
+        3n,
+      ]);
       await rootEpoch
         .connect(owner)
         .createEpochs()
@@ -2906,15 +2880,7 @@ describe("DLPRoot", () => {
     it("should createEpochs with multiple registered dlps #2", async function () {
       await advanceToEpochN(1);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([]);
       await rootEpoch
         .connect(owner)
         .createEpochs()
@@ -2937,15 +2903,11 @@ describe("DLPRoot", () => {
       epoch1.rewardAmount.should.eq(epochRewardAmount);
       epoch1.dlpIds.should.deep.eq([]);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([2n, 3n, 4n]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([
+        2n,
+        3n,
+        4n,
+      ]);
       await rootEpoch
         .connect(owner)
         .createEpochs()
@@ -2967,15 +2929,7 @@ describe("DLPRoot", () => {
 
     it("should createEpochs with multiple registered dlps #3", async function () {
       await advanceToEpochN(1);
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([]);
       await rootEpoch
         .connect(owner)
         .createEpochs()
@@ -2998,15 +2952,11 @@ describe("DLPRoot", () => {
       epoch1.rewardAmount.should.eq(epochRewardAmount);
       epoch1.dlpIds.should.deep.eq([]);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([2n, 3n, 1n]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([
+        2n,
+        3n,
+        1n,
+      ]);
       await rootEpoch
         .connect(owner)
         .createEpochs()
@@ -3028,15 +2978,7 @@ describe("DLPRoot", () => {
 
     it("should createEpochs with multiple registered dlps #4", async function () {
       await advanceToEpochN(1);
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([]);
       await rootEpoch
         .connect(owner)
         .createEpochs()
@@ -3059,15 +3001,7 @@ describe("DLPRoot", () => {
       epoch1.rewardAmount.should.eq(epochRewardAmount);
       epoch1.dlpIds.should.deep.eq([]);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([]);
       await rootEpoch
         .connect(owner)
         .createEpochs()
@@ -3087,15 +3021,7 @@ describe("DLPRoot", () => {
 
     it("should createEpochs with multiple registered dlps #5", async function () {
       await advanceToEpochN(1);
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([]);
       await rootEpoch
         .connect(owner)
         .createEpochs()
@@ -3118,15 +3044,7 @@ describe("DLPRoot", () => {
       epoch1.rewardAmount.should.eq(epochRewardAmount);
       epoch1.dlpIds.should.deep.eq([]);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([5n, 2n]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([5n, 2n]);
       await rootEpoch
         .connect(owner)
         .createEpochs()
@@ -3148,15 +3066,7 @@ describe("DLPRoot", () => {
 
     it("should createEpochs after staking", async function () {
       await advanceToEpochN(1);
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([]);
       await rootEpoch
         .connect(owner)
         .createEpochs()
@@ -3179,15 +3089,11 @@ describe("DLPRoot", () => {
       epoch1.rewardAmount.should.eq(epochRewardAmount);
       epoch1.dlpIds.should.deep.eq([]);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([5n, 4n, 3n]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([
+        5n,
+        4n,
+        3n,
+      ]);
       await rootEpoch
         .connect(owner)
         .createEpochs()
@@ -3206,7 +3112,9 @@ describe("DLPRoot", () => {
       epoch1 = await rootEpoch.epochs(1);
       epoch1.dlpIds.should.deep.eq([5n, 4n, 3n]);
 
-      await root.connect(user1).createStake(1, { value: parseEther(10) });
+      await rootStaking
+        .connect(user1)
+        .createStake(1, { value: parseEther(10) });
 
       await advanceToEpochN(3);
       await rootEpoch
@@ -3237,7 +3145,7 @@ describe("DLPRoot", () => {
 
     it("should createEpochs when 100 dlps and 16  epochDlpsLimit", async function () {
       await rootEpoch.connect(owner).updateEpochDlpsLimit(16);
-      await root.connect(owner).updateMinStakeAmount(1);
+      await rootStaking.connect(owner).updateMinStakeAmount(1);
       await rootCore.connect(owner).updateMinDlpRegistrationStake(1);
       await rootCore.connect(owner).updateDlpEligibilityThresholds(1, 1);
       const stakes = generateStakes(100, parseEther(1), parseEther(2));
@@ -3246,15 +3154,7 @@ describe("DLPRoot", () => {
 
       await advanceToEpochN(5);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          16,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq(topStakes);
+      (await rootMetrics.topDlpIds(16)).should.deep.eq(topStakes);
       await rootEpoch
         .connect(owner)
         .createEpochs()
@@ -3294,15 +3194,7 @@ describe("DLPRoot", () => {
 
       await advanceToEpochN(2);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          32,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq(topStakes);
+      (await rootMetrics.topDlpIds(32)).should.deep.eq(topStakes);
 
       await rootEpoch
         .connect(owner)
@@ -3373,20 +3265,20 @@ describe("DLPRoot", () => {
 
       const user1InitialBalance = await ethers.provider.getBalance(user1);
 
-      const tx = await root
+      const tx = await rootStaking
         .connect(user1)
         .createStake(1, { value: stakeAmount });
       const receipt = await getReceipt(tx);
 
       await tx.should
-        .emit(root, "StakeCreated")
+        .emit(rootStaking, "StakeCreated")
         .withArgs(2, user1, 1, stakeAmount);
 
-      (await root.stakersListCount()).should.eq(2);
-      (await root.stakersListAt(0)).should.eq(dlp1Owner.address);
-      (await root.stakersListAt(1)).should.eq(user1.address);
+      (await rootStaking.stakersListCount()).should.eq(2);
+      (await rootStaking.stakersListAt(0)).should.eq(dlp1Owner.address);
+      (await rootStaking.stakersListAt(1)).should.eq(user1.address);
 
-      const stake1 = await root.stakes(1);
+      const stake1 = await rootStaking.stakes(1);
       stake1.id.should.eq(1);
       stake1.stakerAddress.should.eq(dlp1Owner.address);
       stake1.dlpId.should.eq(1);
@@ -3396,24 +3288,26 @@ describe("DLPRoot", () => {
       stake1.withdrawn.should.eq(false);
       stake1.lastClaimedEpochId.should.eq(0);
 
-      (await root.stakerDlpsListCount(dlp1Owner.address)).should.eq(1);
-      (await root.stakerDlpsListAt(dlp1Owner.address, 0)).should.eq(1);
-      (await root.stakerDlpsListValues(dlp1Owner.address)).should.deep.eq([1]);
+      (await rootStaking.stakerDlpsListCount(dlp1Owner.address)).should.eq(1);
+      (await rootStaking.stakerDlpsListAt(dlp1Owner.address, 0)).should.eq(1);
+      (
+        await rootStaking.stakerDlpsListValues(dlp1Owner.address)
+      ).should.deep.eq([1]);
 
-      (await root.stakerStakesListCount(dlp1Owner.address)).should.eq(1);
-      (await root.stakerStakesListAt(dlp1Owner.address, 0)).should.eq(1);
-      (await root.stakerStakesListValues(dlp1Owner.address)).should.deep.eq([
-        1,
-      ]);
+      (await rootStaking.stakerStakesListCount(dlp1Owner.address)).should.eq(1);
+      (await rootStaking.stakerStakesListAt(dlp1Owner.address, 0)).should.eq(1);
+      (
+        await rootStaking.stakerStakesListValues(dlp1Owner.address)
+      ).should.deep.eq([1]);
 
-      (await root.stakerDlpStakeAmount(dlp1Owner.address, 1)).should.eq(
+      (await rootStaking.stakerDlpStakeAmount(dlp1Owner.address, 1)).should.eq(
         dlpEligibilityThreshold,
       );
-      (await root.stakerTotalStakeAmount(dlp1Owner.address)).should.eq(
+      (await rootStaking.stakerTotalStakeAmount(dlp1Owner.address)).should.eq(
         dlpEligibilityThreshold,
       );
 
-      const stakes2 = await root.stakes(2);
+      const stakes2 = await rootStaking.stakes(2);
       stakes2.id.should.eq(2);
       stakes2.stakerAddress.should.eq(user1.address);
       stakes2.dlpId.should.eq(1);
@@ -3423,25 +3317,31 @@ describe("DLPRoot", () => {
       stakes2.withdrawn.should.eq(false);
       stakes2.lastClaimedEpochId.should.eq(0);
 
-      (await root.stakerDlpsListCount(user1.address)).should.eq(1);
-      (await root.stakerDlpsListAt(user1.address, 0)).should.eq(1);
-      (await root.stakerDlpsListValues(user1.address)).should.deep.eq([1]);
+      (await rootStaking.stakerDlpsListCount(user1.address)).should.eq(1);
+      (await rootStaking.stakerDlpsListAt(user1.address, 0)).should.eq(1);
+      (await rootStaking.stakerDlpsListValues(user1.address)).should.deep.eq([
+        1,
+      ]);
 
-      (await root.stakerStakesListCount(user1.address)).should.eq(1);
-      (await root.stakerStakesListAt(user1.address, 0)).should.eq(2);
-      (await root.stakerStakesListValues(user1.address)).should.deep.eq([2]);
+      (await rootStaking.stakerStakesListCount(user1.address)).should.eq(1);
+      (await rootStaking.stakerStakesListAt(user1.address, 0)).should.eq(2);
+      (await rootStaking.stakerStakesListValues(user1.address)).should.deep.eq([
+        2,
+      ]);
 
-      (await root.stakerDlpStakeAmount(user1.address, 1)).should.eq(
+      (await rootStaking.stakerDlpStakeAmount(user1.address, 1)).should.eq(
         stakeAmount,
       );
-      (await root.stakerTotalStakeAmount(user1.address)).should.eq(stakeAmount);
+      (await rootStaking.stakerTotalStakeAmount(user1.address)).should.eq(
+        stakeAmount,
+      );
 
       const dlp1Info = await rootCore.dlps(1);
       dlp1Info.stakeAmount.should.eq(dlpEligibilityThreshold + stakeAmount);
 
-      (await root.stakerDlpsListValues(user1)).should.deep.eq([1]);
-      (await root.stakerDlpsListCount(user1)).should.eq(1);
-      (await root.stakerDlpsListAt(user1, 0)).should.deep.eq(1);
+      (await rootStaking.stakerDlpsListValues(user1)).should.deep.eq([1]);
+      (await rootStaking.stakerDlpsListCount(user1)).should.eq(1);
+      (await rootStaking.stakerDlpsListAt(user1, 0)).should.deep.eq(1);
 
       (await ethers.provider.getBalance(user1)).should.eq(
         user1InitialBalance - stakeAmount - receipt.fee,
@@ -3463,7 +3363,7 @@ describe("DLPRoot", () => {
       await advanceToEpochN(5);
       (await rootEpoch.epochsCount()).should.eq(0);
 
-      const tx = await root
+      const tx = await rootStaking
         .connect(user1)
         .createStake(1, { value: stakeAmount });
 
@@ -3474,7 +3374,7 @@ describe("DLPRoot", () => {
       const epoch5 = await rootEpoch.epochs(5);
 
       await tx.should
-        .emit(root, "StakeCreated")
+        .emit(rootStaking, "StakeCreated")
         .withArgs(2, user1, 1, stakeAmount)
         .and.emit(rootEpoch, "EpochCreated")
         .withArgs(1, epoch1.startBlock, epoch1.endBlock, epoch1.rewardAmount)
@@ -3491,7 +3391,7 @@ describe("DLPRoot", () => {
     });
 
     it(`should reject createStake when dlp doesn't exist`, async function () {
-      await root
+      await rootStaking
         .connect(user1)
         .createStake(1, { value: parseEther(10) })
         .should.be.rejectedWith("InvalidDlpStatus()");
@@ -3506,7 +3406,7 @@ describe("DLPRoot", () => {
 
       await rootCore.connect(dlp1Owner).deregisterDlp(1);
 
-      await root
+      await rootStaking
         .connect(user1)
         .createStake(1, { value: parseEther(10) })
         .should.be.rejectedWith("InvalidDlpStatus()");
@@ -3519,7 +3419,7 @@ describe("DLPRoot", () => {
 
       await rootCore.connect(maintainer).updateDlpVerification(1, true);
 
-      await root
+      await rootStaking
         .connect(user1)
         .createStake(1, { value: minStakeAmount - 1n })
         .should.be.rejectedWith("InvalidStakeAmount()");
@@ -3539,25 +3439,25 @@ describe("DLPRoot", () => {
 
       const user1InitialBalance = await ethers.provider.getBalance(user1);
 
-      const tx1 = await root
+      const tx1 = await rootStaking
         .connect(user1)
         .createStake(1, { value: stakeAmount1 });
       const receipt1 = await getReceipt(tx1);
 
       await tx1.should
-        .emit(root, "StakeCreated")
+        .emit(rootStaking, "StakeCreated")
         .withArgs(2, user1, 1, stakeAmount1);
 
-      const tx2 = await root
+      const tx2 = await rootStaking
         .connect(user1)
         .createStake(1, { value: stakeAmount2 });
       const receipt2 = await getReceipt(tx2);
 
       await tx2.should
-        .emit(root, "StakeCreated")
+        .emit(rootStaking, "StakeCreated")
         .withArgs(3, user1, 1, stakeAmount2);
 
-      const stake1 = await root.stakes(1);
+      const stake1 = await rootStaking.stakes(1);
       stake1.id.should.eq(1);
       stake1.stakerAddress.should.eq(dlp1Owner.address);
       stake1.dlpId.should.eq(1);
@@ -3567,24 +3467,26 @@ describe("DLPRoot", () => {
       stake1.withdrawn.should.eq(false);
       stake1.lastClaimedEpochId.should.eq(0);
 
-      (await root.stakerDlpsListCount(dlp1Owner.address)).should.eq(1);
-      (await root.stakerDlpsListAt(dlp1Owner.address, 0)).should.eq(1);
-      (await root.stakerDlpsListValues(dlp1Owner.address)).should.deep.eq([1]);
+      (await rootStaking.stakerDlpsListCount(dlp1Owner.address)).should.eq(1);
+      (await rootStaking.stakerDlpsListAt(dlp1Owner.address, 0)).should.eq(1);
+      (
+        await rootStaking.stakerDlpsListValues(dlp1Owner.address)
+      ).should.deep.eq([1]);
 
-      (await root.stakerStakesListCount(dlp1Owner.address)).should.eq(1);
-      (await root.stakerStakesListAt(dlp1Owner.address, 0)).should.eq(1);
-      (await root.stakerStakesListValues(dlp1Owner.address)).should.deep.eq([
-        1,
-      ]);
+      (await rootStaking.stakerStakesListCount(dlp1Owner.address)).should.eq(1);
+      (await rootStaking.stakerStakesListAt(dlp1Owner.address, 0)).should.eq(1);
+      (
+        await rootStaking.stakerStakesListValues(dlp1Owner.address)
+      ).should.deep.eq([1]);
 
-      (await root.stakerDlpStakeAmount(dlp1Owner.address, 1)).should.eq(
+      (await rootStaking.stakerDlpStakeAmount(dlp1Owner.address, 1)).should.eq(
         dlpEligibilityThreshold,
       );
-      (await root.stakerTotalStakeAmount(dlp1Owner.address)).should.eq(
+      (await rootStaking.stakerTotalStakeAmount(dlp1Owner.address)).should.eq(
         dlpEligibilityThreshold,
       );
 
-      const stakes2 = await root.stakes(2);
+      const stakes2 = await rootStaking.stakes(2);
       stakes2.id.should.eq(2);
       stakes2.stakerAddress.should.eq(user1.address);
       stakes2.dlpId.should.eq(1);
@@ -3594,7 +3496,7 @@ describe("DLPRoot", () => {
       stakes2.withdrawn.should.eq(false);
       stakes2.lastClaimedEpochId.should.eq(0);
 
-      const stakes3 = await root.stakes(3);
+      const stakes3 = await rootStaking.stakes(3);
       stakes3.id.should.eq(3);
       stakes3.stakerAddress.should.eq(user1.address);
       stakes3.dlpId.should.eq(1);
@@ -3604,19 +3506,23 @@ describe("DLPRoot", () => {
       stakes3.withdrawn.should.eq(false);
       stakes3.lastClaimedEpochId.should.eq(0);
 
-      (await root.stakerDlpsListCount(user1.address)).should.eq(1);
-      (await root.stakerDlpsListAt(user1.address, 0)).should.eq(1);
-      (await root.stakerDlpsListValues(user1.address)).should.deep.eq([1]);
+      (await rootStaking.stakerDlpsListCount(user1.address)).should.eq(1);
+      (await rootStaking.stakerDlpsListAt(user1.address, 0)).should.eq(1);
+      (await rootStaking.stakerDlpsListValues(user1.address)).should.deep.eq([
+        1,
+      ]);
 
-      (await root.stakerStakesListCount(user1.address)).should.eq(2);
-      (await root.stakerStakesListAt(user1.address, 0)).should.eq(2);
-      (await root.stakerStakesListAt(user1.address, 1)).should.eq(3);
-      (await root.stakerStakesListValues(user1.address)).should.deep.eq([2, 3]);
+      (await rootStaking.stakerStakesListCount(user1.address)).should.eq(2);
+      (await rootStaking.stakerStakesListAt(user1.address, 0)).should.eq(2);
+      (await rootStaking.stakerStakesListAt(user1.address, 1)).should.eq(3);
+      (await rootStaking.stakerStakesListValues(user1.address)).should.deep.eq([
+        2, 3,
+      ]);
 
-      (await root.stakerDlpStakeAmount(user1.address, 1)).should.eq(
+      (await rootStaking.stakerDlpStakeAmount(user1.address, 1)).should.eq(
         stakeAmount1 + stakeAmount2,
       );
-      (await root.stakerTotalStakeAmount(user1.address)).should.eq(
+      (await rootStaking.stakerTotalStakeAmount(user1.address)).should.eq(
         stakeAmount1 + stakeAmount2,
       );
 
@@ -3625,9 +3531,9 @@ describe("DLPRoot", () => {
         dlpEligibilityThreshold + stakeAmount1 + stakeAmount2,
       );
 
-      (await root.stakerDlpsListValues(user1)).should.deep.eq([1]);
-      (await root.stakerDlpsListCount(user1)).should.eq(1);
-      (await root.stakerDlpsListAt(user1, 0)).should.deep.eq(1);
+      (await rootStaking.stakerDlpsListValues(user1)).should.deep.eq([1]);
+      (await rootStaking.stakerDlpsListCount(user1)).should.eq(1);
+      (await rootStaking.stakerDlpsListAt(user1, 0)).should.deep.eq(1);
 
       (await ethers.provider.getBalance(user1)).should.eq(
         user1InitialBalance -
@@ -3661,34 +3567,34 @@ describe("DLPRoot", () => {
 
       const user1InitialBalance = await ethers.provider.getBalance(user1);
 
-      const tx1 = await root
+      const tx1 = await rootStaking
         .connect(user1)
         .createStake(1, { value: stakeAmount1 });
       const receipt1 = await getReceipt(tx1);
 
       await tx1.should
-        .emit(root, "StakeCreated")
+        .emit(rootStaking, "StakeCreated")
         .withArgs(3, user1, 1, stakeAmount1);
 
-      const tx2 = await root
+      const tx2 = await rootStaking
         .connect(user1)
         .createStake(2, { value: stakeAmount2 });
       const receipt2 = await getReceipt(tx2);
 
       await tx2.should
-        .emit(root, "StakeCreated")
+        .emit(rootStaking, "StakeCreated")
         .withArgs(4, user1, 2, stakeAmount2);
 
-      const tx3 = await root
+      const tx3 = await rootStaking
         .connect(user1)
         .createStake(1, { value: stakeAmount3 });
       const receipt3 = await getReceipt(tx3);
 
       await tx3.should
-        .emit(root, "StakeCreated")
+        .emit(rootStaking, "StakeCreated")
         .withArgs(5, user1, 1, stakeAmount3);
 
-      const stake1 = await root.stakes(1);
+      const stake1 = await rootStaking.stakes(1);
       stake1.id.should.eq(1);
       stake1.stakerAddress.should.eq(dlp1Owner.address);
       stake1.dlpId.should.eq(1);
@@ -3698,24 +3604,26 @@ describe("DLPRoot", () => {
       stake1.withdrawn.should.eq(false);
       stake1.lastClaimedEpochId.should.eq(0);
 
-      (await root.stakerDlpsListCount(dlp1Owner.address)).should.eq(1);
-      (await root.stakerDlpsListAt(dlp1Owner.address, 0)).should.eq(1);
-      (await root.stakerDlpsListValues(dlp1Owner.address)).should.deep.eq([1]);
+      (await rootStaking.stakerDlpsListCount(dlp1Owner.address)).should.eq(1);
+      (await rootStaking.stakerDlpsListAt(dlp1Owner.address, 0)).should.eq(1);
+      (
+        await rootStaking.stakerDlpsListValues(dlp1Owner.address)
+      ).should.deep.eq([1]);
 
-      (await root.stakerStakesListCount(dlp1Owner.address)).should.eq(1);
-      (await root.stakerStakesListAt(dlp1Owner.address, 0)).should.eq(1);
-      (await root.stakerStakesListValues(dlp1Owner.address)).should.deep.eq([
-        1,
-      ]);
+      (await rootStaking.stakerStakesListCount(dlp1Owner.address)).should.eq(1);
+      (await rootStaking.stakerStakesListAt(dlp1Owner.address, 0)).should.eq(1);
+      (
+        await rootStaking.stakerStakesListValues(dlp1Owner.address)
+      ).should.deep.eq([1]);
 
-      (await root.stakerDlpStakeAmount(dlp1Owner.address, 1)).should.eq(
+      (await rootStaking.stakerDlpStakeAmount(dlp1Owner.address, 1)).should.eq(
         dlpEligibilityThreshold,
       );
-      (await root.stakerTotalStakeAmount(dlp1Owner.address)).should.eq(
+      (await rootStaking.stakerTotalStakeAmount(dlp1Owner.address)).should.eq(
         dlpEligibilityThreshold,
       );
 
-      const stake2 = await root.stakes(2);
+      const stake2 = await rootStaking.stakes(2);
       stake2.id.should.eq(2);
       stake2.stakerAddress.should.eq(dlp2Owner.address);
       stake2.dlpId.should.eq(2);
@@ -3725,24 +3633,26 @@ describe("DLPRoot", () => {
       stake2.withdrawn.should.eq(false);
       stake2.lastClaimedEpochId.should.eq(0);
 
-      (await root.stakerDlpsListCount(dlp2Owner.address)).should.eq(1);
-      (await root.stakerDlpsListAt(dlp2Owner.address, 0)).should.eq(2);
-      (await root.stakerDlpsListValues(dlp2Owner.address)).should.deep.eq([2]);
+      (await rootStaking.stakerDlpsListCount(dlp2Owner.address)).should.eq(1);
+      (await rootStaking.stakerDlpsListAt(dlp2Owner.address, 0)).should.eq(2);
+      (
+        await rootStaking.stakerDlpsListValues(dlp2Owner.address)
+      ).should.deep.eq([2]);
 
-      (await root.stakerStakesListCount(dlp2Owner.address)).should.eq(1);
-      (await root.stakerStakesListAt(dlp2Owner.address, 0)).should.eq(2);
-      (await root.stakerStakesListValues(dlp2Owner.address)).should.deep.eq([
-        2,
-      ]);
+      (await rootStaking.stakerStakesListCount(dlp2Owner.address)).should.eq(1);
+      (await rootStaking.stakerStakesListAt(dlp2Owner.address, 0)).should.eq(2);
+      (
+        await rootStaking.stakerStakesListValues(dlp2Owner.address)
+      ).should.deep.eq([2]);
 
-      (await root.stakerDlpStakeAmount(dlp2Owner.address, 2)).should.eq(
+      (await rootStaking.stakerDlpStakeAmount(dlp2Owner.address, 2)).should.eq(
         dlpEligibilityThreshold,
       );
-      (await root.stakerTotalStakeAmount(dlp2Owner.address)).should.eq(
+      (await rootStaking.stakerTotalStakeAmount(dlp2Owner.address)).should.eq(
         dlpEligibilityThreshold,
       );
 
-      const stakes3 = await root.stakes(3);
+      const stakes3 = await rootStaking.stakes(3);
       stakes3.id.should.eq(3);
       stakes3.stakerAddress.should.eq(user1.address);
       stakes3.dlpId.should.eq(1);
@@ -3752,7 +3662,7 @@ describe("DLPRoot", () => {
       stakes3.withdrawn.should.eq(false);
       stakes3.lastClaimedEpochId.should.eq(0);
 
-      const stakes4 = await root.stakes(4);
+      const stakes4 = await rootStaking.stakes(4);
       stakes4.id.should.eq(4);
       stakes4.stakerAddress.should.eq(user1.address);
       stakes4.dlpId.should.eq(2);
@@ -3762,7 +3672,7 @@ describe("DLPRoot", () => {
       stakes4.withdrawn.should.eq(false);
       stakes4.lastClaimedEpochId.should.eq(0);
 
-      const stakes5 = await root.stakes(5);
+      const stakes5 = await rootStaking.stakes(5);
       stakes5.id.should.eq(5);
       stakes5.stakerAddress.should.eq(user1.address);
       stakes5.dlpId.should.eq(1);
@@ -3772,26 +3682,28 @@ describe("DLPRoot", () => {
       stakes5.withdrawn.should.eq(false);
       stakes5.lastClaimedEpochId.should.eq(0);
 
-      (await root.stakerDlpsListCount(user1.address)).should.eq(2);
-      (await root.stakerDlpsListAt(user1.address, 0)).should.eq(1);
-      (await root.stakerDlpsListAt(user1.address, 1)).should.eq(2);
-      (await root.stakerDlpsListValues(user1.address)).should.deep.eq([1, 2]);
+      (await rootStaking.stakerDlpsListCount(user1.address)).should.eq(2);
+      (await rootStaking.stakerDlpsListAt(user1.address, 0)).should.eq(1);
+      (await rootStaking.stakerDlpsListAt(user1.address, 1)).should.eq(2);
+      (await rootStaking.stakerDlpsListValues(user1.address)).should.deep.eq([
+        1, 2,
+      ]);
 
-      (await root.stakerStakesListCount(user1.address)).should.eq(3);
-      (await root.stakerStakesListAt(user1.address, 0)).should.eq(3);
-      (await root.stakerStakesListAt(user1.address, 1)).should.eq(4);
-      (await root.stakerStakesListAt(user1.address, 2)).should.eq(5);
-      (await root.stakerStakesListValues(user1.address)).should.deep.eq([
+      (await rootStaking.stakerStakesListCount(user1.address)).should.eq(3);
+      (await rootStaking.stakerStakesListAt(user1.address, 0)).should.eq(3);
+      (await rootStaking.stakerStakesListAt(user1.address, 1)).should.eq(4);
+      (await rootStaking.stakerStakesListAt(user1.address, 2)).should.eq(5);
+      (await rootStaking.stakerStakesListValues(user1.address)).should.deep.eq([
         3, 4, 5,
       ]);
 
-      (await root.stakerDlpStakeAmount(user1.address, 1)).should.eq(
+      (await rootStaking.stakerDlpStakeAmount(user1.address, 1)).should.eq(
         stakeAmount1 + stakeAmount3,
       );
-      (await root.stakerDlpStakeAmount(user1.address, 2)).should.eq(
+      (await rootStaking.stakerDlpStakeAmount(user1.address, 2)).should.eq(
         stakeAmount2,
       );
-      (await root.stakerTotalStakeAmount(user1.address)).should.eq(
+      (await rootStaking.stakerTotalStakeAmount(user1.address)).should.eq(
         stakeAmount1 + stakeAmount2 + stakeAmount3,
       );
 
@@ -3803,10 +3715,10 @@ describe("DLPRoot", () => {
       const dlp2Info = await rootCore.dlps(2);
       dlp2Info.stakeAmount.should.eq(dlpEligibilityThreshold + stakeAmount2);
 
-      (await root.stakerDlpsListValues(user1)).should.deep.eq([1, 2]);
-      (await root.stakerDlpsListCount(user1)).should.eq(2);
-      (await root.stakerDlpsListAt(user1, 0)).should.deep.eq(1);
-      (await root.stakerDlpsListAt(user1, 1)).should.deep.eq(2);
+      (await rootStaking.stakerDlpsListValues(user1)).should.deep.eq([1, 2]);
+      (await rootStaking.stakerDlpsListCount(user1)).should.eq(2);
+      (await rootStaking.stakerDlpsListAt(user1, 0)).should.deep.eq(1);
+      (await rootStaking.stakerDlpsListAt(user1, 1)).should.deep.eq(2);
 
       (await ethers.provider.getBalance(user1)).should.eq(
         user1InitialBalance -
@@ -3848,43 +3760,43 @@ describe("DLPRoot", () => {
       const stakeAmount1 = parseEther(10);
       const stakeAmount2 = parseEther(15);
 
-      await root
+      await rootStaking
         .connect(user1)
         .createStake(1, { value: stakeAmount1 })
-        .should.emit(root, "StakeCreated")
+        .should.emit(rootStaking, "StakeCreated")
         .withArgs(3, user1, 1, stakeAmount1);
 
-      await root
+      await rootStaking
         .connect(user1)
         .createStake(2, { value: stakeAmount2 })
-        .should.emit(root, "StakeCreated")
+        .should.emit(rootStaking, "StakeCreated")
         .withArgs(4, user1, 2, stakeAmount2);
 
       // (await rootCore.dlps(1)).epochIds.should.deep.eq([1n, 2n, 3n, 4n]);
       // (await rootCore.dlps(2)).epochIds.should.deep.eq([]);
 
-      const stake1 = await root.stakes(1);
+      const stake1 = await rootStaking.stakes(1);
       stake1.id.should.eq(1);
       stake1.stakerAddress.should.eq(dlp1Owner.address);
       stake1.dlpId.should.eq(1);
       stake1.amount.should.eq(dlpEligibilityThreshold);
       stake1.lastClaimedEpochId.should.eq(0);
 
-      const stake2 = await root.stakes(2);
+      const stake2 = await rootStaking.stakes(2);
       stake2.id.should.eq(2);
       stake2.stakerAddress.should.eq(dlp2Owner.address);
       stake2.dlpId.should.eq(2);
       stake2.amount.should.eq(dlpEligibilityThreshold);
       stake2.lastClaimedEpochId.should.eq(4);
 
-      const stakes3 = await root.stakes(3);
+      const stakes3 = await rootStaking.stakes(3);
       stakes3.id.should.eq(3);
       stakes3.stakerAddress.should.eq(user1.address);
       stakes3.dlpId.should.eq(1);
       stakes3.amount.should.eq(stakeAmount1);
       stakes3.lastClaimedEpochId.should.eq(4);
 
-      const stakes4 = await root.stakes(4);
+      const stakes4 = await rootStaking.stakes(4);
       stakes4.id.should.eq(4);
       stakes4.stakerAddress.should.eq(user1.address);
       stakes4.dlpId.should.eq(2);
@@ -3897,10 +3809,10 @@ describe("DLPRoot", () => {
       const dlp2Info = await rootCore.dlps(2);
       dlp2Info.stakeAmount.should.eq(dlpEligibilityThreshold + stakeAmount2);
 
-      (await root.stakerDlpsListValues(user1)).should.deep.eq([1, 2]);
-      (await root.stakerDlpsListCount(user1)).should.eq(2);
-      (await root.stakerDlpsListAt(user1, 0)).should.deep.eq(1);
-      (await root.stakerDlpsListAt(user1, 1)).should.deep.eq(2);
+      (await rootStaking.stakerDlpsListValues(user1)).should.deep.eq([1, 2]);
+      (await rootStaking.stakerDlpsListCount(user1)).should.eq(2);
+      (await rootStaking.stakerDlpsListAt(user1, 0)).should.deep.eq(1);
+      (await rootStaking.stakerDlpsListAt(user1, 1)).should.deep.eq(2);
     });
 
     it("should createStake when dlp is not verified", async function () {
@@ -3908,9 +3820,11 @@ describe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: minDlpRegistrationStake });
 
-      await root.connect(user1).createStake(1, { value: parseEther(10) });
+      await rootStaking
+        .connect(user1)
+        .createStake(1, { value: parseEther(10) });
 
-      const stake2 = await root.stakes(2);
+      const stake2 = await rootStaking.stakes(2);
       stake2.id.should.eq(2);
       stake2.stakerAddress.should.eq(user1.address);
       stake2.dlpId.should.eq(1);
@@ -3922,11 +3836,11 @@ describe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: minDlpRegistrationStake });
 
-      await root
+      await rootStaking
         .connect(user1)
         .createStake(1, { value: dlpEligibilityThreshold });
 
-      const stake2 = await root.stakes(2);
+      const stake2 = await rootStaking.stakes(2);
       stake2.id.should.eq(2);
       stake2.stakerAddress.should.eq(user1.address);
       stake2.dlpId.should.eq(1);
@@ -3952,11 +3866,11 @@ describe("DLPRoot", () => {
 
       await rootCore.connect(maintainer).updateDlpVerification(1, true);
 
-      await root
+      await rootStaking
         .connect(user1)
         .createStake(1, { value: dlpEligibilityThreshold });
 
-      const stake2 = await root.stakes(2);
+      const stake2 = await rootStaking.stakes(2);
       stake2.id.should.eq(2);
       stake2.stakerAddress.should.eq(user1.address);
       stake2.dlpId.should.eq(1);
@@ -3977,14 +3891,18 @@ describe("DLPRoot", () => {
       await rootCore.connect(maintainer).updateDlpVerification(1, true);
 
       await advanceToEpochN(3);
-      await root.connect(user1).createStake(1, { value: parseEther(300) });
+      await rootStaking
+        .connect(user1)
+        .createStake(1, { value: parseEther(300) });
       const stake2Adjustment = parseEther(0); //beginning of epoch 3, it will have a 1x multiplier at the end of epoch 3
       (await rootMetrics.epochDlps(3, 1)).stakeAmountAdjustment.should.eq(
         stake1Adjustment + stake2Adjustment,
       );
 
       await advanceBlockNTimes(daySize - 1);
-      await root.connect(user1).createStake(1, { value: parseEther(300) });
+      await rootStaking
+        .connect(user1)
+        .createStake(1, { value: parseEther(300) });
       const stake3Adjustment =
         parseEther(300) - calculateStakeScoreByDay(parseEther(300), 19);
       (await rootMetrics.epochDlps(3, 1)).stakeAmountAdjustment.should.eq(
@@ -3992,7 +3910,9 @@ describe("DLPRoot", () => {
       );
 
       await advanceBlockNTimes(18 * daySize - 1);
-      await root.connect(user1).createStake(1, { value: parseEther(400) });
+      await rootStaking
+        .connect(user1)
+        .createStake(1, { value: parseEther(400) });
       const stake4Adjustment =
         parseEther(400) - calculateStakeScoreByDay(parseEther(400), 1);
       (await rootMetrics.epochDlps(3, 1)).stakeAmountAdjustment.should.eq(
@@ -4003,7 +3923,9 @@ describe("DLPRoot", () => {
       );
 
       await advanceBlockNTimes(daySize - 1);
-      await root.connect(user1).createStake(1, { value: parseEther(500) });
+      await rootStaking
+        .connect(user1)
+        .createStake(1, { value: parseEther(500) });
       const stake5Adjustment =
         parseEther(500) - calculateStakeScoreByDay(parseEther(500), 0);
       (await rootMetrics.epochDlps(3, 1)).stakeAmountAdjustment.should.eq(
@@ -4035,17 +3957,17 @@ describe("DLPRoot", () => {
 
       (await rootCore.dlps(1)).stakeAmount.should.eq(dlpEligibilityThreshold);
 
-      const tx1 = await root
+      const tx1 = await rootStaking
         .connect(user1)
         .createStake(1, { value: stakeAmount });
       const receipt1 = await getReceipt(tx1);
 
-      const tx2 = await root.connect(user1).closeStakes([2]);
+      const tx2 = await rootStaking.connect(user1).closeStakes([2]);
       const receipt2 = await getReceipt(tx2);
 
-      await tx2.should.emit(root, "StakeClosed").withArgs(2);
+      await tx2.should.emit(rootStaking, "StakeClosed").withArgs(2);
 
-      const stake2 = await root.stakes(2);
+      const stake2 = await rootStaking.stakes(2);
       stake2.id.should.eq(2);
       stake2.stakerAddress.should.eq(user1);
       stake2.dlpId.should.eq(1);
@@ -4055,16 +3977,20 @@ describe("DLPRoot", () => {
       stake2.withdrawn.should.eq(false);
       stake2.lastClaimedEpochId.should.eq(0);
 
-      (await root.stakerDlpsListCount(user1.address)).should.eq(1);
-      (await root.stakerDlpsListAt(user1.address, 0)).should.eq(1);
-      (await root.stakerDlpsListValues(user1.address)).should.deep.eq([1]);
+      (await rootStaking.stakerDlpsListCount(user1.address)).should.eq(1);
+      (await rootStaking.stakerDlpsListAt(user1.address, 0)).should.eq(1);
+      (await rootStaking.stakerDlpsListValues(user1.address)).should.deep.eq([
+        1,
+      ]);
 
-      (await root.stakerStakesListCount(user1.address)).should.eq(1);
-      (await root.stakerStakesListAt(user1.address, 0)).should.eq(2);
-      (await root.stakerStakesListValues(user1.address)).should.deep.eq([2]);
+      (await rootStaking.stakerStakesListCount(user1.address)).should.eq(1);
+      (await rootStaking.stakerStakesListAt(user1.address, 0)).should.eq(2);
+      (await rootStaking.stakerStakesListValues(user1.address)).should.deep.eq([
+        2,
+      ]);
 
-      (await root.stakerDlpStakeAmount(user1.address, 1)).should.eq(0);
-      (await root.stakerTotalStakeAmount(user1.address)).should.eq(0);
+      (await rootStaking.stakerDlpStakeAmount(user1.address, 1)).should.eq(0);
+      (await rootStaking.stakerTotalStakeAmount(user1.address)).should.eq(0);
 
       (await rootCore.dlps(1)).stakeAmount.should.eq(dlpEligibilityThreshold);
 
@@ -4090,12 +4016,12 @@ describe("DLPRoot", () => {
 
       const user1InitialBalance = await ethers.provider.getBalance(user1);
 
-      const tx1 = await root
+      const tx1 = await rootStaking
         .connect(user1)
         .createStake(1, { value: stakeAmount1 });
       const receipt1 = await getReceipt(tx1);
 
-      const tx2 = await root
+      const tx2 = await rootStaking
         .connect(user1)
         .createStake(1, { value: stakeAmount2 });
       const receipt2 = await getReceipt(tx2);
@@ -4104,16 +4030,16 @@ describe("DLPRoot", () => {
         dlpEligibilityThreshold + stakeAmount1 + stakeAmount2,
       );
 
-      const tx3 = await root.connect(user1).closeStakes([2, 3]);
+      const tx3 = await rootStaking.connect(user1).closeStakes([2, 3]);
       const receipt3 = await getReceipt(tx3);
 
       await tx3.should
-        .emit(root, "StakeClosed")
+        .emit(rootStaking, "StakeClosed")
         .withArgs(2)
-        .and.emit(root, "StakeClosed")
+        .and.emit(rootStaking, "StakeClosed")
         .withArgs(3);
 
-      const stake2 = await root.stakes(2);
+      const stake2 = await rootStaking.stakes(2);
       stake2.id.should.eq(2);
       stake2.stakerAddress.should.eq(user1);
       stake2.dlpId.should.eq(1);
@@ -4123,7 +4049,7 @@ describe("DLPRoot", () => {
       stake2.withdrawn.should.eq(false);
       stake2.lastClaimedEpochId.should.eq(0);
 
-      const stake3 = await root.stakes(3);
+      const stake3 = await rootStaking.stakes(3);
       stake3.id.should.eq(3);
       stake3.stakerAddress.should.eq(user1);
       stake3.dlpId.should.eq(1);
@@ -4133,17 +4059,21 @@ describe("DLPRoot", () => {
       stake3.withdrawn.should.eq(false);
       stake3.lastClaimedEpochId.should.eq(0);
 
-      (await root.stakerDlpsListCount(user1.address)).should.eq(1);
-      (await root.stakerDlpsListAt(user1.address, 0)).should.eq(1);
-      (await root.stakerDlpsListValues(user1.address)).should.deep.eq([1]);
+      (await rootStaking.stakerDlpsListCount(user1.address)).should.eq(1);
+      (await rootStaking.stakerDlpsListAt(user1.address, 0)).should.eq(1);
+      (await rootStaking.stakerDlpsListValues(user1.address)).should.deep.eq([
+        1,
+      ]);
 
-      (await root.stakerStakesListCount(user1.address)).should.eq(2);
-      (await root.stakerStakesListAt(user1.address, 0)).should.eq(2);
-      (await root.stakerStakesListAt(user1.address, 1)).should.eq(3);
-      (await root.stakerStakesListValues(user1.address)).should.deep.eq([2, 3]);
+      (await rootStaking.stakerStakesListCount(user1.address)).should.eq(2);
+      (await rootStaking.stakerStakesListAt(user1.address, 0)).should.eq(2);
+      (await rootStaking.stakerStakesListAt(user1.address, 1)).should.eq(3);
+      (await rootStaking.stakerStakesListValues(user1.address)).should.deep.eq([
+        2, 3,
+      ]);
 
-      (await root.stakerDlpStakeAmount(user1.address, 1)).should.eq(0);
-      (await root.stakerTotalStakeAmount(user1.address)).should.eq(0);
+      (await rootStaking.stakerDlpStakeAmount(user1.address, 1)).should.eq(0);
+      (await rootStaking.stakerTotalStakeAmount(user1.address)).should.eq(0);
 
       (await rootCore.dlps(1)).stakeAmount.should.eq(dlpEligibilityThreshold);
 
@@ -4175,12 +4105,12 @@ describe("DLPRoot", () => {
 
       const user1InitialBalance = await ethers.provider.getBalance(user1);
 
-      const tx1 = await root
+      const tx1 = await rootStaking
         .connect(user1)
         .createStake(1, { value: stakeAmount1 });
       const receipt1 = await getReceipt(tx1);
 
-      const tx2 = await root
+      const tx2 = await rootStaking
         .connect(user1)
         .createStake(1, { value: stakeAmount2 });
       const receipt2 = await getReceipt(tx2);
@@ -4189,12 +4119,12 @@ describe("DLPRoot", () => {
         dlpEligibilityThreshold + stakeAmount1 + stakeAmount2,
       );
 
-      const tx3 = await root.connect(user1).closeStakes([3]);
+      const tx3 = await rootStaking.connect(user1).closeStakes([3]);
       const receipt3 = await getReceipt(tx3);
 
-      await tx3.should.emit(root, "StakeClosed").withArgs(3);
+      await tx3.should.emit(rootStaking, "StakeClosed").withArgs(3);
 
-      const stake2 = await root.stakes(2);
+      const stake2 = await rootStaking.stakes(2);
       stake2.id.should.eq(2);
       stake2.stakerAddress.should.eq(user1);
       stake2.dlpId.should.eq(1);
@@ -4204,7 +4134,7 @@ describe("DLPRoot", () => {
       stake2.withdrawn.should.eq(false);
       stake2.lastClaimedEpochId.should.eq(0);
 
-      const stake3 = await root.stakes(3);
+      const stake3 = await rootStaking.stakes(3);
       stake3.id.should.eq(3);
       stake3.stakerAddress.should.eq(user1);
       stake3.dlpId.should.eq(1);
@@ -4214,19 +4144,23 @@ describe("DLPRoot", () => {
       stake3.withdrawn.should.eq(false);
       stake3.lastClaimedEpochId.should.eq(0);
 
-      (await root.stakerDlpsListCount(user1.address)).should.eq(1);
-      (await root.stakerDlpsListAt(user1.address, 0)).should.eq(1);
-      (await root.stakerDlpsListValues(user1.address)).should.deep.eq([1]);
+      (await rootStaking.stakerDlpsListCount(user1.address)).should.eq(1);
+      (await rootStaking.stakerDlpsListAt(user1.address, 0)).should.eq(1);
+      (await rootStaking.stakerDlpsListValues(user1.address)).should.deep.eq([
+        1,
+      ]);
 
-      (await root.stakerStakesListCount(user1.address)).should.eq(2);
-      (await root.stakerStakesListAt(user1.address, 0)).should.eq(2);
-      (await root.stakerStakesListAt(user1.address, 1)).should.eq(3);
-      (await root.stakerStakesListValues(user1.address)).should.deep.eq([2, 3]);
+      (await rootStaking.stakerStakesListCount(user1.address)).should.eq(2);
+      (await rootStaking.stakerStakesListAt(user1.address, 0)).should.eq(2);
+      (await rootStaking.stakerStakesListAt(user1.address, 1)).should.eq(3);
+      (await rootStaking.stakerStakesListValues(user1.address)).should.deep.eq([
+        2, 3,
+      ]);
 
-      (await root.stakerDlpStakeAmount(user1.address, 1)).should.eq(
+      (await rootStaking.stakerDlpStakeAmount(user1.address, 1)).should.eq(
         stakeAmount1,
       );
-      (await root.stakerTotalStakeAmount(user1.address)).should.eq(
+      (await rootStaking.stakerTotalStakeAmount(user1.address)).should.eq(
         stakeAmount1,
       );
 
@@ -4257,14 +4191,14 @@ describe("DLPRoot", () => {
 
       const stakeAmount = parseEther(10);
 
-      await root.connect(user1).createStake(1, { value: stakeAmount });
+      await rootStaking.connect(user1).createStake(1, { value: stakeAmount });
 
       await advanceToEpochN(5);
 
-      await root
+      await rootStaking
         .connect(user1)
         .closeStakes([2])
-        .should.emit(root, "StakeClosed")
+        .should.emit(rootStaking, "StakeClosed")
         .withArgs(2)
         .and.emit(rootEpoch, "EpochCreated")
         .withArgs(1, startBlock, startBlock + epochSize - 1, epochRewardAmount)
@@ -4309,9 +4243,9 @@ describe("DLPRoot", () => {
 
       const stakeAmount = parseEther(10);
 
-      await root.connect(user1).createStake(1, { value: stakeAmount });
+      await rootStaking.connect(user1).createStake(1, { value: stakeAmount });
 
-      await root
+      await rootStaking
         .connect(user2)
         .closeStakes([2])
         .should.be.rejectedWith("NotStakeOwner()");
@@ -4326,17 +4260,17 @@ describe("DLPRoot", () => {
 
       const stakeAmount = parseEther(10);
 
-      await root.connect(user1).createStake(1, { value: stakeAmount });
+      await rootStaking.connect(user1).createStake(1, { value: stakeAmount });
 
-      await root.connect(user1).closeStakes([2]);
-      await root
+      await rootStaking.connect(user1).closeStakes([2]);
+      await rootStaking
         .connect(user1)
         .closeStakes([2])
         .should.be.rejectedWith("AlreadyClosed()");
     });
 
     it("should reject closeStake when invalid stake", async function () {
-      await root
+      await rootStaking
         .connect(user1)
         .closeStakes([2])
         .should.be.rejectedWith("NotStakeOwner()");
@@ -4351,7 +4285,7 @@ describe("DLPRoot", () => {
 
       await rootCore.connect(maintainer).updateDlpVerification(1, true);
 
-      await root
+      await rootStaking
         .connect(user1)
         .createStake(1, { value: dlpEligibilityThreshold - 1n });
 
@@ -4361,9 +4295,9 @@ describe("DLPRoot", () => {
         minDlpRegistrationStake + dlpEligibilityThreshold - 1n,
       );
 
-      await root.connect(dlp1Owner).closeStakes([1]);
+      await rootStaking.connect(dlp1Owner).closeStakes([1]);
 
-      const stake1 = await root.stakes(1);
+      const stake1 = await rootStaking.stakes(1);
       stake1.id.should.eq(1);
       stake1.stakerAddress.should.eq(dlp1Owner);
       stake1.dlpId.should.eq(1);
@@ -4389,7 +4323,7 @@ describe("DLPRoot", () => {
 
       await rootCore.connect(maintainer).updateDlpVerification(1, true);
 
-      await root
+      await rootStaking
         .connect(user1)
         .createStake(1, { value: minDlpRegistrationStake - 1n });
 
@@ -4399,9 +4333,9 @@ describe("DLPRoot", () => {
         dlpEligibilityThreshold + minDlpRegistrationStake - 1n,
       );
 
-      await root.connect(dlp1Owner).closeStakes([1]);
+      await rootStaking.connect(dlp1Owner).closeStakes([1]);
 
-      const stake1 = await root.stakes(1);
+      const stake1 = await rootStaking.stakes(1);
       stake1.id.should.eq(1);
       stake1.stakerAddress.should.eq(dlp1Owner);
       stake1.dlpId.should.eq(1);
@@ -4427,7 +4361,7 @@ describe("DLPRoot", () => {
 
       await rootCore.connect(maintainer).updateDlpVerification(1, true);
 
-      await root
+      await rootStaking
         .connect(user1)
         .createStake(1, { value: dlpEligibilityThreshold - 1n });
 
@@ -4439,9 +4373,9 @@ describe("DLPRoot", () => {
 
       (await rootCore.eligibleDlpsListValues()).should.deep.eq([1n]);
 
-      await root.connect(dlp1Owner).closeStakes([1]);
+      await rootStaking.connect(dlp1Owner).closeStakes([1]);
 
-      const stake1 = await root.stakes(1);
+      const stake1 = await rootStaking.stakes(1);
       stake1.id.should.eq(1);
       stake1.stakerAddress.should.eq(dlp1Owner);
       stake1.dlpId.should.eq(1);
@@ -4457,9 +4391,9 @@ describe("DLPRoot", () => {
 
       (await rootCore.eligibleDlpsListValues()).should.deep.eq([1n]);
 
-      await root.connect(user1).closeStakes([2]);
+      await rootStaking.connect(user1).closeStakes([2]);
 
-      const stake2 = await root.stakes(2);
+      const stake2 = await rootStaking.stakes(2);
       stake2.id.should.eq(2);
       stake2.stakerAddress.should.eq(user1);
       stake2.dlpId.should.eq(1);
@@ -4485,15 +4419,15 @@ describe("DLPRoot", () => {
 
       const currentBlockNumber = await getCurrentBlockNumber();
 
-      await root.connect(user1).createStake(1, { value: parseEther(1) });
+      await rootStaking.connect(user1).createStake(1, { value: parseEther(1) });
 
       let dlp1Info = await rootCore.dlps(1);
       dlp1Info.status.should.eq(DlpStatus.Eligible);
       dlp1Info.stakeAmount.should.eq(dlpEligibilityThreshold + parseEther(1));
 
-      await root.connect(user1).closeStakes([2]);
+      await rootStaking.connect(user1).closeStakes([2]);
 
-      const stake2 = await root.stakes(2);
+      const stake2 = await rootStaking.stakes(2);
       stake2.id.should.eq(2);
       stake2.stakerAddress.should.eq(user1);
       stake2.dlpId.should.eq(1);
@@ -4519,17 +4453,17 @@ describe("DLPRoot", () => {
 
       const currentBlockNumber = await getCurrentBlockNumber();
 
-      await root.connect(user1).createStake(1, { value: parseEther(1) });
+      await rootStaking.connect(user1).createStake(1, { value: parseEther(1) });
 
-      await root.connect(user2).createStake(1, { value: parseEther(2) });
+      await rootStaking.connect(user2).createStake(1, { value: parseEther(2) });
 
       let dlp1Info = await rootCore.dlps(1);
       dlp1Info.status.should.eq(DlpStatus.Eligible);
       dlp1Info.stakeAmount.should.eq(dlpEligibilityThreshold);
 
-      await root.connect(user1).closeStakes([2]);
+      await rootStaking.connect(user1).closeStakes([2]);
 
-      const stake2 = await root.stakes(2);
+      const stake2 = await rootStaking.stakes(2);
       stake2.id.should.eq(2);
       stake2.stakerAddress.should.eq(user1);
       stake2.dlpId.should.eq(1);
@@ -4545,9 +4479,9 @@ describe("DLPRoot", () => {
 
       (await rootCore.eligibleDlpsListValues()).should.deep.eq([1n]);
 
-      await root.connect(user2).closeStakes([3]);
+      await rootStaking.connect(user2).closeStakes([3]);
 
-      const stake3 = await root.stakes(3);
+      const stake3 = await rootStaking.stakes(3);
       stake3.id.should.eq(3);
       stake3.stakerAddress.should.eq(user2);
       stake3.dlpId.should.eq(1);
@@ -4583,11 +4517,11 @@ describe("DLPRoot", () => {
       const user1InitialBalance = await ethers.provider.getBalance(user1);
 
       const blockNumber = await getCurrentBlockNumber();
-      const tx1 = await root
+      const tx1 = await rootStaking
         .connect(user1)
         .createStake(1, { value: stakeAmount });
       const receipt1 = await getReceipt(tx1);
-      const tx2 = await root.connect(user1).closeStakes([2]);
+      const tx2 = await rootStaking.connect(user1).closeStakes([2]);
       const receipt2 = await getReceipt(tx2);
 
       await advanceBlockNTimes(stakeWithdrawalDelay);
@@ -4596,12 +4530,12 @@ describe("DLPRoot", () => {
         dlpEligibilityThreshold + stakeAmount,
       );
 
-      const tx3 = await root.connect(user1).withdrawStakes([2]);
+      const tx3 = await rootStaking.connect(user1).withdrawStakes([2]);
       const receipt3 = await getReceipt(tx3);
 
-      await tx3.should.emit(root, "StakeWithdrawn").withArgs(2);
+      await tx3.should.emit(rootStaking, "StakeWithdrawn").withArgs(2);
 
-      const stake = await root.stakes(2);
+      const stake = await rootStaking.stakes(2);
       stake.startBlock.should.eq(blockNumber + 1);
       stake.endBlock.should.eq(blockNumber + 2);
       stake.withdrawn.should.eq(true);
@@ -4623,16 +4557,16 @@ describe("DLPRoot", () => {
       const stakeAmount2 = parseEther(15);
       const user1InitialBalance = await ethers.provider.getBalance(user1);
 
-      const tx1 = await root
+      const tx1 = await rootStaking
         .connect(user1)
         .createStake(1, { value: stakeAmount1 });
       const receipt1 = await getReceipt(tx1);
-      const tx2 = await root
+      const tx2 = await rootStaking
         .connect(user1)
         .createStake(1, { value: stakeAmount2 });
       const receipt2 = await getReceipt(tx2);
 
-      const tx3 = await root.connect(user1).closeStakes([2, 3]);
+      const tx3 = await rootStaking.connect(user1).closeStakes([2, 3]);
       const receipt3 = await getReceipt(tx3);
 
       await advanceBlockNTimes(stakeWithdrawalDelay);
@@ -4641,19 +4575,19 @@ describe("DLPRoot", () => {
         dlpEligibilityThreshold + stakeAmount1 + stakeAmount2,
       );
 
-      const tx4 = await root.connect(user1).withdrawStakes([2, 3]);
+      const tx4 = await rootStaking.connect(user1).withdrawStakes([2, 3]);
       const receipt4 = await getReceipt(tx4);
 
       await tx4.should
-        .emit(root, "StakeWithdrawn")
+        .emit(rootStaking, "StakeWithdrawn")
         .withArgs(2)
-        .and.emit(root, "StakeWithdrawn")
+        .and.emit(rootStaking, "StakeWithdrawn")
         .withArgs(3);
 
-      const stake2 = await root.stakes(2);
+      const stake2 = await rootStaking.stakes(2);
       stake2.withdrawn.should.eq(true);
 
-      const stake3 = await root.stakes(3);
+      const stake3 = await rootStaking.stakes(3);
       stake3.withdrawn.should.eq(true);
 
       const dlp1Info = await rootCore.dlps(1);
@@ -4673,15 +4607,15 @@ describe("DLPRoot", () => {
 
     it("should create missing epochs when withdrawStake", async function () {
       const stakeAmount = parseEther(10);
-      await root.connect(user1).createStake(1, { value: stakeAmount });
-      await root.connect(user1).closeStakes([2]);
+      await rootStaking.connect(user1).createStake(1, { value: stakeAmount });
+      await rootStaking.connect(user1).closeStakes([2]);
 
       await advanceToEpochN(5);
       (await rootEpoch.epochsCount()).should.eq(0);
 
       await advanceBlockNTimes(stakeWithdrawalDelay);
 
-      const tx = await root.connect(user1).withdrawStakes([2]);
+      const tx = await rootStaking.connect(user1).withdrawStakes([2]);
 
       const epoch1 = await rootEpoch.epochs(1);
       const epoch2 = await rootEpoch.epochs(2);
@@ -4690,7 +4624,7 @@ describe("DLPRoot", () => {
       const epoch5 = await rootEpoch.epochs(5);
 
       await tx.should
-        .emit(root, "StakeWithdrawn")
+        .emit(rootStaking, "StakeWithdrawn")
         .withArgs(2)
         .and.emit(rootEpoch, "EpochCreated")
         .withArgs(1, epoch1.startBlock, epoch1.endBlock, epoch1.rewardAmount)
@@ -4708,12 +4642,12 @@ describe("DLPRoot", () => {
 
     it("should reject withdrawStake when not stake owner", async function () {
       const stakeAmount = parseEther(10);
-      await root.connect(user1).createStake(1, { value: stakeAmount });
-      await root.connect(user1).closeStakes([2]);
+      await rootStaking.connect(user1).createStake(1, { value: stakeAmount });
+      await rootStaking.connect(user1).closeStakes([2]);
 
       await advanceBlockNTimes(stakeWithdrawalDelay);
 
-      await root
+      await rootStaking
         .connect(user2)
         .withdrawStakes([2])
         .should.be.rejectedWith("NotStakeOwner()");
@@ -4721,13 +4655,13 @@ describe("DLPRoot", () => {
 
     it("should reject withdrawStake when already withdrawn", async function () {
       const stakeAmount = parseEther(10);
-      await root.connect(user1).createStake(1, { value: stakeAmount });
-      await root.connect(user1).closeStakes([2]);
+      await rootStaking.connect(user1).createStake(1, { value: stakeAmount });
+      await rootStaking.connect(user1).closeStakes([2]);
 
       await advanceBlockNTimes(stakeWithdrawalDelay);
 
-      await root.connect(user1).withdrawStakes([2]);
-      await root
+      await rootStaking.connect(user1).withdrawStakes([2]);
+      await rootStaking
         .connect(user1)
         .withdrawStakes([2])
         .should.be.rejectedWith("StakeAlreadyWithdrawn()");
@@ -4735,11 +4669,11 @@ describe("DLPRoot", () => {
 
     it("should reject withdrawStake when not closed", async function () {
       const stakeAmount = parseEther(10);
-      await root.connect(user1).createStake(1, { value: stakeAmount });
+      await rootStaking.connect(user1).createStake(1, { value: stakeAmount });
 
       await advanceBlockNTimes(stakeWithdrawalDelay);
 
-      await root
+      await rootStaking
         .connect(user1)
         .withdrawStakes([2])
         .should.be.rejectedWith("StakeNotClosed()");
@@ -4747,12 +4681,12 @@ describe("DLPRoot", () => {
 
     it("should reject withdrawStake when withdrawal delay not passed", async function () {
       const stakeAmount = parseEther(10);
-      await root.connect(user1).createStake(1, { value: stakeAmount });
-      await root.connect(user1).closeStakes([2]);
+      await rootStaking.connect(user1).createStake(1, { value: stakeAmount });
+      await rootStaking.connect(user1).closeStakes([2]);
 
       await advanceBlockNTimes(stakeWithdrawalDelay - 5);
 
-      await root
+      await rootStaking
         .connect(user1)
         .withdrawStakes([2])
         .should.be.rejectedWith("StakeWithdrawalTooEarly()");
@@ -4760,23 +4694,25 @@ describe("DLPRoot", () => {
 
     it("should withdraw stake after delay update", async function () {
       const stakeAmount = parseEther(10);
-      await root.connect(user1).createStake(1, { value: stakeAmount });
-      await root.connect(user1).closeStakes([2]);
+      await rootStaking.connect(user1).createStake(1, { value: stakeAmount });
+      await rootStaking.connect(user1).closeStakes([2]);
 
       const newDelay = stakeWithdrawalDelay + 50;
-      await root.connect(maintainer).updateStakeWithdrawalDelay(newDelay);
+      await rootStaking
+        .connect(maintainer)
+        .updateStakeWithdrawalDelay(newDelay);
 
       await advanceBlockNTimes(stakeWithdrawalDelay);
 
-      await root
+      await rootStaking
         .connect(user1)
         .withdrawStakes([2])
         .should.be.rejectedWith("StakeWithdrawalTooEarly()");
 
       await advanceBlockNTimes(50);
 
-      const tx = await root.connect(user1).withdrawStakes([2]);
-      await tx.should.emit(root, "StakeWithdrawn").withArgs(2);
+      const tx = await rootStaking.connect(user1).withdrawStakes([2]);
+      await tx.should.emit(rootStaking, "StakeWithdrawn").withArgs(2);
     });
   });
 
@@ -4786,7 +4722,9 @@ describe("DLPRoot", () => {
     beforeEach(async () => {
       await deploy();
 
-      await root.connect(owner).updateMinStakeAmount(minDlpRegistrationStake);
+      await rootStaking
+        .connect(owner)
+        .updateMinStakeAmount(minDlpRegistrationStake);
       await rootCore
         .connect(owner)
         .updateMinDlpRegistrationStake(minDlpRegistrationStake);
@@ -4843,15 +4781,9 @@ describe("DLPRoot", () => {
           test.epochDlpsLimit,
         );
 
-        (
-          await rootMetrics.topDlpIdsDefaultPercentages(
-            await rootEpoch.epochsCount(),
-            test.epochDlpsLimit,
-            (await rootCore.eligibleDlpsListValues()).map((v) =>
-              BigInt(v.toString()),
-            ),
-          )
-        ).should.deep.eq(topKDlpIdsExpected);
+        (await rootMetrics.topDlpIds(test.epochDlpsLimit)).should.deep.eq(
+          topKDlpIdsExpected,
+        );
 
         await advanceBlockNTimes(2 * 2000); //epoch3
         await rootEpoch.connect(owner).createEpochs();
@@ -4876,33 +4808,17 @@ describe("DLPRoot", () => {
 
       await saveDefaultEpochPerformanceRatings(1);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([5, 4, 3]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([5, 4, 3]);
       (await rootEpoch.epochs(1)).dlpIds.should.deep.eq([5, 4, 3]);
 
-      await root.connect(dlp1Owner).createStake(1, { value: 350n });
+      await rootStaking.connect(dlp1Owner).createStake(1, { value: 350n });
 
       await advanceToEpochN(3);
       await rootEpoch.connect(owner).createEpochs();
 
       await saveDefaultEpochPerformanceRatings(2);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([5, 1, 4]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([5, 1, 4]);
       (await rootEpoch.epochs(2)).dlpIds.should.deep.eq([5, 1, 4]);
 
       (await rootEpoch.epochDlps(2, 1)).stakeAmount.should.eq(450n);
@@ -4927,35 +4843,19 @@ describe("DLPRoot", () => {
       await advanceToEpochN(2);
       await rootEpoch.connect(owner).createEpochs();
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([5, 4, 3]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([5, 4, 3]);
 
       await saveDefaultEpochPerformanceRatings(1);
       (await rootEpoch.epochs(1)).dlpIds.should.deep.eq([5, 4, 3]);
 
-      await root.connect(user1).createStake(1, { value: 350n });
+      await rootStaking.connect(user1).createStake(1, { value: 350n });
 
       await advanceToEpochN(3);
       await rootEpoch.connect(owner).createEpochs();
 
       await saveDefaultEpochPerformanceRatings(2);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([5, 1, 4]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([5, 1, 4]);
       (await rootEpoch.epochs(2)).dlpIds.should.deep.eq([5, 1, 4]);
 
       (await rootEpoch.epochDlps(2, 1)).stakeAmount.should.eq(450n);
@@ -4980,35 +4880,19 @@ describe("DLPRoot", () => {
       await advanceToEpochN(2);
       await rootEpoch.connect(owner).createEpochs();
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([5, 4, 3]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([5, 4, 3]);
 
       await saveDefaultEpochPerformanceRatings(1);
       (await rootEpoch.epochs(1)).dlpIds.should.deep.eq([5, 4, 3]);
 
-      await root.connect(dlp1Owner).closeStakes([4]);
+      await rootStaking.connect(dlp1Owner).closeStakes([4]);
 
       await advanceToEpochN(4);
       await rootEpoch.connect(owner).createEpochs();
 
       await saveDefaultEpochPerformanceRatings(3);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([5, 3, 2]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([5, 3, 2]);
       (await rootEpoch.epochs(3)).dlpIds.should.deep.eq([5, 3, 2]);
 
       (await rootEpoch.epochDlps(3, 1)).stakeAmount.should.eq(100);
@@ -5033,37 +4917,21 @@ describe("DLPRoot", () => {
       await advanceToEpochN(2);
       await rootEpoch.connect(owner).createEpochs();
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([5, 4, 3]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([5, 4, 3]);
 
       await saveDefaultEpochPerformanceRatings(1);
       (await rootEpoch.epochs(1)).dlpIds.should.deep.eq([5, 4, 3]);
 
-      await root.connect(dlp1Owner).closeStakes([2]);
-      await root.connect(dlp1Owner).closeStakes([3]);
-      await root.connect(dlp1Owner).closeStakes([4]);
+      await rootStaking.connect(dlp1Owner).closeStakes([2]);
+      await rootStaking.connect(dlp1Owner).closeStakes([3]);
+      await rootStaking.connect(dlp1Owner).closeStakes([4]);
 
       await advanceToEpochN(4);
       await rootEpoch.connect(owner).createEpochs();
 
       await saveDefaultEpochPerformanceRatings(3);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([5, 1]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([5, 1]);
       (await rootEpoch.epochs(3)).dlpIds.should.deep.eq([5, 1]);
 
       (await rootEpoch.epochDlps(3, 1)).stakeAmount.should.eq(100);
@@ -5088,15 +4956,7 @@ describe("DLPRoot", () => {
       await advanceToEpochN(2);
       await rootEpoch.connect(owner).createEpochs();
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([5, 4, 3]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([5, 4, 3]);
 
       await saveDefaultEpochPerformanceRatings(1);
       (await rootEpoch.epochs(1)).dlpIds.should.deep.eq([5, 4, 3]);
@@ -5108,15 +4968,7 @@ describe("DLPRoot", () => {
 
       await saveDefaultEpochPerformanceRatings(5);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([7, 5, 4]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([7, 5, 4]);
       (await rootEpoch.epochs(5)).dlpIds.should.deep.eq([7, 5, 4]);
     });
 
@@ -5126,15 +4978,7 @@ describe("DLPRoot", () => {
       await advanceToEpochN(2);
       await rootEpoch.connect(owner).createEpochs();
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([5, 4, 3]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([5, 4, 3]);
 
       await saveDefaultEpochPerformanceRatings(1);
       (await rootEpoch.epochs(1)).dlpIds.should.deep.eq([5, 4, 3]);
@@ -5146,15 +4990,7 @@ describe("DLPRoot", () => {
 
       await saveDefaultEpochPerformanceRatings(2);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([5, 3, 2]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([5, 3, 2]);
       (await rootEpoch.epochs(2)).dlpIds.should.deep.eq([5, 3, 2]);
     });
 
@@ -5164,15 +5000,7 @@ describe("DLPRoot", () => {
       await advanceToEpochN(2);
       await rootEpoch.connect(owner).createEpochs();
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([5, 4, 3]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([5, 4, 3]);
 
       await saveDefaultEpochPerformanceRatings(1);
       (await rootEpoch.epochs(1)).dlpIds.should.deep.eq([5, 4, 3]);
@@ -5184,15 +5012,7 @@ describe("DLPRoot", () => {
 
       await saveDefaultEpochPerformanceRatings(2);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          2,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([5, 4]);
+      (await rootMetrics.topDlpIds(2)).should.deep.eq([5, 4]);
       (await rootEpoch.epochs(2)).dlpIds.should.deep.eq([5, 4]);
 
       await rootEpoch.connect(owner).updateEpochDlpsLimit(4);
@@ -5202,15 +5022,7 @@ describe("DLPRoot", () => {
 
       await saveDefaultEpochPerformanceRatings(3);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          4,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([5, 4, 3, 2]);
+      (await rootMetrics.topDlpIds(4)).should.deep.eq([5, 4, 3, 2]);
       (await rootEpoch.epochs(3)).dlpIds.should.deep.eq([5, 4, 3, 2]);
     });
 
@@ -5220,63 +5032,31 @@ describe("DLPRoot", () => {
       await advanceToEpochN(2);
       await rootEpoch.connect(owner).createEpochs();
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([5, 4, 3]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([5, 4, 3]);
 
       await saveDefaultEpochPerformanceRatings(1);
       (await rootEpoch.epochs(1)).dlpIds.should.deep.eq([5, 4, 3]);
 
-      await root.connect(dlp1Owner).createStake(1, { value: 350n });
+      await rootStaking.connect(dlp1Owner).createStake(1, { value: 350n });
 
       await advanceToEpochN(3);
       await rootEpoch.connect(owner).createEpochs();
 
       await saveDefaultEpochPerformanceRatings(2);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([5, 1, 4]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([5, 1, 4]);
       (await rootEpoch.epochs(2)).dlpIds.should.deep.eq([5, 1, 4]);
 
       await rootCore.connect(dlp1Owner).deregisterDlp(5);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([1, 4, 3]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([1, 4, 3]);
 
       await advanceToEpochN(4);
       await rootEpoch.connect(owner).createEpochs();
 
       await saveDefaultEpochPerformanceRatings(3);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          epochDlpsLimit,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([1, 4, 3]);
+      (await rootMetrics.topDlpIds(epochDlpsLimit)).should.deep.eq([1, 4, 3]);
       (await rootEpoch.epochs(3)).dlpIds.should.deep.eq([1, 4, 3]);
 
       await rootEpoch.connect(owner).updateEpochDlpsLimit(2);
@@ -5286,15 +5066,7 @@ describe("DLPRoot", () => {
 
       await saveDefaultEpochPerformanceRatings(4);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          2,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([1, 4]);
+      (await rootMetrics.topDlpIds(2)).should.deep.eq([1, 4]);
       (await rootEpoch.epochs(4)).dlpIds.should.deep.eq([1, 4]);
 
       await registerNDlps([100n, 600n]);
@@ -5304,15 +5076,7 @@ describe("DLPRoot", () => {
 
       await saveDefaultEpochPerformanceRatings(5);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          2,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([7, 1]);
+      (await rootMetrics.topDlpIds(2)).should.deep.eq([7, 1]);
       (await rootEpoch.epochs(5)).dlpIds.should.deep.eq([7, 1]);
 
       await rootEpoch.connect(owner).updateEpochDlpsLimit(4);
@@ -5322,33 +5086,17 @@ describe("DLPRoot", () => {
 
       await saveDefaultEpochPerformanceRatings(6);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          4,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([7, 1, 4, 3]);
+      (await rootMetrics.topDlpIds(4)).should.deep.eq([7, 1, 4, 3]);
       (await rootEpoch.epochs(6)).dlpIds.should.deep.eq([7, 1, 4, 3]);
 
-      await root.connect(dlp1Owner).closeStakes([1]);
+      await rootStaking.connect(dlp1Owner).closeStakes([1]);
 
       await advanceToEpochN(8);
       await rootEpoch.connect(owner).createEpochs();
 
       await saveDefaultEpochPerformanceRatings(7);
 
-      (
-        await rootMetrics.topDlpIdsDefaultPercentages(
-          await rootEpoch.epochsCount(),
-          4,
-          (await rootCore.eligibleDlpsListValues()).map((v) =>
-            BigInt(v.toString()),
-          ),
-        )
-      ).should.deep.eq([7, 4, 1, 3]);
+      (await rootMetrics.topDlpIds(4)).should.deep.eq([7, 4, 1, 3]);
       (await rootEpoch.epochs(7)).dlpIds.should.deep.eq([7, 4, 1, 3]);
     });
   });
@@ -5860,7 +5608,7 @@ describe("DLPRoot", () => {
 
       for (let day = 0; day <= 86; day++) {
         const endBlock = startBlock + day * daySize;
-        const actualScore = await root.calculateStakeScore(
+        const actualScore = await rootStaking.calculateStakeScore(
           stakeAmount,
           startBlock,
           endBlock,
@@ -5880,7 +5628,7 @@ describe("DLPRoot", () => {
       const stakeAmount = parseEther(100);
       const currentBlock = await getCurrentBlockNumber();
 
-      const score = await root.calculateStakeScore(
+      const score = await rootStaking.calculateStakeScore(
         stakeAmount,
         currentBlock,
         currentBlock,
@@ -5895,7 +5643,7 @@ describe("DLPRoot", () => {
       const startBlock = 1000;
       const endBlock = startBlock + daySize - 1;
 
-      const score = await root.calculateStakeScore(
+      const score = await rootStaking.calculateStakeScore(
         stakeAmount,
         startBlock,
         endBlock,
@@ -5910,7 +5658,7 @@ describe("DLPRoot", () => {
       const startBlock = 1000;
       const endBlock = startBlock + daySize;
 
-      const score = await root.calculateStakeScore(
+      const score = await rootStaking.calculateStakeScore(
         stakeAmount,
         startBlock,
         endBlock,
@@ -5927,7 +5675,7 @@ describe("DLPRoot", () => {
       const startBlock = 1000;
       const endBlock = startBlock + daySize * 7;
 
-      const score = await root.calculateStakeScore(
+      const score = await rootStaking.calculateStakeScore(
         stakeAmount,
         startBlock,
         endBlock,
@@ -5944,7 +5692,7 @@ describe("DLPRoot", () => {
       const startBlock = 1000;
       const endBlock = startBlock + daySize * 20;
 
-      const score = await root.calculateStakeScore(
+      const score = await rootStaking.calculateStakeScore(
         stakeAmount,
         startBlock,
         endBlock,
@@ -5961,7 +5709,7 @@ describe("DLPRoot", () => {
       const startBlock = 1000;
       const endBlock = startBlock + daySize * 84; // Above maximum days
 
-      const score = await root.calculateStakeScore(
+      const score = await rootStaking.calculateStakeScore(
         stakeAmount,
         startBlock,
         endBlock,
@@ -5978,7 +5726,7 @@ describe("DLPRoot", () => {
       const startBlock = 1000;
       const endBlock = startBlock + daySize + daySize / 2; // 1.5 days
 
-      const score = await root.calculateStakeScore(
+      const score = await rootStaking.calculateStakeScore(
         stakeAmount,
         startBlock,
         endBlock,
@@ -5993,7 +5741,11 @@ describe("DLPRoot", () => {
       const startBlock = 1000;
       const endBlock = startBlock + daySize * 10;
 
-      const score = await root.calculateStakeScore(0, startBlock, endBlock);
+      const score = await rootStaking.calculateStakeScore(
+        0,
+        startBlock,
+        endBlock,
+      );
 
       // Zero amount should give zero score regardless of time
       score.should.eq(0);
@@ -6004,7 +5756,7 @@ describe("DLPRoot", () => {
       const startBlock = 1000;
       const endBlock = startBlock + daySize * 50; // 50 days
 
-      const score = await root.calculateStakeScore(
+      const score = await rootStaking.calculateStakeScore(
         stakeAmount,
         startBlock,
         endBlock,
@@ -6021,7 +5773,7 @@ describe("DLPRoot", () => {
       const startBlock = 1000;
       const endBlock = startBlock + daySize * 50; // 50 days
 
-      const score = await root.calculateStakeScore(
+      const score = await rootStaking.calculateStakeScore(
         stakeAmount,
         startBlock,
         endBlock,
@@ -6039,8 +5791,8 @@ describe("DLPRoot", () => {
     beforeEach(async () => {
       await deploy();
 
-      await root.connect(owner).updateRewardClaimDelay(0);
-      await root;
+      await rootStaking.connect(owner).updateRewardClaimDelay(0);
+      await rootStaking;
       // .connect(owner)
       // .updateMinDlpStakersPercentage(minDlpStakersPercentage);
 
@@ -6063,7 +5815,7 @@ describe("DLPRoot", () => {
       await rootCore.connect(maintainer).updateDlpVerification(1, true);
       // Create stake
       const stakeAmount = dlpEligibilityThreshold * 2n;
-      await root.connect(user1).createStake(1, { value: stakeAmount });
+      await rootStaking.connect(user1).createStake(1, { value: stakeAmount });
 
       // Advance to include stake in epoch rewards
       await advanceToEpochN(3);
@@ -6073,8 +5825,8 @@ describe("DLPRoot", () => {
 
       (await rootEpoch.epochs(1)).dlpIds.should.deep.eq([1]);
 
-      const stake1 = await root.stakes(1);
-      const stake2 = await root.stakes(2);
+      const stake1 = await rootStaking.stakes(1);
+      const stake2 = await rootStaking.stakes(2);
 
       const epoch1 = await rootEpoch.epochs(1);
       await rootEpoch.connect(manager).saveEpochDlpsTotalStakesScore([
@@ -6105,9 +5857,9 @@ describe("DLPRoot", () => {
       const stake2ExpectedClaimableAmount = (dlp1Epoch1StakersReward * 2n) / 3n;
 
       const stake2ClaimableAmount =
-        await root.calculateStakeClaimableAmount.staticCall(2);
+        await rootStaking.calculateStakeClaimableAmount.staticCall(2);
 
-      (await rootEpoch.epochDlps(1, 1)).rewardAmount.should.eq(
+      (await rootEpoch.epochDlps(1, 1)).ownerRewardAmount.should.eq(
         dlp1Epoch1Reward - dlp1Epoch1StakersReward,
       );
       (await rootEpoch.epochDlps(1, 1)).stakersRewardAmount.should.eq(
@@ -6120,11 +5872,11 @@ describe("DLPRoot", () => {
       stake2ClaimableAmount.should.eq(stake2ExpectedClaimableAmount);
       stake2ClaimableAmount.should.eq(parseEther(0.8));
 
-      const tx = await root.connect(user1).claimStakesReward([2]);
+      const tx = await rootStaking.connect(user1).claimStakesReward([2]);
       const receipt = await getReceipt(tx);
 
       // Verify stake was claimed
-      const stake = await root.stakes(2);
+      const stake = await rootStaking.stakes(2);
       stake.lastClaimedEpochId.should.eq(1);
 
       // User should receive reward minus gas
@@ -6140,15 +5892,17 @@ describe("DLPRoot", () => {
 
       await rootCore.connect(maintainer).updateDlpVerification(1, true);
 
-      await root.connect(user1).createStake(1, { value: parseEther(100) });
+      await rootStaking
+        .connect(user1)
+        .createStake(1, { value: parseEther(100) });
 
       await advanceToEpochN(1);
       await rootEpoch.connect(owner).createEpochs();
       await advanceBlockNTimes(rewardClaimDelay);
 
-      await root.connect(maintainer).pause();
+      await rootStaking.connect(maintainer).pause();
 
-      await root
+      await rootStaking
         .connect(user1)
         .claimStakesReward([2])
         .should.be.rejectedWith("EnforcedPause()");
@@ -6170,8 +5924,7 @@ describe("DLPRoot", () => {
         );
         (await rootMetrics.hasRole(MANAGER_ROLE, manager)).should.eq(true);
         (await rootMetrics.version()).should.eq(1);
-        (await rootMetrics.trustedForwarder()).should.eq(trustedForwarder);
-        (await rootMetrics.dlpRoot()).should.eq(root);
+        (await rootMetrics.dlpRoot()).should.eq(rootStaking);
         (await rootMetrics.ratingPercentages(RatingType.Stake)).should.eq(
           stakeRatingPercentage,
         );
@@ -6219,7 +5972,7 @@ describe("DLPRoot", () => {
             `AccessControlUnauthorizedAccount("${manager.address}", "${MAINTAINER_ROLE}")`,
           );
 
-        (await rootMetrics.dlpRoot()).should.eq(root);
+        (await rootMetrics.dlpRoot()).should.eq(rootStaking);
       });
 
       it("Should upgradeTo when owner", async function () {
@@ -6296,7 +6049,7 @@ describe("DLPRoot", () => {
 
         await rootMetrics
           .connect(manager)
-          .saveEpochPerformanceRatings(1, false, [
+          .saveEpochPerformanceRatings(1, [
             {
               dlpId: 1n,
               performanceRating: parseEther(100),
@@ -6384,7 +6137,7 @@ describe("DLPRoot", () => {
 
         const tx = await rootMetrics
           .connect(manager)
-          .saveEpochPerformanceRatings(1, false, [
+          .saveEpochPerformanceRatings(1, [
             {
               dlpId: 1n,
               performanceRating: parseEther(0.7),
@@ -6443,15 +6196,17 @@ describe("DLPRoot", () => {
         const epoch1Dlp5 = await rootMetrics.epochDlps(1, 5);
         epoch1Dlp5.performanceRating.should.eq(parseEther(0.05));
 
-        const top5Dlps = await rootMetrics.topDlpsDefaultPercentages(
+        const top5Dlps = await rootMetrics.topDlpsCustomized(
           1,
           5,
           [1, 2, 3, 4, 5],
+          [],
         );
-        const top3Dlps = await rootMetrics.topDlpsDefaultPercentages(
+        const top3Dlps = await rootMetrics.topDlpsCustomized(
           1,
           3,
           [1, 2, 3, 4, 5],
+          [],
         );
 
         top3Dlps.should.deep.eq(top5Dlps.slice(0, 3));
@@ -6559,30 +6314,30 @@ describe("DLPRoot", () => {
         const top3DlpsTotalSublinearRating =
           dlp1SublinearRating + dlp4SublinearRating + dlp5SublinearRating;
 
-        rootDlp1Epoch1.rewardAmount.should.closeTo(
+        rootDlp1Epoch1.ownerRewardAmount.should.closeTo(
           (dlp1SublinearRating * totalDlpCreatorsRewardAmount) /
             top3DlpsTotalSublinearRating,
           10,
         );
-        rootDlp2Epoch1.rewardAmount.should.eq(0n);
-        rootDlp3Epoch1.rewardAmount.should.eq(0n);
-        rootDlp4Epoch1.rewardAmount.should.closeTo(
+        rootDlp2Epoch1.ownerRewardAmount.should.eq(0n);
+        rootDlp3Epoch1.ownerRewardAmount.should.eq(0n);
+        rootDlp4Epoch1.ownerRewardAmount.should.closeTo(
           (dlp4SublinearRating * totalDlpCreatorsRewardAmount) /
             top3DlpsTotalSublinearRating,
           10,
         );
-        rootDlp5Epoch1.rewardAmount.should.closeTo(
+        rootDlp5Epoch1.ownerRewardAmount.should.closeTo(
           (dlp5SublinearRating * totalDlpCreatorsRewardAmount) /
             top3DlpsTotalSublinearRating,
           10,
         );
 
         (
-          rootDlp1Epoch1.rewardAmount +
+          rootDlp1Epoch1.ownerRewardAmount +
           rootDlp1Epoch1.stakersRewardAmount +
-          rootDlp4Epoch1.rewardAmount +
+          rootDlp4Epoch1.ownerRewardAmount +
           rootDlp4Epoch1.stakersRewardAmount +
-          rootDlp5Epoch1.rewardAmount +
+          rootDlp5Epoch1.ownerRewardAmount +
           rootDlp5Epoch1.stakersRewardAmount
         ).should.closeTo(epochRewardAmount, 10);
       });
@@ -6653,7 +6408,7 @@ describe("DLPRoot", () => {
 
         const tx = await rootMetrics
           .connect(manager)
-          .saveEpochPerformanceRatings(1, false, epochPerformanceRatings);
+          .saveEpochPerformanceRatings(1, epochPerformanceRatings);
         const receipt = await getReceipt(tx);
 
         const dlpEpochPerformanceRatingSavedLogs = receipt.logs
@@ -6713,7 +6468,7 @@ describe("DLPRoot", () => {
 
         await rootMetrics
           .connect(user1)
-          .saveEpochPerformanceRatings(1, false, [
+          .saveEpochPerformanceRatings(1, [
             {
               dlpId: 1n,
               performanceRating: parseEther(100),
@@ -6752,11 +6507,11 @@ describe("DLPRoot", () => {
         (await rewardsTreasury.hasRole(DEFAULT_ADMIN_ROLE, owner)).should.eq(
           true,
         );
-        (await rewardsTreasury.hasRole(DEFAULT_ADMIN_ROLE, root)).should.eq(
-          true,
-        );
+        (
+          await rewardsTreasury.hasRole(DEFAULT_ADMIN_ROLE, rootStaking)
+        ).should.eq(true);
         (await rewardsTreasury.version()).should.eq(1);
-        (await rewardsTreasury.dlpRoot()).should.eq(root);
+        (await rewardsTreasury.dlpRoot()).should.eq(rootStaking);
       });
 
       it("should change admin", async function () {
@@ -6798,7 +6553,7 @@ describe("DLPRoot", () => {
             `AccessControlUnauthorizedAccount("${manager.address}", "${DEFAULT_ADMIN_ROLE}")`,
           );
 
-        (await rewardsTreasury.dlpRoot()).should.eq(root);
+        (await rewardsTreasury.dlpRoot()).should.eq(rootStaking);
       });
 
       it("Should upgradeTo when owner", async function () {
@@ -6937,11 +6692,11 @@ describe("DLPRoot", () => {
         (await stakesTreasury.hasRole(DEFAULT_ADMIN_ROLE, owner)).should.eq(
           true,
         );
-        (await stakesTreasury.hasRole(DEFAULT_ADMIN_ROLE, root)).should.eq(
-          true,
-        );
+        (
+          await stakesTreasury.hasRole(DEFAULT_ADMIN_ROLE, rootStaking)
+        ).should.eq(true);
         (await stakesTreasury.version()).should.eq(1);
-        (await stakesTreasury.dlpRoot()).should.eq(root);
+        (await stakesTreasury.dlpRoot()).should.eq(rootStaking);
       });
 
       it("should change admin", async function () {
@@ -6983,7 +6738,7 @@ describe("DLPRoot", () => {
             `AccessControlUnauthorizedAccount("${manager.address}", "${DEFAULT_ADMIN_ROLE}")`,
           );
 
-        (await stakesTreasury.dlpRoot()).should.eq(root);
+        (await stakesTreasury.dlpRoot()).should.eq(rootStaking);
       });
 
       it("Should upgradeTo when owner", async function () {

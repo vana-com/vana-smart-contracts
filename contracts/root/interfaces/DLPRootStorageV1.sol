@@ -29,7 +29,7 @@ abstract contract DLPRootStorageV1 is IDLPRoot, IDLPRootDeprecated {
 
     // DLP management
     uint256 private dlpsCount; // moved to DLPRootCore
-    mapping(uint256 dlpId => Dlp dlp) private _dlps; // moved to DLPRootCore
+    mapping(uint256 dlpId => Dlp dlp) internal _dlps; // moved to DLPRootCore
     mapping(address dlpAddress => uint256 dlpId) private dlpIds; // moved to DLPRootCore
     EnumerableSet.UintSet private _eligibleDlpsList; // moved to DLPRootCore
 

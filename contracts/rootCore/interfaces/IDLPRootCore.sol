@@ -30,7 +30,6 @@ interface IDLPRootCore {
         DlpStatus status;
         uint256 registrationBlockNumber;
         Checkpoints.Trace208 stakeAmountCheckpoints; // Historical stake amounts
-        Checkpoints.Trace208 unstakeAmountCheckpoints; // Historical unstake amounts
         bool isVerified;
     }
 
@@ -46,6 +45,7 @@ interface IDLPRootCore {
     function minDlpRegistrationStake() external view returns (uint256);
     function dlpEligibilityThreshold() external view returns (uint256);
     function dlpSubEligibilityThreshold() external view returns (uint256);
+    function eligibleDlpsLimit() external view returns (uint256);
     function dlpsCount() external view returns (uint256);
 
     struct DlpInfo {
@@ -70,7 +70,7 @@ interface IDLPRootCore {
     function dlpNameToId(string calldata dlpName) external view returns (uint256);
     function dlpsByName(string calldata dlpName) external view returns (DlpInfo memory);
 
-    function dlpComputedStakeAmountByBlock(uint256 dlpId, uint48 checkBlock) external view returns (uint256);
+    function dlpEpochStakeAmount(uint256 dlpId, uint256 epochId) external view returns (uint256);
 
     // Admin functions
     function pause() external;

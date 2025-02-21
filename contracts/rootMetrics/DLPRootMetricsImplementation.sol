@@ -3,18 +3,15 @@ pragma solidity 0.8.24;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import "@openzeppelin/contracts/utils/math/Math.sol";
+import "./interfaces/ERC2771ContextUpgradeableMock.sol";
 import "./interfaces/DLPRootMetricsStorageV1.sol";
-
-import "hardhat/console.sol"; //todo: remove this
 
 contract DLPRootMetricsImplementation is
     UUPSUpgradeable,
     PausableUpgradeable,
     AccessControlUpgradeable,
-    ERC2771ContextUpgradeable,
+    ERC2771ContextUpgradeableMock,
     DLPRootMetricsStorageV1
 {
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
@@ -37,12 +34,11 @@ contract DLPRootMetricsImplementation is
     error InvalidFoundationWalletAddress();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() ERC2771ContextUpgradeable(address(0)) {
+    constructor() {
         _disableInitializers();
     }
 
     function initialize(
-        address trustedForwarderAddress,
         address ownerAddress,
         address dlpRootAddress,
         uint256 stakeRatingPercentage,
@@ -52,7 +48,6 @@ contract DLPRootMetricsImplementation is
         __UUPSUpgradeable_init();
         __Pausable_init();
 
-        _trustedForwarder = trustedForwarderAddress;
         dlpRoot = IDLPRoot(dlpRootAddress);
 
         _updateRatingPercentages(stakeRatingPercentage, performanceRatingPercentage);
@@ -65,36 +60,6 @@ contract DLPRootMetricsImplementation is
     }
 
     function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
-
-    function _msgSender()
-        internal
-        view
-        override(ContextUpgradeable, ERC2771ContextUpgradeable)
-        returns (address sender)
-    {
-        return ERC2771ContextUpgradeable._msgSender();
-    }
-
-    function _msgData() internal view override(ContextUpgradeable, ERC2771ContextUpgradeable) returns (bytes calldata) {
-        return ERC2771ContextUpgradeable._msgData();
-    }
-
-    function _contextSuffixLength()
-        internal
-        view
-        override(ContextUpgradeable, ERC2771ContextUpgradeable)
-        returns (uint256)
-    {
-        return ERC2771ContextUpgradeable._contextSuffixLength();
-    }
-
-    function _checkRole(bytes32 role) internal view override {
-        _checkRole(role, msg.sender);
-    }
-
-    function trustedForwarder() public view virtual override returns (address) {
-        return _trustedForwarder;
-    }
 
     function version() external pure virtual override returns (uint256) {
         return 1;
@@ -128,7 +93,7 @@ contract DLPRootMetricsImplementation is
      * @notice Gets top DLP IDs by rating (performanceRating + stakeRating)
      * @dev Uses insertion sort to maintain ordered list
      */
-    function topDlps(
+    function topDlpsCustomized(
         uint256 epochId,
         uint256 numberOfDlps,
         uint256[] memory dlpIds,
@@ -203,25 +168,19 @@ contract DLPRootMetricsImplementation is
         return topDlpList;
     }
 
-    function topDlpsDefaultPercentages(
-        uint256 epochId,
-        uint256 numberOfDlps,
-        uint256[] memory dlpIds
-    ) public view override returns (DlpRating[] memory) {
-        uint256[] memory percentages = new uint256[](2);
-        percentages[0] = ratingPercentages[RatingType.Stake];
-        percentages[1] = ratingPercentages[RatingType.Performance];
-
-        return topDlps(epochId, numberOfDlps, dlpIds, percentages);
+    function topDlps(uint256 numberOfDlps) public view override returns (DlpRating[] memory) {
+        return
+            topDlpsCustomized(
+                dlpRoot.dlpRootEpoch().epochsCount(),
+                numberOfDlps,
+                dlpRoot.dlpRootCore().eligibleDlpsListValues(),
+                new uint256[](0)
+            );
     }
 
-    function topDlpIds(
-        uint256 epochId,
-        uint256 numberOfDlps,
-        uint256[] memory dlpIds,
-        uint256[] memory customRatingPercentages
-    ) public view override returns (uint256[] memory) {
-        DlpRating[] memory dlpRating = topDlps(epochId, numberOfDlps, dlpIds, customRatingPercentages);
+    function topDlpIds(uint256 numberOfDlps) public view override returns (uint256[] memory) {
+        DlpRating[] memory dlpRating = topDlps(numberOfDlps);
+
         uint256 topDlpsCount = dlpRating.length;
 
         uint256[] memory topDlpIdsList = new uint256[](topDlpsCount);
@@ -236,29 +195,17 @@ contract DLPRootMetricsImplementation is
         return topDlpIdsList;
     }
 
-    function topDlpIdsDefaultPercentages(
-        uint256 epochId,
-        uint256 numberOfDlps,
-        uint256[] memory dlpIds
-    ) public view override returns (uint256[] memory) {
-        uint256[] memory percentages = new uint256[](2);
-        percentages[0] = ratingPercentages[RatingType.Stake];
-        percentages[1] = ratingPercentages[RatingType.Performance];
-
-        return topDlpIds(epochId, numberOfDlps, dlpIds, percentages);
-    }
-
     /**
      * @notice Estimates reward percentages for given DLPs
      * @dev Calculates based on ratings and current epoch parameters
      */
-    function estimatedDlpRewardPercentages(
+    function estimatedDlpRewardPercentagesCustomized(
         uint256[] memory dlpIds,
         uint256[] memory customRatingPercentages
     ) public view override returns (DlpRewardApy[] memory) {
         uint256 epochId = dlpRoot.dlpRootEpoch().epochsCount();
 
-        IDLPRootMetrics.DlpRating[] memory topDlpsList = topDlps(
+        IDLPRootMetrics.DlpRating[] memory topDlpsList = topDlpsCustomized(
             epochId,
             dlpRoot.dlpRootEpoch().epochDlpsLimit(),
             dlpRoot.dlpRootCore().eligibleDlpsListValues(),
@@ -319,7 +266,7 @@ contract DLPRootMetricsImplementation is
             result[i] = DlpRewardApy({
                 dlpId: dlpId,
                 EPY: epy,
-                APY: (epy * 365 * dlpRoot.dlpRootEpoch().daySize()) / dlpRoot.dlpRootEpoch().epochSize() //todo: fix this
+                APY: (epy * 365 * dlpRoot.dlpRootEpoch().daySize()) / dlpRoot.dlpRootEpoch().epochSize()
             });
 
             unchecked {
@@ -329,14 +276,10 @@ contract DLPRootMetricsImplementation is
         return result;
     }
 
-    function estimatedDlpRewardPercentagesDefault(
+    function estimatedDlpRewardPercentages(
         uint256[] memory dlpIds
     ) public view override returns (DlpRewardApy[] memory) {
-        uint256[] memory percentages = new uint256[](2);
-        percentages[0] = ratingPercentages[RatingType.Stake];
-        percentages[1] = ratingPercentages[RatingType.Performance];
-
-        return estimatedDlpRewardPercentages(dlpIds, percentages);
+        return estimatedDlpRewardPercentagesCustomized(dlpIds, new uint256[](0));
     }
 
     /**
@@ -445,10 +388,6 @@ contract DLPRootMetricsImplementation is
         _foundationWalletAddress = foundationWalletAddress;
     }
 
-    function updateTrustedForwarder(address trustedForwarderAddress) external onlyRole(MAINTAINER_ROLE) {
-        _trustedForwarder = trustedForwarderAddress;
-    }
-
     function pause() external override onlyRole(MAINTAINER_ROLE) {
         _pause();
     }
@@ -474,12 +413,10 @@ contract DLPRootMetricsImplementation is
     /**
      * @notice Saves or updates epoch performanceRatings for DLPs
      * @param epochId                 The epoch ID to save performanceRatings for
-     * @param shouldFinalize          deprecated; we need to keep these parameter until we can remove them from the performance microservice
      * @param dlpPerformanceRatings   Array of DLP performanceRatings to save
      */
     function saveEpochPerformanceRatings(
         uint256 epochId,
-        bool shouldFinalize,
         DlpPerformanceRating[] memory dlpPerformanceRatings
     ) external override onlyRole(MANAGER_ROLE) whenNotPaused {
         Epoch storage epoch = _epochs[epochId];
@@ -552,11 +489,21 @@ contract DLPRootMetricsImplementation is
         uint256 dlpPerformanceRating = totalDlpsPerformanceRating > 0
             ? (1e18 * _epochs[epochId].dlps[dlpId].performanceRating) / totalDlpsPerformanceRating
             : 0;
-        return
-            (customRatingPercentages[uint256(RatingType.Stake)] *
-                dlpStakeRating +
-                customRatingPercentages[uint256(RatingType.Performance)] *
-                dlpPerformanceRating) / 1e20;
+
+        uint256 stakeRatingPercentage;
+        uint256 performanceRatingPercentage;
+
+        if (customRatingPercentages.length == 2) {
+            stakeRatingPercentage = customRatingPercentages[uint256(RatingType.Stake)];
+            performanceRatingPercentage = customRatingPercentages[uint256(RatingType.Performance)];
+        } else if (customRatingPercentages.length == 0) {
+            stakeRatingPercentage = ratingPercentages[RatingType.Stake];
+            performanceRatingPercentage = ratingPercentages[RatingType.Performance];
+        } else {
+            revert InvalidRatingPercentages();
+        }
+
+        return (stakeRatingPercentage * dlpStakeRating + performanceRatingPercentage * dlpPerformanceRating) / 1e20;
     }
 
     function _updateRatingPercentages(uint256 stakeRatingPercentage, uint256 performanceRatingPercentage) internal {
@@ -578,10 +525,11 @@ contract DLPRootMetricsImplementation is
             revert EpochRewardsAlreadyDistributed();
         }
 
-        IDLPRootMetrics.DlpRating[] memory topDlps = topDlpsDefaultPercentages(
+        IDLPRootMetrics.DlpRating[] memory topDlps = topDlpsCustomized(
             epochId,
             dlpRoot.dlpRootEpoch().epochDlpsLimit(),
-            dlpIds
+            dlpIds,
+            new uint256[](0)
         );
 
         uint256 totalTopDlpsRating;
@@ -613,7 +561,7 @@ contract DLPRootMetricsImplementation is
 
             epochDlpRewards[i].dlpId = topDlps[i].dlpId;
             epochDlpRewards[i].stakersRewardAmount = stakersRewardAmount;
-            epochDlpRewards[i].rewardAmount = totalDlpReward - stakersRewardAmount;
+            epochDlpRewards[i].ownerRewardAmount = totalDlpReward - stakersRewardAmount;
 
             unchecked {
                 ++i;

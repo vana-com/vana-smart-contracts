@@ -6,7 +6,7 @@ import "./IDLPRootCore.sol";
 abstract contract DLPRootCoreStorageV1 is IDLPRootCore {
     IDLPRoot public override dlpRoot;
 
-    uint256 internal eligibleDlpsLimit;
+    uint256 public override eligibleDlpsLimit;
     uint256 public override minDlpStakersPercentage; // Min % of rewards to stakers (in 1e18)
     uint256 public override maxDlpStakersPercentage; // Max % of rewards to stakers (in 1e18)
     uint256 public override minDlpRegistrationStake; // Min stake for new DLP registration
@@ -16,7 +16,6 @@ abstract contract DLPRootCoreStorageV1 is IDLPRootCore {
     uint256 public override dlpsCount;
     mapping(uint256 dlpId => Dlp dlp) internal _dlps;
     mapping(address dlpAddress => uint256 dlpId) public override dlpIds;
-    EnumerableSet.UintSet internal _eligibleDlpsList;
-
     mapping(string dlpName => uint256 dlpId) public override dlpNameToId;
+    EnumerableSet.UintSet internal _eligibleDlpsList;
 }

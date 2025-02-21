@@ -6,6 +6,7 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "./interfaces/DLPRootCoreStorageV1.sol";
+import {IDLPRootOld} from "../root/interfaces/IDLPRootOld.sol";
 
 contract DLPRootCoreImplementation is
     UUPSUpgradeable,
@@ -20,7 +21,6 @@ contract DLPRootCoreImplementation is
 
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
     bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
-    bytes32 public constant DLP_ROOT_METRICS_ROLE = keccak256("DLP_ROOT_METRICS_ROLE");
     bytes32 public constant DLP_ROOT_ROLE = keccak256("DLP_ROOT_ROLE");
 
     uint256 public constant NEW_MULTIPLIER_EPOCH = 3;
@@ -103,6 +103,7 @@ contract DLPRootCoreImplementation is
 
         _grantRole(DEFAULT_ADMIN_ROLE, ownerAddress);
         _grantRole(MAINTAINER_ROLE, ownerAddress);
+        _grantRole(MANAGER_ROLE, ownerAddress);
         _grantRole(DLP_ROOT_ROLE, dlpRootAddress);
     }
 
@@ -117,12 +118,8 @@ contract DLPRootCoreImplementation is
      */
     function dlps(uint256 dlpId) public view override returns (DlpInfo memory) {
         Dlp storage dlp = _dlps[dlpId];
-        //        Epoch storage epoch = _epochs[epochsCount];
 
-        //        uint stakersPercentageEpoch = dlp.registrationBlockNumber > epoch.startBlock
-        //            ? dlp.stakersPercentageCheckpoints.at(0)._value
-        //            : dlp.stakersPercentageCheckpoints.upperLookup(uint48(epoch.startBlock));
-
+        uint256 epochsCount = _dlpRootEpoch().epochsCount();
         return
             DlpInfo({
                 id: dlp.id,
@@ -130,22 +127,22 @@ contract DLPRootCoreImplementation is
                 ownerAddress: dlp.ownerAddress,
                 treasuryAddress: dlp.treasuryAddress,
                 stakersPercentage: dlp.stakersPercentageCheckpoints.latest(),
-                stakersPercentageEpoch: dlp.stakersPercentageCheckpoints.latest(), //todo: use stakersPercentageEpoch value after fixing epoch3 values
+                stakersPercentageEpoch: dlp.stakersPercentageCheckpoints.upperLookup(
+                    epochsCount > 0 ? uint48(epochsCount - 1) : 0
+                ),
                 name: dlp.name,
                 iconUrl: dlp.iconUrl,
                 website: dlp.website,
                 metadata: dlp.metadata,
                 status: dlp.status,
                 registrationBlockNumber: dlp.registrationBlockNumber,
-                stakeAmount: _dlpComputedStakeAmount(dlpId),
+                stakeAmount: dlp.stakeAmountCheckpoints.latest(),
                 isVerified: dlp.isVerified
             });
     }
 
-    function dlpComputedStakeAmountByBlock(uint256 dlpId, uint48 checkBlock) external view override returns (uint256) {
-        return
-            _dlps[dlpId].stakeAmountCheckpoints.upperLookup(checkBlock) -
-            _dlps[dlpId].unstakeAmountCheckpoints.upperLookup(checkBlock);
+    function dlpEpochStakeAmount(uint256 dlpId, uint256 epochId) external view override returns (uint256) {
+        return _dlps[dlpId].stakeAmountCheckpoints.upperLookup(uint48(epochId));
     }
 
     function dlpsByAddress(address dlpAddress) external view override returns (DlpInfo memory) {
@@ -196,19 +193,34 @@ contract DLPRootCoreImplementation is
             if (dlp.status != DlpStatus.Deregistered) {
                 uint256 stakersPercentage = dlp.stakersPercentageCheckpoints.latest();
                 if (stakersPercentage < newMinDlpStakersPercentage) {
-                    stakersPercentage = newMinDlpStakersPercentage;
-                } else if (stakersPercentage > newMaxDlpStakersPercentage) {
-                    stakersPercentage = newMaxDlpStakersPercentage;
-                }
-
-                if (stakersPercentage != dlp.stakersPercentageCheckpoints.latest()) {
-                    _checkpointPush(dlp.stakersPercentageCheckpoints, stakersPercentage);
+                    _checkpointPush(
+                        dlp.stakersPercentageCheckpoints,
+                        _dlpRootEpoch().epochsCount(),
+                        newMinDlpStakersPercentage
+                    );
                     emit DlpUpdated(
                         i,
                         dlp.dlpAddress,
                         dlp.ownerAddress,
                         dlp.treasuryAddress,
-                        stakersPercentage,
+                        newMinDlpStakersPercentage,
+                        dlp.name,
+                        dlp.iconUrl,
+                        dlp.website,
+                        dlp.metadata
+                    );
+                } else if (stakersPercentage > newMaxDlpStakersPercentage) {
+                    _checkpointPush(
+                        dlp.stakersPercentageCheckpoints,
+                        _dlpRootEpoch().epochsCount(),
+                        newMaxDlpStakersPercentage
+                    );
+                    emit DlpUpdated(
+                        i,
+                        dlp.dlpAddress,
+                        dlp.ownerAddress,
+                        dlp.treasuryAddress,
+                        newMaxDlpStakersPercentage,
                         dlp.name,
                         dlp.iconUrl,
                         dlp.website,
@@ -277,7 +289,7 @@ contract DLPRootCoreImplementation is
 
         emit DlpVerificationUpdated(dlpId, isVerified);
 
-        if (_dlpComputedStakeAmount(dlpId) >= dlpEligibilityThreshold) {
+        if (dlp.stakeAmountCheckpoints.latest() >= dlpEligibilityThreshold) {
             if (isVerified) {
                 _eligibleDlpsList.add(dlpId);
                 dlp.status = DlpStatus.Eligible;
@@ -321,8 +333,22 @@ contract DLPRootCoreImplementation is
         dlp.ownerAddress = dlpUpdateInfo.ownerAddress;
         dlp.treasuryAddress = dlpUpdateInfo.treasuryAddress;
         if (dlp.stakersPercentageCheckpoints.latest() != dlpUpdateInfo.stakersPercentage) {
-            _checkpointPush(dlp.stakersPercentageCheckpoints, dlpUpdateInfo.stakersPercentage);
+            _checkpointPush(
+                dlp.stakersPercentageCheckpoints,
+                _dlpRootEpoch().epochsCount(),
+                dlpUpdateInfo.stakersPercentage
+            );
         }
+
+        if (keccak256(bytes(dlpUpdateInfo.name)) != keccak256(bytes(dlp.name))) {
+            if (dlpNameToId[dlpUpdateInfo.name] != 0 || !_validateDlpNameLength(dlpUpdateInfo.name)) {
+                revert InvalidName();
+            }
+
+            dlpNameToId[dlp.name] = 0;
+            dlpNameToId[dlpUpdateInfo.name] = dlpId;
+        }
+
         dlp.name = dlpUpdateInfo.name;
         dlp.iconUrl = dlpUpdateInfo.iconUrl;
         dlp.website = dlpUpdateInfo.website;
@@ -369,13 +395,13 @@ contract DLPRootCoreImplementation is
 
     function addDlpStake(uint256 dlpId, uint256 amount) external override onlyRole(DLP_ROOT_ROLE) {
         Dlp storage dlp = _dlps[dlpId];
-        _checkpointAdd(dlp.stakeAmountCheckpoints, amount);
+        _checkpointAdd(dlp.stakeAmountCheckpoints, _dlpRootEpoch().epochsCount(), amount);
 
         // Check if DLP becomes eligible
         if (
             dlp.isVerified &&
             (dlp.status == DlpStatus.Registered || dlp.status == DlpStatus.SubEligible) &&
-            _dlpComputedStakeAmount(dlpId) >= dlpEligibilityThreshold
+            dlp.stakeAmountCheckpoints.latest() >= dlpEligibilityThreshold
         ) {
             _eligibleDlpsList.add(dlpId);
             dlp.status = DlpStatus.Eligible;
@@ -391,9 +417,9 @@ contract DLPRootCoreImplementation is
 
     function removeDlpStake(uint256 dlpId, uint256 amount) external override onlyRole(DLP_ROOT_ROLE) {
         Dlp storage dlp = _dlps[dlpId];
-        _checkpointAdd(dlp.unstakeAmountCheckpoints, amount);
+        _checkpointSub(dlp.stakeAmountCheckpoints, _dlpRootEpoch().epochsCount(), amount);
 
-        uint256 dlpStake = _dlpComputedStakeAmount(dlpId);
+        uint256 dlpStake = dlp.stakeAmountCheckpoints.latest();
 
         // Update DLP status based on remaining stake
         if (
@@ -428,7 +454,7 @@ contract DLPRootCoreImplementation is
             revert InvalidDlpStatus();
         }
 
-        if (dlpNameToId[registrationInfo.name] != 0 || bytes(registrationInfo.name).length == 0) {
+        if (dlpNameToId[registrationInfo.name] != 0 || !_validateDlpNameLength(registrationInfo.name)) {
             revert InvalidName();
         }
 
@@ -446,11 +472,17 @@ contract DLPRootCoreImplementation is
         uint256 dlpId = ++dlpsCount;
         Dlp storage dlp = _dlps[dlpId];
 
+        uint256 epochsCount = _dlpRootEpoch().epochsCount();
+
         dlp.id = dlpId;
         dlp.dlpAddress = registrationInfo.dlpAddress;
         dlp.ownerAddress = registrationInfo.ownerAddress;
         dlp.treasuryAddress = registrationInfo.treasuryAddress;
-        _checkpointPush(dlp.stakersPercentageCheckpoints, registrationInfo.stakersPercentage);
+        _checkpointPush(
+            dlp.stakersPercentageCheckpoints,
+            epochsCount > 0 ? epochsCount - 1 : 0,
+            registrationInfo.stakersPercentage
+        );
         dlp.name = registrationInfo.name;
         dlp.iconUrl = registrationInfo.iconUrl;
         dlp.website = registrationInfo.website;
@@ -478,29 +510,6 @@ contract DLPRootCoreImplementation is
         dlpRoot.createStakeOnBehalf{value: msg.value}(dlpId, registrationInfo.ownerAddress);
     }
 
-    /**
-     * @notice Helper function to set checkpoint value
-     */
-    function _checkpointPush(Checkpoints.Trace208 storage store, uint256 delta) private returns (uint208, uint208) {
-        return store.push(uint48(block.number), uint208(delta));
-    }
-
-    /**
-     * @notice Get DLP stake amount at specific block
-     */
-    function _dlpComputedStakeAmountByBlock(uint256 dlpId, uint48 checkBlock) internal view returns (uint256) {
-        return
-            _dlps[dlpId].stakeAmountCheckpoints.upperLookup(checkBlock) -
-            _dlps[dlpId].unstakeAmountCheckpoints.upperLookup(checkBlock);
-    }
-
-    /**
-     * @notice Get current DLP stake amount
-     */
-    function _dlpComputedStakeAmount(uint256 dlpId) internal view returns (uint256) {
-        return _dlps[dlpId].stakeAmountCheckpoints.latest() - _dlps[dlpId].unstakeAmountCheckpoints.latest();
-    }
-
     function _dlpRootEpoch() internal view returns (IDLPRootEpoch) {
         return dlpRoot.dlpRootEpoch();
     }
@@ -510,9 +519,115 @@ contract DLPRootCoreImplementation is
     }
 
     /**
-     * @notice Helper function to add value to checkpoint
+     * @notice Helper function to set checkpoint value
      */
-    function _checkpointAdd(Checkpoints.Trace208 storage store, uint256 delta) private returns (uint208, uint208) {
-        return store.push(uint48(block.number), store.latest() + uint208(delta));
+    function _checkpointPush(
+        Checkpoints.Trace208 storage store,
+        uint256 key,
+        uint256 value
+    ) private returns (uint208, uint208) {
+        return store.push(uint48(key), uint208(value));
+    }
+
+    function _checkpointAdd(
+        Checkpoints.Trace208 storage store,
+        uint256 key,
+        uint256 delta
+    ) private returns (uint208, uint208) {
+        return store.push(uint48(key), store.latest() + uint208(delta));
+    }
+
+    function _checkpointSub(
+        Checkpoints.Trace208 storage store,
+        uint256 epochId,
+        uint256 delta
+    ) private returns (uint208, uint208) {
+        return store.push(uint48(epochId), store.latest() - uint208(delta));
+    }
+
+    function _validateDlpNameLength(string memory str) internal pure returns (bool) {
+        bytes memory strBytes = bytes(str);
+        uint256 count = 0;
+
+        for (uint256 i = 0; i < strBytes.length; i++) {
+            if (strBytes[i] != 0x20) {
+                // 0x20 is the ASCII space character
+                count++;
+            }
+        }
+
+        return count > 3;
+    }
+
+    function migrateParametersData() external onlyRole(MANAGER_ROLE) {
+        IDLPRootOld dlpRootOld = IDLPRootOld(address(dlpRoot));
+        minDlpStakersPercentage = dlpRootOld.minDlpStakersPercentage();
+        maxDlpStakersPercentage = dlpRootOld.maxDlpStakersPercentage();
+        minDlpRegistrationStake = dlpRootOld.minDlpRegistrationStake();
+        dlpEligibilityThreshold = dlpRootOld.dlpEligibilityThreshold();
+        dlpSubEligibilityThreshold = dlpRootOld.dlpSubEligibilityThreshold();
+    }
+
+    function migrateDlpData(uint256 startDlpId, uint256 endDlpId) external onlyRole(MANAGER_ROLE) {
+        IDLPRootOld dlpRootOld = IDLPRootOld(address(dlpRoot));
+
+        uint256 epochsCount = dlpRootOld.epochsCount();
+        for (uint256 dlpId = startDlpId; dlpId <= endDlpId; ) {
+            IDLPRootOld.DlpInfo memory dlpInfo = dlpRootOld.dlps(dlpId);
+            Dlp storage dlp = _dlps[dlpId];
+
+            dlp.id = dlpInfo.id;
+            dlp.dlpAddress = dlpInfo.dlpAddress;
+            dlp.ownerAddress = dlpInfo.ownerAddress;
+            dlp.treasuryAddress = payable(dlpInfo.treasuryAddress);
+            dlp.name = dlpInfo.name;
+            dlp.iconUrl = dlpInfo.iconUrl;
+            dlp.website = dlpInfo.website;
+            dlp.metadata = dlpInfo.metadata;
+            dlp.status = DlpStatus(uint256(dlpInfo.status));
+            dlp.registrationBlockNumber = dlpInfo.registrationBlockNumber;
+            dlp.isVerified = dlpInfo.isVerified;
+
+            for (uint256 epochId = 0; epochId <= epochsCount; ) {
+                IDLPRootOld.DlpEpochInfo memory dlpEpochInfo = dlpRootOld.dlpEpochs(dlpId, epochId);
+
+                _checkpointPush(dlp.stakersPercentageCheckpoints, epochId, dlpEpochInfo.stakersPercentage);
+                _checkpointPush(dlp.stakeAmountCheckpoints, epochId, dlpEpochInfo.stakeAmount);
+
+                unchecked {
+                    ++epochId;
+                }
+            }
+
+            dlpIds[dlpInfo.dlpAddress] = dlpId;
+            dlpNameToId[dlpInfo.name] = dlpId;
+
+            if (DlpStatus(uint256(dlpInfo.status)) == DlpStatus.Eligible) {
+                _eligibleDlpsList.add(dlpId);
+            }
+
+            dlpsCount++;
+
+            unchecked {
+                ++dlpId;
+            }
+        }
+    }
+
+    function migrateLastEpochDlpStakeData(uint256 startDlpId, uint256 endDlpId) external onlyRole(MANAGER_ROLE) {
+        IDLPRootOld dlpRootOld = IDLPRootOld(address(dlpRoot));
+
+        uint256 epochsCount = dlpRootOld.epochsCount();
+        for (uint256 dlpId = startDlpId; dlpId <= endDlpId; ) {
+            Dlp storage dlp = _dlps[dlpId];
+
+            IDLPRootOld.DlpEpochInfo memory dlpEpochInfo = dlpRootOld.dlpEpochs(dlpId, epochsCount);
+
+            _checkpointPush(dlp.stakeAmountCheckpoints, epochsCount, dlpEpochInfo.stakeAmount);
+
+            unchecked {
+                ++dlpId;
+            }
+        }
     }
 }

@@ -9,7 +9,7 @@ import "./IDLPRootMetrics.sol";
  * contract which implements DLPRootMetricsStorageV1
  */
 abstract contract DLPRootMetricsStorageV1 is IDLPRootMetrics {
-    address internal _trustedForwarder;
+    address private _trustedForwarder; // not used anymore
     IDLPRoot public override dlpRoot;
 
     mapping(uint256 epochId => Epoch) internal _epochs;

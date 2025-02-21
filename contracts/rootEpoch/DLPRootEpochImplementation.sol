@@ -6,6 +6,7 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "./interfaces/DLPRootEpochStorageV1.sol";
+import {IDLPRootOld} from "../root/interfaces/IDLPRootOld.sol";
 
 contract DLPRootEpochImplementation is
     UUPSUpgradeable,
@@ -20,7 +21,6 @@ contract DLPRootEpochImplementation is
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
     bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
     bytes32 public constant DLP_ROOT_METRICS_ROLE = keccak256("DLP_ROOT_METRICS_ROLE");
-    bytes32 public constant DLP_ROOT_ROLE = keccak256("DLP_ROOT_ROLE");
 
     event EpochCreated(uint256 epochId, uint256 startBlock, uint256 endBlock, uint256 rewardAmount);
     event EpochOverridden(uint256 epochId, uint256 startBlock, uint256 endBlock, uint256 rewardAmount);
@@ -31,7 +31,7 @@ contract DLPRootEpochImplementation is
     event DlpRewardClaimed(
         uint256 indexed dlpId,
         uint256 indexed epochId,
-        uint256 rewardAmount,
+        uint256 ownerRewardAmount,
         uint256 stakersRewardAmount
     );
 
@@ -73,7 +73,7 @@ contract DLPRootEpochImplementation is
 
         _grantRole(DEFAULT_ADMIN_ROLE, ownerAddress);
         _grantRole(MAINTAINER_ROLE, ownerAddress);
-        _grantRole(DLP_ROOT_ROLE, dlpRootAddress);
+        _grantRole(MANAGER_ROLE, ownerAddress);
     }
 
     function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
@@ -99,16 +99,12 @@ contract DLPRootEpochImplementation is
 
         IDLPRootCore.DlpInfo memory dlp = dlpRoot.dlpRootCore().dlps(dlpId);
 
-        //        uint256 stakersPercentageEpoch = dlp.registrationBlockNumber > epoch.startBlock
-        //            ? dlp.stakersPercentageCheckpoints.at(0)._value
-        //            : dlp.stakersPercentageCheckpoints.upperLookup(uint48(epoch.startBlock));
-
         return
             EpochDlpInfo({
-                stakeAmount: dlpRoot.dlpRootCore().dlpComputedStakeAmountByBlock(dlpId, uint48(epoch.endBlock)),
+                stakeAmount: dlpRoot.dlpRootCore().dlpEpochStakeAmount(dlpId, uint48(epochId)),
                 isTopDlp: epoch.dlpIds.contains(dlpId),
-                rewardAmount: epochDlp.rewardAmount,
-                stakersPercentage: dlp.stakersPercentage, //stakersPercentageEpoch,
+                ownerRewardAmount: epochDlp.ownerRewardAmount,
+                stakersPercentage: dlp.stakersPercentageEpoch,
                 totalStakesScore: epochDlp.totalStakesScore,
                 rewardClaimed: epochDlp.rewardClaimed,
                 stakersRewardAmount: epochDlp.stakersRewardAmount
@@ -116,7 +112,7 @@ contract DLPRootEpochImplementation is
     }
 
     function epochDlpStakeAmount(uint256 epochId, uint256 dlpId) external view override returns (uint256) {
-        return dlpRoot.dlpRootCore().dlpComputedStakeAmountByBlock(dlpId, uint48(_epochs[epochId].endBlock));
+        return dlpRoot.dlpRootCore().dlpEpochStakeAmount(dlpId, uint48(epochId));
     }
 
     function pause() external override onlyRole(MAINTAINER_ROLE) {
@@ -180,11 +176,9 @@ contract DLPRootEpochImplementation is
             dlpId = epochDlpRewards[index].dlpId;
 
             epoch.dlpIds.add(dlpId);
-            //            dlp = _dlps[dlpId];
-            //            dlp.epochIds[++dlp.epochIdsCount] = epochId;
 
             epochDlp = epoch.dlps[dlpId];
-            epochDlp.rewardAmount = epochDlpRewards[index].rewardAmount;
+            epochDlp.ownerRewardAmount = epochDlpRewards[index].ownerRewardAmount;
             epochDlp.stakersRewardAmount = epochDlpRewards[index].stakersRewardAmount;
 
             //            bool success = dlpRootRewardsTreasury.transferVana(
@@ -194,16 +188,16 @@ contract DLPRootEpochImplementation is
 
             bool success = dlpRoot.dlpRootRewardsTreasury().transferVana(
                 dlpRoot.dlpRootMetrics().foundationWalletAddress(),
-                epochDlpRewards[index].rewardAmount
+                epochDlpRewards[index].ownerRewardAmount
             );
 
             if (success) {
-                epochDlp.rewardClaimed = true;
+                epochDlp.rewardClaimed = epochDlpRewards[index].ownerRewardAmount;
 
                 emit DlpRewardClaimed(
                     dlpId,
                     epochId,
-                    epochDlpRewards[index].rewardAmount,
+                    epochDlpRewards[index].ownerRewardAmount,
                     epochDlpRewards[index].stakersRewardAmount
                 );
             } else {
@@ -304,6 +298,60 @@ contract DLPRootEpochImplementation is
 
             emit EpochCreated(epochsCount, newEpoch.startBlock, newEpoch.endBlock, newEpoch.rewardAmount);
             lastEpoch = newEpoch;
+        }
+    }
+
+    function migrateParametersData() external onlyRole(MANAGER_ROLE) {
+        IDLPRootOld dlpRootOld = IDLPRootOld(address(dlpRoot));
+
+        epochDlpsLimit = dlpRootOld.epochDlpsLimit();
+        epochRewardAmount = dlpRootOld.epochRewardAmount();
+        epochSize = dlpRootOld.epochSize();
+        daySize = dlpRootOld.daySize();
+        epochsCount = dlpRootOld.epochsCount();
+    }
+
+    function migrateEpochData(uint256 epochIdStart, uint256 epochIdEnd) external onlyRole(MANAGER_ROLE) {
+        IDLPRootOld dlpRootOld = IDLPRootOld(address(dlpRoot));
+
+        uint256 dlpsCount = dlpRootOld.dlpsCount();
+
+        for (uint256 epochId = epochIdStart; epochId <= epochIdEnd; ) {
+            Epoch storage epoch = _epochs[epochId];
+            IDLPRootOld.EpochInfo memory epochInfo = dlpRootOld.epochs(epochId);
+
+            epoch.startBlock = epochInfo.startBlock;
+            epoch.endBlock = epochInfo.endBlock;
+            epoch.rewardAmount = epochInfo.rewardAmount;
+            epoch.isFinalised = epochInfo.isFinalised;
+
+            uint256 dlpId;
+            uint256 epochDlpIdsCount = epochInfo.dlpIds.length;
+            for (dlpId = 0; dlpId < epochDlpIdsCount; ) {
+                epoch.dlpIds.add(epochInfo.dlpIds[dlpId]);
+
+                unchecked {
+                    ++dlpId;
+                }
+            }
+
+            for (dlpId = 1; dlpId <= dlpsCount; ) {
+                IDLPRootOld.DlpEpochInfo memory dlpEpoch = dlpRootOld.dlpEpochs(dlpId, epochId);
+                EpochDlp storage epochDlp = epoch.dlps[dlpId];
+
+                epochDlp.ownerRewardAmount = dlpEpoch.rewardAmount;
+                epochDlp.stakersRewardAmount = dlpEpoch.stakersRewardAmount;
+                epochDlp.totalStakesScore = dlpEpoch.totalStakesScore;
+                epochDlp.rewardClaimed = dlpEpoch.rewardClaimed ? dlpEpoch.rewardAmount : 0;
+
+                unchecked {
+                    ++dlpId;
+                }
+            }
+
+            unchecked {
+                ++epochId;
+            }
         }
     }
 }
