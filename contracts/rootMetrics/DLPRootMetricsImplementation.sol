@@ -203,71 +203,16 @@ contract DLPRootMetricsImplementation is
         uint256[] memory dlpIds,
         uint256[] memory customRatingPercentages
     ) public view override returns (DlpRewardApy[] memory) {
-        uint256 epochId = dlpRoot.dlpRootEpoch().epochsCount();
-
-        IDLPRootMetrics.DlpRating[] memory topDlpsList = topDlpsCustomized(
-            epochId,
-            dlpRoot.dlpRootEpoch().epochDlpsLimit(),
-            dlpRoot.dlpRootCore().eligibleDlpsListValues(),
+        TopDlpTotalRatings memory topDlpTotalRatings = _calculateTopDlpTotalRatings(
+            dlpRoot.dlpRootEpoch().epochsCount(),
             customRatingPercentages
         );
 
-        uint256 i;
-        uint256 totalTopDlpsStakeAmount;
-        uint256 totalTopDlpsPerformanceRating;
-        uint256 totalTopDlpsRating;
-
-        // Calculate total amount and ratings for top DLPs
-        for (i = 0; i < topDlpsList.length; ) {
-            totalTopDlpsStakeAmount += _dlpEpochStakeAmount(topDlpsList[i].dlpId, epochId);
-            totalTopDlpsPerformanceRating += _epochs[epochId].dlps[topDlpsList[i].dlpId].performanceRating;
-
-            unchecked {
-                ++i;
-            }
-        }
-
-        uint256 dlpRating;
-        uint256 dlpId;
-        // Calculate total amount and ratings for top DLPs
-        for (i = 0; i < topDlpsList.length; ) {
-            dlpId = topDlpsList[i].dlpId;
-
-            totalTopDlpsRating += calculateDlpRating(
-                dlpId,
-                epochId,
-                totalTopDlpsStakeAmount,
-                totalTopDlpsPerformanceRating,
-                customRatingPercentages
-            );
-
-            unchecked {
-                ++i;
-            }
-        }
-
         DlpRewardApy[] memory result = new DlpRewardApy[](dlpIds.length);
+        uint256 i;
 
         for (i = 0; i < dlpIds.length; ) {
-            dlpId = dlpIds[i];
-
-            dlpRating = calculateDlpRating(
-                dlpId,
-                epochId,
-                totalTopDlpsStakeAmount,
-                totalTopDlpsPerformanceRating,
-                customRatingPercentages
-            );
-
-            uint256 dlpReward = (dlpRating * dlpRoot.dlpRootEpoch().epochRewardAmount()) / totalTopDlpsRating;
-            uint256 epy = (dlpRoot.dlpRootCore().dlps(dlpId).stakersPercentageEpoch * dlpReward) /
-                _dlpEpochStakeAmount(dlpId, epochId);
-
-            result[i] = DlpRewardApy({
-                dlpId: dlpId,
-                EPY: epy,
-                APY: (epy * 365 * dlpRoot.dlpRootEpoch().daySize()) / dlpRoot.dlpRootEpoch().epochSize()
-            });
+            result[i] = _calculateDlpRewardApy(dlpIds[i], topDlpTotalRatings, customRatingPercentages);
 
             unchecked {
                 ++i;
@@ -454,7 +399,7 @@ contract DLPRootMetricsImplementation is
      * @notice Saves or updates epoch performanceRatings for DLPs
      * @param epochId                The epoch ID to save performanceRatings for
      */
-    function finalizeEpoch(uint256 epochId) external override onlyRole(MAINTAINER_ROLE) whenNotPaused {
+    function finalizeEpoch(uint256 epochId) external override onlyRole(MANAGER_ROLE) whenNotPaused {
         if (dlpRoot.dlpRootEpoch().epochs(epochId).isFinalised) {
             revert EpochAlreadyFinalised();
         }
@@ -533,35 +478,40 @@ contract DLPRootMetricsImplementation is
         );
 
         uint256 totalTopDlpsRating;
-
-        uint256 topDlpsCount = topDlps.length;
-
-        uint256[] memory topDlpsStakerPercentages = new uint256[](topDlpsCount);
-
         uint256 i;
 
-        for (i = 0; i < topDlpsCount; ) {
+        // Calculate total stake amount for top DLPs
+        for (uint256 i = 0; i < topDlps.length; ) {
             totalTopDlpsRating += topDlps[i].rating;
-            topDlpsStakerPercentages[i] = dlpRoot.dlpRootEpoch().epochDlps(epochId, topDlps[i].dlpId).stakersPercentage;
 
             unchecked {
                 ++i;
             }
         }
 
+        uint256 dlpId;
+
+        uint256 topDlpsCount = topDlps.length;
+
         IDLPRootEpoch.EpochDlpReward[] memory epochDlpRewards = new IDLPRootEpoch.EpochDlpReward[](topDlpsCount);
         uint256 totalDlpReward;
         uint256 stakersRewardAmount;
 
-        // calculate stakers rewards
+        // Calculate rewards
         for (i = 0; i < topDlpsCount; ) {
+            dlpId = topDlps[i].dlpId;
+
             totalDlpReward = totalTopDlpsRating > 0 ? (topDlps[i].rating * epoch.rewardAmount) / totalTopDlpsRating : 0;
 
-            stakersRewardAmount = (totalDlpReward * topDlpsStakerPercentages[i]) / 100e18;
+            stakersRewardAmount =
+                (totalDlpReward * dlpRoot.dlpRootEpoch().epochDlps(epochId, dlpId).stakersPercentage) /
+                100e18;
 
-            epochDlpRewards[i].dlpId = topDlps[i].dlpId;
-            epochDlpRewards[i].stakersRewardAmount = stakersRewardAmount;
-            epochDlpRewards[i].ownerRewardAmount = totalDlpReward - stakersRewardAmount;
+            epochDlpRewards[i] = IDLPRootEpoch.EpochDlpReward({
+                dlpId: dlpId,
+                ownerRewardAmount: totalDlpReward - stakersRewardAmount,
+                stakersRewardAmount: stakersRewardAmount
+            });
 
             unchecked {
                 ++i;
@@ -575,5 +525,131 @@ contract DLPRootMetricsImplementation is
         return
             dlpRoot.dlpRootEpoch().epochDlpStakeAmount(epochId, dlpId) -
             _epochs[epochId].dlps[dlpId].stakeAmountAdjustment;
+    }
+
+    function _calculateDlpRating(
+        uint256 dlpStakeAmount,
+        uint256 dlpPerformanceRating,
+        uint256 totalDlpsStakeAmount,
+        uint256 totalDlpsPerformanceRating,
+        uint256[] memory customRatingPercentages
+    ) public view returns (uint256) {
+        uint256 normalizedDlpStakeRating = totalDlpsStakeAmount > 0
+            ? (1e18 * dlpStakeAmount) / totalDlpsStakeAmount
+            : 0;
+        uint256 normalizedDlpPerformanceRating = totalDlpsPerformanceRating > 0
+            ? (1e18 * dlpPerformanceRating) / totalDlpsPerformanceRating
+            : 0;
+        return
+            (customRatingPercentages[uint256(RatingType.Stake)] *
+                normalizedDlpStakeRating +
+                customRatingPercentages[uint256(RatingType.Performance)] *
+                normalizedDlpPerformanceRating) / 1e20;
+    }
+
+    struct TopDlpTotalRatings {
+        uint256 totalStakeAmount;
+        uint256 totalStakeAmountAdjusted;
+        uint256 totalRating;
+        uint256 totalRatingAdjusted;
+        uint256 totalPerformanceRating;
+    }
+    function _calculateTopDlpTotalRatings(
+        uint256 epochId,
+        uint256[] memory customRatingPercentages
+    ) internal view returns (TopDlpTotalRatings memory) {
+        IDLPRootMetrics.DlpRating[] memory topDlpsList = topDlpsCustomized(
+            epochId,
+            dlpRoot.dlpRootEpoch().epochDlpsLimit(),
+            dlpRoot.dlpRootCore().eligibleDlpsListValues(),
+            customRatingPercentages
+        );
+
+        uint256 i;
+        TopDlpTotalRatings memory totalTopDlpsStakeAmount;
+
+        uint256[] memory dlpStakeAmountsAdjusted = new uint256[](topDlpsList.length);
+        uint256[] memory dlpStakeAmounts = new uint256[](topDlpsList.length);
+        uint256[] memory dlpPerformanceRatings = new uint256[](topDlpsList.length);
+
+        // Calculate total amount and ratings for top DLPs
+        for (i = 0; i < topDlpsList.length; ) {
+            dlpStakeAmounts[i] = dlpRoot.dlpRootCore().dlpEpochStakeAmount(topDlpsList[i].dlpId, epochId);
+            dlpStakeAmountsAdjusted[i] =
+                dlpStakeAmounts[i] -
+                _epochs[epochId].dlps[topDlpsList[i].dlpId].stakeAmountAdjustment;
+            dlpPerformanceRatings[i] = _epochs[epochId].dlps[topDlpsList[i].dlpId].performanceRating;
+
+            totalTopDlpsStakeAmount.totalStakeAmountAdjusted += dlpStakeAmountsAdjusted[i];
+            totalTopDlpsStakeAmount.totalStakeAmount += dlpStakeAmounts[i];
+            totalTopDlpsStakeAmount.totalPerformanceRating += dlpPerformanceRatings[i];
+
+            unchecked {
+                ++i;
+            }
+        }
+
+        uint256 dlpId;
+        // Calculate total amount and ratings for top DLPs
+        for (i = 0; i < topDlpsList.length; ) {
+            totalTopDlpsStakeAmount.totalRatingAdjusted += _calculateDlpRating(
+                dlpStakeAmountsAdjusted[i],
+                dlpPerformanceRatings[i],
+                totalTopDlpsStakeAmount.totalStakeAmountAdjusted,
+                totalTopDlpsStakeAmount.totalPerformanceRating,
+                customRatingPercentages
+            );
+            totalTopDlpsStakeAmount.totalRating += _calculateDlpRating(
+                dlpStakeAmounts[i],
+                dlpPerformanceRatings[i],
+                totalTopDlpsStakeAmount.totalStakeAmount,
+                totalTopDlpsStakeAmount.totalPerformanceRating,
+                customRatingPercentages
+            );
+
+            unchecked {
+                ++i;
+            }
+        }
+
+        return totalTopDlpsStakeAmount;
+    }
+
+    function _calculateDlpRewardApy(
+        uint256 dlpId,
+        TopDlpTotalRatings memory topDlpTotalRatings,
+        uint256[] memory customRatingPercentages
+    ) private view returns (DlpRewardApy memory) {
+        uint256 epochCount = dlpRoot.dlpRootEpoch().epochRewardAmount();
+        uint256 epochRewardAmount = dlpRoot.dlpRootEpoch().epochsCount();
+        uint256 dlpStakeAmount = dlpRoot.dlpRootCore().dlpEpochStakeAmount(dlpId, epochCount);
+        uint256 dlpStakeAmountAdjusted = dlpStakeAmount - _epochs[epochCount].dlps[dlpId].stakeAmountAdjustment;
+
+        uint256 dlpRewardAdjusted = (_calculateDlpRating(
+            dlpStakeAmountAdjusted,
+            _epochs[epochCount].dlps[dlpId].performanceRating,
+            topDlpTotalRatings.totalStakeAmountAdjusted,
+            topDlpTotalRatings.totalPerformanceRating,
+            customRatingPercentages
+        ) * epochRewardAmount) / topDlpTotalRatings.totalRatingAdjusted;
+
+        uint256 dlpReward = (_calculateDlpRating(
+            dlpStakeAmount,
+            _epochs[epochCount].dlps[dlpId].performanceRating,
+            topDlpTotalRatings.totalStakeAmount,
+            topDlpTotalRatings.totalPerformanceRating,
+            customRatingPercentages
+        ) * epochRewardAmount) / topDlpTotalRatings.totalRating;
+
+        uint256 dlpStakersPercentageEpoch = dlpRoot.dlpRootEpoch().epochDlps(epochCount, dlpId).stakersPercentage;
+
+        return
+            DlpRewardApy({
+                dlpId: dlpId,
+                EPY: (dlpStakersPercentageEpoch * dlpRewardAdjusted) / dlpStakeAmountAdjusted,
+                APY: (((dlpStakersPercentageEpoch * dlpReward) / dlpStakeAmount) *
+                    365 *
+                    dlpRoot.dlpRootEpoch().daySize()) / dlpRoot.dlpRootEpoch().epochSize()
+            });
     }
 }

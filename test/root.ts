@@ -573,7 +573,7 @@ describe("DLPRoot", () => {
         dlpPerformanceRating(id, 1n),
       ),
     );
-    await rootMetrics.connect(maintainer).finalizeEpoch(epochId);
+    await rootMetrics.connect(manager).finalizeEpoch(epochId);
   }
 
   describe("Setup", () => {
@@ -6174,7 +6174,7 @@ describe("DLPRoot", () => {
           .and.emit(rootMetrics, "DlpEpochPerformanceRatingSaved")
           .withArgs(1, 5, parseEther(0.05));
 
-        await rootMetrics.connect(maintainer).finalizeEpoch(1);
+        await rootMetrics.connect(manager).finalizeEpoch(1);
 
         const epoch = await rootMetrics.epochs(1);
         epoch.totalPerformanceRating.should.eq(
@@ -6299,36 +6299,30 @@ describe("DLPRoot", () => {
         const totalDlpCreatorsRewardAmount =
           epochRewardAmount - totalStakersRewardAmount;
 
-        const dlp1SublinearRating =
-          (sqrt(top3Dlps[2].rating) *
-            (parseEther(100) - dlp1StakersPercentage)) /
-          parseEther(100);
-        const dlp4SublinearRating =
-          (sqrt(top3Dlps[1].rating) *
-            (parseEther(100) - dlp4StakersPercentage)) /
-          parseEther(100);
-        const dlp5SublinearRating =
-          (sqrt(top3Dlps[0].rating) *
-            (parseEther(100) - dlp5StakersPercentage)) /
-          parseEther(100);
-        const top3DlpsTotalSublinearRating =
-          dlp1SublinearRating + dlp4SublinearRating + dlp5SublinearRating;
-
         rootDlp1Epoch1.ownerRewardAmount.should.closeTo(
-          (dlp1SublinearRating * totalDlpCreatorsRewardAmount) /
-            top3DlpsTotalSublinearRating,
+          (top5Dlps[2].rating *
+            epochRewardAmount *
+            (parseEther(100) - dlp1StakersPercentage)) /
+            top3DlpsTotalRating /
+            parseEther(100),
           10,
         );
         rootDlp2Epoch1.ownerRewardAmount.should.eq(0n);
         rootDlp3Epoch1.ownerRewardAmount.should.eq(0n);
         rootDlp4Epoch1.ownerRewardAmount.should.closeTo(
-          (dlp4SublinearRating * totalDlpCreatorsRewardAmount) /
-            top3DlpsTotalSublinearRating,
+          (top5Dlps[1].rating *
+            epochRewardAmount *
+            (parseEther(100) - dlp4StakersPercentage)) /
+            top3DlpsTotalRating /
+            parseEther(100),
           10,
         );
         rootDlp5Epoch1.ownerRewardAmount.should.closeTo(
-          (dlp5SublinearRating * totalDlpCreatorsRewardAmount) /
-            top3DlpsTotalSublinearRating,
+          (top5Dlps[0].rating *
+            epochRewardAmount *
+            (parseEther(100) - dlp5StakersPercentage)) /
+            top3DlpsTotalRating /
+            parseEther(100),
           10,
         );
 
