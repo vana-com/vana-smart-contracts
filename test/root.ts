@@ -6667,7 +6667,7 @@ describe("DLPRoot", () => {
     });
   });
 
-  xdescribe("Developer tests prod", () => {
+  describe("Developer tests prod", () => {
     const adminAddress = "0xfd3E61C018Ea22Cea7CB15f35cc968F39dC2c3F4";
     let adminWallet: HardhatEthersSigner;
     beforeEach(async () => {
