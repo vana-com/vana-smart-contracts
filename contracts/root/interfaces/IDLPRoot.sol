@@ -87,6 +87,8 @@ interface IDLPRoot {
     // Staking and rewards
     function createStake(uint256 dlpId) external payable;
     function createStakeOnBehalf(uint256 dlpId, address stakeOwner) external payable;
+    function createStakeWithVeVANA(uint256 dlpId, uint256 amount) external;
+    function createStakeOnBehalfWithVeVANA(uint256 dlpId, address stakeOwner, uint256 amount) external;
     function closeStakes(uint256[] memory stakeIds) external;
     function withdrawStakes(uint256[] memory stakeIds) external;
     function migrateStake(uint256 stakeId, uint256 newDlpId, uint256 newAmount) external;

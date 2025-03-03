@@ -6,7 +6,9 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "./interfaces/DLPRootStorageV1.sol";
+import { IVeVANA } from "../veVANA/interfaces/IVeVANA.sol";
 
 contract DLPRootImplementation is
     UUPSUpgradeable,
@@ -19,6 +21,7 @@ contract DLPRootImplementation is
     using EnumerableSet for EnumerableSet.UintSet;
     using EnumerableSet for EnumerableSet.AddressSet;
     using Checkpoints for Checkpoints.Trace208;
+    using SafeERC20 for IVeVANA;
 
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
 
@@ -236,7 +239,13 @@ contract DLPRootImplementation is
     function createStake(uint256 dlpId) external payable override nonReentrant whenNotPaused {
         dlpRootEpoch.createEpochs();
 
-        _createStake(_msgSender(), dlpId, msg.value, block.number);
+        _createStake(_msgSender(), dlpId, msg.value, block.number, false);
+    }
+
+    function createStakeWithVeVANA(uint256 dlpId, uint256 amount) external override nonReentrant whenNotPaused {
+        dlpRootEpoch.createEpochs();
+
+        _createStake(_msgSender(), dlpId, amount, block.number, false);
     }
 
     function createStakeOnBehalf(
@@ -245,7 +254,17 @@ contract DLPRootImplementation is
     ) external payable override nonReentrant whenNotPaused {
         dlpRootEpoch.createEpochs();
 
-        _createStake(stakeOwner, dlpId, msg.value, block.number);
+        _createStake(stakeOwner, dlpId, msg.value, block.number, false);
+    }
+
+    function createStakeOnBehalfWithVeVANA(
+        uint256 dlpId,
+        address stakeOwner,
+        uint256 amount
+    ) external override nonReentrant whenNotPaused {
+        dlpRootEpoch.createEpochs();
+
+        _createStake(stakeOwner, dlpId, amount, block.number, false);
     }
 
     /**
@@ -294,7 +313,7 @@ contract DLPRootImplementation is
         stake.movedAmount = newAmount;
         _closeStake(_msgSender(), stakeId);
 
-        _createStake(_msgSender(), newDlpId, newAmount, stake.startBlock);
+        _createStake(_msgSender(), newDlpId, newAmount, stake.startBlock, true);
 
         emit StakeMigrated(stakeId, stakesCount, newDlpId, newAmount);
     }
@@ -419,7 +438,7 @@ contract DLPRootImplementation is
      * @notice Creates a new stake for a DLP
      * @dev Validates stake amount and DLP status before creating
      */
-    function _createStake(address stakerAddress, uint256 dlpId, uint256 amount, uint256 startBlock) internal {
+    function _createStake(address stakerAddress, uint256 dlpId, uint256 amount, uint256 startBlock, bool isRestake) internal {
         if (stakerAddress == address(0)) {
             revert InvalidAddress();
         }
@@ -463,10 +482,18 @@ contract DLPRootImplementation is
             );
         }
 
-        (bool success, ) = payable(address(dlpRootStakesTreasury)).call{value: msg.value}("");
-
-        if (!success) {
-            revert TransferFailed();
+        // If the stake is a restake, the amount is already in the treasury
+        if (!isRestake) {
+            if (msg.value > 0) {
+                dlpRootStakesTreasury.depositVana{value: msg.value}();
+            } else {
+                IVeVANA veVANA = dlpRootStakesTreasury.veVANAVault().token();
+                veVANA.safeTransferFrom(
+                    _msgSender(),
+                    address(dlpRootStakesTreasury),
+                    amount
+                );
+            }
         }
 
         emit StakeCreated(stakesCount, stakerAddress, dlpId, amount);
@@ -552,13 +579,10 @@ contract DLPRootImplementation is
 
         stake.withdrawn = true;
 
-        bool success = dlpRootStakesTreasury.transferVana(
+        dlpRootStakesTreasury.transferVana(
             payable(stake.stakerAddress),
             stake.amount - stake.movedAmount
         );
-        if (!success) {
-            revert TransferFailed();
-        }
 
         emit StakeWithdrawn(stakeId);
     }
@@ -576,10 +600,7 @@ contract DLPRootImplementation is
 
         Stake storage stake = _stakes[stakeId];
 
-        bool success = dlpRootRewardsTreasury.transferVana(payable(stake.stakerAddress), totalRewardAmount);
-        if (!success) {
-            revert TransferFailed();
-        }
+        dlpRootRewardsTreasury.transferVana(payable(stake.stakerAddress), totalRewardAmount);
     }
 
     /**

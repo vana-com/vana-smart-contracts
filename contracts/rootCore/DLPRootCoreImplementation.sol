@@ -5,8 +5,10 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "./interfaces/DLPRootCoreStorageV1.sol";
 import {IDLPRootOld} from "../root/interfaces/IDLPRootOld.sol";
+import {IVeVANA} from "../veVANA/interfaces/IVeVANA.sol";
 
 contract DLPRootCoreImplementation is
     UUPSUpgradeable,
@@ -18,6 +20,7 @@ contract DLPRootCoreImplementation is
     using EnumerableSet for EnumerableSet.UintSet;
     using EnumerableSet for EnumerableSet.AddressSet;
     using Checkpoints for Checkpoints.Trace208;
+    using SafeERC20 for IVeVANA;
 
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
     bytes32 public constant MANAGER_ROLE = keccak256("MANAGER_ROLE");
@@ -276,7 +279,18 @@ contract DLPRootCoreImplementation is
         DlpRegistration calldata registrationInfo
     ) external payable override whenNotPaused nonReentrant {
         _dlpRootEpoch().createEpochs();
-        _registerDlp(registrationInfo);
+        _registerDlp(registrationInfo, msg.value);
+    }
+
+    /**
+     * @notice Registers a new DLP with initial stake in veVANA
+     */
+    function registerDlpWithVeVANA(
+        DlpRegistration calldata registrationInfo,
+        uint256 amount
+    ) external override whenNotPaused nonReentrant {
+        _dlpRootEpoch().createEpochs();
+        _registerDlp(registrationInfo, amount);
     }
 
     function updateDlpVerification(uint256 dlpId, bool isVerified) external override onlyRole(MAINTAINER_ROLE) {
@@ -445,7 +459,7 @@ contract DLPRootCoreImplementation is
     /**
      * @notice Internal function to register a new DLP
      */
-    function _registerDlp(DlpRegistration calldata registrationInfo) internal {
+    function _registerDlp(DlpRegistration calldata registrationInfo, uint256 amount) internal {
         if (registrationInfo.ownerAddress == address(0) || registrationInfo.treasuryAddress == address(0)) {
             revert InvalidAddress();
         }
@@ -465,16 +479,15 @@ contract DLPRootCoreImplementation is
             revert InvalidStakersPercentage();
         }
 
-        if (msg.value < minDlpRegistrationStake) {
+        if (amount < minDlpRegistrationStake) {
             revert InvalidStakeAmount();
         }
 
-        uint256 dlpId = ++dlpsCount;
-        Dlp storage dlp = _dlps[dlpId];
+        Dlp storage dlp = _dlps[++dlpsCount];
 
         uint256 epochsCount = _dlpRootEpoch().epochsCount();
 
-        dlp.id = dlpId;
+        dlp.id = dlpsCount;
         dlp.dlpAddress = registrationInfo.dlpAddress;
         dlp.ownerAddress = registrationInfo.ownerAddress;
         dlp.treasuryAddress = registrationInfo.treasuryAddress;
@@ -490,12 +503,12 @@ contract DLPRootCoreImplementation is
         dlp.registrationBlockNumber = block.number;
         dlp.status = DlpStatus.Registered;
 
-        dlpIds[registrationInfo.dlpAddress] = dlpId;
+        dlpIds[registrationInfo.dlpAddress] = dlp.id;
 
-        dlpNameToId[registrationInfo.name] = dlpId;
+        dlpNameToId[registrationInfo.name] = dlp.id;
 
         emit DlpRegistered(
-            dlpId,
+            dlp.id,
             registrationInfo.dlpAddress,
             registrationInfo.ownerAddress,
             registrationInfo.treasuryAddress,
@@ -506,8 +519,16 @@ contract DLPRootCoreImplementation is
             registrationInfo.metadata
         );
 
-        emit DlpStatusUpdated(dlpId, DlpStatus.Registered);
-        dlpRoot.createStakeOnBehalf{value: msg.value}(dlpId, registrationInfo.ownerAddress);
+        emit DlpStatusUpdated(dlp.id, DlpStatus.Registered);
+        if (msg.value > 0) {
+            dlpRoot.createStakeOnBehalf{value: msg.value}(dlp.id, registrationInfo.ownerAddress);
+        } else {
+            IVeVANA veVANA = dlpRoot.dlpRootStakesTreasury().veVANAVault().token();
+            veVANA.safeTransferFrom(msg.sender, address(this), amount);
+            veVANA.approve(address(dlpRoot), amount);
+            dlpRoot.createStakeOnBehalfWithVeVANA(dlp.id, registrationInfo.ownerAddress, amount);
+        }
+        
     }
 
     function _dlpRootEpoch() internal view returns (IDLPRootEpoch) {

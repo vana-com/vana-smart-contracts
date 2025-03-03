@@ -99,6 +99,7 @@ interface IDLPRootCore {
 
     // DLP lifecycle management
     function registerDlp(DlpRegistration calldata registrationInfo) external payable;
+    function registerDlpWithVeVANA(DlpRegistration calldata registrationInfo, uint256 amount) external;
     function updateDlpVerification(uint256 dlpId, bool isVerified) external;
     function updateDlp(uint256 dlpId, DlpRegistration calldata dlpUpdateInfo) external;
     function deregisterDlp(uint256 dlpId) external;
