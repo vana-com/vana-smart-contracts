@@ -2,6 +2,8 @@
 pragma solidity 0.8.24;
 
 import {IDLPRoot} from "../../root/interfaces/IDLPRoot.sol";
+import {IDLPRootCore} from "../../rootCore/interfaces/IDLPRootCore.sol";
+import {IDLPRootEpoch} from "../../rootEpoch/interfaces/IDLPRootEpoch.sol";
 
 interface IDLPRootMetrics {
     enum RatingType {
@@ -50,41 +52,31 @@ interface IDLPRootMetrics {
         bool fullRewardAmount;
     }
 
+    struct DlpRewardApy {
+        uint256 dlpId;
+        uint256 APY; //annual percentage yield for stakers
+        uint256 EPY; //epoch percentage yield for stakers
+    }
+
     function version() external pure returns (uint256);
     function dlpRoot() external view returns (IDLPRoot);
     function foundationWalletAddress() external view returns (address payable);
     function epochs(uint256 epochId) external view returns (EpochInfo memory);
     function epochDlps(uint256 epochId, uint256 dlpId) external view returns (EpochDlpInfo memory);
     function ratingPercentages(RatingType rating) external view returns (uint256);
-    function topDlps(
+    function topDlpsCustomized(
         uint256 epochId,
         uint256 numberOfDlps,
         uint256[] memory dlpIds,
         uint256[] memory customRatingPercentages
     ) external view returns (DlpRating[] memory);
-    function topDlpsDefaultPercentages(
-        uint256 epochId,
-        uint256 numberOfDlps,
-        uint256[] memory dlpIds
-    ) external view returns (DlpRating[] memory);
-    function topDlpIds(
-        uint256 epochId,
-        uint256 numberOfDlps,
+    function topDlps(uint256 numberOfDlps) external view returns (DlpRating[] memory);
+    function topDlpIds(uint256 numberOfDlps) external view returns (uint256[] memory);
+    function estimatedDlpRewardPercentagesCustomized(
         uint256[] memory dlpIds,
         uint256[] memory customRatingPercentages
-    ) external view returns (uint256[] memory);
-    function topDlpIdsDefaultPercentages(
-        uint256 epochId,
-        uint256 numberOfDlps,
-        uint256[] memory dlpIds
-    ) external view returns (uint256[] memory);
-    function estimatedDlpRewardPercentages(
-        uint256[] memory dlpIds,
-        uint256[] memory customRatingPercentages
-    ) external view returns (IDLPRoot.DlpRewardApy[] memory);
-    function estimatedDlpRewardPercentagesDefault(
-        uint256[] memory dlpIds
-    ) external view returns (IDLPRoot.DlpRewardApy[] memory);
+    ) external view returns (DlpRewardApy[] memory);
+    function estimatedDlpRewardPercentages(uint256[] memory dlpIds) external view returns (DlpRewardApy[] memory);
     function getMultiplier(uint256 index) external pure returns (uint256);
     function pause() external;
     function unpause() external;
@@ -96,11 +88,7 @@ interface IDLPRootMetrics {
         uint256 adjustment,
         bool isAddition
     ) external;
-    function saveEpochPerformanceRatings(
-        uint256 epochId,
-        bool shouldFinalize,
-        DlpPerformanceRating[] memory dlpPerformanceRatings
-    ) external;
+    function saveEpochPerformanceRatings(uint256 epochId, DlpPerformanceRating[] memory dlpPerformanceRatings) external;
     function finalizeEpoch(uint256 epochId) external;
     function updateRatingPercentages(uint256 stakeRatingPercentage, uint256 performanceRatingPercentage) external;
 }
