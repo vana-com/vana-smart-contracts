@@ -405,6 +405,7 @@ contract DLPRootMetricsImplementation is
         }
 
         IDLPRootEpoch.EpochInfo memory rootEpoch = dlpRoot.dlpRootEpoch().epochs(epochId);
+
         if (rootEpoch.endBlock >= block.number) {
             revert EpochNotEndedYet();
         }
@@ -428,27 +429,14 @@ contract DLPRootMetricsImplementation is
         uint256 totalDlpsPerformanceRating,
         uint256[] memory customRatingPercentages
     ) public view returns (uint256) {
-        uint256 dlpStakeRating = totalDlpsStakeAmount > 0
-            ? (1e18 * _dlpEpochStakeAmount(dlpId, epochId)) / totalDlpsStakeAmount
-            : 0;
-        uint256 dlpPerformanceRating = totalDlpsPerformanceRating > 0
-            ? (1e18 * _epochs[epochId].dlps[dlpId].performanceRating) / totalDlpsPerformanceRating
-            : 0;
-
-        uint256 stakeRatingPercentage;
-        uint256 performanceRatingPercentage;
-
-        if (customRatingPercentages.length == 2) {
-            stakeRatingPercentage = customRatingPercentages[uint256(RatingType.Stake)];
-            performanceRatingPercentage = customRatingPercentages[uint256(RatingType.Performance)];
-        } else if (customRatingPercentages.length == 0) {
-            stakeRatingPercentage = ratingPercentages[RatingType.Stake];
-            performanceRatingPercentage = ratingPercentages[RatingType.Performance];
-        } else {
-            revert InvalidRatingPercentages();
-        }
-
-        return (stakeRatingPercentage * dlpStakeRating + performanceRatingPercentage * dlpPerformanceRating) / 1e20;
+        return
+            _calculateDlpRating(
+                _dlpEpochStakeAmount(dlpId, epochId),
+                _epochs[epochId].dlps[dlpId].performanceRating,
+                totalDlpsStakeAmount,
+                totalDlpsPerformanceRating,
+                customRatingPercentages
+            );
     }
 
     function _updateRatingPercentages(uint256 stakeRatingPercentage, uint256 performanceRatingPercentage) internal {
@@ -533,17 +521,31 @@ contract DLPRootMetricsImplementation is
         uint256 totalDlpsStakeAmount,
         uint256 totalDlpsPerformanceRating,
         uint256[] memory customRatingPercentages
-    ) public view returns (uint256) {
+    ) internal view returns (uint256) {
         uint256 normalizedDlpStakeRating = totalDlpsStakeAmount > 0
             ? (1e18 * dlpStakeAmount) / totalDlpsStakeAmount
             : 0;
         uint256 normalizedDlpPerformanceRating = totalDlpsPerformanceRating > 0
             ? (1e18 * dlpPerformanceRating) / totalDlpsPerformanceRating
             : 0;
+
+        uint256 stakeRatingPercentage;
+        uint256 performanceRatingPercentage;
+
+        if (customRatingPercentages.length == 2) {
+            stakeRatingPercentage = customRatingPercentages[uint256(RatingType.Stake)];
+            performanceRatingPercentage = customRatingPercentages[uint256(RatingType.Performance)];
+        } else if (customRatingPercentages.length == 0) {
+            stakeRatingPercentage = ratingPercentages[RatingType.Stake];
+            performanceRatingPercentage = ratingPercentages[RatingType.Performance];
+        } else {
+            revert InvalidRatingPercentages();
+        }
+
         return
-            (customRatingPercentages[uint256(RatingType.Stake)] *
+            (stakeRatingPercentage *
                 normalizedDlpStakeRating +
-                customRatingPercentages[uint256(RatingType.Performance)] *
+                performanceRatingPercentage *
                 normalizedDlpPerformanceRating) / 1e20;
     }
 
@@ -589,7 +591,6 @@ contract DLPRootMetricsImplementation is
             }
         }
 
-        uint256 dlpId;
         // Calculate total amount and ratings for top DLPs
         for (i = 0; i < topDlpsList.length; ) {
             totalTopDlpsStakeAmount.totalRatingAdjusted += _calculateDlpRating(
@@ -620,8 +621,8 @@ contract DLPRootMetricsImplementation is
         TopDlpTotalRatings memory topDlpTotalRatings,
         uint256[] memory customRatingPercentages
     ) private view returns (DlpRewardApy memory) {
-        uint256 epochCount = dlpRoot.dlpRootEpoch().epochRewardAmount();
-        uint256 epochRewardAmount = dlpRoot.dlpRootEpoch().epochsCount();
+        uint256 epochRewardAmount = dlpRoot.dlpRootEpoch().epochRewardAmount();
+        uint256 epochCount = dlpRoot.dlpRootEpoch().epochsCount();
         uint256 dlpStakeAmount = dlpRoot.dlpRootCore().dlpEpochStakeAmount(dlpId, epochCount);
         uint256 dlpStakeAmountAdjusted = dlpStakeAmount - _epochs[epochCount].dlps[dlpId].stakeAmountAdjustment;
 
