@@ -57,16 +57,15 @@ contract DLPRootTreasuryImplementation is
         _grantRole(DEFAULT_ADMIN_ROLE, dlpRootAddress);
     }
 
-    function updateVeVANAVault(address veVANAVaultAddress) external override onlyRole(DEFAULT_ADMIN_ROLE) {
-        veVANAVault = IVeVANAVault(veVANAVaultAddress);
+    function updateVeVANA(address veVANAAddress) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        veVANA = IVeVANA(veVANAAddress);
     }
 
     function transferVana(
         address payable to,
         uint256 value
     ) external override whenNotPaused onlyRole(DEFAULT_ADMIN_ROLE) {
-        veVANAVault.token().approve(address(veVANAVault), value);
-        veVANAVault.withdrawVANA(value);
+        veVANA.withdrawVANA(value);
         to.sendValue(value);
     }
 
@@ -74,7 +73,7 @@ contract DLPRootTreasuryImplementation is
         address to,
         uint256 value
     ) external override whenNotPaused onlyRole(DEFAULT_ADMIN_ROLE) returns (bool) {
-        try veVANAVault.token().transfer(to, value) {
+        try veVANA.transfer(to, value) {
             return true;
         } catch {
             return false;
@@ -82,11 +81,11 @@ contract DLPRootTreasuryImplementation is
     }
 
     function depositVana() external payable {
-        veVANAVault.depositVANA{value: msg.value}();
+        veVANA.depositVANA{value: msg.value}();
     }
 
     function depositVeVANA(uint256 amount) external {
-        veVANAVault.token().safeTransferFrom(msg.sender, address(this), amount);
+        veVANA.safeTransferFrom(msg.sender, address(this), amount);
     }
 
     function migrateVana() external whenNotPaused onlyRole(DEFAULT_ADMIN_ROLE) {

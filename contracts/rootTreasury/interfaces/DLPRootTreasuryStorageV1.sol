@@ -2,7 +2,7 @@
 pragma solidity 0.8.24;
 
 import "./IDLPRootTreasury.sol";
-import "../../veVANA/interfaces/IVeVANAVault.sol";
+import "../../veVANA/interfaces/IVeVANA.sol";
 
 /**
  * @title Storage for DLPRootTreasury
@@ -11,5 +11,5 @@ import "../../veVANA/interfaces/IVeVANAVault.sol";
  */
 abstract contract DLPRootTreasuryStorageV1 is IDLPRootTreasury {
     IDLPRoot public override dlpRoot;
-    IVeVANAVault public override veVANAVault;
+    IVeVANA public override veVANA;
 }

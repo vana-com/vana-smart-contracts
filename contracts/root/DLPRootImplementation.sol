@@ -487,7 +487,7 @@ contract DLPRootImplementation is
             if (msg.value > 0) {
                 dlpRootStakesTreasury.depositVana{value: msg.value}();
             } else {
-                IVeVANA veVANA = dlpRootStakesTreasury.veVANAVault().token();
+                IVeVANA veVANA = dlpRootStakesTreasury.veVANA();
                 veVANA.safeTransferFrom(
                     _msgSender(),
                     address(dlpRootStakesTreasury),

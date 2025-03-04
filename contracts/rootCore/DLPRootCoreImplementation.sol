@@ -523,7 +523,7 @@ contract DLPRootCoreImplementation is
         if (msg.value > 0) {
             dlpRoot.createStakeOnBehalf{value: msg.value}(dlp.id, registrationInfo.ownerAddress);
         } else {
-            IVeVANA veVANA = dlpRoot.dlpRootStakesTreasury().veVANAVault().token();
+            IVeVANA veVANA = dlpRoot.dlpRootStakesTreasury().veVANA();
             veVANA.safeTransferFrom(msg.sender, address(this), amount);
             veVANA.approve(address(dlpRoot), amount);
             dlpRoot.createStakeOnBehalfWithVeVANA(dlp.id, registrationInfo.ownerAddress, amount);

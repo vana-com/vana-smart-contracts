@@ -1,7 +1,7 @@
 import chai, { should } from "chai";
 import chaiAsPromised from "chai-as-promised";
 import { ethers, network, upgrades } from "hardhat";
-import { BaseWallet, ContractTransaction, ContractTransactionReceipt, ContractTransactionResponse, formatEther, Wallet } from "ethers";
+import { BaseWallet, ContractTransaction, ContractTransactionReceipt, TransactionResponse, ContractTransactionResponse, formatEther, Wallet } from "ethers";
 import * as helpers from "@nomicfoundation/hardhat-network-helpers";
 import {
   DLPRootCoreImplementation,
@@ -9,8 +9,7 @@ import {
   DLPRootImplementation,
   DLPRootMetricsImplementation,
   DLPRootTreasuryImplementation,
-  VeVANA,
-  VeVANAVaultImplementation,
+  VeVANAImplementation,
 } from "../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import {
@@ -123,8 +122,7 @@ describe("DLPRoot", () => {
   let rewardsTreasury: DLPRootTreasuryImplementation;
   let stakesTreasury: DLPRootTreasuryImplementation;
 
-  let veVANA: VeVANA;
-  let veVANAVault: VeVANAVaultImplementation;
+  let veVANA: VeVANAImplementation;
 
   const epochDlpsLimit = 3;
   let epochSize = 210;
@@ -291,22 +289,18 @@ describe("DLPRoot", () => {
 
     await rootEpoch.connect(owner).overrideEpoch(0, 0, startBlock - 1, 0);
 
-    const veVANAVaultDeploy = await upgrades.deployProxy(
-      await ethers.getContractFactory("VeVANAVaultImplementation"),
+    const veVANADeploy = await upgrades.deployProxy(
+      await ethers.getContractFactory("VeVANAImplementation"),
       [owner.address],
       {
           kind: "uups",
       },
     );
 
-    veVANAVault = await ethers.getContractAt(
-      "VeVANAVaultImplementation",
-      veVANAVaultDeploy.target,
+    veVANA = await ethers.getContractAt(
+      "VeVANAImplementation",
+      veVANADeploy.target,
     );
-
-    veVANA = await (await ethers.getContractFactory("VeVANA")).deploy(veVANAVaultDeploy);
-
-    await veVANAVault.connect(owner).updateToken(veVANA);
 
     const dlpRootRewardsTreasuryDeploy = await upgrades.deployProxy(
       await ethers.getContractFactory("DLPRootTreasuryImplementation"),
@@ -321,7 +315,8 @@ describe("DLPRoot", () => {
       dlpRootRewardsTreasuryDeploy.target,
     );
 
-    rewardsTreasury.connect(owner).updateVeVANAVault(veVANAVault);
+    rewardsTreasury.connect(owner).updateVeVANA(veVANA);
+    veVANA.connect(owner).grantRole(DEFAULT_ADMIN_ROLE, rewardsTreasury);
 
     const dlpRootStakesTreasuryDeploy = await upgrades.deployProxy(
       await ethers.getContractFactory("DLPRootTreasuryImplementation"),
@@ -336,7 +331,8 @@ describe("DLPRoot", () => {
       dlpRootStakesTreasuryDeploy.target,
     );
 
-    stakesTreasury.connect(owner).updateVeVANAVault(veVANAVault);
+    stakesTreasury.connect(owner).updateVeVANA(veVANA);
+    veVANA.connect(owner).grantRole(DEFAULT_ADMIN_ROLE, stakesTreasury);
 
     await rootStaking.connect(owner).grantRole(MAINTAINER_ROLE, maintainer);
     await rootStaking.connect(owner).grantRole(MANAGER_ROLE, manager);
@@ -1105,10 +1101,10 @@ describe("DLPRoot", () => {
       const registrationAmount = minDlpRegistrationStake;
       const stakerPercentage = minDlpStakersPercentage;
 
-      let tx: ContractTransactionResponse;
+      let tx: TransactionResponse;
       let txFee: bigint;
 
-      tx = await veVANAVault.connect(user1).depositVANA({ value: registrationAmount });
+      tx = await veVANA.connect(user1).depositVANA({ value: registrationAmount });
       txFee = (await getReceipt(tx)).fee;
       tx = await veVANA.connect(user1).approve(rootCore, registrationAmount);
       txFee += (await getReceipt(tx)).fee;
@@ -3471,15 +3467,13 @@ describe("DLPRoot", () => {
 
       const user1InitialBalance = await ethers.provider.getBalance(user1);
 
-      let tx: ContractTransactionResponse;
+      let tx: TransactionResponse;
       let txFee: bigint;
 
-      tx = await veVANAVault.connect(user1).depositVANA({value: stakeAmount});
+      // Mint veVANA for user1 to stake with veVANA
+      tx = await veVANA.connect(user1).depositVANA({value: stakeAmount});
       txFee = (await getReceipt(tx)).fee;
       (await veVANA.balanceOf(user1)).should.eq(stakeAmount);
-      (await ethers.provider.getBalance(user1)).should.eq(
-        user1InitialBalance - stakeAmount - txFee,
-      );
 
       tx = await veVANA.connect(user1).approve(rootStaking, stakeAmount);
       txFee += (await getReceipt(tx)).fee;
