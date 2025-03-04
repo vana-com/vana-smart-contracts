@@ -176,6 +176,7 @@ describe("veVANA", function () {
     describe("Governance", function () {
         it("should provide the correct voting power to veVANA holders", async function () {
             const depositAmount = parseEther(100);
+            await veVANA.connect(owner).delegate(owner.address);
             await veVANA.connect(owner).depositVANA({ value: depositAmount });
             (await veVANA.balanceOf(owner)).should.equal(depositAmount);
 

@@ -19,7 +19,6 @@ contract VeVANA is ERC20Votes, Ownable, ReentrancyGuard {
     constructor(
         address ownerAddress
     ) ERC20("Vote-Escrowed VANA", "veVANA") EIP712("veVANA", "1") Ownable(ownerAddress) {
-        delegate(ownerAddress);
     }
 
     /// @dev If the owner is the 0 address, anyone can deposit and withdraw veVANA directly.
