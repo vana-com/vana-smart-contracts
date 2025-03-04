@@ -3474,6 +3474,9 @@ describe("DLPRoot", () => {
       tx = await veVANA.connect(user1).depositVANA({value: stakeAmount});
       txFee = (await getReceipt(tx)).fee;
       (await veVANA.balanceOf(user1)).should.eq(stakeAmount);
+      (await ethers.provider.getBalance(user1)).should.eq(
+        user1InitialBalance - stakeAmount - txFee,
+      );
 
       tx = await veVANA.connect(user1).approve(rootStaking, stakeAmount);
       txFee += (await getReceipt(tx)).fee;
