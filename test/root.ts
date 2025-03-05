@@ -1,7 +1,7 @@
 import chai, { should } from "chai";
 import chaiAsPromised from "chai-as-promised";
 import { ethers, network, upgrades } from "hardhat";
-import { BaseWallet, formatEther, Wallet } from "ethers";
+import { BaseWallet, ContractTransaction, ContractTransactionReceipt, TransactionResponse, ContractTransactionResponse, formatEther, Wallet } from "ethers";
 import * as helpers from "@nomicfoundation/hardhat-network-helpers";
 import {
   DLPRootCoreImplementation,
@@ -9,6 +9,7 @@ import {
   DLPRootImplementation,
   DLPRootMetricsImplementation,
   DLPRootTreasuryImplementation,
+  VeVANAImplementation,
 } from "../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import {
@@ -120,6 +121,8 @@ describe("DLPRoot", () => {
   let rootEpoch: DLPRootEpochImplementation;
   let rewardsTreasury: DLPRootTreasuryImplementation;
   let stakesTreasury: DLPRootTreasuryImplementation;
+
+  let veVANA: VeVANAImplementation;
 
   const epochDlpsLimit = 3;
   let epochSize = 210;
@@ -286,6 +289,19 @@ describe("DLPRoot", () => {
 
     await rootEpoch.connect(owner).overrideEpoch(0, 0, startBlock - 1, 0);
 
+    const veVANADeploy = await upgrades.deployProxy(
+      await ethers.getContractFactory("VeVANAImplementation"),
+      [owner.address],
+      {
+          kind: "uups",
+      },
+    );
+
+    veVANA = await ethers.getContractAt(
+      "VeVANAImplementation",
+      veVANADeploy.target,
+    );
+
     const dlpRootRewardsTreasuryDeploy = await upgrades.deployProxy(
       await ethers.getContractFactory("DLPRootTreasuryImplementation"),
       [owner.address, rootStaking.target],
@@ -299,6 +315,9 @@ describe("DLPRoot", () => {
       dlpRootRewardsTreasuryDeploy.target,
     );
 
+    rewardsTreasury.connect(owner).updateVeVANA(veVANA);
+    veVANA.connect(owner).grantRole(DEFAULT_ADMIN_ROLE, rewardsTreasury);
+
     const dlpRootStakesTreasuryDeploy = await upgrades.deployProxy(
       await ethers.getContractFactory("DLPRootTreasuryImplementation"),
       [owner.address, rootStaking.target],
@@ -311,6 +330,9 @@ describe("DLPRoot", () => {
       "DLPRootTreasuryImplementation",
       dlpRootStakesTreasuryDeploy.target,
     );
+
+    stakesTreasury.connect(owner).updateVeVANA(veVANA);
+    veVANA.connect(owner).grantRole(DEFAULT_ADMIN_ROLE, stakesTreasury);
 
     await rootStaking.connect(owner).grantRole(MAINTAINER_ROLE, maintainer);
     await rootStaking.connect(owner).grantRole(MANAGER_ROLE, manager);
@@ -567,6 +589,7 @@ describe("DLPRoot", () => {
   }
 
   async function saveDefaultEpochPerformanceRatings(epochId: number) {
+    await rewardsTreasury.connect(foundation).depositVana({ value: epochRewardAmount });
     await rootMetrics.connect(manager).saveEpochPerformanceRatings(
       epochId,
       (await rootCore.eligibleDlpsListValues()).map((id) =>
@@ -1066,7 +1089,87 @@ describe("DLPRoot", () => {
       (await ethers.provider.getBalance(user1)).should.eq(
         dlp1OwnerInitialBalance - registrationAmount - receipt.fee,
       );
-      (await ethers.provider.getBalance(stakesTreasury)).should.eq(
+      (await veVANA.balanceOf(stakesTreasury)).should.eq(
+        registrationAmount,
+      );
+    });
+
+    it("should registerDlp with veVANA", async function () {
+      const dlp1OwnerInitialBalance =
+        await ethers.provider.getBalance(dlp1Owner);
+
+      const registrationAmount = minDlpRegistrationStake;
+      const stakerPercentage = minDlpStakersPercentage;
+
+      let tx: TransactionResponse;
+      let txFee: bigint;
+
+      tx = await veVANA.connect(user1).depositVANA({ value: registrationAmount });
+      txFee = (await getReceipt(tx)).fee;
+      tx = await veVANA.connect(user1).approve(rootCore, registrationAmount);
+      txFee += (await getReceipt(tx)).fee;
+
+      const blockNumber = await getCurrentBlockNumber();
+      tx = await rootCore.connect(user1).registerDlpWithVeVANA(
+        {
+          dlpAddress: dlp1,
+          ownerAddress: dlp1Owner,
+          treasuryAddress: dlp1Treasury,
+          stakersPercentage: stakerPercentage,
+          name: "dlp1Name",
+          iconUrl: "dlp1IconUrl",
+          website: "dlp1Website",
+          metadata: "dlp1Metadata",
+        },
+        registrationAmount,
+      );
+
+      const receipt = await getReceipt(tx);
+      txFee += receipt.fee;
+
+      receipt.should
+        .emit(rootStaking, "DlpRegistered")
+        .withArgs(
+          1,
+          dlp1,
+          dlp1Owner,
+          dlp1Treasury,
+          stakerPercentage,
+          "dlp1Name",
+          "dlp1IconUrl",
+          "dlp1Website",
+          "dlp1Metadata",
+        )
+        .emit(rootStaking, "StakeCreated")
+        .withArgs(1, dlp1Owner, 1, registrationAmount);
+
+      (await rootCore.dlpsCount()).should.eq(1);
+
+      const dlp1Info = await rootCore.dlps(1);
+
+      dlp1Info.id.should.eq(1);
+      dlp1Info.dlpAddress.should.eq(dlp1);
+      dlp1Info.ownerAddress.should.eq(dlp1Owner.address);
+      dlp1Info.treasuryAddress.should.eq(dlp1Treasury);
+      dlp1Info.stakersPercentage.should.eq(stakerPercentage);
+      dlp1Info.stakersPercentageEpoch.should.eq(minDlpStakersPercentage);
+      dlp1Info.name.should.eq("dlp1Name");
+      dlp1Info.iconUrl.should.eq("dlp1IconUrl");
+      dlp1Info.website.should.eq("dlp1Website");
+      dlp1Info.metadata.should.eq("dlp1Metadata");
+
+      dlp1Info.stakeAmount.should.eq(registrationAmount);
+      dlp1Info.status.should.eq(DlpStatus.Registered);
+      dlp1Info.registrationBlockNumber.should.eq(blockNumber + 1);
+
+      (await rootCore.dlpsByAddress(dlp1)).should.deep.eq(dlp1Info);
+      (await rootCore.dlpNameToId("dlp1Name")).should.deep.eq(1);
+      (await rootCore.dlpsByName("dlp1Name")).should.deep.eq(dlp1Info);
+
+      (await ethers.provider.getBalance(user1)).should.eq(
+        dlp1OwnerInitialBalance - registrationAmount - txFee,
+      );
+      (await veVANA.balanceOf(stakesTreasury)).should.eq(
         registrationAmount,
       );
     });
@@ -1143,7 +1246,7 @@ describe("DLPRoot", () => {
       (await ethers.provider.getBalance(user1)).should.eq(
         dlp1OwnerInitialBalance - registrationAmount - receipt.fee,
       );
-      (await ethers.provider.getBalance(stakesTreasury)).should.eq(
+      (await veVANA.balanceOf(stakesTreasury)).should.eq(
         registrationAmount,
       );
     });
@@ -1214,7 +1317,7 @@ describe("DLPRoot", () => {
       (await ethers.provider.getBalance(user1)).should.eq(
         dlp1OwnerInitialBalance - registrationAmount - receipt.fee,
       );
-      (await ethers.provider.getBalance(stakesTreasury)).should.eq(
+      (await veVANA.balanceOf(stakesTreasury)).should.eq(
         registrationAmount,
       );
 
@@ -1310,7 +1413,7 @@ describe("DLPRoot", () => {
       (await ethers.provider.getBalance(user1)).should.eq(
         dlp1OwnerInitialBalance - registrationAmount - receipt.fee,
       );
-      (await ethers.provider.getBalance(stakesTreasury)).should.eq(
+      (await veVANA.balanceOf(stakesTreasury)).should.eq(
         registrationAmount,
       );
     });
@@ -1380,7 +1483,7 @@ describe("DLPRoot", () => {
       (await ethers.provider.getBalance(user1)).should.eq(
         dlp1OwnerInitialBalance - registrationAmount - receipt.fee,
       );
-      (await ethers.provider.getBalance(stakesTreasury)).should.eq(
+      (await veVANA.balanceOf(stakesTreasury)).should.eq(
         registrationAmount,
       );
 
@@ -1537,7 +1640,7 @@ describe("DLPRoot", () => {
           receipt1.fee -
           receipt2.fee,
       );
-      (await ethers.provider.getBalance(stakesTreasury)).should.eq(
+      (await veVANA.balanceOf(stakesTreasury)).should.eq(
         registrationAmount + registrationAmount,
       );
     });
@@ -1828,7 +1931,7 @@ describe("DLPRoot", () => {
           receipt1.fee -
           receipt2.fee,
       );
-      (await ethers.provider.getBalance(stakesTreasury)).should.eq(
+      (await veVANA.balanceOf(stakesTreasury)).should.eq(
         minDlpRegistrationStake,
       );
     });
@@ -3346,7 +3449,121 @@ describe("DLPRoot", () => {
       (await ethers.provider.getBalance(user1)).should.eq(
         user1InitialBalance - stakeAmount - receipt.fee,
       );
-      (await ethers.provider.getBalance(stakesTreasury)).should.eq(
+      (await veVANA.balanceOf(stakesTreasury)).should.eq(
+        dlpEligibilityThreshold + stakeAmount,
+      );
+    });
+
+    it("should createStakeWithVeVANA and emit event", async function () {
+      const blockNumber = await getCurrentBlockNumber();
+
+      await rootCore
+        .connect(dlp1Owner)
+        .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
+
+      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+
+      const stakeAmount = parseEther(10);
+
+      const user1InitialBalance = await ethers.provider.getBalance(user1);
+
+      let tx: TransactionResponse;
+      let txFee: bigint;
+
+      // Mint veVANA for user1 to stake with veVANA
+      tx = await veVANA.connect(user1).depositVANA({value: stakeAmount});
+      txFee = (await getReceipt(tx)).fee;
+      (await veVANA.balanceOf(user1)).should.eq(stakeAmount);
+      (await ethers.provider.getBalance(user1)).should.eq(
+        user1InitialBalance - stakeAmount - txFee,
+      );
+
+      tx = await veVANA.connect(user1).approve(rootStaking, stakeAmount);
+      txFee += (await getReceipt(tx)).fee;
+
+      tx = await rootStaking
+        .connect(user1)
+        .createStakeWithVeVANA(1, stakeAmount);
+      txFee += (await getReceipt(tx)).fee;
+      (await veVANA.balanceOf(user1)).should.eq(0);
+
+      await tx.should
+        .emit(rootStaking, "StakeCreated")
+        .withArgs(2, user1, 1, stakeAmount);
+
+      (await rootStaking.stakersListCount()).should.eq(2);
+      (await rootStaking.stakersListAt(0)).should.eq(dlp1Owner.address);
+      (await rootStaking.stakersListAt(1)).should.eq(user1.address);
+
+      const stake1 = await rootStaking.stakes(1);
+      stake1.id.should.eq(1);
+      stake1.stakerAddress.should.eq(dlp1Owner.address);
+      stake1.dlpId.should.eq(1);
+      stake1.amount.should.eq(dlpEligibilityThreshold);
+      stake1.startBlock.should.eq(blockNumber + 1);
+      stake1.endBlock.should.eq(0);
+      stake1.withdrawn.should.eq(false);
+      stake1.lastClaimedEpochId.should.eq(0);
+
+      (await rootStaking.stakerDlpsListCount(dlp1Owner.address)).should.eq(1);
+      (await rootStaking.stakerDlpsListAt(dlp1Owner.address, 0)).should.eq(1);
+      (
+        await rootStaking.stakerDlpsListValues(dlp1Owner.address)
+      ).should.deep.eq([1]);
+
+      (await rootStaking.stakerStakesListCount(dlp1Owner.address)).should.eq(1);
+      (await rootStaking.stakerStakesListAt(dlp1Owner.address, 0)).should.eq(1);
+      (
+        await rootStaking.stakerStakesListValues(dlp1Owner.address)
+      ).should.deep.eq([1]);
+
+      (await rootStaking.stakerDlpStakeAmount(dlp1Owner.address, 1)).should.eq(
+        dlpEligibilityThreshold,
+      );
+      (await rootStaking.stakerTotalStakeAmount(dlp1Owner.address)).should.eq(
+        dlpEligibilityThreshold,
+      );
+
+      const stakes2 = await rootStaking.stakes(2);
+      stakes2.id.should.eq(2);
+      stakes2.stakerAddress.should.eq(user1.address);
+      stakes2.dlpId.should.eq(1);
+      stakes2.amount.should.eq(stakeAmount);
+      stakes2.startBlock.should.eq(blockNumber + 5);
+      stakes2.endBlock.should.eq(0);
+      stakes2.withdrawn.should.eq(false);
+      stakes2.lastClaimedEpochId.should.eq(0);
+
+      (await rootStaking.stakerDlpsListCount(user1.address)).should.eq(1);
+      (await rootStaking.stakerDlpsListAt(user1.address, 0)).should.eq(1);
+      (await rootStaking.stakerDlpsListValues(user1.address)).should.deep.eq([
+        1,
+      ]);
+
+      (await rootStaking.stakerStakesListCount(user1.address)).should.eq(1);
+      (await rootStaking.stakerStakesListAt(user1.address, 0)).should.eq(2);
+      (await rootStaking.stakerStakesListValues(user1.address)).should.deep.eq([
+        2,
+      ]);
+
+      (await rootStaking.stakerDlpStakeAmount(user1.address, 1)).should.eq(
+        stakeAmount,
+      );
+      (await rootStaking.stakerTotalStakeAmount(user1.address)).should.eq(
+        stakeAmount,
+      );
+
+      const dlp1Info = await rootCore.dlps(1);
+      dlp1Info.stakeAmount.should.eq(dlpEligibilityThreshold + stakeAmount);
+
+      (await rootStaking.stakerDlpsListValues(user1)).should.deep.eq([1]);
+      (await rootStaking.stakerDlpsListCount(user1)).should.eq(1);
+      (await rootStaking.stakerDlpsListAt(user1, 0)).should.deep.eq(1);
+
+      (await ethers.provider.getBalance(user1)).should.eq(
+        user1InitialBalance - stakeAmount - txFee,
+      );
+      (await veVANA.balanceOf(stakesTreasury)).should.eq(
         dlpEligibilityThreshold + stakeAmount,
       );
     });
@@ -3542,7 +3759,7 @@ describe("DLPRoot", () => {
           receipt1.fee -
           receipt2.fee,
       );
-      (await ethers.provider.getBalance(stakesTreasury)).should.eq(
+      (await veVANA.balanceOf(stakesTreasury)).should.eq(
         dlpEligibilityThreshold + stakeAmount1 + stakeAmount2,
       );
     });
@@ -3729,7 +3946,7 @@ describe("DLPRoot", () => {
           receipt2.fee -
           receipt3.fee,
       );
-      (await ethers.provider.getBalance(stakesTreasury)).should.eq(
+      (await veVANA.balanceOf(stakesTreasury)).should.eq(
         2n * dlpEligibilityThreshold +
           stakeAmount1 +
           stakeAmount2 +
@@ -3997,7 +4214,7 @@ describe("DLPRoot", () => {
       (await ethers.provider.getBalance(user1)).should.eq(
         user1InitialBalance - stakeAmount - receipt1.fee - receipt2.fee,
       );
-      (await ethers.provider.getBalance(stakesTreasury)).should.eq(
+      (await veVANA.balanceOf(stakesTreasury)).should.eq(
         dlpEligibilityThreshold + stakeAmount,
       );
     });
@@ -4086,7 +4303,7 @@ describe("DLPRoot", () => {
           receipt3.fee,
       );
 
-      (await ethers.provider.getBalance(stakesTreasury)).should.eq(
+      (await veVANA.balanceOf(stakesTreasury)).should.eq(
         dlpEligibilityThreshold + stakeAmount1 + stakeAmount2,
       );
     });
@@ -4177,7 +4394,7 @@ describe("DLPRoot", () => {
           receipt3.fee,
       );
 
-      (await ethers.provider.getBalance(stakesTreasury)).should.eq(
+      (await veVANA.balanceOf(stakesTreasury)).should.eq(
         dlpEligibilityThreshold + stakeAmount1 + stakeAmount2,
       );
     });
@@ -4526,7 +4743,7 @@ describe("DLPRoot", () => {
 
       await advanceBlockNTimes(stakeWithdrawalDelay);
 
-      (await ethers.provider.getBalance(stakesTreasury)).should.eq(
+      (await veVANA.balanceOf(stakesTreasury)).should.eq(
         dlpEligibilityThreshold + stakeAmount,
       );
 
@@ -4547,7 +4764,7 @@ describe("DLPRoot", () => {
         user1InitialBalance - receipt1.fee - receipt2.fee - receipt3.fee,
       );
 
-      (await ethers.provider.getBalance(stakesTreasury)).should.eq(
+      (await veVANA.balanceOf(stakesTreasury)).should.eq(
         dlpEligibilityThreshold,
       );
     });
@@ -4571,7 +4788,7 @@ describe("DLPRoot", () => {
 
       await advanceBlockNTimes(stakeWithdrawalDelay);
 
-      (await ethers.provider.getBalance(stakesTreasury)).should.eq(
+      (await veVANA.balanceOf(stakesTreasury)).should.eq(
         dlpEligibilityThreshold + stakeAmount1 + stakeAmount2,
       );
 
@@ -4600,7 +4817,7 @@ describe("DLPRoot", () => {
           receipt3.fee -
           receipt4.fee,
       );
-      (await ethers.provider.getBalance(stakesTreasury)).should.eq(
+      (await veVANA.balanceOf(stakesTreasury)).should.eq(
         dlpEligibilityThreshold,
       );
     });
@@ -5796,10 +6013,7 @@ describe("DLPRoot", () => {
       // .connect(owner)
       // .updateMinDlpStakersPercentage(minDlpStakersPercentage);
 
-      await owner.sendTransaction({
-        to: rewardsTreasury,
-        value: initialRewardsTreasuryBalance,
-      });
+      await rewardsTreasury.connect(owner).depositVana({ value: initialRewardsTreasuryBalance });
     });
 
     it("should claimStakesReward", async function () {
@@ -6103,7 +6317,7 @@ describe("DLPRoot", () => {
         epoch1Dlp5.performanceRating.should.eq(parseEther(500));
       });
 
-      xit("should saveEpochPerformanceRatings after epoch.endBlock", async function () {
+      it("should saveEpochPerformanceRatings after epoch.endBlock", async function () {
         await rootEpoch.connect(owner).updateEpochDlpsLimit(3);
         await rootCore
           .connect(owner)
@@ -6504,7 +6718,7 @@ describe("DLPRoot", () => {
         (
           await rewardsTreasury.hasRole(DEFAULT_ADMIN_ROLE, rootStaking)
         ).should.eq(true);
-        (await rewardsTreasury.version()).should.eq(1);
+        (await rewardsTreasury.version()).should.eq(2);
         (await rewardsTreasury.dlpRoot()).should.eq(rootStaking);
       });
 
@@ -6548,6 +6762,78 @@ describe("DLPRoot", () => {
           );
 
         (await rewardsTreasury.dlpRoot()).should.eq(rootStaking);
+      });
+
+      it("should migrate VANA to veVANA with admin role", async function () {
+        (
+          await rewardsTreasury.hasRole(DEFAULT_ADMIN_ROLE, owner)
+        ).should.eq(true);
+
+        const treasuryInitialBalance = parseEther(100);
+        await owner.sendTransaction({
+          to: rewardsTreasury,
+          value: treasuryInitialBalance,
+        });
+
+        (await ethers.provider.getBalance(rewardsTreasury)).should.eq(treasuryInitialBalance);
+
+        await rewardsTreasury
+          .connect(owner)
+          .migrateVana();
+
+        (await veVANA.balanceOf(rewardsTreasury)).should.eq(treasuryInitialBalance);
+        (await ethers.provider.getBalance(rewardsTreasury)).should.eq(0);
+      });
+
+      it("should allow to transfer VANA or veVANA after VANA migration", async function () {
+        (
+          await rewardsTreasury.hasRole(DEFAULT_ADMIN_ROLE, owner)
+        ).should.eq(true);
+
+        const treasuryInitialBalance = parseEther(100);
+        await owner.sendTransaction({
+          to: rewardsTreasury,
+          value: treasuryInitialBalance,
+        });
+
+        (await ethers.provider.getBalance(rewardsTreasury)).should.eq(treasuryInitialBalance);
+
+        await rewardsTreasury
+          .connect(owner)
+          .migrateVana();
+
+        (await veVANA.balanceOf(rewardsTreasury)).should.eq(treasuryInitialBalance);
+        (await ethers.provider.getBalance(rewardsTreasury)).should.eq(0);
+        
+        const user1InitialBalance = await ethers.provider.getBalance(user1);
+        const withdrawVeVANAAmount = parseEther(0.6);
+        await rewardsTreasury.connect(owner).transferVeVANA(user1, withdrawVeVANAAmount);
+        (await veVANA.balanceOf(rewardsTreasury)).should.eq(treasuryInitialBalance - withdrawVeVANAAmount);
+        (await veVANA.balanceOf(user1)).should.eq(withdrawVeVANAAmount);
+        (await ethers.provider.getBalance(rewardsTreasury)).should.eq(0);
+        (await ethers.provider.getBalance(user1)).should.eq(user1InitialBalance);
+
+        const withdrawVanaAmount = parseEther(0.4);
+        await rewardsTreasury
+          .connect(owner)
+          .transferVana(user1, withdrawVanaAmount);
+
+        (await veVANA.balanceOf(rewardsTreasury)).should.eq(treasuryInitialBalance - withdrawVeVANAAmount - withdrawVanaAmount);
+
+        (await ethers.provider.getBalance(user1)).should.eq(
+          user1InitialBalance + withdrawVanaAmount,
+        );
+        (await ethers.provider.getBalance(rewardsTreasury)).should.eq(0);
+      });
+
+      it("should not migrate VANA to veVANA with non-admin role", async function () {
+        (
+          await rewardsTreasury.hasRole(DEFAULT_ADMIN_ROLE, user1)
+        ).should.eq(false);
+
+        await rewardsTreasury.connect(user1).migrateVana().should.be.rejectedWith(
+          `AccessControlUnauthorizedAccount("${user1.address}", "${DEFAULT_ADMIN_ROLE}")`,
+        );
       });
 
       it("Should upgradeTo when owner", async function () {
@@ -6626,27 +6912,28 @@ describe("DLPRoot", () => {
           parseEther(1),
         );
       });
+
+      it("should receive veVANA when deposit VANA", async function () {
+        await rewardsTreasury.depositVana({ value: parseEther(1) });
+
+        (await veVANA.balanceOf(rewardsTreasury)).should.eq(
+          parseEther(1),
+        );
+      });
     });
 
     describe("Transfer Vana ", () => {
       it("should transferVana when owner", async function () {
-        await owner.sendTransaction({
-          to: rewardsTreasury,
-          value: parseEther(1),
-        });
+        await rewardsTreasury.connect(foundation).depositVana({ value: parseEther(1) });
 
-        (await ethers.provider.getBalance(rewardsTreasury)).should.eq(
-          parseEther(1),
-        );
+        (await veVANA.balanceOf(rewardsTreasury)).should.eq(parseEther(1));
 
         const user1InitialBalance = await ethers.provider.getBalance(user1);
         await rewardsTreasury
           .connect(owner)
           .transferVana(user1, parseEther(0.4));
 
-        (await ethers.provider.getBalance(rewardsTreasury)).should.eq(
-          parseEther(0.6),
-        );
+        (await veVANA.balanceOf(rewardsTreasury)).should.eq(parseEther(0.6));
 
         (await ethers.provider.getBalance(user1)).should.eq(
           user1InitialBalance + parseEther(0.4),
@@ -6689,7 +6976,7 @@ describe("DLPRoot", () => {
         (
           await stakesTreasury.hasRole(DEFAULT_ADMIN_ROLE, rootStaking)
         ).should.eq(true);
-        (await stakesTreasury.version()).should.eq(1);
+        (await stakesTreasury.version()).should.eq(2);
         (await stakesTreasury.dlpRoot()).should.eq(rootStaking);
       });
 
@@ -6811,27 +7098,28 @@ describe("DLPRoot", () => {
           parseEther(1),
         );
       });
+
+      it("should receive veVANA when deposit VANA", async function () {
+        await stakesTreasury.depositVana({ value: parseEther(1) });
+
+        (await veVANA.balanceOf(stakesTreasury)).should.eq(
+          parseEther(1),
+        );
+      });
     });
 
     describe("Transfer Vana ", () => {
       it("should transferVana when owner", async function () {
-        await owner.sendTransaction({
-          to: stakesTreasury,
-          value: parseEther(1),
-        });
+        await stakesTreasury.connect(user1).depositVana({ value: parseEther(1) });
 
-        (await ethers.provider.getBalance(stakesTreasury)).should.eq(
-          parseEther(1),
-        );
+        (await veVANA.balanceOf(stakesTreasury)).should.eq(parseEther(1));
 
         const user1InitialBalance = await ethers.provider.getBalance(user1);
         await stakesTreasury
           .connect(owner)
           .transferVana(user1, parseEther(0.4));
 
-        (await ethers.provider.getBalance(stakesTreasury)).should.eq(
-          parseEther(0.6),
-        );
+        (await veVANA.balanceOf(stakesTreasury)).should.eq(parseEther(0.6));
 
         (await ethers.provider.getBalance(user1)).should.eq(
           user1InitialBalance + parseEther(0.4),

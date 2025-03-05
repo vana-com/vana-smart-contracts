@@ -186,7 +186,7 @@ contract DLPRootEpochImplementation is
             //                epochDlpRewards[index].rewardAmount
             //            );
 
-            bool success = dlpRoot.dlpRootRewardsTreasury().transferVana(
+            bool success = dlpRoot.dlpRootRewardsTreasury().transferVeVANA(
                 dlpRoot.dlpRootMetrics().foundationWalletAddress(),
                 epochDlpRewards[index].ownerRewardAmount
             );
