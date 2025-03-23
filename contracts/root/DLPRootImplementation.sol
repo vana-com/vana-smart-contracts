@@ -31,6 +31,7 @@ contract DLPRootImplementation is
     event StakeClosed(uint256 indexed stakeId);
     event StakeWithdrawn(uint256 indexed stakeId);
     event StakeMigrated(uint256 oldStakeId, uint256 newStakeId, uint256 indexed newDlpId, uint256 newAmount);
+    event StakeMigratedToVanaPool(uint256 indexed stakeId, uint256 amount, uint256 entityId);
     event StakeRewardClaimed(uint256 indexed stakeId, uint256 indexed epochId, uint256 amount, bool isFinal);
 
     // Custom errors
@@ -43,6 +44,7 @@ contract DLPRootImplementation is
     error InvalidDlpId();
     error InvalidDlpStatus();
     error InvalidAddress();
+    error StakeActionPaused();
     error NotStakeOwner();
     error NothingToClaim();
     error InvalidStakersPercentage();
@@ -227,6 +229,14 @@ contract DLPRootImplementation is
         dlpRootRewardsTreasury = IDLPRootTreasury(newDlpRootRewardsTreasuryAddress);
     }
 
+    function updateVanaPoolStaking(address newVanaPoolStakingAddress) external onlyRole(MAINTAINER_ROLE) {
+        vanaPoolStaking = IVanaPoolStaking(newVanaPoolStakingAddress);
+    }
+
+    function updateStakeLastBlockNumber(uint256 newStakingLastBlockNumber) external onlyRole(MAINTAINER_ROLE) {
+        stakingLastBlockNumber = newStakingLastBlockNumber;
+    }
+
     function updateDlpRootStakesTreasury(
         address newDlpRootStakesTreasuryAddress
     ) external override onlyRole(DEFAULT_ADMIN_ROLE) {
@@ -326,6 +336,33 @@ contract DLPRootImplementation is
         _claimStakeRewardUntilEpoch(stakeId, maxEpoch);
     }
 
+    function migrateStakeToVanaPool(uint256 stakeId, uint256 entityId) external payable nonReentrant whenNotPaused {
+        dlpRootEpoch.createEpochs();
+
+        Stake storage stake = _stakes[stakeId];
+
+        if (stake.endBlock == 0) {
+            stake.movedAmount = stake.amount;
+            _closeStake(_msgSender(), stakeId);
+            stake.movedAmount = 0;
+        }
+
+        uint256 toClaim = stake.amount + _calculateStakeRewardUntilEpoch(stakeId, dlpRootEpoch.epochsCount() - 1, true);
+
+        if (toClaim == 0) {
+            revert NothingToClaim();
+        }
+
+        bool success = dlpRootRewardsTreasury.transferVana(payable(address(this)), toClaim);
+        if (!success) {
+            revert TransferFailed();
+        }
+
+        vanaPoolStaking.stake{value: toClaim}(entityId, stake.stakerAddress);
+
+        emit StakeMigratedToVanaPool(stakeId, stake.amount, entityId);
+    }
+
     /**
      * @notice Calculates stake score based on amount and duration
      */
@@ -420,6 +457,10 @@ contract DLPRootImplementation is
      * @dev Validates stake amount and DLP status before creating
      */
     function _createStake(address stakerAddress, uint256 dlpId, uint256 amount, uint256 startBlock) internal {
+        if (block.number > stakingLastBlockNumber) {
+            revert StakeActionPaused();
+        }
+
         if (stakerAddress == address(0)) {
             revert InvalidAddress();
         }
