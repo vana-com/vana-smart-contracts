@@ -1,0 +1,450 @@
+// SPDX-License-Identifier: MIT
+pragma solidity 0.8.24;
+
+import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/Address.sol";
+import "../dataAccessPayment/interfaces/IPaymentRequestor.sol";
+import "../dataAccessTreasury/DataAccessTreasuryBeaconProxy.sol";
+import "../dataAccessTreasury/DataAccessTreasuryImplementation.sol";
+import "./interfaces/ComputeEngineStorageV1.sol";
+
+contract ComputeEngineImplementation is
+    UUPSUpgradeable,
+    PausableUpgradeable,
+    AccessControlUpgradeable,
+    ReentrancyGuardUpgradeable,
+    ComputeEngineStorageV1
+{
+    using SafeERC20 for IERC20;
+    using Address for address payable;
+
+    bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
+    uint80 public constant DEDICATED_TIMEOUT = type(uint80).max;
+    address public constant VANA = address(0);
+
+    event JobRegistered(uint256 indexed jobId, address indexed ownerAddress);
+    event JobCanceled(uint256 indexed jobId);
+    event JobStatusUpdated(uint256 indexed jobId, JobStatus status, string statusMessage);
+    event PaymentExecuted(uint256 indexed jobId, address indexed token, uint256 amount);
+    event Deposit(address indexed account, address indexed token, uint256 amount);
+    event Withdraw(address indexed account, address indexed token, uint256 amount);
+
+    error NotJobOwner();
+    error JobAlreadyDoneOrCanceled();
+    error NotTee();
+    error TeeAlreadyAssigned(uint256 jobId);
+    error FailedToAssignTee();
+    error NotLongRunningJob();
+    error TeePoolNotFound();
+
+    error TeeNotFound();
+    error ZeroTeeAddress();
+    error InvalidStatusTransition(JobStatus currentStatus, JobStatus newStatus);
+    error NotQueryEngine();
+    error UnauthorizedPaymentRequestor();
+    error InsufficientBalance();
+    error InvalidVanaAmount();
+    error InvalidAmount();
+    error JobNotFound(uint256 jobId);
+    error JobNotSubmitted(uint256 jobId);
+    error InstructionNotFound(uint256 computeInstructionId);
+
+    modifier onlyQueryEngine() {
+        if (msg.sender != queryEngine) {
+            revert NotQueryEngine();
+        }
+        _;
+    }
+
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    /**
+     * @notice Initializes the contract
+     *
+     * @param ownerAddress Address of the owner
+     */
+    function initialize(
+        address ownerAddress,
+        address _queryEngine,
+        IComputeEngineTeePoolFactory _teePoolFactory,
+        DataAccessTreasuryFactoryBeacon _dataAccessTreasuryFactory
+    ) external initializer {
+        __UUPSUpgradeable_init();
+        __Pausable_init();
+        __AccessControl_init();
+        __ReentrancyGuard_init();
+
+        queryEngine = _queryEngine;
+
+        teePoolFactory = _teePoolFactory;
+
+        /// @dev Deploy a new data access treasury for the query engine via beacon proxy
+        address proxy = _dataAccessTreasuryFactory.createBeaconProxy(
+            abi.encodeCall(
+                DataAccessTreasuryImplementation(payable(_dataAccessTreasuryFactory.implementation())).initialize,
+                (ownerAddress, address(this))
+            )
+        );
+        computeEngineTreasury = IDataAccessTreasury(proxy);
+
+        _setRoleAdmin(MAINTAINER_ROLE, DEFAULT_ADMIN_ROLE);
+        _grantRole(DEFAULT_ADMIN_ROLE, ownerAddress);
+        _grantRole(MAINTAINER_ROLE, ownerAddress);
+    }
+
+    /**
+     * @notice Upgrade the contract
+     * This function is required by OpenZeppelin's UUPSUpgradeable
+     *
+     * @param newImplementation                  new implementation
+     */
+    function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
+
+    /// @inheritdoc IComputeEngine
+    function version() external pure virtual override returns (uint256) {
+        return 1;
+    }
+
+    /// @inheritdoc IComputeEngine
+    function pause() external override onlyRole(MAINTAINER_ROLE) {
+        _pause();
+    }
+
+    /// @inheritdoc IComputeEngine
+    function unpause() external override onlyRole(MAINTAINER_ROLE) {
+        _unpause();
+    }
+
+    function updateQueryEngine(address _queryEngineAddress) external override onlyRole(MAINTAINER_ROLE) {
+        queryEngine = _queryEngineAddress;
+    }
+
+    function updateComputeEngineTreasury(
+        IDataAccessTreasury _computeEngineTreasuryAddress
+    ) external override onlyRole(MAINTAINER_ROLE) {
+        computeEngineTreasury = _computeEngineTreasuryAddress;
+    }
+
+    function updateInstructionRegistry(
+        IComputeInstructionRegistry _instructionRegistry
+    ) external override onlyRole(MAINTAINER_ROLE) {
+        instructionRegistry = _instructionRegistry;
+    }
+
+    function updateTeePoolFactory(
+        IComputeEngineTeePoolFactory _teePoolFactory
+    ) external override onlyRole(MAINTAINER_ROLE) {
+        teePoolFactory = _teePoolFactory;
+    }
+
+    ////////////////////////
+    ///// Job Registry /////
+    ////////////////////////
+
+    /// @inheritdoc IComputeEngine
+    function jobs(uint256 jobId) external view override returns (Job memory) {
+        return _jobs[jobId];
+    }
+
+    /// @inheritdoc IComputeEngine
+    function submitJob(
+        uint80 maxTimeout,
+        bool gpuRequired,
+        uint256 computeInstructionId
+    ) external payable override whenNotPaused {
+        uint256 jobId = _registerJob(maxTimeout, gpuRequired, computeInstructionId);
+
+        address teeAddress = _assignJobToTee(jobId);
+        if (teeAddress == address(0)) {
+            /// @dev The job will be in the Registered state and can be resubmitted later or canceled
+            return;
+        }
+        Job storage job = _jobs[jobId];
+        job.teeAddress = teeAddress;
+        job.status = JobStatus.Submitted;
+    }
+
+    /// @inheritdoc IComputeEngine
+    function submitJobWithTee(
+        uint256 maxTimeout,
+        bool gpuRequired,
+        uint256 computeInstructionId,
+        address teeAddress
+    ) external payable override whenNotPaused {
+        /// @dev We don't check if the job is a long-running job.
+        /// If an app builder has a dedicated Tee, they can submit any job to it.
+        /// The verification of the Tee ownership is performed off-chain.
+        /// submitJobWithTee always submits the job to the dedicated Tee pools.
+        
+        // if (maxTimeout <= teePoolFactory.persistentTimeout()) {
+        //     revert NotLongRunningJob();
+        // }
+
+        if (teeAddress == address(0)) {
+            revert ZeroTeeAddress();
+        }
+
+        uint256 jobId = _registerJob(maxTimeout, gpuRequired, computeInstructionId);
+        Job storage job = _jobs[jobId];
+
+        /// @dev Assign the job to the Tee and submit it to the TeePool
+        job.teeAddress = teeAddress;
+        address assignedTeeAddress = _assignJobToTee(jobId);
+        if (assignedTeeAddress != teeAddress) {
+            revert FailedToAssignTee();
+        }
+
+        job.status = JobStatus.Submitted;
+    }
+
+    /// @notice Registers a job
+    /// @param maxTimeout The maximum timeout for the job
+    /// @param gpuRequired True if the job requires GPU, false otherwise
+    /// @param computeInstructionId The ID of the compute instruction
+    /// @return jobId The ID of the job
+    function _registerJob(
+        uint256 maxTimeout,
+        bool gpuRequired,
+        uint256 computeInstructionId
+    ) internal whenNotPaused returns (uint256 jobId) {
+        IComputeInstructionRegistry.ComputeInstructionInfo memory computeInstruction = instructionRegistry.instructions(
+            computeInstructionId
+        );
+        if (computeInstruction.owner == address(0)) {
+            revert InstructionNotFound(computeInstructionId);
+        }
+
+        /// @dev Deposit the job fee
+        if (msg.value > 0) {
+            _deposit(msg.sender, VANA, msg.value);
+        }
+
+        jobId = ++jobsCount;
+        Job storage job = _jobs[jobId];
+        job.ownerAddress = msg.sender;
+        job.maxTimeout = uint80(maxTimeout);
+        job.gpuRequired = gpuRequired;
+        job.status = JobStatus.Registered;
+        job.computeInstructionId = uint32(computeInstructionId);
+        job.addedTimestamp = uint48(block.timestamp);
+
+        emit JobRegistered(jobId, msg.sender);
+    }
+
+    function resubmitJob(uint256 jobId) external override whenNotPaused {
+        _resubmitJobWithTee(jobId, address(0));
+    }
+
+    function resubmitJobWithTee(uint256 jobId, address teeAddress) external override whenNotPaused {
+        if (teeAddress == address(0)) {
+            revert ZeroTeeAddress();
+        }
+        _resubmitJobWithTee(jobId, teeAddress);
+    }
+
+    function _resubmitJobWithTee(uint256 jobId, address teeAddress) internal whenNotPaused {
+        Job storage job = _jobs[jobId];
+        if (job.teeAddress != address(0)) {
+            revert TeeAlreadyAssigned(jobId);
+        }
+
+        if (job.status != JobStatus.Registered) {
+            revert JobAlreadyDoneOrCanceled();
+        }
+
+        // if (teeAddress != address(0) && job.maxTimeout <= teePoolFactory.persistentTimeout()) {
+        //     revert NotLongRunningJob();
+        // }
+
+        if (teeAddress != address(0)) {
+            job.teeAddress = teeAddress;
+        }
+        address assignedTeeAddress = _assignJobToTee(jobId);
+        if (assignedTeeAddress == address(0) || (teeAddress != address(0) && assignedTeeAddress != teeAddress)) {
+            revert FailedToAssignTee();
+        }
+
+        job.teeAddress = assignedTeeAddress;
+        job.status = JobStatus.Submitted;
+    }
+
+    function _assignJobToTee(uint256 jobId) internal returns (address) {
+        Job storage job = _jobs[jobId];
+
+        address jobTeeAddress = job.teeAddress;
+        /// @dev If a non-zero Tee address is provided, the job will be submitted to the dedicated Tee pool.
+        uint80 jobMaxTimeout = jobTeeAddress != address(0) ? DEDICATED_TIMEOUT : job.maxTimeout;
+        IComputeEngineTeePool teePoolAddress = teePoolFactory.getTeePoolAddress(jobMaxTimeout, job.gpuRequired);
+        if (address(teePoolAddress) == address(0)) {
+            /**
+             * @dev The job will be in the Registered state and can be resubmitted later
+             * when a TEE pool is available, or the user can cancel the job.
+             */
+            return address(0);
+        }
+
+        /// @dev It should not revert, if the job cannot be assigned to a Tee,
+        /// its status will be Registered.
+        bytes memory jobParams = abi.encode(jobId, job.maxTimeout, job.gpuRequired, job.teeAddress);
+        try teePoolAddress.submitJob(jobParams) returns (address teeAddress) {
+            return teeAddress;
+        } catch {}
+        return address(0);
+    }
+
+    /// @inheritdoc IComputeEngine
+    function updateJobStatus(
+        uint256 jobId,
+        JobStatus status,
+        string calldata statusMessage
+    ) external override whenNotPaused {
+        Job storage job = _jobs[jobId];
+        /// @dev Only the Tee assigned to the job can update the status.
+        /// If the assigned TEE is not active, it can still update the job status.
+        if (msg.sender != job.teeAddress) {
+            revert NotTee();
+        }
+
+        JobStatus currentStatus = job.status;
+        if (currentStatus == JobStatus.Completed || currentStatus == JobStatus.Failed) {
+            revert JobAlreadyDoneOrCanceled();
+        }
+        if (status == JobStatus.Canceled || status <= currentStatus) {
+            revert InvalidStatusTransition(currentStatus, status);
+        }
+
+        job.status = status;
+        job.statusMessage = statusMessage;
+        emit JobStatusUpdated(jobId, status, statusMessage);
+
+        /// @dev Remove the job from the TeePool if it's completed or failed
+        if (status == JobStatus.Completed || status == JobStatus.Failed) {
+            IComputeEngineTeePool teePool = teePoolFactory.getTeePoolAddress(job.maxTimeout, job.gpuRequired);
+            if (address(teePool) != address(0)) {
+                teePool.removeJob(jobId);
+            }
+        }
+    }
+
+    /// @inheritdoc IComputeEngine
+    function cancelJob(uint256 jobId) external override whenNotPaused {
+        Job storage job = _jobs[jobId];
+
+        if (job.ownerAddress != msg.sender) {
+            revert NotJobOwner();
+        }
+
+        JobStatus status = job.status;
+
+        if (status >= JobStatus.Completed) {
+            revert JobAlreadyDoneOrCanceled();
+        }
+
+        job.status = JobStatus.Canceled;
+        emit JobCanceled(jobId);
+
+        if (status == JobStatus.Submitted || status == JobStatus.Running) {
+            IComputeEngineTeePool teePool = teePoolFactory.getTeePoolAddress(job.maxTimeout, job.gpuRequired);
+            if (address(teePool) != address(0)) {
+                teePool.removeJob(jobId);
+            }
+        }
+    }
+
+    ///////////////////
+    ///// Payment /////
+    ///////////////////
+
+    function deposit(address token, uint256 amount) external payable override whenNotPaused {
+        _deposit(msg.sender, token, amount);
+    }
+
+    function _deposit(address from, address token, uint256 amount) internal {
+        if (amount == 0) {
+            revert InvalidAmount();
+        }
+
+        _accountBalances[from][token] += amount;
+        emit Deposit(from, token, amount);
+
+        if (token == VANA) {
+            if (msg.value != amount) {
+                revert InvalidVanaAmount();
+            }
+            payable(address(computeEngineTreasury)).sendValue(amount);
+        } else {
+            IERC20(token).safeTransferFrom(from, address(this), amount);
+            IERC20(token).safeTransfer(address(computeEngineTreasury), amount);
+        }
+    }
+
+    function withdraw(address token, uint256 amount) external override whenNotPaused nonReentrant {
+        if (amount == 0) {
+            revert InvalidAmount();
+        }
+
+        if (_accountBalances[msg.sender][token] < amount) {
+            revert InsufficientBalance();
+        }
+
+        unchecked {
+            _accountBalances[msg.sender][token] -= amount;
+        }
+        emit Withdraw(msg.sender, token, amount);
+
+        computeEngineTreasury.transfer(msg.sender, token, amount);
+    }
+
+    function balanceOf(address account, address token) external view override returns (uint256) {
+        return _accountBalances[account][token];
+    }
+
+    function executePaymentRequest(
+        address token,
+        uint256 amount,
+        bytes calldata metadata
+    ) external override whenNotPaused nonReentrant {
+        if (msg.sender == queryEngine) {
+            _executePaymentRequestFromQueryEngine(token, amount, metadata);
+        } else {
+            revert UnauthorizedPaymentRequestor();
+        }
+    }
+
+    function _executePaymentRequestFromQueryEngine(address token, uint256 amount, bytes calldata metadata) onlyQueryEngine internal {
+        uint256 jobId = abi.decode(metadata, (uint256));
+        Job storage job = _jobs[jobId];
+
+        address jobOwner = _jobs[jobId].ownerAddress;
+        if (jobOwner == address(0)) {
+            revert JobNotFound(jobId);
+        }
+
+        /// @dev Don't check other job statuses as compute engine may delay the update of the job status
+        if (job.status < JobStatus.Submitted) {
+            revert JobNotSubmitted(jobId);
+        }
+
+        if (_accountBalances[jobOwner][token] < amount) {
+            revert InsufficientBalance();
+        }
+        unchecked {
+            _accountBalances[jobOwner][token] -= amount;
+        }
+
+        PaymentInfo storage paymentInfo = _jobPayments[jobId][token];
+        paymentInfo.paidAmounts[token] += amount;
+        paymentInfo.payer = jobOwner;
+
+        emit PaymentExecuted(jobId, token, amount);
+
+        computeEngineTreasury.transfer(msg.sender, token, amount);
+    }
+}

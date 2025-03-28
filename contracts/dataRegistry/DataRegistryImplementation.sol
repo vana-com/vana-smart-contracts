@@ -47,6 +47,19 @@ contract DataRegistryImplementation is
     );
 
     /**
+     * @notice Triggered when user has added a refinement to the file
+     *
+     * @param fileId                            id of the file
+     * @param refinerId                         id of the refiner
+     * @param url                               url of the refinement
+     */
+    event RefinementAdded(
+        uint256 indexed fileId,
+        uint256 indexed refinerId, 
+        string url
+    );
+
+    /**
      * @notice Triggered when user has authorized an account to access the file
      *
      * @param fileId                            id of the file
@@ -56,6 +69,10 @@ contract DataRegistryImplementation is
 
     error NotFileOwner();
     error FileUrlAlreadyUsed();
+    error FileNotFound();
+    error RefinementAlreadyAdded();
+    error NoPermission();
+    error InvalidUrl();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() ERC2771ContextUpgradeable(address(0)) {
@@ -124,7 +141,7 @@ contract DataRegistryImplementation is
      * @notice Returns the version of the contract
      */
     function version() external pure virtual override returns (uint256) {
-        return 1;
+        return 2;
     }
 
     /**
@@ -262,6 +279,61 @@ contract DataRegistryImplementation is
 
         _files[fileId].permissions[account] = key;
         emit PermissionGranted(fileId, account);
+    }
+
+    /// @inheritdoc IDataRegistry
+    function addRefinementWithPermission(
+        uint256 fileId,
+        uint256 refinerId,
+        string calldata url,
+        address account,
+        string calldata key) external override whenNotPaused {
+        // @dev _files is 1-indexed
+        if (fileId > filesCount || fileId == 0) {
+            revert FileNotFound();
+        }
+
+        // @dev Only the account with a permission to decrypt the file key can add refinements.
+        // This is to prevent malicious actors from adding refinements to files they don't have access to
+        // or adding arbitrary permissions to the file.
+        if (!_hasPermission(fileId, _msgSender())) {
+            revert NoPermission();
+        }
+
+        File storage _file = _files[fileId];
+
+        // @dev Refinement is only allowed to be added once per refiner with a non-empty URL.
+        // This is to prevent refiners from changing the refinement URL or 
+        // adding empty URLs to bypass addFilePermission.
+        if (bytes(url).length == 0) {
+            revert InvalidUrl();
+        }
+
+        if (bytes(_file.refinements[refinerId]).length != 0) {
+            revert RefinementAlreadyAdded();
+        }
+        _file.refinements[refinerId] = url;
+        emit RefinementAdded(fileId, refinerId, url);
+
+        // @dev Add permission for the account to access the refinement.
+        // The permission for an account is not allowed to be changed once set,
+        // to prevent previous refinements from being inaccessible.
+        if (bytes(_file.permissions[account]).length == 0) {
+            _file.permissions[account] = key;
+            emit PermissionGranted(fileId, account);
+        }
+    }
+
+    /// @inheritdoc IDataRegistry
+    function fileRefinements(uint256 fileId, uint256 refinerId) external view override returns (string memory) {
+        return _files[fileId].refinements[refinerId];
+    }
+
+    /// @notice Checks if the account has permission to access the file.
+    /// @param fileId The ID of the file to check.
+    /// @param account The address of the account to check.
+    function _hasPermission(uint256 fileId, address account) internal view returns (bool) {
+        return bytes(_files[fileId].permissions[account]).length != 0;
     }
 
     /**
