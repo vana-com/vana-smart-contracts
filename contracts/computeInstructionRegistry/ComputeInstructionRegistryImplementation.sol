@@ -24,6 +24,14 @@ contract ComputeInstructionRegistryImplementation is
     event ComputeInstructionUpdated(uint256 indexed computeInstructionId, uint256 indexed dlpId, bool approved);
 
     error NotDlpOwner();
+    error DlpNotFound(uint256 dlpId);
+
+    modifier onlyDlpOwner(uint256 dlpId) {
+        if (dlpRootCore.dlps(dlpId).ownerAddress != msg.sender) {
+            revert NotDlpOwner();
+        }
+        _;
+    }
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -101,15 +109,10 @@ contract ComputeInstructionRegistryImplementation is
     /// @inheritdoc IComputeInstructionRegistry
     function updateComputeInstruction(
         uint256 instructionId,
+        uint256 dlpId,
         bool approved
-    ) external {
-        IDLPRootCoreReadOnly.DlpInfo memory dlp = dlpRootCore.dlpsByAddress(msg.sender);
-        if (dlp.ownerAddress != msg.sender) {
-            revert NotDlpOwner();
-        }
-
+    ) external onlyDlpOwner(dlpId) whenNotPaused {
         ComputeInstruction storage instruction = _instructions[instructionId];
-        uint256 dlpId = dlp.id;
         if (instruction.dlpApprovals[dlpId] != approved) {
             instruction.dlpApprovals[dlpId] = approved;
             emit ComputeInstructionUpdated(instructionId, dlpId, approved);

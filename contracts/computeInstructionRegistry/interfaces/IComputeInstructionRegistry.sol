@@ -56,6 +56,7 @@ interface IComputeInstructionRegistry {
 
     /// @notice Updates the compute instruction's approval with the given ID
     /// @param instructionId The ID of the compute instruction
+    /// @param dlpId The ID of the DLP
     /// @param approved Whether the compute instruction has been approved against the refiner
-    function updateComputeInstruction(uint256 instructionId, bool approved) external;
+    function updateComputeInstruction(uint256 instructionId, uint256 dlpId, bool approved) external;
 }
