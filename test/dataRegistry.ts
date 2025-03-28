@@ -20,6 +20,7 @@ describe("DataRegistry", () => {
   let dlp1: HardhatEthersSigner;
   let dlp2: HardhatEthersSigner;
   let dlp3: HardhatEthersSigner;
+  let queryEngine: HardhatEthersSigner;
   let user1: HardhatEthersSigner;
   let user2: HardhatEthersSigner;
   let user3: HardhatEthersSigner;
@@ -44,6 +45,7 @@ describe("DataRegistry", () => {
       dlp1,
       dlp2,
       dlp3,
+      queryEngine,
       user1,
       user2,
       user3,
@@ -76,7 +78,7 @@ describe("DataRegistry", () => {
       (await dataRegistry.hasRole(DEFAULT_ADMIN_ROLE, owner)).should.eq(true);
       (await dataRegistry.hasRole(MAINTAINER_ROLE, owner)).should.eq(true);
       (await dataRegistry.hasRole(MAINTAINER_ROLE, maintainer)).should.eq(true);
-      (await dataRegistry.version()).should.eq(1);
+      (await dataRegistry.version()).should.eq(2);
     });
 
     it("should change admin", async function () {
@@ -108,23 +110,23 @@ describe("DataRegistry", () => {
       await upgrades.upgradeProxy(
         dataRegistry,
         await ethers.getContractFactory(
-          "DataRegistryImplementationV2Mock",
+          "DataRegistryImplementationV0Mock",
           owner,
         ),
       );
 
       const newRoot = await ethers.getContractAt(
-        "DataRegistryImplementationV2Mock",
+        "DataRegistryImplementationV0Mock",
         dataRegistry,
       );
-      (await newRoot.version()).should.eq(2);
+      (await newRoot.version()).should.eq(0);
 
       (await newRoot.test()).should.eq("test");
     });
 
     it("Should upgradeTo when owner and emit event", async function () {
       const newRootImplementation = await ethers.deployContract(
-        "DataRegistryImplementationV2Mock",
+        "DataRegistryImplementationV0Mock",
       );
 
       await dataRegistry
@@ -134,11 +136,11 @@ describe("DataRegistry", () => {
         .withArgs(newRootImplementation);
 
       const newRoot = await ethers.getContractAt(
-        "DataRegistryImplementationV2Mock",
+        "DataRegistryImplementationV0Mock",
         dataRegistry,
       );
 
-      (await newRoot.version()).should.eq(2);
+      (await newRoot.version()).should.eq(0);
 
       (await newRoot.test()).should.eq("test");
     });
@@ -157,7 +159,7 @@ describe("DataRegistry", () => {
 
     it("Should reject upgradeTo when non owner", async function () {
       const newRootImplementation = await ethers.deployContract(
-        "DataRegistryImplementationV2Mock",
+        "DataRegistryImplementationV0Mock",
       );
 
       await dataRegistry
@@ -762,6 +764,199 @@ describe("DataRegistry", () => {
         .connect(user1)
         .addFilePermission(1, dlp1, "key1")
         .should.be.rejectedWith("EnforcedPause()");
+    });
+  });
+
+  describe("AddRefinementWithPermission", () => {
+    beforeEach(async () => {
+      await deploy();
+    });
+
+    it("should addRefinementWithPermission", async function () {
+      await dataRegistry
+        .connect(user1)
+        .addFileWithPermissions("file1", user2, [
+          { account: dlp1, key: "key1" },
+        ])
+        .should.emit(dataRegistry, "FileAdded")
+        .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, dlp1);
+
+      const file1 = await dataRegistry.files(1);
+      file1.id.should.eq(1);
+      file1.ownerAddress.should.eq(user2.address);
+      file1.addedAtBlock.should.eq(await getCurrentBlockNumber());
+
+      (await dataRegistry.filePermissions(1, dlp1)).should.eq("key1");
+      (await dataRegistry.filePermissions(1, dlp2)).should.eq("");
+
+      await dataRegistry
+        .connect(dlp1)
+        .addRefinementWithPermission(1, 1, "refinement1", queryEngine, "key2")
+        .should.emit(dataRegistry, "RefinementAdded")
+        .withArgs(1, 1, "refinement1")
+        .and.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, queryEngine);
+
+      (await dataRegistry.filePermissions(1, queryEngine)).should.eq("key2");
+      (await dataRegistry.fileRefinements(1, 1)).should.eq("refinement1");
+    });
+
+    it("should addRefinementWithPermission against multiple refiners", async function () {
+      await dataRegistry
+        .connect(user1)
+        .addFileWithPermissions("file1", user2, [
+          { account: dlp1, key: "key1" },
+        ])
+        .should.emit(dataRegistry, "FileAdded")
+        .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, dlp1);
+
+      const file1 = await dataRegistry.files(1);
+      file1.id.should.eq(1);
+      file1.ownerAddress.should.eq(user2.address);
+      file1.addedAtBlock.should.eq(await getCurrentBlockNumber());
+
+      (await dataRegistry.filePermissions(1, dlp1)).should.eq("key1");
+      (await dataRegistry.filePermissions(1, dlp2)).should.eq("");
+
+      await dataRegistry
+        .connect(dlp1)
+        .addRefinementWithPermission(1, 1, "refinement1", queryEngine, "key2")
+        .should.emit(dataRegistry, "RefinementAdded")
+        .withArgs(1, 1, "refinement1")
+        .and.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, queryEngine);
+
+      // No PermissionGranted as permission for queryEngine is already granted
+      await dataRegistry
+        .connect(dlp1)
+        .addRefinementWithPermission(1, 2, "refinement2", queryEngine, "key3")
+        .should.emit(dataRegistry, "RefinementAdded")
+        .withArgs(1, 2, "refinement2");
+
+      (await dataRegistry.filePermissions(1, queryEngine)).should.eq("key2");
+      (await dataRegistry.fileRefinements(1, 1)).should.eq("refinement1");
+      (await dataRegistry.fileRefinements(1, 2)).should.eq("refinement2");
+    });
+
+    it("should not addRefinementWithPermission with invalid fileId", async function () {
+      await dataRegistry
+        .connect(user1)
+        .addFileWithPermissions("file1", user2, [
+          { account: dlp1, key: "key1" },
+        ])
+        .should.emit(dataRegistry, "FileAdded")
+        .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, dlp1);
+
+      const file1 = await dataRegistry.files(1);
+      file1.id.should.eq(1);
+
+      await dataRegistry
+        .connect(dlp1)
+        .addRefinementWithPermission(0, 1, "refinement1", queryEngine, "key2")
+        .should.be.rejectedWith("FileNotFound()");
+
+      await dataRegistry
+        .connect(dlp1)
+        .addRefinementWithPermission(2, 1, "refinement1", queryEngine, "key2")
+        .should.be.rejectedWith("FileNotFound()");
+    });
+
+    it("should not allow unauthorized users to addRefinementWithPermission", async function () {
+      await dataRegistry
+        .connect(user1)
+        .addFileWithPermissions("file1", user2, [
+          { account: dlp1, key: "key1" },
+        ])
+        .should.emit(dataRegistry, "FileAdded")
+        .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, dlp1);
+
+      (await dataRegistry.filePermissions(1, dlp1)).should.eq("key1");
+      (await dataRegistry.filePermissions(1, dlp2)).should.eq("");
+
+      await dataRegistry
+        .connect(dlp2)
+        .addRefinementWithPermission(1, 1, "refinement1", queryEngine, "key2")
+        .should.be.rejectedWith("NoPermission()");
+
+      const file1 = await dataRegistry.files(1);
+      file1.ownerAddress.should.eq(user2.address);
+
+      // File owner should not be able to add refinement if they don't have permission
+      await dataRegistry
+        .connect(user2)
+        .addRefinementWithPermission(1, 1, "refinement1", queryEngine, "key2")
+        .should.be.rejectedWith("NoPermission()");
+
+      // However, file owner can add permission to themselves, and then add refinement
+      await dataRegistry
+        .connect(user2)
+        .addFilePermission(1, user2, "key3")
+        .should.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, user2);
+
+      await dataRegistry
+        .connect(user2)
+        .addRefinementWithPermission(1, 1, "refinement1", queryEngine, "key2")
+        .should.emit(dataRegistry, "RefinementAdded")
+        .withArgs(1, 1, "refinement1")
+        .and.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, queryEngine);
+    });
+
+    it("should not addRefinementWithPermission with empty URL", async function () {
+      await dataRegistry
+        .connect(user1)
+        .addFileWithPermissions("file1", user2, [
+          { account: dlp1, key: "key1" },
+        ])
+        .should.emit(dataRegistry, "FileAdded")
+        .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, dlp1);
+
+      const file1 = await dataRegistry.files(1);
+      file1.id.should.eq(1);
+
+      await dataRegistry
+        .connect(dlp1)
+        .addRefinementWithPermission(1, 1, "", queryEngine, "key2")
+        .should.be.rejectedWith("InvalidUrl()");
+    });
+
+    it("should not addRefinementWithPermission more than once against the same refiner", async function () {
+      await dataRegistry
+        .connect(user1)
+        .addFileWithPermissions("file1", user2, [
+          { account: dlp1, key: "key1" },
+        ])
+        .should.emit(dataRegistry, "FileAdded")
+        .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, dlp1);
+
+      const file1 = await dataRegistry.files(1);
+      file1.id.should.eq(1);
+
+      await dataRegistry
+        .connect(dlp1)
+        .addRefinementWithPermission(1, 1, "refinement1a", queryEngine, "key2")
+        .should.emit(dataRegistry, "RefinementAdded")
+        .withArgs(1, 1, "refinement1a")
+        .and.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, queryEngine);
+
+      await dataRegistry
+        .connect(dlp1)
+        .addRefinementWithPermission(1, 1, "refinement1b", queryEngine, "key2")
+        .should.be.rejectedWith("RefinementAlreadyAdded()");
     });
   });
 });
