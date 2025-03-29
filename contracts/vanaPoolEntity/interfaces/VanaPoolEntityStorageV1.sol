@@ -23,6 +23,7 @@ abstract contract VanaPoolEntityStorageV1 is IVanaPoolEntity {
     EnumerableSet.UintSet internal _activeEntityIds; // Constants for calculations
 
     uint256 internal constant SECONDS_PER_YEAR = 365 days;
+    uint256 internal constant E = 2718281828459045235;
 
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
     bytes32 public constant VANA_POOL_ROLE = keccak256("VANA_POOL_ROLE");

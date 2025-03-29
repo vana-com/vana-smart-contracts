@@ -32,6 +32,7 @@ contract DLPRootImplementation is
     event StakeWithdrawn(uint256 indexed stakeId);
     event StakeMigrated(uint256 oldStakeId, uint256 newStakeId, uint256 indexed newDlpId, uint256 newAmount);
     event StakeMigratedToVanaPool(uint256 indexed stakeId, uint256 amount, uint256 entityId);
+    event RewardMigratedToVanaPool(uint256 indexed stakeId, uint256 amount, uint256 entityId);
     event StakeRewardClaimed(uint256 indexed stakeId, uint256 indexed epochId, uint256 amount, bool isFinal);
 
     // Custom errors
@@ -304,6 +305,8 @@ contract DLPRootImplementation is
         stake.movedAmount = newAmount;
         _closeStake(_msgSender(), stakeId);
 
+        stake.withdrawn = true;
+
         _createStake(_msgSender(), newDlpId, newAmount, stake.startBlock);
 
         emit StakeMigrated(stakeId, stakesCount, newDlpId, newAmount);
@@ -336,31 +339,110 @@ contract DLPRootImplementation is
         _claimStakeRewardUntilEpoch(stakeId, maxEpoch);
     }
 
-    function migrateStakeToVanaPool(uint256 stakeId, uint256 entityId) external payable nonReentrant whenNotPaused {
+    function migrateStakeAndRewardToVanaPool(uint256 stakeId, uint256 entityId) external nonReentrant whenNotPaused {
         dlpRootEpoch.createEpochs();
 
         Stake storage stake = _stakes[stakeId];
 
-        if (stake.endBlock == 0) {
-            stake.movedAmount = stake.amount;
-            _closeStake(_msgSender(), stakeId);
-            stake.movedAmount = 0;
+        if (stake.stakerAddress != _msgSender()) {
+            revert NotStakeOwner();
         }
 
-        uint256 toClaim = stake.amount + _calculateStakeRewardUntilEpoch(stakeId, dlpRootEpoch.epochsCount() - 1, true);
+        bool hasMigrated = false;
+        if (stake.withdrawn == false && stake.movedAmount == 0) {
+            stake.movedAmount = stake.amount;
 
-        if (toClaim == 0) {
+            if (stake.endBlock == 0) {
+                _closeStake(_msgSender(), stakeId);
+            }
+
+            bool success = dlpRootStakesTreasury.transferVana(payable(address(this)), stake.amount);
+            if (!success) {
+                revert TransferFailed();
+            }
+
+            vanaPoolStaking.stake{value: stake.amount}(entityId, stake.stakerAddress, 0);
+
+            emit StakeMigratedToVanaPool(stakeId, stake.amount, entityId);
+
+            stake.withdrawn = true;
+
+            hasMigrated = true;
+        }
+
+        uint256 rewardAmount = _calculateStakeRewardUntilEpoch(stakeId, dlpRootEpoch.epochsCount() - 1, true);
+
+        if (rewardAmount > 0) {
+            bool success = dlpRootRewardsTreasury.transferVana(payable(address(this)), rewardAmount);
+            if (!success) {
+                revert TransferFailed();
+            }
+
+            vanaPoolStaking.stake{value: rewardAmount}(entityId, stake.stakerAddress, 0);
+
+            emit RewardMigratedToVanaPool(stakeId, rewardAmount, entityId);
+
+            hasMigrated = true;
+        }
+
+        if (!hasMigrated) {
             revert NothingToClaim();
         }
+    }
 
-        bool success = dlpRootRewardsTreasury.transferVana(payable(address(this)), toClaim);
+    function migrateStakeToVanaPool(uint256 stakeId, uint256 entityId) external nonReentrant whenNotPaused {
+        dlpRootEpoch.createEpochs();
+
+        Stake storage stake = _stakes[stakeId];
+
+        if (stake.stakerAddress != _msgSender()) {
+            revert NotStakeOwner();
+        }
+
+        if (stake.withdrawn || stake.movedAmount > 0) {
+            revert StakeAlreadyWithdrawn();
+        }
+
+        stake.movedAmount = stake.amount;
+        if (stake.endBlock == 0) {
+            _closeStake(_msgSender(), stakeId);
+        }
+
+        stake.withdrawn = true;
+
+        bool success = dlpRootStakesTreasury.transferVana(payable(address(this)), stake.amount);
         if (!success) {
             revert TransferFailed();
         }
 
-        vanaPoolStaking.stake{value: toClaim}(entityId, stake.stakerAddress);
+        vanaPoolStaking.stake{value: stake.amount}(entityId, stake.stakerAddress, 0);
 
         emit StakeMigratedToVanaPool(stakeId, stake.amount, entityId);
+    }
+
+    function migrateRewardToVanaPool(uint256 stakeId, uint256 entityId) external nonReentrant whenNotPaused {
+        dlpRootEpoch.createEpochs();
+
+        Stake storage stake = _stakes[stakeId];
+
+        if (stake.stakerAddress != _msgSender()) {
+            revert NotStakeOwner();
+        }
+
+        uint256 rewardAmount = _calculateStakeRewardUntilEpoch(stakeId, dlpRootEpoch.epochsCount() - 1, true);
+
+        if (rewardAmount == 0) {
+            revert NothingToClaim();
+        }
+
+        bool success = dlpRootRewardsTreasury.transferVana(payable(address(this)), rewardAmount);
+        if (!success) {
+            revert TransferFailed();
+        }
+
+        vanaPoolStaking.stake{value: rewardAmount}(entityId, stake.stakerAddress, 0);
+
+        emit RewardMigratedToVanaPool(stakeId, rewardAmount, entityId);
     }
 
     /**
@@ -593,12 +675,14 @@ contract DLPRootImplementation is
 
         stake.withdrawn = true;
 
-        bool success = dlpRootStakesTreasury.transferVana(
-            payable(stake.stakerAddress),
-            stake.amount - stake.movedAmount
-        );
-        if (!success) {
-            revert TransferFailed();
+        if (stake.amount - stake.movedAmount > 0) {
+            bool success = dlpRootStakesTreasury.transferVana(
+                payable(stake.stakerAddress),
+                stake.amount - stake.movedAmount
+            );
+            if (!success) {
+                revert TransferFailed();
+            }
         }
 
         emit StakeWithdrawn(stakeId);
@@ -656,4 +740,6 @@ contract DLPRootImplementation is
 
         return (epochDlp.stakersRewardAmount * stakeScore) / epochDlp.totalStakesScore;
     }
+
+    receive() external payable {}
 }

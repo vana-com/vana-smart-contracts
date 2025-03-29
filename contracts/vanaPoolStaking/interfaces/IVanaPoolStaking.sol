@@ -19,8 +19,8 @@ interface IVanaPoolStaking {
     function vanaPoolTreasury() external view returns (IVanaPoolTreasury);
     function minStakeAmount() external view returns (uint256);
 
-    function stake(uint256 entityId, address recipient) external payable;
-    function unstake(uint256 entityId, uint256 amount) external;
+    function stake(uint256 entityId, address recipient, uint256 shareAmountMin) external payable;
+    function unstake(uint256 entityId, uint256 amount, uint256 vanaAmountMin) external;
 
     function stakerEntities(address staker, uint256 entityId) external view returns (StakerEntity memory);
 

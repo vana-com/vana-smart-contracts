@@ -7,8 +7,6 @@ import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "./interfaces/VanaPoolEntityStorageV1.sol";
 
-import "hardhat/console.sol";
-
 contract VanaPoolEntityImplementation is
     UUPSUpgradeable,
     PausableUpgradeable,
@@ -178,12 +176,20 @@ contract VanaPoolEntityImplementation is
     }
 
     /**
+     * @notice Updates the minimum registration stake
+     * @param newMinRegistrationStake The new minimum registration stake
+     */
+    function updateMinRegistrationStake(uint256 newMinRegistrationStake) external override onlyRole(MAINTAINER_ROLE) {
+        minRegistrationStake = newMinRegistrationStake;
+    }
+
+    /**
      * @notice Creates a new entity
      * @param entityRegistrationInfo The entity registration information
      */
     function createEntity(
         EntityRegistrationInfo calldata entityRegistrationInfo
-    ) external payable override whenNotPaused nonReentrant {
+    ) external payable override whenNotPaused nonReentrant onlyRole(MAINTAINER_ROLE) {
         if (entityRegistrationInfo.ownerAddress == address(0)) {
             revert InvalidAddress();
         }
@@ -207,8 +213,6 @@ contract VanaPoolEntityImplementation is
         entity.name = entityRegistrationInfo.name;
         entity.status = EntityStatus.Active;
         entity.maxAPY = maxAPYDefault;
-        //todo: use compound APY instead of maxAPY
-        entity.ratePerSecond = maxAPYDefault / SECONDS_PER_YEAR / 100;
         entity.lastUpdateTimestamp = block.timestamp;
 
         entityNameToId[entityRegistrationInfo.name] = entityId;
@@ -267,6 +271,8 @@ contract VanaPoolEntityImplementation is
 
         // Update fields
         entity.ownerAddress = entityRegistrationInfo.ownerAddress;
+
+        //todo: move owner's shares to new address if we allow public entity registration
 
         emit EntityUpdated(entityId, entityRegistrationInfo.ownerAddress, entityRegistrationInfo.name);
     }
@@ -337,7 +343,7 @@ contract VanaPoolEntityImplementation is
         }
 
         // Calculate theoretical rewards based on maxAPY
-        uint256 toDistribute = (entity.activeRewardPool * entity.ratePerSecond * timeElapsed) / 1e18;
+        uint256 toDistribute = calculateContinuousCompoundingYield(entity.maxAPY, entity.activeRewardPool, timeElapsed);
 
         if (toDistribute > entity.lockedRewardPool) {
             toDistribute = entity.lockedRewardPool;
@@ -368,8 +374,6 @@ contract VanaPoolEntityImplementation is
         processRewards(entityId);
 
         entity.maxAPY = newMaxAPY;
-        //todo: use compound APY instead of maxAPY
-        entity.ratePerSecond = newMaxAPY / SECONDS_PER_YEAR / 100;
 
         emit EntityMaxAPYUpdated(entityId, newMaxAPY);
     }
@@ -431,6 +435,79 @@ contract VanaPoolEntityImplementation is
         } else {
             entity.totalShares -= shares;
             entity.activeRewardPool -= amount;
+        }
+    }
+
+    /**
+     * @dev Calculates continuously compounded APY
+     * @param apy The annual interest rate where 6% = 6e18
+     * @param principal The initial amount
+     * @param time Time in seconds for which the interest is calculated
+     * @return The final amount after applying continuous compounding
+     */
+    function calculateContinuousCompoundingYield(
+        uint256 apy,
+        uint256 principal,
+        uint256 time
+    ) public pure override returns (uint256) {
+        // Convert percentage to decimal (e.g., 6e18 (6%) -> 0.06 * 1e18)
+        uint256 rateAsDecimal = apy / 100;
+
+        // Convert time to years
+        uint256 timeInYears = (time * 1e18) / 365 days;
+
+        // Calculate e^(rate * time)
+        uint256 exponent = (rateAsDecimal * timeInYears) / 1e18;
+        uint256 eToExponent = _calculateExponential(exponent);
+
+        // Calculate principal * (e^(rate * time) - 1) to get only the interest
+        return (principal * (eToExponent - 1e18)) / 1e18;
+    }
+
+    /**
+     * @dev Calculates continuously compounded APY for an entity
+     * @param entityId The entity ID
+     * @return The compounded APY
+     */
+    function calculateContinuousAPYByEntity(uint256 entityId) external view override returns (uint256) {
+        // Convert percentage to decimal (e.g., 6e18 (6%) -> 0.06 * 1e18)
+        uint256 rateAsDecimal = _entities[entityId].maxAPY / 100;
+
+        // Calculate e^rate - 1
+        uint256 eToRate = _calculateExponential(rateAsDecimal);
+
+        // Calculate (e^rate - 1) * 100 to get APY percentage
+        return (eToRate - 1e18) * 100;
+    }
+
+    /**
+     * @dev Approximates e^x using Taylor series expansion
+     * @param x The exponent multiplied by 1e18
+     * @return e^x multiplied by 1e18
+     */
+    function _calculateExponential(uint256 x) internal pure returns (uint256) {
+        // For small values, use more accurate Taylor series
+        if (x < 1e18) {
+            // e^x = 1 + x + x^2/2! + x^3/3! + ... + x^n/n!
+            uint256 result = 1e18; // Start with 1
+            uint256 term = 1e18; // First term is 1
+
+            for (uint256 i = 1; i <= 10; i++) {
+                // term = term * x / i
+                term = (term * x) / (i * 1e18);
+                result = result + term;
+
+                // If the term is too small, we can stop
+                if (term < 1e9) break;
+            }
+
+            return result;
+        } else {
+            // For larger values, use e^x = (e^(x/2))^2
+            // This helps prevent overflow
+            uint256 halfX = x / 2;
+            uint256 halfResult = _calculateExponential(halfX);
+            return (halfResult * halfResult) / 1e18;
         }
     }
 }

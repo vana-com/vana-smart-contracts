@@ -16,7 +16,6 @@ interface IVanaPoolEntity {
         EntityStatus status;
         string name;
         uint256 maxAPY; // Maximum APY for this entity (in basis points, 1% = 100)
-        uint256 ratePerSecond; // Rate per second for this entity
         uint256 lockedRewardPool; // Locked rewards for this entity
         uint256 activeRewardPool; // Active rewards available for distribution
         uint256 totalShares; // Total shares for this entity
@@ -51,6 +50,7 @@ interface IVanaPoolEntity {
     function pause() external;
     function unpause() external;
     function updateVanaPool(address vanaPoolStakingAddress) external;
+    function updateMinRegistrationStake(uint256 newMinRegistrationStake) external;
 
     struct EntityRegistrationInfo {
         address ownerAddress;
@@ -70,4 +70,12 @@ interface IVanaPoolEntity {
     function activeEntitiesValues() external view returns (uint256[] memory);
 
     function updateEntityPool(uint256 entityId, uint256 shares, uint256 amount, bool isStake) external;
+
+    function calculateContinuousCompoundingYield(
+        uint256 apy,
+        uint256 principal,
+        uint256 time
+    ) external pure returns (uint256);
+
+    function calculateContinuousAPYByEntity(uint256 entityId) external view returns (uint256);
 }

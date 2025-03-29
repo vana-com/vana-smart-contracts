@@ -72,6 +72,7 @@ contract VanaPoolStakingImplementation is
     error NotEntityOwner();
     error CannotRemoveRegistrationStake();
     error NotAuthorized();
+    error InvalidSlippage();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() ERC2771ContextUpgradeable(address(0)) {
@@ -230,17 +231,23 @@ contract VanaPoolStakingImplementation is
      *
      * @param entityId   ID of the entity to stake into
      * @param recipient  Address of the recipient who will receive the stake
+     * @param shareAmountMin  Minimum amount of share to receive
      */
-    function stake(uint256 entityId, address recipient) external payable override nonReentrant whenNotPaused {
+    function stake(
+        uint256 entityId,
+        address recipient,
+        uint256 shareAmountMin
+    ) external payable override nonReentrant whenNotPaused {
         if (!_isValidEntity(entityId)) {
             revert EntityNotActive();
         }
 
         uint256 stakeAmount = msg.value;
 
-        if (stakeAmount < minStakeAmount) {
-            revert InsufficientStakeAmount();
-        }
+        //todo: block users from staking below min stake after the DLPStakes are migrated
+        //        if (stakeAmount < minStakeAmount) {
+        //            revert InsufficientStakeAmount();
+        //        }
 
         if (recipient == address(0)) {
             revert InvalidRecipient();
@@ -252,6 +259,10 @@ contract VanaPoolStakingImplementation is
         // Calculate shares
         uint256 vanaToShare = vanaPoolEntity.vanaToEntityShare(entityId);
         uint256 sharesIssued = (vanaToShare * stakeAmount) / 1e18;
+
+        if (sharesIssued < shareAmountMin) {
+            revert InvalidSlippage();
+        }
 
         // Update recipient's position instead of the sender's
         _stakers[recipient].entities[entityId].shares += sharesIssued;
@@ -275,32 +286,43 @@ contract VanaPoolStakingImplementation is
      *
      * @param entityId                          ID of the entity to unstake from
      * @param shareAmount                       shareAmount to unstake
+     * @param vanaAmountMin                     minimum amount of VANA to receive
      */
-    function unstake(uint256 entityId, uint256 shareAmount) external override nonReentrant whenNotPaused {
+    function unstake(
+        uint256 entityId,
+        uint256 shareAmount,
+        uint256 vanaAmountMin
+    ) external override nonReentrant whenNotPaused {
         uint256 stakerShares = _stakers[_msgSender()].entities[entityId].shares;
         if (stakerShares == 0 || shareAmount == 0) {
             revert InvalidAmount();
         }
 
-        // Get entity info from VanaPoolEntity
-        IVanaPoolEntity.EntityInfo memory entityInfo = vanaPoolEntity.entities(entityId);
-
-        uint256 vanaToShare = vanaPoolEntity.vanaToEntityShare(entityId);
-
         // Process entity rewards through VanaPoolEntity to ensure current share price is used
         vanaPoolEntity.processRewards(entityId);
 
-        // If this is the entity owner, ensure they can't unstake below the registration stake
-        if (entityInfo.ownerAddress == _msgSender()) {
-            uint256 ownerMinShares = (vanaToShare * vanaPoolEntity.minRegistrationStake()) / 1e18;
+        //todo: block owner from unstaking below registration stake
+        //        uint256 vanaToShare = vanaPoolEntity.vanaToEntityShare(entityId);
+        //
+        //        // Get entity info from VanaPoolEntity
+        //        IVanaPoolEntity.EntityInfo memory entityInfo = vanaPoolEntity.entities(entityId);
+        //        // If this is the entity owner, ensure they can't unstake below the registration stake
+        //        if (entityInfo.ownerAddress == _msgSender()) {
+        //            uint256 ownerMinShares = (vanaToShare * vanaPoolEntity.minRegistrationStake()) / 1e18;
+        //
+        //            if (stakerShares - shareAmount < ownerMinShares) {
+        //                revert CannotRemoveRegistrationStake();
+        //            }
+        //        }
 
-            if (stakerShares - shareAmount < ownerMinShares) {
-                revert CannotRemoveRegistrationStake();
-            }
-        }
+        uint256 shareToVana = vanaPoolEntity.vanaToEntityShare(entityId);
 
         // Store the exact VANA amount corresponding to shares at this point
-        uint256 exactVanaAmount = (1e18 * shareAmount) / vanaToShare;
+        uint256 exactVanaAmount = 1e18 * shareAmount * shareToVana;
+
+        if (exactVanaAmount < vanaAmountMin) {
+            revert InvalidSlippage();
+        }
 
         // Update staker's position
         _stakers[_msgSender()].entities[entityId].shares -= shareAmount;
