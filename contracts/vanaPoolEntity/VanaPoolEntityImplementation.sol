@@ -277,26 +277,26 @@ contract VanaPoolEntityImplementation is
         emit EntityUpdated(entityId, entityRegistrationInfo.ownerAddress, entityRegistrationInfo.name);
     }
 
-    /**
-     * @notice Removes an entity
-     * @param entityId The ID of the entity to remove
-     */
-    function removeEntity(uint256 entityId) external override whenNotPaused nonReentrant onlyEntityOwner(entityId) {
-        Entity storage entity = _entities[entityId];
-
-        if (entity.status != EntityStatus.Active) {
-            revert InvalidEntityStatus();
-        }
-
-        // Process any pending rewards
-        processRewards(entityId);
-
-        // Update status
-        entity.status = EntityStatus.Removed;
-        _activeEntityIds.remove(entityId);
-
-        emit EntityStatusUpdated(entityId, EntityStatus.Removed);
-    }
+    //    /**
+    //     * @notice Removes an entity
+    //     * @param entityId The ID of the entity to remove
+    //     */
+    //    function removeEntity(uint256 entityId) external override whenNotPaused nonReentrant onlyEntityOwner(entityId) {
+    //        Entity storage entity = _entities[entityId];
+    //
+    //        if (entity.status != EntityStatus.Active) {
+    //            revert InvalidEntityStatus();
+    //        }
+    //
+    //        // Process any pending rewards
+    //        processRewards(entityId);
+    //
+    //        // Update status
+    //        entity.status = EntityStatus.Removed;
+    //        _activeEntityIds.remove(entityId);
+    //
+    //        emit EntityStatusUpdated(entityId, EntityStatus.Removed);
+    //    }
 
     /**
      * @notice Add rewards to an entity's locked reward pool
