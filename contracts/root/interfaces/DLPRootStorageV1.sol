@@ -4,6 +4,7 @@ pragma solidity 0.8.24;
 import "./IDLPRoot.sol";
 import "@openzeppelin/contracts/utils/structs/Checkpoints.sol";
 import {IDLPRootDeprecated} from "./IDLPRootDeprecated.sol";
+import {IVanaPoolStaking} from "../../vanaPoolStaking/interfaces/IVanaPoolStaking.sol";
 
 /**
  * @notice For future upgrades, do not change DLPRootStorageV1. Create a new
@@ -54,4 +55,7 @@ abstract contract DLPRootStorageV1 is IDLPRoot, IDLPRootDeprecated {
     IDLPRootTreasury public override dlpRootStakesTreasury;
     IDLPRootCore public override dlpRootCore;
     IDLPRootEpoch public override dlpRootEpoch;
+
+    uint256 public stakingLastBlockNumber;
+    IVanaPoolStaking public vanaPoolStaking;
 }
