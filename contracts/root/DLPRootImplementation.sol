@@ -331,7 +331,7 @@ contract DLPRootImplementation is
         }
 
         bool hasMigrated = false;
-        if (stake.withdrawn == false && stake.movedAmount == 0) {
+        if (stake.withdrawn == false) {
             uint256 amount = stake.amount - stake.movedAmount;
 
             stake.movedAmount = stake.amount;
