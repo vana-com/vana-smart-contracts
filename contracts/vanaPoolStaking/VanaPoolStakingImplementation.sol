@@ -318,7 +318,7 @@ contract VanaPoolStakingImplementation is
         uint256 shareToVana = vanaPoolEntity.vanaToEntityShare(entityId);
 
         // Store the exact VANA amount corresponding to shares at this point
-        uint256 exactVanaAmount = 1e18 * shareAmount * shareToVana;
+        uint256 exactVanaAmount = (shareAmount * shareToVana) / 1e18;
 
         if (exactVanaAmount < vanaAmountMin) {
             revert InvalidSlippage();
