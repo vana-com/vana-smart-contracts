@@ -9,8 +9,6 @@ import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "./interfaces/VanaPoolStakingStorageV1.sol";
 
-import "hardhat/console.sol";
-
 contract VanaPoolStakingImplementation is
     UUPSUpgradeable,
     PausableUpgradeable,
@@ -315,7 +313,7 @@ contract VanaPoolStakingImplementation is
         //            }
         //        }
 
-        uint256 shareToVana = vanaPoolEntity.vanaToEntityShare(entityId);
+        uint256 shareToVana = vanaPoolEntity.entityShareToVana(entityId);
 
         // Store the exact VANA amount corresponding to shares at this point
         uint256 exactVanaAmount = (shareAmount * shareToVana) / 1e18;

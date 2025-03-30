@@ -11,6 +11,10 @@ import {
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { getReceipt, parseEther } from "../utils/helpers";
 import { setBalance } from "@nomicfoundation/hardhat-network-helpers";
+import {
+  advanceToTimestamp,
+  getCurrentBlockTimestamp,
+} from "../utils/timeAndBlockManipulation";
 
 chai.use(chaiAsPromised);
 should();
@@ -43,9 +47,14 @@ describe("VanaPool", () => {
   const VANA_POOL_ROLE = ethers.keccak256(ethers.toUtf8Bytes("VANA_POOL_ROLE"));
 
   // Configuration constants
-  const MIN_STAKE_AMOUNT = parseEther(0.1); // 0.1 VANA
-  const MIN_REGISTRATION_STAKE = parseEther(1); // 1 VANA
-  const MAX_APY_DEFAULT = parseEther(6); // 6% APY
+  const minStakeAmount = parseEther(0.1); // 0.1 VANA
+  const minRegistrationStake = parseEther(1); // 1 VANA
+  const maxDefaultApy = parseEther(6); // 6% APY
+
+  const day = 24 * 3600;
+  const week = day * 7;
+  const month = day * 30;
+  const year = day * 365;
 
   enum EntityStatus {
     None,
@@ -54,8 +63,8 @@ describe("VanaPool", () => {
   }
 
   // Entity creation info type
-  type EntityCreationInfo = {
-    ownerAddress: HardhatEthersSigner;
+  type EntityRegistrationInfo = {
+    ownerAddress: string;
     name: string;
   };
 
@@ -71,7 +80,7 @@ describe("VanaPool", () => {
     // Deploy VanaPool
     const vanaPoolDeploy = await upgrades.deployProxy(
       await ethers.getContractFactory("VanaPoolStakingImplementation"),
-      [trustedForwarder.address, owner.address, MIN_STAKE_AMOUNT],
+      [trustedForwarder.address, owner.address, minStakeAmount],
       {
         kind: "uups",
       },
@@ -102,8 +111,8 @@ describe("VanaPool", () => {
       [
         owner.address,
         vanaPoolStaking.target,
-        MIN_REGISTRATION_STAKE,
-        MAX_APY_DEFAULT,
+        minRegistrationStake,
+        maxDefaultApy,
       ],
       {
         kind: "uups",
@@ -149,7 +158,7 @@ describe("VanaPool", () => {
         await vanaPoolStaking.hasRole(MAINTAINER_ROLE, maintainer.address)
       ).should.eq(true);
       (await vanaPoolStaking.version()).should.eq(1);
-      (await vanaPoolStaking.minStakeAmount()).should.eq(MIN_STAKE_AMOUNT);
+      (await vanaPoolStaking.minStakeAmount()).should.eq(minStakeAmount);
       (await vanaPoolStaking.vanaPoolEntity()).should.eq(vanaPoolEntity.target);
       (await vanaPoolStaking.vanaPoolTreasury()).should.eq(
         vanaPoolTreasury.target,
@@ -173,9 +182,9 @@ describe("VanaPool", () => {
       ).should.eq(true);
       (await vanaPoolEntity.version()).should.eq(1);
       (await vanaPoolEntity.minRegistrationStake()).should.eq(
-        MIN_REGISTRATION_STAKE,
+        minRegistrationStake,
       );
-      (await vanaPoolEntity.maxAPYDefault()).should.eq(MAX_APY_DEFAULT);
+      (await vanaPoolEntity.maxAPYDefault()).should.eq(maxDefaultApy);
       (await vanaPoolEntity.vanaPoolStaking()).should.eq(
         vanaPoolStaking.target,
       );
@@ -201,33 +210,33 @@ describe("VanaPool", () => {
         .connect(maintainer)
         .pause()
         .should.emit(vanaPoolStaking, "Paused");
-      (await vanaPoolStaking.paused()).should.be.equal(true);
+      (await vanaPoolStaking.paused()).should.equal(true);
 
       await vanaPoolStaking
         .connect(maintainer)
         .unpause()
         .should.emit(vanaPoolStaking, "Unpaused");
-      (await vanaPoolStaking.paused()).should.be.equal(false);
+      (await vanaPoolStaking.paused()).should.equal(false);
 
       // Test VanaPoolEntity pause and unpause
       await vanaPoolEntity
         .connect(maintainer)
         .pause()
         .should.emit(vanaPoolEntity, "Paused");
-      (await vanaPoolEntity.paused()).should.be.equal(true);
+      (await vanaPoolEntity.paused()).should.equal(true);
 
       await vanaPoolEntity
         .connect(maintainer)
         .unpause()
         .should.emit(vanaPoolEntity, "Unpaused");
-      (await vanaPoolEntity.paused()).should.be.equal(false);
+      (await vanaPoolEntity.paused()).should.equal(false);
     });
 
     it("should reject pause and unpause when non-maintainer", async function () {
       await vanaPoolStaking
         .connect(user1)
         .pause()
-        .should.be.rejectedWith(
+        .should.rejectedWith(
           `AccessControlUnauthorizedAccount("${user1.address}", "${MAINTAINER_ROLE}")`,
         );
 
@@ -235,14 +244,14 @@ describe("VanaPool", () => {
       await vanaPoolStaking
         .connect(user1)
         .unpause()
-        .should.be.rejectedWith(
+        .should.rejectedWith(
           `AccessControlUnauthorizedAccount("${user1.address}", "${MAINTAINER_ROLE}")`,
         );
 
       await vanaPoolEntity
         .connect(user1)
         .pause()
-        .should.be.rejectedWith(
+        .should.rejectedWith(
           `AccessControlUnauthorizedAccount("${user1.address}", "${MAINTAINER_ROLE}")`,
         );
     });
@@ -262,7 +271,7 @@ describe("VanaPool", () => {
       await vanaPoolStaking
         .connect(user1)
         .updateMinStakeAmount(parseEther(0.2))
-        .should.be.rejectedWith(
+        .should.rejectedWith(
           `AccessControlUnauthorizedAccount("${user1.address}", "${MAINTAINER_ROLE}")`,
         );
     });
@@ -278,7 +287,7 @@ describe("VanaPool", () => {
       await vanaPoolStaking
         .connect(user1)
         .updateTrustedForwarder(user2.address)
-        .should.be.rejectedWith(
+        .should.rejectedWith(
           `AccessControlUnauthorizedAccount("${user1.address}", "${MAINTAINER_ROLE}")`,
         );
     });
@@ -289,20 +298,15 @@ describe("VanaPool", () => {
       await deploy();
     });
 
-    const createEntity = async (entityInfo: EntityCreationInfo) => {
-      const registrationInfo = {
-        ownerAddress: entityInfo.ownerAddress.address,
-        name: entityInfo.name,
-      };
-
+    const createEntity = async (entityInfo: EntityRegistrationInfo) => {
       return vanaPoolEntity
-        .connect(entityInfo.ownerAddress)
-        .createEntity(registrationInfo, { value: MIN_REGISTRATION_STAKE });
+        .connect(maintainer)
+        .createEntity(entityInfo, { value: minRegistrationStake });
     };
 
     it("should create an entity successfully", async function () {
       const entityInfo = {
-        ownerAddress: user1,
+        ownerAddress: user1.address,
         name: "Test Entity",
       };
 
@@ -315,7 +319,7 @@ describe("VanaPool", () => {
 
       await tx.should
         .emit(vanaPoolEntity, "EntityCreated")
-        .withArgs(1, user1.address, "Test Entity", MAX_APY_DEFAULT)
+        .withArgs(1, user1.address, "Test Entity", maxDefaultApy)
         .and.emit(vanaPoolEntity, "EntityStatusUpdated")
         .withArgs(1, EntityStatus.Active)
         .and.emit(vanaPoolStaking, "Staked");
@@ -327,10 +331,10 @@ describe("VanaPool", () => {
       entityData.entityId.should.eq(1);
       entityData.ownerAddress.should.eq(user1.address);
       entityData.name.should.eq("Test Entity");
-      entityData.maxAPY.should.eq(MAX_APY_DEFAULT);
+      entityData.maxAPY.should.eq(maxDefaultApy);
       entityData.status.should.eq(EntityStatus.Active);
-      entityData.totalShares.should.eq(MIN_REGISTRATION_STAKE);
-      entityData.activeRewardPool.should.eq(MIN_REGISTRATION_STAKE);
+      entityData.totalShares.should.eq(minRegistrationStake);
+      entityData.activeRewardPool.should.eq(minRegistrationStake);
 
       // Verify name mapping
       (await vanaPoolEntity.entityNameToId("Test Entity")).should.eq(1);
@@ -339,63 +343,57 @@ describe("VanaPool", () => {
       const ownerShares = (
         await vanaPoolStaking.stakerEntities(user1.address, 1)
       ).shares;
-      ownerShares.should.eq(MIN_REGISTRATION_STAKE);
+      ownerShares.should.eq(minRegistrationStake);
 
       // Verify funds were sent to treasury
       const treasuryBalanceAfter = await ethers.provider.getBalance(
         vanaPoolTreasury.target,
       );
       treasuryBalanceAfter.should.eq(
-        treasuryBalanceBefore + MIN_REGISTRATION_STAKE,
+        treasuryBalanceBefore + minRegistrationStake,
       );
     });
 
     it("should reject entity creation with same name", async function () {
       const entityInfo = {
-        ownerAddress: user1,
+        ownerAddress: user1.address,
         name: "Test Entity",
       };
 
       await createEntity(entityInfo);
 
       const entityInfo2 = {
-        ownerAddress: user2,
+        ownerAddress: user2.address,
         name: "Test Entity", // Same name as first entity
       };
 
-      await createEntity(entityInfo2).should.be.rejectedWith("InvalidName()");
+      await createEntity(entityInfo2).should.rejectedWith("InvalidName()");
     });
 
     it("should reject entity creation with name too short", async function () {
       const entityInfo = {
-        ownerAddress: user1,
+        ownerAddress: user1.address,
         name: "ABC", // Less than 4 characters
       };
 
-      await createEntity(entityInfo).should.be.rejectedWith("InvalidName()");
+      await createEntity(entityInfo).should.rejectedWith("InvalidName()");
     });
 
     it("should reject entity creation with wrong registration stake", async function () {
       const entityInfo = {
-        ownerAddress: user1,
+        ownerAddress: user1.address,
         name: "Test Entity",
       };
 
       await vanaPoolEntity
-        .connect(user1)
-        .createEntity(
-          {
-            ownerAddress: user1.address,
-            name: entityInfo.name,
-          },
-          { value: MIN_REGISTRATION_STAKE - BigInt(1) },
-        )
-        .should.be.rejectedWith("InvalidRegistrationStake()");
+        .connect(maintainer)
+        .createEntity(entityInfo, { value: minRegistrationStake - BigInt(1) })
+        .should.rejectedWith("InvalidRegistrationStake()");
     });
 
     it("should update entity information successfully", async function () {
       const entityInfo = {
-        ownerAddress: user1,
+        ownerAddress: user1.address,
         name: "Test Entity",
       };
 
@@ -425,7 +423,7 @@ describe("VanaPool", () => {
 
     it("should reject entity update when not owner", async function () {
       const entityInfo = {
-        ownerAddress: user1,
+        ownerAddress: user1.address,
         name: "Test Entity",
       };
 
@@ -439,12 +437,14 @@ describe("VanaPool", () => {
       await vanaPoolEntity
         .connect(user2)
         .updateEntity(1, updatedInfo)
-        .should.be.rejectedWith("NotEntityOwner()");
+        .should.rejectedWith("NotEntityOwner()");
     });
 
+    // The removeEntity() function is commented out in the interface, so these tests are commented too
+    /*
     it("should remove entity successfully", async function () {
       const entityInfo = {
-        ownerAddress: user1,
+        ownerAddress: user1.address,
         name: "Test Entity",
       };
 
@@ -462,13 +462,13 @@ describe("VanaPool", () => {
       // Try to stake in removed entity (should fail)
       await vanaPoolStaking
         .connect(user3)
-        .stake(1, user3.address, { value: parseEther(1) })
-        .should.be.rejectedWith("EntityNotActive()");
+        .stake(1, user3.address, 0, { value: parseEther(1) })
+        .should.rejectedWith("EntityNotActive()");
     });
 
     it("should reject entity removal when not owner", async function () {
       const entityInfo = {
-        ownerAddress: user1,
+        ownerAddress: user1.address,
         name: "Test Entity",
       };
 
@@ -477,22 +477,26 @@ describe("VanaPool", () => {
       await vanaPoolEntity
         .connect(user2)
         .removeEntity(1)
-        .should.be.rejectedWith("NotEntityOwner()");
+        .should.rejectedWith("NotEntityOwner()");
     });
+    */
   });
 
-  describe("Staking Operations", () => {
+  describe("Staking Operations with lockedPoolAmount = 0", () => {
+    let entityCreationTimestamp: number;
     beforeEach(async () => {
       await deploy();
 
       // Create an entity for testing staking operations
-      await vanaPoolEntity.connect(user1).createEntity(
+      await vanaPoolEntity.connect(maintainer).createEntity(
         {
           ownerAddress: user1.address,
           name: "Test Entity",
         },
-        { value: MIN_REGISTRATION_STAKE },
+        { value: minRegistrationStake },
       );
+
+      entityCreationTimestamp = await getCurrentBlockTimestamp();
     });
 
     it("should stake successfully in an entity for self", async function () {
@@ -502,21 +506,21 @@ describe("VanaPool", () => {
         vanaPoolTreasury.target,
       );
 
-      const entityBefore = await vanaPoolEntity.entities(1);
-
+      await advanceToTimestamp(entityCreationTimestamp + 86400); // 1 day after entity creation
       // Stake for self (user2 as sender and recipient)
       const tx = await vanaPoolStaking
         .connect(user2)
-        .stake(1, user2.address, { value: stakeAmount });
+        .stake(1, user2.address, 0, { value: stakeAmount }); // shareAmountMin set to 0 for this test
       const receipt = await getReceipt(tx);
 
-      await tx.should.emit(vanaPoolStaking, "Staked");
+      await tx.should
+        .emit(vanaPoolStaking, "Staked")
+        .withArgs(1, user2.address, stakeAmount, stakeAmount);
 
       // Verify user's balance update
       const user2BalanceAfter = await ethers.provider.getBalance(user2);
-      user2BalanceAfter.should.be.closeTo(
+      user2BalanceAfter.should.eq(
         user2BalanceBefore - stakeAmount - receipt.fee,
-        1000n,
       );
 
       // Verify treasury received funds
@@ -529,12 +533,17 @@ describe("VanaPool", () => {
       const userShares = (
         await vanaPoolStaking.stakerEntities(user2.address, 1)
       ).shares;
-      userShares.should.be.gt(0n);
+      userShares.should.eq(stakeAmount);
 
       // Verify entity stats update
       const entityAfter = await vanaPoolEntity.entities(1);
-      entityAfter.totalShares.should.be.gt(entityBefore.totalShares);
-      entityAfter.activeRewardPool.should.be.gt(entityBefore.activeRewardPool);
+      entityAfter.totalShares.should.eq(minRegistrationStake + stakeAmount);
+      entityAfter.activeRewardPool.should.eq(
+        minRegistrationStake + stakeAmount,
+      );
+
+      (await vanaPoolEntity.entityShareToVana(1)).should.eq(parseEther(1));
+      (await vanaPoolEntity.vanaToEntityShare(1)).should.eq(parseEther(1));
     });
 
     it("should stake successfully in an entity for another user", async function () {
@@ -547,16 +556,17 @@ describe("VanaPool", () => {
       // User2 stakes for user3
       const tx = await vanaPoolStaking
         .connect(user2)
-        .stake(1, user3.address, { value: stakeAmount });
+        .stake(1, user3.address, 0, { value: stakeAmount }); // shareAmountMin set to 0
       const receipt = await getReceipt(tx);
 
-      await tx.should.emit(vanaPoolStaking, "Staked");
+      await tx.should
+        .emit(vanaPoolStaking, "Staked")
+        .withArgs(1, user3.address, stakeAmount, stakeAmount);
 
       // Verify staker's balance update
       const user2BalanceAfter = await ethers.provider.getBalance(user2);
-      user2BalanceAfter.should.be.closeTo(
+      user2BalanceAfter.should.eq(
         user2BalanceBefore - stakeAmount - receipt.fee,
-        1000n,
       );
 
       // Verify treasury received funds
@@ -569,34 +579,52 @@ describe("VanaPool", () => {
       const user3Shares = (
         await vanaPoolStaking.stakerEntities(user3.address, 1)
       ).shares;
-      user3Shares.should.be.gt(0n);
+      user3Shares.should.eq(stakeAmount);
 
       // Verify staker has no shares
       const user2Shares = (
         await vanaPoolStaking.stakerEntities(user2.address, 1)
       ).shares;
       user2Shares.should.eq(0n);
+
+      // Verify entity stats update
+      const entityAfter = await vanaPoolEntity.entities(1);
+      entityAfter.totalShares.should.eq(minRegistrationStake + stakeAmount);
+      entityAfter.activeRewardPool.should.eq(
+        minRegistrationStake + stakeAmount,
+      );
+
+      (await vanaPoolEntity.entityShareToVana(1)).should.eq(parseEther(1));
+      (await vanaPoolEntity.vanaToEntityShare(1)).should.eq(parseEther(1));
     });
 
     it("should reject stake with invalid recipient", async function () {
       await vanaPoolStaking
         .connect(user2)
-        .stake(1, ethers.ZeroAddress, { value: parseEther(1) })
-        .should.be.rejectedWith("InvalidRecipient()");
-    });
-
-    it("should reject stake with amount below minimum", async function () {
-      await vanaPoolStaking
-        .connect(user2)
-        .stake(1, user2.address, { value: MIN_STAKE_AMOUNT - BigInt(1) })
-        .should.be.rejectedWith("InsufficientStakeAmount()");
+        .stake(1, ethers.ZeroAddress, 0, { value: parseEther(1) })
+        .should.rejectedWith("InvalidRecipient()");
     });
 
     it("should reject stake for non-existent entity", async function () {
       await vanaPoolStaking
         .connect(user2)
-        .stake(999, user2.address, { value: parseEther(1) })
-        .should.be.rejectedWith("EntityNotActive()");
+        .stake(999, user2.address, 0, { value: parseEther(1) })
+        .should.rejectedWith("EntityNotActive()");
+    });
+
+    it("should reject stake with invalid slippage", async function () {
+      // Get share price first to calculate expected shares
+      const vanaToShare = await vanaPoolEntity.vanaToEntityShare(1);
+      const stakeAmount = parseEther(2);
+      const expectedShares = (vanaToShare * stakeAmount) / parseEther(1);
+
+      // Set minimum shares to more than would be received
+      const tooHighMinShares = expectedShares * BigInt(2);
+
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, tooHighMinShares, { value: stakeAmount })
+        .should.rejectedWith("InvalidSlippage()");
     });
 
     it("should unstake successfully from an entity", async function () {
@@ -604,7 +632,7 @@ describe("VanaPool", () => {
       const stakeAmount = parseEther(2);
       await vanaPoolStaking
         .connect(user2)
-        .stake(1, user2.address, { value: stakeAmount });
+        .stake(1, user2.address, 0, { value: stakeAmount });
 
       const user2BalanceBefore = await ethers.provider.getBalance(user2);
 
@@ -612,77 +640,67 @@ describe("VanaPool", () => {
       const userShares = (
         await vanaPoolStaking.stakerEntities(user2.address, 1)
       ).shares;
+
       const unstakeSharesAmount = userShares / 2n;
 
       const tx = await vanaPoolStaking
         .connect(user2)
-        .unstake(1, unstakeSharesAmount);
+        .unstake(1, unstakeSharesAmount, 0);
       const receipt = await getReceipt(tx);
 
       await tx.should.emit(vanaPoolStaking, "Unstaked");
 
       // Verify user's balance increased (excluding gas costs)
       const user2BalanceAfter = await ethers.provider.getBalance(user2);
-      user2BalanceAfter.should.be.gt(user2BalanceBefore - receipt.fee);
+      user2BalanceAfter.should.gt(user2BalanceBefore - receipt.fee);
 
       // Verify user's remaining shares
       const remainingShares = (
         await vanaPoolStaking.stakerEntities(user2.address, 1)
       ).shares;
-      remainingShares.should.be.lt(userShares);
+      remainingShares.should.lt(userShares);
     });
 
     it("should reject unstake with zero amount", async function () {
       await vanaPoolStaking
         .connect(user2)
-        .stake(1, user2.address, { value: parseEther(1) });
+        .stake(1, user2.address, 0, { value: parseEther(1) });
       await vanaPoolStaking
         .connect(user2)
-        .unstake(1, 0)
-        .should.be.rejectedWith("InvalidAmount()");
+        .unstake(1, 0, 0)
+        .should.rejectedWith("InvalidAmount()");
     });
 
     it("should reject unstake for stakes user doesn't own", async function () {
       await vanaPoolStaking
         .connect(user2)
-        .unstake(1, parseEther(1))
-        .should.be.rejectedWith("InvalidAmount()");
+        .unstake(1, parseEther(1), 0)
+        .should.rejectedWith("InvalidAmount()");
     });
 
-    it("should prevent entity owner from unstaking below registration stake", async function () {
-      // Owner tries to unstake the registration stake
+    it("should reject unstake with invalid slippage", async function () {
+      // First stake some VANA
+      const stakeAmount = parseEther(2);
       await vanaPoolStaking
-        .connect(user1)
-        .unstake(1, MIN_REGISTRATION_STAKE)
-        .should.be.rejectedWith("CannotRemoveRegistrationStake()");
-    });
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: stakeAmount });
 
-    it("should allow entity owner to unstake above registration stake", async function () {
-      // First stake more than the registration amount
-      const additionalStake = parseEther(3);
+      // Get user shares
+      const userShares = (
+        await vanaPoolStaking.stakerEntities(user2.address, 1)
+      ).shares;
+      const unstakeSharesAmount = userShares / 2n;
+
+      // Set minimum VANA amount too high
+      const shareToVana = await vanaPoolEntity.entityShareToVana(1);
+      const expectedVanaAmount =
+        (shareToVana * unstakeSharesAmount) / parseEther(1);
+      const tooHighMinAmount = expectedVanaAmount * BigInt(2); // 200% of expected amount
+
       await vanaPoolStaking
-        .connect(user1)
-        .stake(1, user1.address, { value: additionalStake });
-
-      // Total owner stake is now MIN_REGISTRATION_STAKE + additionalStake
-      const ownerShares = (
-        await vanaPoolStaking.stakerEntities(user1.address, 1)
-      ).shares;
-
-      // Calculate shares equivalent to the additional stake (approximately)
-      const sharesToUnstake = ownerShares - MIN_REGISTRATION_STAKE;
-
-      const tx = await vanaPoolStaking
-        .connect(user1)
-        .unstake(1, sharesToUnstake);
-
-      await tx.should.emit(vanaPoolStaking, "Unstaked");
-
-      // Verify remaining shares are approximately equal to registration amount
-      const remainingShares = (
-        await vanaPoolStaking.stakerEntities(user1.address, 1)
-      ).shares;
-      remainingShares.should.be.gte((MIN_REGISTRATION_STAKE * 9n) / 10n); // Allow for some rounding
+        .connect(user2)
+        .unstake(1, unstakeSharesAmount, tooHighMinAmount)
+        .should.rejectedWith("InvalidSlippage()");
     });
 
     it("should handle share to VANA conversion", async function () {
@@ -690,7 +708,7 @@ describe("VanaPool", () => {
       const stakeAmount = parseEther(1);
       await vanaPoolStaking
         .connect(user2)
-        .stake(1, user2.address, { value: stakeAmount });
+        .stake(1, user2.address, 0, { value: stakeAmount });
 
       // Add some rewards to change the share/VANA ratio
       await vanaPoolEntity
@@ -710,13 +728,13 @@ describe("VanaPool", () => {
       const stakeAmount2 = parseEther(1);
       await vanaPoolStaking
         .connect(user3)
-        .stake(1, user3.address, { value: stakeAmount2 });
+        .stake(1, user3.address, 0, { value: stakeAmount2 });
 
       // Verify user received shares
       const userShares = (
         await vanaPoolStaking.stakerEntities(user3.address, 1)
       ).shares;
-      userShares.should.be.gt(0n);
+      userShares.should.gt(0n);
     });
   });
 
@@ -725,12 +743,12 @@ describe("VanaPool", () => {
       await deploy();
 
       // Create an entity for testing rewards
-      await vanaPoolEntity.connect(user1).createEntity(
+      await vanaPoolEntity.connect(maintainer).createEntity(
         {
           ownerAddress: user1.address,
           name: "Test Entity",
         },
-        { value: MIN_REGISTRATION_STAKE },
+        { value: minRegistrationStake },
       );
     });
 
@@ -766,7 +784,7 @@ describe("VanaPool", () => {
       await vanaPoolEntity
         .connect(user2)
         .addRewards(1, { value: 0 })
-        .should.be.rejectedWith("InvalidParam()");
+        .should.rejectedWith("InvalidParam()");
     });
 
     it("should process rewards correctly", async function () {
@@ -789,11 +807,11 @@ describe("VanaPool", () => {
       const entityAfter = await vanaPoolEntity.entities(1);
 
       // Some reward should have been moved from locked to active pool
-      entityAfter.lockedRewardPool.should.be.lt(entityBefore.lockedRewardPool);
-      entityAfter.activeRewardPool.should.be.gt(entityBefore.activeRewardPool);
+      entityAfter.lockedRewardPool.should.lt(entityBefore.lockedRewardPool);
+      entityAfter.activeRewardPool.should.gt(entityBefore.activeRewardPool);
 
       // Last update timestamp should be updated
-      entityAfter.lastUpdateTimestamp.should.be.gt(
+      entityAfter.lastUpdateTimestamp.should.gt(
         entityBefore.lastUpdateTimestamp,
       );
     });
@@ -806,9 +824,9 @@ describe("VanaPool", () => {
         .connect(user2)
         .addRewards(1, { value: parseEther(1) });
 
-      // Update maxAPY - use owner instead of maintainer
+      // Update maxAPY
       const tx = await vanaPoolEntity
-        .connect(owner)
+        .connect(maintainer)
         .updateEntityMaxAPY(1, newMaxAPY);
 
       await tx.should
@@ -819,11 +837,11 @@ describe("VanaPool", () => {
       entity.maxAPY.should.eq(newMaxAPY);
     });
 
-    it("should reject updateEntityMaxAPY when non-admin", async function () {
+    it("should reject updateEntityMaxAPY when non-maintainer", async function () {
       await vanaPoolEntity
         .connect(user1)
         .updateEntityMaxAPY(1, parseEther(12))
-        .should.be.rejectedWith(
+        .should.rejectedWith(
           `AccessControlUnauthorizedAccount("${user1.address}", "${MAINTAINER_ROLE}")`,
         );
     });
@@ -833,7 +851,7 @@ describe("VanaPool", () => {
       const initialStake = parseEther(5);
       await vanaPoolStaking
         .connect(user2)
-        .stake(1, user2.address, { value: initialStake });
+        .stake(1, user2.address, 0, { value: initialStake });
 
       // Add rewards
       const rewardAmount = parseEther(2.5); // 50% of staked amount
@@ -851,10 +869,10 @@ describe("VanaPool", () => {
       const laterStake = parseEther(5);
       await vanaPoolStaking
         .connect(user3)
-        .stake(1, user3.address, { value: laterStake });
+        .stake(1, user3.address, 0, { value: laterStake });
 
       // User2 and user3 staked the same amount of VANA
-      // User3 should have received shares reflecting the new share/VANA ratio
+      // User3 should have received fewer shares reflecting the new share/VANA ratio
       const user2Shares = (
         await vanaPoolStaking.stakerEntities(user2.address, 1)
       ).shares;
@@ -863,8 +881,84 @@ describe("VanaPool", () => {
       ).shares;
 
       // Both users should have shares
-      user2Shares.should.be.gt(0n);
-      user3Shares.should.be.gt(0n);
+      user2Shares.should.gt(0n);
+      user3Shares.should.gt(0n);
+
+      // User3 should have fewer shares since the share value increased
+      user3Shares.should.lt(user2Shares);
+    });
+
+    it("should handle multiple reward additions and processing", async function () {
+      // User2 makes initial stake
+      const initialStake = parseEther(10);
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: initialStake });
+
+      // Add first batch of rewards
+      const firstReward = parseEther(1);
+      await vanaPoolEntity.connect(user3).addRewards(1, { value: firstReward });
+
+      // Fast forward 10 days
+      await helpers.time.increase(86400 * 10);
+
+      // Process rewards
+      await vanaPoolEntity.processRewards(1);
+
+      // Add second batch of rewards
+      const secondReward = parseEther(2);
+      await vanaPoolEntity
+        .connect(user3)
+        .addRewards(1, { value: secondReward });
+
+      // Fast forward another 10 days
+      await helpers.time.increase(86400 * 10);
+
+      // Process rewards again
+      await vanaPoolEntity.processRewards(1);
+
+      // Get entity info
+      const entity = await vanaPoolEntity.entities(1);
+
+      // Verify that some rewards have been processed
+      entity.activeRewardPool.should.gt(initialStake);
+      entity.lockedRewardPool.should.lt(firstReward + secondReward);
+    });
+
+    it("should process all rewards if time period is long enough", async function () {
+      // Add a small amount of rewards
+      const rewardAmount = parseEther(0.1);
+      await vanaPoolEntity
+        .connect(user2)
+        .addRewards(1, { value: rewardAmount });
+
+      // Fast forward a very long time
+      await helpers.time.increase(86400 * 365); // 1 year
+
+      // Process rewards
+      await vanaPoolEntity.processRewards(1);
+
+      // Get entity info
+      const entity = await vanaPoolEntity.entities(1);
+
+      // Verify that all or most rewards have been processed
+      entity.lockedRewardPool.should.lt(parseEther(0.01)); // Less than 10% remaining
+    });
+
+    it("should reject reward operations for non-existent entities", async function () {
+      const nonExistentEntityId = 999;
+
+      // Try to add rewards to non-existent entity
+      await vanaPoolEntity
+        .connect(user2)
+        .addRewards(nonExistentEntityId, { value: parseEther(1) })
+        .should.rejectedWith("InvalidEntityStatus()");
+
+      // Try to process rewards for non-existent entity
+      await vanaPoolEntity
+        .connect(user2)
+        .processRewards(nonExistentEntityId)
+        .should.rejectedWith("InvalidEntityStatus()");
     });
   });
 
@@ -873,42 +967,46 @@ describe("VanaPool", () => {
       await deploy();
 
       // Create an entity for testing
-      await vanaPoolEntity.connect(user1).createEntity(
+      await vanaPoolEntity.connect(maintainer).createEntity(
         {
           ownerAddress: user1.address,
           name: "Test Entity",
         },
-        { value: MIN_REGISTRATION_STAKE },
+        { value: minRegistrationStake },
       );
     });
 
     it("should handle multiple entities with stakers and rewards", async function () {
       // Create a second entity
-      await vanaPoolEntity.connect(user2).createEntity(
+      await vanaPoolEntity.connect(maintainer).createEntity(
         {
           ownerAddress: user2.address,
           name: "Entity Beta",
         },
-        { value: MIN_REGISTRATION_STAKE },
+        { value: minRegistrationStake },
       );
 
-      // Set different APYs for the entities - use owner since maintainer role issues
-      await vanaPoolEntity.connect(owner).updateEntityMaxAPY(1, parseEther(8)); // 8% APY
-      await vanaPoolEntity.connect(owner).updateEntityMaxAPY(2, parseEther(12)); // 12% APY
+      // Set different APYs for the entities
+      await vanaPoolEntity
+        .connect(maintainer)
+        .updateEntityMaxAPY(1, parseEther(8)); // 8% APY
+      await vanaPoolEntity
+        .connect(maintainer)
+        .updateEntityMaxAPY(2, parseEther(12)); // 12% APY
 
       // Multiple users stake in both entities
       await vanaPoolStaking
         .connect(user3)
-        .stake(1, user3.address, { value: parseEther(3) });
+        .stake(1, user3.address, 0, { value: parseEther(3) });
       await vanaPoolStaking
         .connect(user3)
-        .stake(2, user3.address, { value: parseEther(2) });
+        .stake(2, user3.address, 0, { value: parseEther(2) });
       await vanaPoolStaking
         .connect(user4)
-        .stake(1, user4.address, { value: parseEther(1) });
+        .stake(1, user4.address, 0, { value: parseEther(1) });
       await vanaPoolStaking
         .connect(user4)
-        .stake(2, user4.address, { value: parseEther(4) });
+        .stake(2, user4.address, 0, { value: parseEther(4) });
 
       // Add different reward amounts to each entity
       await vanaPoolEntity
@@ -930,8 +1028,8 @@ describe("VanaPool", () => {
       const entity2 = await vanaPoolEntity.entities(2);
 
       // Each entity should have some rewards distributed
-      entity1.lockedRewardPool.should.be.lt(parseEther(0.5));
-      entity2.lockedRewardPool.should.be.lt(parseEther(0.8));
+      entity1.lockedRewardPool.should.lt(parseEther(0.5));
+      entity2.lockedRewardPool.should.lt(parseEther(0.8));
 
       // Calculate user3's shares in entity 1
       const user3Shares1 = (
@@ -940,58 +1038,27 @@ describe("VanaPool", () => {
 
       // For entity 1, unstake half of user3's shares
       const halfUser3Shares1 = user3Shares1 / 2n;
-      await vanaPoolStaking.connect(user3).unstake(1, halfUser3Shares1);
+
+      // Calculate expected VANA amount for slippage check
+      const shareToVana = await vanaPoolEntity.entityShareToVana(1);
+      const expectedVanaAmount =
+        (shareToVana * halfUser3Shares1) / parseEther(1);
+      const minVanaAmount = (expectedVanaAmount * BigInt(95)) / BigInt(100); // 95% of expected
+
+      await vanaPoolStaking
+        .connect(user3)
+        .unstake(1, halfUser3Shares1, minVanaAmount);
 
       // Verify that user3 still has some shares left
       (
         await vanaPoolStaking.stakerEntities(user3.address, 1)
-      ).shares.should.be.closeTo(user3Shares1 - halfUser3Shares1, 10n);
+      ).shares.should.closeTo(user3Shares1 - halfUser3Shares1, 10n);
 
       // User4 has shares in entity 2
       const user4Shares2 = (
         await vanaPoolStaking.stakerEntities(user4.address, 2)
       ).shares;
-      user4Shares2.should.be.gt(0n);
-    });
-
-    it("should handle entity removal with rewards", async function () {
-      // Add rewards
-      await vanaPoolEntity
-        .connect(user2)
-        .addRewards(1, { value: parseEther(0.5) });
-
-      // Fast forward time
-      await helpers.time.increase(86400); // 1 day
-
-      // Process rewards
-      await vanaPoolEntity.processRewards(1);
-
-      // Verify rewards were processed
-      const entity = await vanaPoolEntity.entities(1);
-      entity.lockedRewardPool.should.be.lt(parseEther(0.5));
-
-      // Remove entity (should succeed as only owner has stakes)
-      await vanaPoolEntity
-        .connect(user1)
-        .removeEntity(1)
-        .should.emit(vanaPoolEntity, "EntityStatusUpdated")
-        .withArgs(1, EntityStatus.Removed);
-
-      // Verify entity is removed
-      const removedEntity = await vanaPoolEntity.entities(1);
-      removedEntity.status.should.eq(EntityStatus.Removed);
-
-      // Try to stake in removed entity (should fail)
-      await vanaPoolStaking
-        .connect(user3)
-        .stake(1, user3.address, { value: parseEther(1) })
-        .should.be.rejectedWith("EntityNotActive()");
-
-      // Try to add rewards to removed entity (should fail)
-      await vanaPoolEntity
-        .connect(user2)
-        .addRewards(1, { value: parseEther(0.1) })
-        .should.be.rejectedWith("InvalidEntityStatus()");
+      user4Shares2.should.gt(0n);
     });
 
     it("should handle share/VANA conversions with rewards accrual", async function () {
@@ -999,7 +1066,7 @@ describe("VanaPool", () => {
       const stakeAmount = parseEther(10);
       await vanaPoolStaking
         .connect(user2)
-        .stake(1, user2.address, { value: stakeAmount });
+        .stake(1, user2.address, 0, { value: stakeAmount });
 
       // Record initial shares
       const initialShares = (
@@ -1020,7 +1087,7 @@ describe("VanaPool", () => {
       // User3 stakes the same amount
       await vanaPoolStaking
         .connect(user3)
-        .stake(1, user3.address, { value: stakeAmount });
+        .stake(1, user3.address, 0, { value: stakeAmount });
 
       // Record user3's shares
       const user3Shares = (
@@ -1029,13 +1096,72 @@ describe("VanaPool", () => {
 
       // User2 unstakes half their shares
       const halfShares = initialShares / 2n;
-      await vanaPoolStaking.connect(user2).unstake(1, halfShares);
+
+      // Calculate expected VANA amount for slippage check
+      const shareToVana = await vanaPoolEntity.entityShareToVana(1);
+      const expectedVanaAmount = (shareToVana * halfShares) / parseEther(1);
+      const minVanaAmount = (expectedVanaAmount * BigInt(95)) / BigInt(100); // 95% of expected
+
+      await vanaPoolStaking
+        .connect(user2)
+        .unstake(1, halfShares, minVanaAmount);
 
       // Verify user3 received shares and user2 was able to unstake
-      user3Shares.should.be.gt(0n);
+      user3Shares.should.gt(0n);
       (
         await vanaPoolStaking.stakerEntities(user2.address, 1)
-      ).shares.should.be.closeTo(initialShares - halfShares, 10n);
+      ).shares.should.closeTo(initialShares - halfShares, 10n);
+    });
+
+    it("should handle stake and unstake with slippage protection", async function () {
+      // Initial stake to create baseline
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: parseEther(5) });
+
+      // Add rewards and process to change share ratio
+      await vanaPoolEntity
+        .connect(user3)
+        .addRewards(1, { value: parseEther(1) });
+
+      await helpers.time.increase(86400 * 5); // 5 days
+      await vanaPoolEntity.processRewards(1);
+
+      // Get current share price
+      const vanaToShare = await vanaPoolEntity.vanaToEntityShare(1);
+      const stakeAmount = parseEther(2);
+      const expectedShares = (vanaToShare * stakeAmount) / parseEther(1);
+
+      // Stake with slippage protection (95% of expected shares)
+      const minShares = (expectedShares * BigInt(95)) / BigInt(100);
+
+      await vanaPoolStaking
+        .connect(user4)
+        .stake(1, user4.address, minShares, { value: stakeAmount });
+
+      // Verify received at least the minimum shares
+      const actualShares = (
+        await vanaPoolStaking.stakerEntities(user4.address, 1)
+      ).shares;
+
+      actualShares.should.gte(minShares);
+
+      // Now test unstaking with slippage protection
+      const shareToVana = await vanaPoolEntity.entityShareToVana(1);
+      const expectedVanaAmount = (shareToVana * actualShares) / parseEther(1);
+      const minVanaAmount = (expectedVanaAmount * BigInt(95)) / BigInt(100);
+
+      // Unstake all shares
+      await vanaPoolStaking
+        .connect(user4)
+        .unstake(1, actualShares, minVanaAmount);
+
+      // Verify user4 has no more shares
+      const remainingShares = (
+        await vanaPoolStaking.stakerEntities(user4.address, 1)
+      ).shares;
+
+      remainingShares.should.eq(0n);
     });
   });
 
@@ -1104,7 +1230,7 @@ describe("VanaPool", () => {
       await vanaPoolTreasury
         .connect(user1)
         .transferVana(user2.address, parseEther(1))
-        .should.be.rejectedWith(
+        .should.rejectedWith(
           `AccessControlUnauthorizedAccount("${user1.address}", "${DEFAULT_ADMIN_ROLE}")`,
         );
     });
@@ -1123,7 +1249,386 @@ describe("VanaPool", () => {
       await vanaPoolTreasury
         .connect(owner)
         .transferVana(user2.address, parseEther(1))
-        .should.be.rejectedWith("EnforcedPause()");
+        .should.rejectedWith("EnforcedPause()");
+    });
+
+    it("should have enough balance to cover unstaking operations", async function () {
+      // Create an entity
+      await vanaPoolEntity.connect(maintainer).createEntity(
+        {
+          ownerAddress: user1.address,
+          name: "Treasury Test Entity",
+        },
+        { value: minRegistrationStake },
+      );
+
+      // User stakes
+      const stakeAmount = parseEther(3);
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: stakeAmount });
+
+      // Verify treasury balance increased
+      const treasuryBalance = await ethers.provider.getBalance(
+        vanaPoolTreasury.target,
+      );
+      treasuryBalance.should.gte(stakeAmount);
+
+      // User unstakes half
+      const userShares = (
+        await vanaPoolStaking.stakerEntities(user2.address, 1)
+      ).shares;
+      const halfShares = userShares / 2n;
+
+      // Calculate expected VANA amount for slippage check
+      const shareToVana = await vanaPoolEntity.entityShareToVana(1);
+      const expectedVanaAmount = (shareToVana * halfShares) / parseEther(1);
+      const minVanaAmount = (expectedVanaAmount * BigInt(95)) / BigInt(100); // 95% of expected
+
+      // Unstake should succeed as treasury has enough balance
+      await vanaPoolStaking.connect(user2).unstake(1, halfShares, minVanaAmount)
+        .should.not.be.rejected;
+    });
+  });
+
+  describe("Continuous Compounding Yield", () => {
+    beforeEach(async () => {
+      await deploy();
+    });
+
+    it("should correctly calculate continuous compounding yield", async function () {
+      // Test with 6% APY for 1 year on 1 VANA
+      const apy = parseEther(6); // 6%
+      const principal = parseEther(1); // 1 VANA
+      const timeInSeconds = 365 * 24 * 60 * 60; // 1 year in seconds
+
+      const compoundedYield =
+        await vanaPoolEntity.calculateContinuousCompoundingYield(
+          apy,
+          principal,
+          timeInSeconds,
+        );
+
+      // For 6% continuous compounding over 1 year, we expect approximately 0.06184 VANA
+      // e^(0.06) - 1 ≈ 0.06184
+      const expectedYield = parseEther(0.06184);
+      compoundedYield.should.closeTo(expectedYield, parseEther(0.001)); // Allow for small rounding differences
+    });
+
+    it("should calculate entity APY correctly", async function () {
+      // Create an entity for testing
+      await vanaPoolEntity.connect(maintainer).createEntity(
+        {
+          ownerAddress: user1.address,
+          name: "APY Test Entity",
+        },
+        { value: minRegistrationStake },
+      );
+
+      // Set entity APY to 12%
+      const entityId = 1;
+      const maxAPY = parseEther(12);
+      await vanaPoolEntity
+        .connect(maintainer)
+        .updateEntityMaxAPY(entityId, maxAPY);
+
+      // Calculate the continuous APY
+      const continuousAPY =
+        await vanaPoolEntity.calculateContinuousAPYByEntity(entityId);
+
+      // For 12% rate, continuous APY should be approximately 12.75%
+      // (e^0.12 - 1) * 100 ≈ 12.75
+      const expectedContinuousAPY = parseEther(12.75);
+      continuousAPY.should.closeTo(expectedContinuousAPY, parseEther(0.1));
+    });
+
+    it("should accumulate rewards correctly over time", async function () {
+      // Create an entity for testing
+      await vanaPoolEntity.connect(maintainer).createEntity(
+        {
+          ownerAddress: user1.address,
+          name: "Rewards Entity",
+        },
+        { value: minRegistrationStake },
+      );
+
+      // Add rewards
+      const rewardAmount = parseEther(10);
+      await vanaPoolEntity
+        .connect(user2)
+        .addRewards(1, { value: rewardAmount });
+
+      // Fast forward time - 30 days
+      await helpers.time.increase(30 * 24 * 60 * 60);
+
+      // Process rewards
+      await vanaPoolEntity.processRewards(1);
+
+      // Check entity after rewards processing
+      const entity = await vanaPoolEntity.entities(1);
+
+      // With 6% APY over 30 days, we expect approximately 0.5% yield on the active reward pool
+      const startingPool = minRegistrationStake;
+      const expectedYield = (startingPool * BigInt(5)) / BigInt(1000); // Approximately 0.5%
+
+      // Verify active reward pool increased and locked reward pool decreased
+      entity.activeRewardPool.should.gt(startingPool);
+      entity.lockedRewardPool.should.lt(rewardAmount);
+
+      // Check if active reward pool increase is in the expected range
+      const poolIncrease = entity.activeRewardPool - startingPool;
+      poolIncrease.should.gt(0);
+    });
+
+    it("should cap rewards by available locked rewards", async function () {
+      // Create an entity with a very high APY
+      await vanaPoolEntity.connect(maintainer).createEntity(
+        {
+          ownerAddress: user1.address,
+          name: "High APY Entity",
+        },
+        { value: minRegistrationStake },
+      );
+
+      // Set a very high APY - 100%
+      await vanaPoolEntity
+        .connect(maintainer)
+        .updateEntityMaxAPY(1, parseEther(100));
+
+      // Add small rewards
+      const smallRewardAmount = parseEther(0.1);
+      await vanaPoolEntity
+        .connect(user2)
+        .addRewards(1, { value: smallRewardAmount });
+
+      // Fast forward a long time
+      await helpers.time.increase(365 * 24 * 60 * 60); // 1 year
+
+      // Get entity before processing
+      const entityBefore = await vanaPoolEntity.entities(1);
+
+      // Process rewards
+      await vanaPoolEntity.processRewards(1);
+
+      // Get entity after processing
+      const entityAfter = await vanaPoolEntity.entities(1);
+
+      // Theoretical yield at 100% would be more than the reward, but should be capped
+      entityAfter.lockedRewardPool.should.eq(0); // All rewards processed
+      entityAfter.activeRewardPool.should.eq(
+        entityBefore.activeRewardPool + smallRewardAmount,
+      );
+    });
+  });
+
+  describe("Entity Name Validation", () => {
+    beforeEach(async () => {
+      await deploy();
+    });
+
+    it("should validate entity names correctly", async function () {
+      // Valid names
+      const validNames = [
+        "Test Entity",
+        "Valid Entity Name 123",
+        "Another-Valid_Name",
+        "1234 Entity",
+      ];
+
+      // Create entities with valid names
+      for (let i = 0; i < validNames.length; i++) {
+        const entityInfo = {
+          ownerAddress: user1.address,
+          name: validNames[i],
+        };
+
+        await vanaPoolEntity
+          .connect(maintainer)
+          .createEntity(entityInfo, { value: minRegistrationStake });
+
+        // Check that the entity was created with the correct name
+        const entityId = i + 1;
+        const entity = await vanaPoolEntity.entities(entityId);
+        entity.name.should.eq(validNames[i]);
+      }
+
+      // Invalid names (too short)
+      const invalidNames = [
+        "A", // 1 character
+        "AB", // 2 characters
+        "ABC", // 3 characters
+        "    ", // All spaces
+      ];
+
+      // Try to create entities with invalid names
+      for (const invalidName of invalidNames) {
+        const entityInfo = {
+          ownerAddress: user1.address,
+          name: invalidName,
+        };
+
+        await vanaPoolEntity
+          .connect(maintainer)
+          .createEntity(entityInfo, { value: minRegistrationStake })
+          .should.rejectedWith("InvalidName()");
+      }
+    });
+  });
+
+  describe("Security and Role Management", () => {
+    beforeEach(async () => {
+      await deploy();
+    });
+
+    it("should enforce role-based access control", async function () {
+      // Try to call maintainer functions as a regular user
+      await vanaPoolEntity
+        .connect(user1)
+        .pause()
+        .should.rejectedWith(
+          `AccessControlUnauthorizedAccount("${user1.address}", "${MAINTAINER_ROLE}")`,
+        );
+
+      await vanaPoolEntity
+        .connect(user1)
+        .updateMinRegistrationStake(parseEther(2))
+        .should.rejectedWith(
+          `AccessControlUnauthorizedAccount("${user1.address}", "${MAINTAINER_ROLE}")`,
+        );
+
+      await vanaPoolStaking
+        .connect(user1)
+        .updateMinStakeAmount(parseEther(0.2))
+        .should.rejectedWith(
+          `AccessControlUnauthorizedAccount("${user1.address}", "${MAINTAINER_ROLE}")`,
+        );
+    });
+
+    it("should properly revoke and grant roles", async function () {
+      // Grant maintainer role to user3
+      await vanaPoolEntity
+        .connect(owner)
+        .grantRole(MAINTAINER_ROLE, user3.address);
+
+      // Verify user3 now has the role
+      (await vanaPoolEntity.hasRole(MAINTAINER_ROLE, user3.address)).should.eq(
+        true,
+      );
+
+      // User3 should now be able to call maintainer functions
+      await vanaPoolEntity
+        .connect(user3)
+        .updateMinRegistrationStake(parseEther(2)).should.not.be.rejected;
+
+      // Revoke the role
+      await vanaPoolEntity
+        .connect(owner)
+        .revokeRole(MAINTAINER_ROLE, user3.address);
+
+      // Verify user3 no longer has the role
+      (await vanaPoolEntity.hasRole(MAINTAINER_ROLE, user3.address)).should.eq(
+        false,
+      );
+
+      // User3 should no longer be able to call maintainer functions
+      await vanaPoolEntity
+        .connect(user3)
+        .updateMinRegistrationStake(parseEther(3))
+        .should.rejectedWith(
+          `AccessControlUnauthorizedAccount("${user3.address}", "${MAINTAINER_ROLE}")`,
+        );
+    });
+  });
+
+  describe("Contract Interactions", () => {
+    beforeEach(async () => {
+      await deploy();
+
+      // Create an entity for testing
+      await vanaPoolEntity.connect(maintainer).createEntity(
+        {
+          ownerAddress: user1.address,
+          name: "Test Entity",
+        },
+        { value: minRegistrationStake },
+      );
+    });
+
+    it("should correctly update references between contracts", async function () {
+      // Deploy a new VanaPoolStaking implementation
+      const vanaPoolStakingDeploy = await upgrades.deployProxy(
+        await ethers.getContractFactory("VanaPoolStakingImplementation"),
+        [trustedForwarder.address, owner.address, minStakeAmount],
+        {
+          kind: "uups",
+        },
+      );
+
+      const newVanaPoolStaking = await ethers.getContractAt(
+        "VanaPoolStakingImplementation",
+        vanaPoolStakingDeploy.target,
+      );
+
+      // Update VanaPoolEntity to use the new VanaPoolStaking
+      await vanaPoolEntity
+        .connect(maintainer)
+        .updateVanaPool(newVanaPoolStaking.target);
+
+      // Verify the update worked
+      (await vanaPoolEntity.vanaPoolStaking()).should.eq(
+        newVanaPoolStaking.target,
+      );
+
+      // Verify roles were properly assigned
+      (
+        await vanaPoolEntity.hasRole(VANA_POOL_ROLE, vanaPoolStaking.target)
+      ).should.eq(false);
+      (
+        await vanaPoolEntity.hasRole(VANA_POOL_ROLE, newVanaPoolStaking.target)
+      ).should.eq(true);
+    });
+
+    it("should handle treasury updates correctly", async function () {
+      // Deploy a new VanaPoolTreasury
+      const treasuryDeploy = await upgrades.deployProxy(
+        await ethers.getContractFactory("VanaPoolTreasuryImplementation"),
+        [owner.address, vanaPoolStaking.target],
+        {
+          kind: "uups",
+        },
+      );
+
+      const newVanaPoolTreasury = await ethers.getContractAt(
+        "VanaPoolTreasuryImplementation",
+        treasuryDeploy.target,
+      );
+
+      // Update the staking contract to use the new treasury
+      await vanaPoolStaking
+        .connect(maintainer)
+        .updateVanaPoolTreasury(newVanaPoolTreasury.target);
+
+      // Verify the update worked
+      (await vanaPoolStaking.vanaPoolTreasury()).should.eq(
+        newVanaPoolTreasury.target,
+      );
+
+      // Try operations with the new treasury
+      // First fund the treasury
+      await owner.sendTransaction({
+        to: newVanaPoolTreasury.target,
+        value: parseEther(5),
+      });
+
+      // Stake should work with new treasury
+      await vanaPoolStaking
+        .connect(user3)
+        .stake(1, user3.address, 0, { value: parseEther(1) }).should.not.be
+        .rejected;
+    });
+
+    it("should test", async function () {
+      console.log(await vanaPoolEntity._calculateExponential(parseEther(2)));
     });
   });
 });

@@ -52,6 +52,7 @@ contract DLPRootImplementation is
     error TransferFailed();
     error EpochNotEnded();
     error LastEpochMustBeFinalised();
+    error NotCallableAnymore();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() ERC2771ContextUpgradeable(address(0)) {
@@ -290,26 +291,7 @@ contract DLPRootImplementation is
         uint256 newDlpId,
         uint256 newAmount
     ) external override nonReentrant whenNotPaused {
-        dlpRootEpoch.createEpochs();
-
-        Stake storage stake = _stakes[stakeId];
-
-        if (newDlpId != stake.dlpId) {
-            revert InvalidDlpId();
-        }
-
-        if (newAmount > stake.amount) {
-            revert InvalidStakeAmount();
-        }
-
-        stake.movedAmount = newAmount;
-        _closeStake(_msgSender(), stakeId);
-
-        stake.withdrawn = true;
-
-        _createStake(_msgSender(), newDlpId, newAmount, stake.startBlock);
-
-        emit StakeMigrated(stakeId, stakesCount, newDlpId, newAmount);
+        revert NotCallableAnymore();
     }
 
     /**
@@ -350,20 +332,22 @@ contract DLPRootImplementation is
 
         bool hasMigrated = false;
         if (stake.withdrawn == false && stake.movedAmount == 0) {
+            uint256 amount = stake.amount - stake.movedAmount;
+
             stake.movedAmount = stake.amount;
 
             if (stake.endBlock == 0) {
                 _closeStake(_msgSender(), stakeId);
             }
 
-            bool success = dlpRootStakesTreasury.transferVana(payable(address(this)), stake.amount);
+            bool success = dlpRootStakesTreasury.transferVana(payable(address(this)), amount);
             if (!success) {
                 revert TransferFailed();
             }
 
-            vanaPoolStaking.stake{value: stake.amount}(entityId, stake.stakerAddress, 0);
+            vanaPoolStaking.stake{value: amount}(entityId, stake.stakerAddress, 0);
 
-            emit StakeMigratedToVanaPool(stakeId, stake.amount, entityId);
+            emit StakeMigratedToVanaPool(stakeId, amount, entityId);
 
             stake.withdrawn = true;
 
@@ -399,9 +383,11 @@ contract DLPRootImplementation is
             revert NotStakeOwner();
         }
 
-        if (stake.withdrawn || stake.movedAmount > 0) {
+        if (stake.withdrawn) {
             revert StakeAlreadyWithdrawn();
         }
+
+        uint256 amount = stake.amount - stake.movedAmount;
 
         stake.movedAmount = stake.amount;
         if (stake.endBlock == 0) {
@@ -410,14 +396,14 @@ contract DLPRootImplementation is
 
         stake.withdrawn = true;
 
-        bool success = dlpRootStakesTreasury.transferVana(payable(address(this)), stake.amount);
+        bool success = dlpRootStakesTreasury.transferVana(payable(address(this)), amount);
         if (!success) {
             revert TransferFailed();
         }
 
-        vanaPoolStaking.stake{value: stake.amount}(entityId, stake.stakerAddress, 0);
+        vanaPoolStaking.stake{value: amount}(entityId, stake.stakerAddress, 0);
 
-        emit StakeMigratedToVanaPool(stakeId, stake.amount, entityId);
+        emit StakeMigratedToVanaPool(stakeId, amount, entityId);
     }
 
     function migrateRewardToVanaPool(uint256 stakeId, uint256 entityId) external nonReentrant whenNotPaused {
