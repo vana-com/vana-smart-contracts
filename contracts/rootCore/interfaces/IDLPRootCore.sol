@@ -25,6 +25,8 @@ interface IDLPRootCoreReadOnly {
         bool isVerified;
     }
 
+    function dlpsCount() external view returns (uint256);
+
     function dlps(uint256 dlpId) external view returns (DlpInfo memory);
 
     function dlpsByAddress(address dlpAddress) external view returns (DlpInfo memory);
@@ -83,8 +85,6 @@ interface IDLPRootCore is IDLPRootCoreReadOnly {
     function dlpSubEligibilityThreshold() external view returns (uint256);
 
     function eligibleDlpsLimit() external view returns (uint256);
-
-    function dlpsCount() external view returns (uint256);
 
     function dlpEpochStakeAmount(uint256 dlpId, uint256 epochId) external view returns (uint256);
 

@@ -32,6 +32,9 @@ describe("DataRegistry", () => {
   const MAINTAINER_ROLE = ethers.keccak256(
     ethers.toUtf8Bytes("MAINTAINER_ROLE"),
   );
+  const REFINEMENT_SERVICE_ROLE = ethers.keccak256(
+    ethers.toUtf8Bytes("REFINEMENT_SERVICE_ROLE"),
+  );
 
   const deploy = async () => {
     [
@@ -768,8 +771,23 @@ describe("DataRegistry", () => {
   });
 
   describe("AddRefinementWithPermission", () => {
+    let refinementService: HardhatEthersSigner;
+
     beforeEach(async () => {
       await deploy();
+
+      [refinementService] = await ethers.getSigners();
+
+      await dataRegistry
+        .connect(owner)
+        .setRoleAdmin(REFINEMENT_SERVICE_ROLE, MAINTAINER_ROLE);
+
+      await dataRegistry
+        .connect(maintainer)
+        .grantRole(REFINEMENT_SERVICE_ROLE, refinementService.address);
+
+      (await dataRegistry.hasRole(REFINEMENT_SERVICE_ROLE, refinementService))
+        .should.be.true;
     });
 
     it("should addRefinementWithPermission", async function () {
@@ -792,7 +810,7 @@ describe("DataRegistry", () => {
       (await dataRegistry.filePermissions(1, dlp2)).should.eq("");
 
       await dataRegistry
-        .connect(dlp1)
+        .connect(refinementService)
         .addRefinementWithPermission(1, 1, "refinement1", queryEngine, "key2")
         .should.emit(dataRegistry, "RefinementAdded")
         .withArgs(1, 1, "refinement1")
@@ -823,7 +841,7 @@ describe("DataRegistry", () => {
       (await dataRegistry.filePermissions(1, dlp2)).should.eq("");
 
       await dataRegistry
-        .connect(dlp1)
+        .connect(refinementService)
         .addRefinementWithPermission(1, 1, "refinement1", queryEngine, "key2")
         .should.emit(dataRegistry, "RefinementAdded")
         .withArgs(1, 1, "refinement1")
@@ -832,7 +850,7 @@ describe("DataRegistry", () => {
 
       // No PermissionGranted as permission for queryEngine is already granted
       await dataRegistry
-        .connect(dlp1)
+        .connect(refinementService)
         .addRefinementWithPermission(1, 2, "refinement2", queryEngine, "key3")
         .should.emit(dataRegistry, "RefinementAdded")
         .withArgs(1, 2, "refinement2");
@@ -857,12 +875,12 @@ describe("DataRegistry", () => {
       file1.id.should.eq(1);
 
       await dataRegistry
-        .connect(dlp1)
+        .connect(refinementService)
         .addRefinementWithPermission(0, 1, "refinement1", queryEngine, "key2")
         .should.be.rejectedWith("FileNotFound()");
 
       await dataRegistry
-        .connect(dlp1)
+        .connect(refinementService)
         .addRefinementWithPermission(2, 1, "refinement1", queryEngine, "key2")
         .should.be.rejectedWith("FileNotFound()");
     });
@@ -884,7 +902,7 @@ describe("DataRegistry", () => {
       await dataRegistry
         .connect(dlp2)
         .addRefinementWithPermission(1, 1, "refinement1", queryEngine, "key2")
-        .should.be.rejectedWith("NoPermission()");
+        .should.be.rejectedWith(`AccessControlUnauthorizedAccount("${dlp2.address}", "${REFINEMENT_SERVICE_ROLE}")`);
 
       const file1 = await dataRegistry.files(1);
       file1.ownerAddress.should.eq(user2.address);
@@ -893,7 +911,7 @@ describe("DataRegistry", () => {
       await dataRegistry
         .connect(user2)
         .addRefinementWithPermission(1, 1, "refinement1", queryEngine, "key2")
-        .should.be.rejectedWith("NoPermission()");
+        .should.be.rejectedWith(`AccessControlUnauthorizedAccount("${user2.address}", "${REFINEMENT_SERVICE_ROLE}")`);
 
       // However, file owner can add permission to themselves, and then add refinement
       await dataRegistry
@@ -903,7 +921,7 @@ describe("DataRegistry", () => {
         .withArgs(1, user2);
 
       await dataRegistry
-        .connect(user2)
+        .connect(refinementService)
         .addRefinementWithPermission(1, 1, "refinement1", queryEngine, "key2")
         .should.emit(dataRegistry, "RefinementAdded")
         .withArgs(1, 1, "refinement1")
@@ -926,7 +944,7 @@ describe("DataRegistry", () => {
       file1.id.should.eq(1);
 
       await dataRegistry
-        .connect(dlp1)
+        .connect(refinementService)
         .addRefinementWithPermission(1, 1, "", queryEngine, "key2")
         .should.be.rejectedWith("InvalidUrl()");
     });
@@ -946,7 +964,7 @@ describe("DataRegistry", () => {
       file1.id.should.eq(1);
 
       await dataRegistry
-        .connect(dlp1)
+        .connect(refinementService)
         .addRefinementWithPermission(1, 1, "refinement1a", queryEngine, "key2")
         .should.emit(dataRegistry, "RefinementAdded")
         .withArgs(1, 1, "refinement1a")
@@ -954,7 +972,7 @@ describe("DataRegistry", () => {
         .withArgs(1, queryEngine);
 
       await dataRegistry
-        .connect(dlp1)
+        .connect(refinementService)
         .addRefinementWithPermission(1, 1, "refinement1b", queryEngine, "key2")
         .should.be.rejectedWith("RefinementAlreadyAdded()");
     });

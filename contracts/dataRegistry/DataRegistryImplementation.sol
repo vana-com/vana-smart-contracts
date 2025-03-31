@@ -18,6 +18,8 @@ contract DataRegistryImplementation is
 {
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
 
+    bytes32 public constant REFINEMENT_SERVICE_ROLE = keccak256("REFINEMENT_SERVICE_ROLE");
+
     /**
      * @notice Triggered when a file has been added
      *
@@ -128,6 +130,10 @@ contract DataRegistryImplementation is
 
     function _checkRole(bytes32 role) internal view override {
         _checkRole(role, msg.sender);
+    }
+
+    function setRoleAdmin(bytes32 role, bytes32 adminRole) external onlyRole(DEFAULT_ADMIN_ROLE) {
+        _setRoleAdmin(role, adminRole);
     }
 
     /**
@@ -287,17 +293,10 @@ contract DataRegistryImplementation is
         uint256 refinerId,
         string calldata url,
         address account,
-        string calldata key) external override whenNotPaused {
+        string calldata key) external override whenNotPaused onlyRole(REFINEMENT_SERVICE_ROLE) {
         // @dev _files is 1-indexed
         if (fileId > filesCount || fileId == 0) {
             revert FileNotFound();
-        }
-
-        // @dev Only the account with a permission to decrypt the file key can add refinements.
-        // This is to prevent malicious actors from adding refinements to files they don't have access to
-        // or adding arbitrary permissions to the file.
-        if (!_hasPermission(fileId, _msgSender())) {
-            revert NoPermission();
         }
 
         File storage _file = _files[fileId];
