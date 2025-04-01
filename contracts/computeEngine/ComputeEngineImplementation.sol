@@ -32,6 +32,8 @@ contract ComputeEngineImplementation is
     event PaymentExecuted(uint256 indexed jobId, address indexed token, uint256 amount);
     event Deposit(address indexed account, address indexed token, uint256 amount);
     event Withdraw(address indexed account, address indexed token, uint256 amount);
+    event TeeAssignmentFailed(uint256 indexed jobId, bytes reason);
+    event TeeAssignmentSucceeded(uint256 indexed jobId, address indexed teePoolAddress, address teeAddress);
 
     error NotJobOwner();
     error JobAlreadyDoneOrCanceled();
@@ -287,16 +289,21 @@ contract ComputeEngineImplementation is
              * @dev The job will be in the Registered state and can be resubmitted later
              * when a TEE pool is available, or the user can cancel the job.
              */
+            emit TeeAssignmentFailed(jobId, abi.encodeWithSelector(TeePoolNotFound.selector));
             return address(0);
         }
+        job.teePoolAddress = address(teePoolAddress);
 
-        /// @dev It should not revert, if the job cannot be assigned to a Tee,
+        /// @dev submitJob should not revert. If the job cannot be assigned to a Tee,
         /// its status will be Registered.
-        bytes memory jobParams = abi.encode(jobId, job.maxTimeout, job.gpuRequired, job.teeAddress);
-        try teePoolAddress.submitJob(jobParams) returns (address teeAddress) {
-            return teeAddress;
-        } catch {}
-        return address(0);
+        bytes memory jobParams = abi.encode(jobId, job.maxTimeout, job.gpuRequired, jobTeeAddress);
+        (address assignedTeeAddress, bytes memory reason) = teePoolAddress.submitJob(jobParams);
+        if (assignedTeeAddress == address(0)) {
+            emit TeeAssignmentFailed(jobId, reason);
+            return address(0);
+        }
+        emit TeeAssignmentSucceeded(jobId, address(teePoolAddress), assignedTeeAddress);
+        return assignedTeeAddress;
     }
 
     /// @inheritdoc IComputeEngine

@@ -28,6 +28,7 @@ interface IComputeEngine is IPaymentExecutor {
         uint32 computeInstructionId;
         uint48 addedTimestamp;
         string statusMessage;
+        address teePoolAddress;
     }
 
     struct PaymentInfo {

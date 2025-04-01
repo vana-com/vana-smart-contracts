@@ -22,7 +22,7 @@ contract ComputeEngineTeePoolImplementation is
 
     error TeeAlreadyAdded();
     error TeeNotActive(address teeAddress);
-    error NoActiveTee();
+    error NoActiveTee(address teePoolAddress);
     error NotComputeEngine();
     error HWRequirementNotMet();
     error MaxTimeoutExceeded();
@@ -193,9 +193,9 @@ contract ComputeEngineTeePoolImplementation is
 
     /// @inheritdoc ITeePool
     /// @dev Only the ComputeEngine contract can submit jobs to its TeePool.
-    function submitJob(bytes calldata params) external override onlyComputeEngine whenNotPaused returns (address) {
+    function submitJob(bytes calldata params) external override onlyComputeEngine whenNotPaused returns (address, bytes memory) {
         if (_activeTeeList.length() == 0) {
-            revert NoActiveTee();
+            return (address(0), abi.encodeWithSelector(NoActiveTee.selector, address(this)));
         }
 
         /// @dev Decode the parameters
@@ -205,11 +205,11 @@ contract ComputeEngineTeePoolImplementation is
         );
 
         if (gpuRequired && hardwareType != HardwareType.GPU) {
-            revert HWRequirementNotMet();
+            return (address(0), abi.encodeWithSelector(HWRequirementNotMet.selector));
         }
 
         if (jobMaxTimeout > maxTimeout) {
-            revert MaxTimeoutExceeded();
+            return (address(0), abi.encodeWithSelector(MaxTimeoutExceeded.selector));
         }
 
         address teeAddress;
@@ -219,7 +219,7 @@ contract ComputeEngineTeePoolImplementation is
         } else {
             /// @dev If the Tee is not active, it won't accept new jobs
             if (!isTee(assignedTee)) {
-                revert TeeNotActive(assignedTee);
+                return (address(0), abi.encodeWithSelector(TeeNotActive.selector, assignedTee));
             }
             teeAddress = assignedTee;
         }
@@ -234,7 +234,7 @@ contract ComputeEngineTeePoolImplementation is
 
         emit JobSubmitted(jobId, teeAddress);
 
-        return teeAddress;
+        return (teeAddress, new bytes(0));
     }
 
     /// @inheritdoc ITeePool

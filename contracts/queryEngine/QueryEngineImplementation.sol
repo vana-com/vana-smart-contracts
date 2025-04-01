@@ -43,7 +43,7 @@ contract QueryEngineImplementation is
     );
 
     event PermissionApprovalUpdated(uint256 indexed permissionId, bool approved);
-    event PaymentReceived(address indexed token, uint256 amount, bytes metadata);
+    event PaymentReceived(address indexed token, uint256 amount, uint256 jobId, uint256 refinerId);
     event DlpPaymentClaimed(
         uint256 indexed dlpId,
         address indexed dlpTreasuryAddress,
@@ -352,7 +352,7 @@ contract QueryEngineImplementation is
             revert PaymentNotReceived();
         }
 
-        emit PaymentReceived(token, receivedAmount, metadata);
+        emit PaymentReceived(token, receivedAmount, jobId, refinerId);
 
         uint256 dlpPaymentAmount = (amount * dlpPaymentPercentage) / ONE_HUNDRED_PERCENT;
         uint256 vanaPaymentAmount = receivedAmount - dlpPaymentAmount;

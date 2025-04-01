@@ -8,7 +8,7 @@ const beaconContractName = "DataAccessTreasuryFactoryBeacon";
 const beaconContractPath =
     "contracts/dataAccessTreasury/DataAccessTreasuryBeaconProxy.sol:DataAccessTreasuryFactoryBeacon";
 
-    const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     const [deployer] = await ethers.getSigners();
@@ -22,7 +22,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     await delay(6000);
 
     const newImplementationAddress = await upgrades.beacon.getImplementationAddress(beacon.address);
-    
+
     console.log("New implementation address:", newImplementationAddress);
 
     await verifyContract(newImplementationAddress, []);

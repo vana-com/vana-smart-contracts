@@ -24,6 +24,21 @@ import { parse } from "path";
 chai.use(chaiAsPromised);
 should();
 
+const getErrorSelector = (errorSignature: string) => {
+    const errorSignatureHash = keccak256(ethers.toUtf8Bytes(errorSignature));
+    return errorSignatureHash.slice(0, 10);
+}
+
+const getErrorSelectorWithArgs = (errorSignature: string, ...args: any[]) => {
+    const errorSignatureHash = keccak256(ethers.toUtf8Bytes(errorSignature));
+    const types = errorSignature
+        .slice(errorSignature.indexOf('(') + 1, errorSignature.indexOf(')'))
+        .split(',')
+        .map(type => type.trim());
+    const argsHash = ethers.AbiCoder.defaultAbiCoder().encode(types, args);
+    return errorSignatureHash.slice(0, 10) + argsHash.slice(2);
+};
+
 describe("ComputeEngine", () => {
     const dlpPaymentPercentage = parseEther(80);
     const ephemeralTimeout = 5 * 60; // 5 minutes
@@ -91,6 +106,9 @@ describe("ComputeEngine", () => {
     const QUERY_ENGINE_ROLE = ethers.keccak256(
         ethers.toUtf8Bytes("QUERY_ENGINE_ROLE"),
     );
+
+    const TeeAssignmentFailedSelector = ethers.id("TeeAssignmentFailed(uint256,bytes)");
+    const TeeAssignmentSucceededSelector = ethers.id("TeeAssignmentSucceeded(uint256,address,address)");
 
     const getTeePoolAddress = async function (teePoolType: number, hardwareType: number, maxTimeout: number | bigint) {
         const salt = ethers.keccak256(ethers.toUtf8Bytes("ComputeEngineTeePool"));
@@ -1072,6 +1090,8 @@ describe("ComputeEngine", () => {
                 )
                 .should.emit(computeEngine, "JobRegistered")
                 .withArgs(jobId1, user1)
+                .and.emit(computeEngine, "TeeAssignmentSucceeded")
+                .withArgs(jobId1, ephemeralStandardTeePool.target, ephemeralStandardTee1.address)
                 .and.emit(ephemeralStandardTeePool, "JobSubmitted")
                 .withArgs(jobId1, ephemeralStandardTee1.address);
 
@@ -1086,6 +1106,8 @@ describe("ComputeEngine", () => {
                 )
                 .should.emit(computeEngine, "JobRegistered")
                 .withArgs(jobId2, user1)
+                .and.emit(computeEngine, "TeeAssignmentSucceeded")
+                .withArgs(jobId2, ephemeralStandardTeePool.target, ephemeralStandardTee2.address)
                 .and.emit(ephemeralStandardTeePool, "JobSubmitted")
                 .withArgs(jobId2, ephemeralStandardTee2.address);
 
@@ -1100,6 +1122,8 @@ describe("ComputeEngine", () => {
                 )
                 .should.emit(computeEngine, "JobRegistered")
                 .withArgs(jobId3, user1)
+                .and.emit(computeEngine, "TeeAssignmentSucceeded")
+                .withArgs(jobId3, ephemeralStandardTeePool.target, ephemeralStandardTee3.address)
                 .and.emit(ephemeralStandardTeePool, "JobSubmitted")
                 .withArgs(jobId3, ephemeralStandardTee3.address);
 
@@ -1120,6 +1144,8 @@ describe("ComputeEngine", () => {
                 )
                 .should.emit(computeEngine, "JobRegistered")
                 .withArgs(jobId4, user1)
+                .and.emit(computeEngine, "TeeAssignmentSucceeded")
+                .withArgs(jobId4, ephemeralStandardTeePool.target, ephemeralStandardTee3.address)
                 .and.emit(ephemeralStandardTeePool, "JobSubmitted")
                 .withArgs(jobId4, ephemeralStandardTee3.address);
 
@@ -1134,6 +1160,8 @@ describe("ComputeEngine", () => {
                 )
                 .should.emit(computeEngine, "JobRegistered")
                 .withArgs(jobId5, user1)
+                .and.emit(computeEngine, "TeeAssignmentSucceeded")
+                .withArgs(jobId5, dedicatedStandardTeePool.target, dedicatedStandardTee2.address)
                 .and.emit(dedicatedStandardTeePool, "JobSubmitted")
                 .withArgs(jobId5, dedicatedStandardTee2.address);
 
@@ -1165,6 +1193,8 @@ describe("ComputeEngine", () => {
                 )
                 .should.emit(computeEngine, "JobRegistered")
                 .withArgs(jobId6, user1)
+                .and.emit(computeEngine, "TeeAssignmentSucceeded")
+                .withArgs(jobId6, dedicatedStandardTeePool.target, dedicatedStandardTee1.address)
                 .and.emit(dedicatedStandardTeePool, "JobSubmitted")
                 .withArgs(jobId6, dedicatedStandardTee1.address);
         });
@@ -1227,7 +1257,9 @@ describe("ComputeEngine", () => {
                     instructionId1, // computeInstructionId = 1
                 )
                 .should.emit(computeEngine, "JobRegistered")
-                .withArgs(jobId1, user1);
+                .withArgs(jobId1, user1)
+                .and.emit(computeEngine, "TeeAssignmentFailed")
+                .withArgs(jobId1, getErrorSelector("TeePoolNotFound()"));
 
             (await computeEngine.jobsCount()).should.eq(1);
             (await computeEngine.jobs(jobId1)).should.deep.eq([
@@ -1238,7 +1270,8 @@ describe("ComputeEngine", () => {
                 ethers.ZeroAddress, // teeAddress
                 instructionId1, // computeInstructionId
                 await ethers.provider.getBlock("latest").then((block) => block ? block.timestamp : 0), // addedTimestamp
-                "" // statusMessage
+                "", // statusMessage
+                ethers.ZeroAddress, // teePoolAddress
             ]);
 
             const depositAmount = parseEther(10);
@@ -1255,6 +1288,8 @@ describe("ComputeEngine", () => {
 
             tx.should.emit(computeEngine, "JobRegistered")
                 .withArgs(jobId2, user2)
+                .and.emit(computeEngine, "TeeAssignmentFailed")
+                .withArgs(jobId2, getErrorSelector("TeePoolNotFound()"))
                 .and.emit(computeEngine, "Deposit")
                 .withArgs(user2, VanaToken, depositAmount);
 
@@ -1269,7 +1304,8 @@ describe("ComputeEngine", () => {
                 ethers.ZeroAddress, // teeAddress
                 instructionId1, // computeInstructionId
                 await ethers.provider.getBlock("latest").then((block) => block ? block.timestamp : 0), // addedTimestamp
-                "" // statusMessage
+                "", // statusMessage
+                ethers.ZeroAddress, // teePoolAddress
             ]);
 
             (await ethers.provider.getBalance(user2)).should.eq(user2BalanceBefore - depositAmount - txReceipt.fee);
@@ -1305,7 +1341,9 @@ describe("ComputeEngine", () => {
                     instructionId1, // computeInstructionId = 1
                 )
                 .should.emit(computeEngine, "JobRegistered")
-                .withArgs(jobId1, user1);
+                .withArgs(jobId1, user1)
+                .and.emit(computeEngine, "TeeAssignmentFailed")
+                .withArgs(jobId1, getErrorSelectorWithArgs("NoActiveTee(address)", ephemeralGPUTeePool.target));
 
             (await computeEngine.jobsCount()).should.eq(1);
             (await computeEngine.jobs(1)).should.deep.eq([
@@ -1316,7 +1354,8 @@ describe("ComputeEngine", () => {
                 ethers.ZeroAddress, // teeAddress
                 instructionId1, // computeInstructionId
                 await ethers.provider.getBlock("latest").then((block) => block ? block.timestamp : 0), // addedTimestamp
-                "" // statusMessage
+                "", // statusMessage
+                ephemeralGPUTeePool.target, // teePoolAddress
             ]);
         });
 
@@ -1398,6 +1437,8 @@ describe("ComputeEngine", () => {
                 )
                 .should.emit(computeEngine, "JobRegistered")
                 .withArgs(jobId1, user1)
+                .and.emit(computeEngine, "TeeAssignmentSucceeded")
+                .withArgs(jobId1, ephemeralGPUTeePool.target, ephemeralGPUTee1.address)
                 .and.emit(ephemeralGPUTeePool, "JobSubmitted")
                 .withArgs(jobId1, ephemeralGPUTee1);
 
@@ -1413,7 +1454,8 @@ describe("ComputeEngine", () => {
                 ephemeralGPUTee1.address, // teeAddress
                 instructionId1, // computeInstructionId
                 await ethers.provider.getBlock("latest").then((block) => block ? block.timestamp : 0), // addedTimestamp
-                "" // statusMessage
+                "", // statusMessage
+                ephemeralGPUTeePool.target, // teePoolAddress
             ]);
 
             await computeEngine
@@ -1424,7 +1466,9 @@ describe("ComputeEngine", () => {
                     instructionId1, // computeInstructionId = 1
                 )
                 .should.emit(computeEngine, "JobRegistered")
-                .withArgs(jobId2, user2);
+                .withArgs(jobId2, user2)
+                .and.emit(computeEngine, "TeeAssignmentFailed")
+                .withArgs(jobId2, getErrorSelectorWithArgs("NoActiveTee(address)", ephemeralStandardTeePool.target));
 
             (await computeEngine.jobsCount()).should.eq(2);
             (await computeEngine.jobs(jobId2)).should.deep.eq([
@@ -1435,7 +1479,8 @@ describe("ComputeEngine", () => {
                 ethers.ZeroAddress, // teeAddress
                 instructionId1, // computeInstructionId
                 await ethers.provider.getBlock("latest").then((block) => block ? block.timestamp : 0), // addedTimestamp
-                "" // statusMessage
+                "", // statusMessage
+                ephemeralStandardTeePool.target, // teePoolAddress
             ]);
 
             // jobId3 -> ephemeralGPUTee2 (2 % 2 = 0 -> 2 = len)
@@ -1448,6 +1493,8 @@ describe("ComputeEngine", () => {
                 )
                 .should.emit(computeEngine, "JobRegistered")
                 .withArgs(jobId3, user2)
+                .and.emit(computeEngine, "TeeAssignmentSucceeded")
+                .withArgs(jobId3, ephemeralGPUTeePool.target, ephemeralGPUTee2.address)
                 .and.emit(ephemeralGPUTeePool, "JobSubmitted")
                 .withArgs(jobId3, ephemeralGPUTee2.address);
 
@@ -1463,7 +1510,8 @@ describe("ComputeEngine", () => {
                 ephemeralGPUTee2.address, // teeAddress
                 instructionId1, // computeInstructionId
                 await ethers.provider.getBlock("latest").then((block) => block ? block.timestamp : 0), // addedTimestamp
-                "" // statusMessage
+                "", // statusMessage
+                ephemeralGPUTeePool.target, // teePoolAddress
             ]);
 
             // jobId4 -> ephemeralGPUTee1 (3 % 2 = 1)
@@ -1476,6 +1524,8 @@ describe("ComputeEngine", () => {
                 )
                 .should.emit(computeEngine, "JobRegistered")
                 .withArgs(jobId4, user1)
+                .and.emit(computeEngine, "TeeAssignmentSucceeded")
+                .withArgs(jobId4, ephemeralGPUTeePool.target, ephemeralGPUTee1.address)
                 .and.emit(ephemeralGPUTeePool, "JobSubmitted")
                 .withArgs(jobId4, ephemeralGPUTee1.address);
 
@@ -1491,7 +1541,8 @@ describe("ComputeEngine", () => {
                 ephemeralGPUTee1.address, // teeAddress
                 instructionId1, // computeInstructionId
                 await ethers.provider.getBlock("latest").then((block) => block ? block.timestamp : 0), // addedTimestamp
-                "" // statusMessage
+                "", // statusMessage
+                ephemeralGPUTeePool.target, // teePoolAddress
             ]);
 
             // Add ephemeralGPUTee3 to ephemeralGPUTeePool
@@ -1513,6 +1564,8 @@ describe("ComputeEngine", () => {
                 )
                 .should.emit(computeEngine, "JobRegistered")
                 .withArgs(jobId5, user1)
+                .and.emit(computeEngine, "TeeAssignmentSucceeded")
+                .withArgs(jobId5, ephemeralGPUTeePool.target, ephemeralGPUTee1.address)
                 .and.emit(ephemeralGPUTeePool, "JobSubmitted")
                 .withArgs(jobId5, ephemeralGPUTee1.address);
 
@@ -1528,7 +1581,8 @@ describe("ComputeEngine", () => {
                 ephemeralGPUTee1.address, // teeAddress
                 instructionId1, // computeInstructionId
                 await ethers.provider.getBlock("latest").then((block) => block ? block.timestamp : 0), // addedTimestamp
-                "" // statusMessage
+                "", // statusMessage
+                ephemeralGPUTeePool.target, // teePoolAddress
             ]);
 
             // jobId6 -> ephemeralGPUTee2 (5 % 3 = 2)
@@ -1541,6 +1595,8 @@ describe("ComputeEngine", () => {
                 )
                 .should.emit(computeEngine, "JobRegistered")
                 .withArgs(jobId6, user1)
+                .and.emit(computeEngine, "TeeAssignmentSucceeded")
+                .withArgs(jobId6, ephemeralGPUTeePool.target, ephemeralGPUTee2.address)
                 .and.emit(ephemeralGPUTeePool, "JobSubmitted")
                 .withArgs(jobId6, ephemeralGPUTee2.address);
 
@@ -1556,7 +1612,8 @@ describe("ComputeEngine", () => {
                 ephemeralGPUTee2.address, // teeAddress
                 instructionId1, // computeInstructionId
                 await ethers.provider.getBlock("latest").then((block) => block ? block.timestamp : 0), // addedTimestamp
-                "" // statusMessage
+                "", // statusMessage
+                ephemeralGPUTeePool.target, // teePoolAddress
             ]);
 
             // jobId7 -> ephemeralGPUTee2 (6 % 3 = 0 -> 3 = len)
@@ -1569,6 +1626,8 @@ describe("ComputeEngine", () => {
                 )
                 .should.emit(computeEngine, "JobRegistered")
                 .withArgs(jobId7, user1)
+                .and.emit(computeEngine, "TeeAssignmentSucceeded")
+                .withArgs(jobId7, ephemeralGPUTeePool.target, ephemeralGPUTee3.address)
                 .and.emit(ephemeralGPUTeePool, "JobSubmitted")
                 .withArgs(jobId7, ephemeralGPUTee3.address);
 
@@ -1584,7 +1643,8 @@ describe("ComputeEngine", () => {
                 ephemeralGPUTee3.address, // teeAddress
                 instructionId1, // computeInstructionId
                 await ethers.provider.getBlock("latest").then((block) => block ? block.timestamp : 0), // addedTimestamp
-                "" // statusMessage
+                "", // statusMessage
+                ephemeralGPUTeePool.target, // teePoolAddress
             ]);
         });
 
@@ -1604,7 +1664,9 @@ describe("ComputeEngine", () => {
                     instructionId1, // computeInstructionId = 1
                 )
                 .should.emit(computeEngine, "JobRegistered")
-                .withArgs(jobId1, user1);
+                .withArgs(jobId1, user1)
+                .and.emit(computeEngine, "TeeAssignmentFailed")
+                .withArgs(jobId1, getErrorSelector("TeePoolNotFound()"));
 
             const addedTimestamp = await ethers.provider.getBlock("latest").then((block) => block ? block.timestamp : 0);
             (await computeEngine.jobsCount()).should.eq(1);
@@ -1616,7 +1678,8 @@ describe("ComputeEngine", () => {
                 ethers.ZeroAddress, // teeAddress
                 instructionId1, // computeInstructionId
                 addedTimestamp, // addedTimestamp
-                "" // statusMessage
+                "", // statusMessage
+                ethers.ZeroAddress, // teePoolAddress
             ]);
 
             // No TeePool available
@@ -1664,7 +1727,9 @@ describe("ComputeEngine", () => {
                 .connect(user1)
                 .resubmitJob(jobId1)
                 .should.emit(ephemeralGPUTeePool, "JobSubmitted")
-                .withArgs(jobId1, ephemeralGPUTee1);
+                .withArgs(jobId1, ephemeralGPUTee1)
+                .and.emit(computeEngine, "TeeAssignmentSucceeded")
+                .withArgs(jobId1, ephemeralGPUTeePool.target, ephemeralGPUTee1.address);;
 
             (await computeEngine.jobsCount()).should.eq(1);
             (await getJobsCountTee(ephemeralGPUTeePool, ephemeralGPUTee1.address)).should.eq(1);
@@ -1676,7 +1741,8 @@ describe("ComputeEngine", () => {
                 ephemeralGPUTee1.address, // teeAddress
                 instructionId1, // computeInstructionId
                 addedTimestamp, // addedTimestamp
-                "" // statusMessage
+                "", // statusMessage
+                ephemeralGPUTeePool.target, // teePoolAddress
             ]);
 
             // Resubmitting a job with a Tee assigned is not allowed
@@ -1789,6 +1855,8 @@ describe("ComputeEngine", () => {
                 )
                 .should.emit(computeEngine, "JobRegistered")
                 .withArgs(jobId1, user1)
+                .and.emit(computeEngine, "TeeAssignmentSucceeded")
+                .withArgs(jobId1, dedicatedStandardTeePool.target, dedicatedStandardTee1.address)
                 .and.emit(dedicatedStandardTeePool, "JobSubmitted")
                 .withArgs(jobId1, dedicatedStandardTee1.address);
 
@@ -1801,7 +1869,8 @@ describe("ComputeEngine", () => {
                 dedicatedStandardTee1.address, // teeAddress
                 instructionId1, // computeInstructionId
                 await ethers.provider.getBlock("latest").then((block) => block ? block.timestamp : 0), // addedTimestamp
-                "" // statusMessage
+                "", // statusMessage
+                dedicatedStandardTeePool.target, // teePoolAddress
             ]);
 
             // Resubmitting a job with a Tee assigned is not allowed
@@ -1858,7 +1927,9 @@ describe("ComputeEngine", () => {
                     instructionId1,
                 )
                 .should.emit(computeEngine, "JobRegistered")
-                .withArgs(jobId1, user1);
+                .withArgs(jobId1, user1)
+                .and.emit(computeEngine, "TeeAssignmentFailed")
+                .withArgs(jobId1, getErrorSelectorWithArgs("TeeNotActive(address)", ethers.ZeroAddress));
 
             const addedTimestamp = await ethers.provider.getBlock("latest").then((block) => block ? block.timestamp : 0);
 
@@ -1872,7 +1943,8 @@ describe("ComputeEngine", () => {
                 ethers.ZeroAddress, // teeAddress
                 instructionId1, // computeInstructionId
                 addedTimestamp, // addedTimestamp
-                "" // statusMessage
+                "", // statusMessage
+                dedicatedStandardTeePool.target, // teePoolAddress
             ]);
 
             // Resubmit the job without a Tee -> FailedToAssignTee
@@ -1891,7 +1963,9 @@ describe("ComputeEngine", () => {
                 .connect(user1)
                 .resubmitJobWithTee(jobId1, dedicatedStandardTee1.address)
                 .should.emit(dedicatedStandardTeePool, "JobSubmitted")
-                .withArgs(jobId1, dedicatedStandardTee1.address);
+                .withArgs(jobId1, dedicatedStandardTee1.address)
+                .and.emit(computeEngine, "TeeAssignmentSucceeded")
+                .withArgs(jobId1, dedicatedStandardTeePool.target, dedicatedStandardTee1.address);
 
             (await computeEngine.jobsCount()).should.eq(1);
             (await getJobsCountTee(dedicatedStandardTeePool, dedicatedStandardTee1.address)).should.eq(1);
@@ -1903,7 +1977,8 @@ describe("ComputeEngine", () => {
                 dedicatedStandardTee1.address, // teeAddress
                 instructionId1, // computeInstructionId
                 addedTimestamp, // addedTimestamp
-                ""
+                "",
+                dedicatedStandardTeePool.target, // teePoolAddress
             ]);
         });
 
@@ -1983,6 +2058,8 @@ describe("ComputeEngine", () => {
             (await computeEngine.jobsCount()).should.eq(2);
             (await getJobsCountTee(ephemeralGPUTeePool, ephemeralGPUTee1.address)).should.eq(1);
             (await computeEngine.jobs(jobId2)).status.should.eq(JobStatus.Submitted);
+            (await computeEngine.jobs(jobId2)).teeAddress.should.eq(ephemeralGPUTee1.address);
+            (await computeEngine.jobs(jobId2)).teePoolAddress.should.eq(ephemeralGPUTeePool.target);
 
             // Cannot change from Submitted back to Registered
             await computeEngine
@@ -2644,7 +2721,8 @@ describe("ComputeEngine", () => {
                 ethers.ZeroAddress, // teeAddress
                 instructionId1, // computeInstructionId
                 addedTimestamp, // addedTimestamp
-                "" // statusMessage
+                "", // statusMessage
+                ethers.ZeroAddress, // teePoolAddress
             ]);
 
             await computeEngine
@@ -2668,7 +2746,8 @@ describe("ComputeEngine", () => {
                 ethers.ZeroAddress, // teeAddress
                 instructionId1, // computeInstructionId
                 addedTimestamp, // addedTimestamp
-                "" // statusMessage
+                "", // statusMessage
+                ethers.ZeroAddress, // teePoolAddress
             ]);
 
             // Resubmitting a canceled job is not allowed
@@ -2725,7 +2804,8 @@ describe("ComputeEngine", () => {
                 ephemeralGPUTee1.address, // teeAddress
                 instructionId1, // computeInstructionId
                 addedTimestamp, // addedTimestamp
-                "" // statusMessage
+                "", // statusMessage
+                ephemeralGPUTeePool.target, // teePoolAddress
             ]);
 
             await computeEngine
@@ -2746,7 +2826,8 @@ describe("ComputeEngine", () => {
                 ephemeralGPUTee1.address, // teeAddress
                 instructionId1, // computeInstructionId
                 addedTimestamp, // addedTimestamp
-                "" // statusMessage
+                "", // statusMessage
+                ephemeralGPUTeePool.target, // teePoolAddress
             ]);
 
             const dedicatedStandardAddress = await getTeePoolAddress(TeePoolType.Dedicated, HardwareType.Standard, maxUint80);
@@ -2795,7 +2876,8 @@ describe("ComputeEngine", () => {
                 dedicatedStandardTee2.address, // teeAddress
                 instructionId1, // computeInstructionId
                 addedTimestamp, // addedTimestamp
-                "" // statusMessage
+                "", // statusMessage
+                dedicatedStandardTeePool.target, // teePoolAddress
             ]);
 
             await computeEngine
@@ -2814,7 +2896,8 @@ describe("ComputeEngine", () => {
                 dedicatedStandardTee2.address, // teeAddress
                 instructionId1, // computeInstructionId
                 addedTimestamp, // addedTimestamp
-                "" // statusMessage
+                "", // statusMessage
+                dedicatedStandardTeePool.target, // teePoolAddress
             ]);
         });
 

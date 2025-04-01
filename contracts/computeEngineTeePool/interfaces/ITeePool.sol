@@ -48,7 +48,7 @@ interface ITeePool {
     /// @notice Submits a job to the pool
     /// @param params The parameters for the job
     /// @return The address of the Tee assigned to the job
-    function submitJob(bytes calldata params) external returns (address);
+    function submitJob(bytes calldata params) external returns (address, bytes memory);
 
     /// @notice Removes a job in the pool
     /// @param jobId The ID of the job to remove

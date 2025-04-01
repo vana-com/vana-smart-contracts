@@ -880,7 +880,8 @@ describe("QueryEngine", () => {
                 .withArgs(
                     VanaToken,
                     dataAccessCost,
-                    ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "uint256"], [jobId1, refinerId1]));
+                    jobId1, 
+                    refinerId1);
 
             (await computeEngine.balanceOf(user1, VanaToken)).should.eq(depositAmount - dataAccessCost);
             (await ethers.provider.getBalance(computeEngineTreasury.target)).should.eq(depositAmount - dataAccessCost);
@@ -1032,7 +1033,8 @@ describe("QueryEngine", () => {
                 .withArgs(
                     VanaToken,
                     dataAccessCost,
-                    ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "uint256"], [jobId1, refinerId1]));
+                    jobId1, 
+                    refinerId1);
 
             await queryEngine
                 .connect(dlp2Owner)
@@ -1100,7 +1102,8 @@ describe("QueryEngine", () => {
                 .withArgs(
                     VanaToken,
                     dataAccessCost,
-                    ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "uint256"], [jobId4, refinerId3]));
+                    jobId4, 
+                    refinerId3);
 
             await queryEngine
                 .connect(dlp2Owner)
@@ -1134,7 +1137,8 @@ describe("QueryEngine", () => {
                 .withArgs(
                     VanaToken,
                     dataAccessCost,
-                    ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "uint256"], [jobId1, refinerId1]));
+                    jobId1, 
+                    refinerId1);
 
             await queryEngine
                 .connect(maintainer)
@@ -1158,7 +1162,8 @@ describe("QueryEngine", () => {
                 .withArgs(
                     VanaToken,
                     dataAccessCost,
-                    ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "uint256"], [jobId1, refinerId1]));
+                    jobId1, 
+                    refinerId1);
 
             await queryEngineTreasury
                 .connect(owner)
