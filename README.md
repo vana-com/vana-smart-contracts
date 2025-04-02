@@ -6,21 +6,24 @@
 3. [Flow](#3-flow)
 4. [Installation](#4-installation)
 5. [Contracts](#5-contracts)
-   - [Vana Core Contracts](#vana-core-contracts)
-      - [DataRegistry](#contracts-data-registry)
-      - [TeePool](#contracts-tee-pool)
-      - [DLPRootEpoch](#contracts-dlp-root-epoch)
-      - [DLPRootCore](#contracts-dlp-root-core)
-      - [DLPRoot](#contracts-dlp-root)
-      - [DLPRootMetrics](#contracts-dlp-root-metrics)
-      - [DLPRootTreasuries](#contracts-dlp-root-treasuries)
-      - [Deposit](#contracts-deposit)
-   - [DLP Template Contracts](#dlp-template-contracts)
-      - [DataLiquidityPool](#contracts-data-liquidity-pool)
-      - [DAT (Data Access Token)](##contracts-dat)
-   - [Utilities Contracts](#utilities-contracts)
-      - [Multisend](#contracts-multisend)
-      - [Multicall3](#contracts-multicall3)
+    - [Vana Core Contracts](#vana-core-contracts)
+        - [DataRegistry](#contracts-data-registry)
+        - [TeePool](#contracts-tee-pool)
+        - [VanaPoolEntity](#contracts-vanapool-entity)
+        - [VanaPoolStaking](#contracts-vanapool-staking)
+        - [VanaPoolTreasury](#contracts-vanapool-treasury)
+        - [DLPRootEpoch](#contracts-dlp-root-epoch)
+        - [DLPRootCore](#contracts-dlp-root-core)
+        - [DLPRoot](#contracts-dlp-root)
+        - [DLPRootMetrics](#contracts-dlp-root-metrics)
+        - [DLPRootTreasuries](#contracts-dlp-root-treasuries)
+        - [Deposit](#contracts-deposit)
+    - [DLP Template Contracts](#dlp-template-contracts)
+        - [DataLiquidityPool](#contracts-data-liquidity-pool)
+        - [DAT (Data Access Token)](##contracts-dat)
+    - [Utilities Contracts](#utilities-contracts)
+        - [Multisend](#contracts-multisend)
+        - [Multicall3](#contracts-multicall3)
 6. [Audit](#6-audit)
 
 
@@ -55,6 +58,42 @@ Moksha: [0xF084Ca24B4E29Aa843898e0B12c465fAFD089965](https://moksha.vanascan.io/
 
 Vana mainnet: [0xF084Ca24B4E29Aa843898e0B12c465fAFD089965](https://vanascan.io/address/0xF084Ca24B4E29Aa843898e0B12c465fAFD089965)
 
+### VanaPoolEntity Contract
+
+The VanaPool protocol offers a flexible, yield-generating staking ecosystem built on the Vana blockchain. It creates a marketplace where users can stake their VANA tokens into various entities, each with its own risk profile, APY settings, and reward structure, allowing for diversification across investment options while maintaining liquidity.
+
+VanaPoolEntity serves as the central registry for all yield-generating entities within the protocol, maintaining their status, reward pools, and configuration settings. It calculates rewards using a sophisticated continuous compounding formula that accurately reflects time-based accumulation.
+
+The contract implements dynamic share pricing that automatically adjusts based on rewards processed, ensuring that all stakers receive fair value regardless of when they enter or exit. Entity owners can contribute additional rewards to their pools, which are distributed proportionally to stakers according to their share ownership.
+
+VanaPoolEntity also handles entity lifecycle management including registration, updates, and status changes, while enforcing protocol rules such as minimum stake requirements and valid naming conventions.
+
+Moksha: [0x44f20490A82e1f1F1cC25Dd3BA8647034eDdce30](https://moksha.vanascan.io/address/0x44f20490A82e1f1F1cC25Dd3BA8647034eDdce30)
+
+Vana mainnet: [0x44f20490A82e1f1F1cC25Dd3BA8647034eDdce30](https://vanascan.io/address/0x44f20490A82e1f1F1cC25Dd3BA8647034eDdce30)
+
+### VanaPoolStaking Contract
+
+VanaPoolStaking provides the user-facing interface for interacting with the protocol, allowing participants to stake their VANA tokens into any active entity. It manages the issuance and redemption of entity shares, which represent proportional ownership in an entity's staking pool.
+
+The contract implements comprehensive slippage protection mechanisms to prevent value extraction during high volatility periods, ensuring users receive fair value during both stake and unstake operations. It supports flexible staking options including the ability to designate different recipients for shares, enabling delegation and custody solutions.
+
+VanaPoolStaking maintains detailed records of all user positions across different entities, enabling portfolio diversification while preserving accurate accounting. It coordinates closely with VanaPoolEntity to ensure that reward processing occurs at critical moments such as stake or unstake operations.
+
+Moksha: [0x641C18E2F286c86f96CE95C8ec1EB9fC0415Ca0e](https://moksha.vanascan.io/address/0x641C18E2F286c86f96CE95C8ec1EB9fC0415Ca0e)
+
+Vana mainnet: [0x641C18E2F286c86f96CE95C8ec1EB9fC0415Ca0e](https://vanascan.io/address/0x641C18E2F286c86f96CE95C8ec1EB9fC0415Ca0e)
+
+### VanaPoolTreasury Contract
+
+VanaPoolTreasury acts as the secure vault for all protocol assets, isolating fund management from business logic to enhance security. It implements strict access controls that ensure only authorized contracts can withdraw funds, protecting user deposits from unauthorized access.
+
+The treasury maintains accurate accounting of all protocol assets and handles the mechanics of token transfers during unstaking operations, ensuring that users receive exactly the correct amount based on their share value.
+
+Moksha: [0x6c06959586640De3BcdE69BDcEbF2efCE91F0F70](https://moksha.vanascan.io/address/0x6c06959586640De3BcdE69BDcEbF2efCE91F0F70)
+
+Vana mainnet: [0x6c06959586640De3BcdE69BDcEbF2efCE91F0F70](https://vanascan.io/address/0x6c06959586640De3BcdE69BDcEbF2efCE91F0F70)
+
 ### Root Epoch Contract
 
 Handles epoch-based operations including creation, finalization, and reward distribution for DLPs across time periods.
@@ -65,12 +104,12 @@ Each epoch has a defined start and end block, a total reward amount to be distri
 
 The contract implements sophisticated reward calculation and distribution mechanisms that account for both the stake amount and performance rating of each DLP. It provides functions to query historical data about epochs and DLP participation, allowing for transparent tracking of rewards and performance over time. The epoch structure is configurable, with adjustable parameters like epoch size, reward amount, and maximum DLPs per epoch, providing flexibility to adapt the protocol as the ecosystem grows.
 
-Moksha:  [0xc3d176cF6BccFCB9225b53B87a95147218e1537F](https://moksha.vanascan.io/address/0xc3d176cF6BccFCB9225b53B87a95147218e1537F)
+Moksha:  [0xc3d176cF6BccFCB9225b53B87a95147218e1537F](https://moksha.vanascan.io/address/0x143BE72CF2541604A7691933CAccd6D9cC17c003)
 
-Vana mainnet: [0xc3d176cF6BccFCB9225b53B87a95147218e1537F](https://vanascan.io/address/0xc3d176cF6BccFCB9225b53B87a95147218e1537F)
+Vana mainnet: [0xc3d176cF6BccFCB9225b53B87a95147218e1537F](https://vanascan.io/address/0x143BE72CF2541604A7691933CAccd6D9cC17c003)
 
 
-### Root Core Contract
+### DLPRootCore Contract
 Manages the DLP (Delegation Liquidity Provider) lifecycle including registration, verification, and stake management with eligibility thresholds.
 
 The DLPRootCore contract manages the lifecycle of Delegation Liquidity Providers (DLPs) in the Vana ecosystem, handling registration, verification, and eligibility status. It serves as the central registry for all DLPs, storing critical information such as their addresses, ownership details, stake amounts, and verification status, which determine their eligibility to participate in the ecosystem.
@@ -84,17 +123,17 @@ Moksha:  [0x0aBa5e28228c323A67712101d61a54d4ff5720FD](https://moksha.vanascan.io
 Vana mainnet: [0x0aBa5e28228c323A67712101d61a54d4ff5720FD](https://vanascan.io/address/0x0aBa5e28228c323A67712101d61a54d4ff5720FD)
 
 
-### Root Network Contract
+### DLPRoot Staking Contract
 
-Core contract managing staking functionality including stake creation, withdrawal, migration, and reward claiming.  
+Core contract managing staking functionality including stake creation, withdrawal, migration, and reward claiming.
 
-The DLPRootImplementation contract serves as the central hub of the Vana staking ecosystem, managing the core staking functionality for users who want to support DLPs. It coordinates the interactions between stakers, DLPs, and the various specialized contracts in the system, including DLPRootCore, DLPRootEpoch, DLPRootMetrics, and DLPRootTreasury.  
-  
-The contract enables users to create stakes on DLPs, with stakes tracked by amount, start block, and associated DLP. It implements a sophisticated reward calculation system based on stake duration and the performance of the chosen DLP, with longer stake periods receiving multiplier bonuses. Stakers can close and withdraw their stakes after optional waiting periods, or migrate their stakes to different DLPs, providing flexibility while ensuring system stability.  
-  
-A key feature is the integrated reward claiming mechanism, where stakers can claim their portion of rewards earned by the DLPs they've supported, with rewards calculated based on stake score relative to total stake scores for that DLP in each epoch. The contract employs checkpoints to track historical values like withdrawal delays and claim delays, enabling accurate historical queries. The entire system is secured through role-based access controls, ensuring that sensitive operations like treasury transfers can only be performed by authorized entities.  
+The DLPRoot contract serves as the central hub of the Vana staking ecosystem, managing the core staking functionality for users who want to support DLPs. It coordinates the interactions between stakers, DLPs, and the various specialized contracts in the system, including DLPRootCore, DLPRootEpoch, DLPRootMetrics, and DLPRootTreasury.
 
-Moksha:  [0xff14346dF2B8Fd0c95BF34f1c92e49417b508AD5](https://moksha.vanascan.io/address/0xff14346dF2B8Fd0c95BF34f1c92e49417b508AD5)  
+The contract enables users to create stakes on DLPs, with stakes tracked by amount, start block, and associated DLP. It implements a sophisticated reward calculation system based on stake duration and the performance of the chosen DLP, with longer stake periods receiving multiplier bonuses. Stakers can close and withdraw their stakes after optional waiting periods, or migrate their stakes to different DLPs, providing flexibility while ensuring system stability.
+
+A key feature is the integrated reward claiming mechanism, where stakers can claim their portion of rewards earned by the DLPs they've supported, with rewards calculated based on stake score relative to total stake scores for that DLP in each epoch. The contract employs checkpoints to track historical values like withdrawal delays and claim delays, enabling accurate historical queries. The entire system is secured through role-based access controls, ensuring that sensitive operations like treasury transfers can only be performed by authorized entities.
+
+Moksha:  [0xff14346dF2B8Fd0c95BF34f1c92e49417b508AD5](https://moksha.vanascan.io/address/0xff14346dF2B8Fd0c95BF34f1c92e49417b508AD5)
 
 Vana mainnet: [0xff14346dF2B8Fd0c95BF34f1c92e49417b508AD5](https://vanascan.io/address/0xff14346dF2B8Fd0c95BF34f1c92e49417b508AD5)
 
@@ -208,8 +247,8 @@ E.g.  https://moksha.vanascan.io/tx/0x84532d83be589ec1c13d9de04e426dcc7c54652060
 
 1. At the end of each epoch, rewards are distributed to the 16 participating DLPs based on their performance during the epoch.
 2. For each DLP:
-   - A portion of the reward goes to the DLP owner.
-   - The rest is reserved for the DLP's stakers (as per the `stakersPercentage`).
+    - A portion of the reward goes to the DLP owner.
+    - The rest is reserved for the DLP's stakers (as per the `stakersPercentage`).
 3. Staker rewards are not distributed automatically; each staker must claim their rewards individually.
 
 #### Data Contributor Rewards
@@ -217,9 +256,9 @@ E.g.  https://moksha.vanascan.io/tx/0x84532d83be589ec1c13d9de04e426dcc7c54652060
 - Each DLP is responsible for rewarding its data contributors.
 - The method and currency for these rewards are at the discretion of each DLP.
 - In the DLP template from this repository:
-   - The DLP uses its own currency for rewards.
-   - Reward amount is proportional to the score of the uploaded file.
-   - More details can be found in the specific DLP documentation.
+    - The DLP uses its own currency for rewards.
+    - Reward amount is proportional to the score of the uploaded file.
+    - More details can be found in the specific DLP documentation.
 
 #### Flexibility in Reward Mechanisms
 
@@ -420,10 +459,10 @@ Parameters:
 
 Returns:
 - `FileResponse`: Struct containing:
-   - id: File ID
-   - ownerAddress: Owner's address
-   - url: File URL
-   - addedAtBlock: Block number when file was added
+    - id: File ID
+    - ownerAddress: Owner's address
+    - url: File URL
+    - addedAtBlock: Block number when file was added
 
 Restrictions: None
 
@@ -575,8 +614,8 @@ Adds a proof to a file.
 Parameters:
 - `fileId`: ID of the file
 - `proof`: Proof struct containing:
-   - signature: Proof signature
-   - data: ProofData struct with score, dlpId, metadata, proofUrl, and instruction
+    - signature: Proof signature
+    - data: ProofData struct with score, dlpId, metadata, proofUrl, and instruction
 
 Restrictions:
 - Contract must not be paused
@@ -702,12 +741,12 @@ Parameters:
 
 Returns:
 - Job struct containing:
-   - `fileId`: ID of the file to validate
-   - `bidAmount`: Amount paid for validation
-   - `status`: Current job status
-   - `addedTimestamp`: When job was created
-   - `ownerAddress`: Job creator address
-   - `teeAddress`: Assigned TEE address
+    - `fileId`: ID of the file to validate
+    - `bidAmount`: Amount paid for validation
+    - `status`: Current job status
+    - `addedTimestamp`: When job was created
+    - `ownerAddress`: Job creator address
+    - `teeAddress`: Assigned TEE address
 
 ---
 
@@ -722,13 +761,13 @@ Parameters:
 
 Returns:
 - TeeInfo struct containing:
-   - `teeAddress`: TEE's address
-   - `url`: TEE's endpoint URL
-   - `status`: Current TEE status
-   - `amount`: Total earnings
-   - `withdrawnAmount`: Withdrawn earnings
-   - `jobsCount`: Number of jobs processed
-   - `publicKey`: TEE's public key
+    - `teeAddress`: TEE's address
+    - `url`: TEE's endpoint URL
+    - `status`: Current TEE status
+    - `amount`: Total earnings
+    - `withdrawnAmount`: Withdrawn earnings
+    - `jobsCount`: Number of jobs processed
+    - `publicKey`: TEE's public key
 
 ---
 
@@ -1038,14 +1077,632 @@ Events:
 
 ---
 
-<a id="contracts-dlp-root"></a>
-### DLPRoot
+<a id="contracts-vanapool-entity"></a>
+### VanaPoolEntity
 
-The DLPRoot contract serves as the central hub in the Vana ecosystem, orchestrating a complex system of DataDAO management, staking operations, and reward distribution through its interaction with DLPRootMetrics and specialized treasury contracts. Operating on an epoch-based system, it works in tandem with DLPRootMetrics to identify and reward the most valuable DataDAOs based on both their stake amounts and performance metrics. The contract manages two separate treasury relationships: the DLPRootStakesTreasury for holding staked VANA tokens, and the DLPRootRewardsTreasury for distributing rewards to both DataDAOs and their stakers.
+```solidity
+function initialize(
+    address ownerAddress,
+    address vanaPoolStakingAddress,
+    uint256 initialMinRegistrationStake,
+    uint256 initialMaxAPYDefault
+) external initializer
+```
 
-DataDAOs enter the system through a registration process that requires a minimum initial stake, which is held in the DLPRootStakesTreasury. As they accumulate more stake, DataDAOs can progress through three status tiers: Registered, SubEligible, and Eligible, with automatic transitions based on stake thresholds. This tiered system ensures that only DataDAOs with significant skin in the game can compete for top positions and rewards. To maintain flexibility and attract stakers, DataDAO owners can set custom reward percentages within defined bounds, determining how rewards are split between the DataDAO treasury and its stakers.
+Initializes the VanaPoolEntity contract with essential parameters.
 
-The epoch mechanism drives the system's dynamics, with each epoch having a fixed duration in blocks. At epoch boundaries, DLPRootMetrics finalizes performance ratings, which combine with stake amounts to determine the epoch's top DataDAOs. The DLPRoot then orchestrates reward distribution through the DLPRootRewardsTreasury, ensuring that both DataDAO treasuries and their stakers receive their designated portions. To prevent exploitation, the system implements stake withdrawal delays and requires manual reward claims, while still allowing users to stake across multiple DataDAOs for portfolio diversification.
+Parameters:
+- `ownerAddress`: Address that will receive admin privileges
+- `vanaPoolStakingAddress`: Address of the VanaPoolStaking contract
+- `initialMinRegistrationStake`: Minimum amount required to register an entity
+- `initialMaxAPYDefault`: Default maximum APY for newly created entities
+
+Restrictions:
+- Can only be called once due to initializer modifier
+
+---
+
+```solidity
+function version() external pure returns (uint256)
+```
+
+Returns the implementation version of the contract.
+
+Returns:
+- `uint256`: Current version number (1)
+
+---
+
+```solidity
+function entities(uint256 entityId) public view returns (EntityInfo memory)
+```
+
+Retrieves complete information about a specific entity.
+
+Parameters:
+- `entityId`: ID of the entity to query
+
+Returns:
+- `EntityInfo`: Struct containing all entity details including ID, owner address, status, name, APY settings, reward pools, shares, and timestamps
+
+---
+
+```solidity
+function entityShareToVana(uint256 entityId) external view returns (uint256)
+```
+
+Converts entity shares to equivalent VANA value based on current share price.
+
+Parameters:
+- `entityId`: ID of the entity
+
+Returns:
+- `uint256`: VANA amount per share (scaled by 1e18)
+
+---
+
+```solidity
+function vanaToEntityShare(uint256 entityId) external view returns (uint256)
+```
+
+Converts VANA to equivalent entity shares based on current share price.
+
+Parameters:
+- `entityId`: ID of the entity
+
+Returns:
+- `uint256`: Share amount per VANA (scaled by 1e18)
+
+---
+
+```solidity
+function entityByName(string memory entityName) external view returns (EntityInfo memory)
+```
+
+Retrieves entity information using the entity name.
+
+Parameters:
+- `entityName`: Name of the entity to query
+
+Returns:
+- `EntityInfo`: Struct containing all entity details
+
+---
+
+```solidity
+function pause() external onlyRole(MAINTAINER_ROLE)
+```
+
+Pauses the contract, preventing certain operations.
+
+Restrictions:
+- Can only be called by addresses with MAINTAINER_ROLE
+
+---
+
+```solidity
+function unpause() external onlyRole(MAINTAINER_ROLE)
+```
+
+Unpauses the contract, re-enabling operations.
+
+Restrictions:
+- Can only be called by addresses with MAINTAINER_ROLE
+
+---
+
+```solidity
+function updateVanaPool(address newVanaPoolStakingAddress) external onlyRole(MAINTAINER_ROLE)
+```
+
+Updates the VanaPoolStaking contract address.
+
+Parameters:
+- `newVanaPoolStakingAddress`: New VanaPoolStaking contract address
+
+Restrictions:
+- Can only be called by addresses with MAINTAINER_ROLE
+
+Events:
+- Role revoked from old address
+- Role granted to new address
+
+---
+
+```solidity
+function updateMinRegistrationStake(uint256 newMinRegistrationStake) external onlyRole(MAINTAINER_ROLE)
+```
+
+Updates the minimum stake required to register an entity.
+
+Parameters:
+- `newMinRegistrationStake`: New minimum registration stake amount
+
+Restrictions:
+- Can only be called by addresses with MAINTAINER_ROLE
+
+---
+
+```solidity
+function createEntity(
+    EntityRegistrationInfo calldata entityRegistrationInfo
+) external payable onlyRole(MAINTAINER_ROLE)
+```
+
+Creates a new entity in the VanaPool system.
+
+Parameters:
+- `entityRegistrationInfo`: Struct containing:
+    - `ownerAddress`: Owner of the new entity
+    - `name`: Entity name (must be unique and > 3 characters)
+
+Restrictions:
+- Can only be called by addresses with MAINTAINER_ROLE
+- Contract must not be paused
+- Entity name must be unique and valid
+- Payment must equal minRegistrationStake
+
+Events:
+- `EntityCreated(uint256 indexed entityId, address ownerAddress, string name, uint256 maxAPY)`
+- `EntityStatusUpdated(uint256 indexed entityId, EntityStatus newStatus)`
+
+---
+
+```solidity
+function updateEntity(
+    uint256 entityId,
+    EntityRegistrationInfo calldata entityRegistrationInfo
+) external onlyEntityOwner(entityId)
+```
+
+Updates an existing entity's information.
+
+Parameters:
+- `entityId`: ID of the entity to update
+- `entityRegistrationInfo`: Struct containing new entity details
+
+Restrictions:
+- Can only be called by the entity owner
+- Contract must not be paused
+- Entity must be in Active status
+- If name is changing, new name must be unique and valid
+
+Events:
+- `EntityUpdated(uint256 indexed entityId, address ownerAddress, string name)`
+
+---
+
+```solidity
+function addRewards(uint256 entityId) external payable
+```
+
+Adds rewards to an entity's locked reward pool.
+
+Parameters:
+- `entityId`: ID of the entity to add rewards to
+
+Restrictions:
+- Contract must not be paused
+- Entity must be in Active status
+- Sent value must be greater than zero
+
+Events:
+- `RewardsAdded(uint256 indexed entityId, uint256 amount)`
+
+---
+
+```solidity
+function processRewards(uint256 entityId) public
+```
+
+Processes rewards for an entity, moving tokens from locked to active reward pool based on time elapsed and APY.
+
+Parameters:
+- `entityId`: ID of the entity to process rewards for
+
+Restrictions:
+- Contract must not be paused
+- Entity must be in Active status
+
+Events:
+- `RewardsProcessed(uint256 indexed entityId, uint256 distributedAmount)`
+
+---
+
+```solidity
+function updateEntityMaxAPY(uint256 entityId, uint256 newMaxAPY) external onlyRole(MAINTAINER_ROLE)
+```
+
+Updates an entity's maximum APY setting.
+
+Parameters:
+- `entityId`: ID of the entity
+- `newMaxAPY`: New maximum APY in basis points (1% = 100)
+
+Restrictions:
+- Can only be called by addresses with MAINTAINER_ROLE
+- Entity must be in Active status
+
+Events:
+- `EntityMaxAPYUpdated(uint256 indexed entityId, uint256 newMaxAPY)`
+
+---
+
+```solidity
+function activeEntitiesValues() external view returns (uint256[] memory)
+```
+
+Returns an array of all active entity IDs.
+
+Returns:
+- `uint256[]`: Array of active entity IDs
+
+---
+
+```solidity
+function updateEntityPool(
+    uint256 entityId,
+    uint256 shares,
+    uint256 amount,
+    bool isStake
+) external onlyRole(VANA_POOL_ROLE)
+```
+
+Updates entity stake information when users stake or unstake.
+
+Parameters:
+- `entityId`: ID of the entity
+- `shares`: Amount of shares to add or remove
+- `amount`: Amount of VANA to add or remove
+- `isStake`: True if staking, false if unstaking
+
+Restrictions:
+- Can only be called by VanaPoolStaking contract (VANA_POOL_ROLE)
+- Contract must not be paused
+- Entity must be in Active status
+
+---
+
+```solidity
+function calculateYield(uint256 principal, uint256 apy, uint256 time) public pure returns (uint256)
+```
+
+Calculates yield based on principal, APY, and time using continuous compounding.
+
+Parameters:
+- `principal`: Initial amount
+- `apy`: Annual interest rate where 6% = 6e18
+- `time`: Time in seconds for which the interest is calculated
+
+Returns:
+- `uint256`: The calculated yield amount
+
+---
+
+```solidity
+function calculateContinuousAPYByEntity(uint256 entityId) external view returns (uint256)
+```
+
+Calculates the continuously compounded APY for an entity.
+
+Parameters:
+- `entityId`: ID of the entity
+
+Returns:
+- `uint256`: The compounded APY percentage (scaled by 1e18)
+
+---
+
+<a id="contracts-vanapool-staking"></a>
+### VanaPoolStaking
+
+```solidity
+function initialize(
+    address trustedForwarderAddress,
+    address ownerAddress,
+    uint256 initialMinStake
+) external initializer
+```
+
+Initializes the VanaPoolStaking contract with essential parameters.
+
+Parameters:
+- `trustedForwarderAddress`: Address for meta-transactions
+- `ownerAddress`: Address that will receive admin privileges
+- `initialMinStake`: Minimum amount required for staking
+
+Restrictions:
+- Can only be called once due to initializer modifier
+
+---
+
+```solidity
+function version() external pure returns (uint256)
+```
+
+Returns the implementation version of the contract.
+
+Returns:
+- `uint256`: Current version number (1)
+
+---
+
+```solidity
+function stakerEntities(address staker, uint256 entityId) external view returns (StakerEntity memory)
+```
+
+Retrieves staker information for a specific entity.
+
+Parameters:
+- `staker`: Address of the staker
+- `entityId`: ID of the entity
+
+Returns:
+- `StakerEntity`: Struct containing shares owned by staker in the entity
+
+---
+
+```solidity
+function pause() external onlyRole(MAINTAINER_ROLE)
+```
+
+Pauses the contract, preventing certain operations.
+
+Restrictions:
+- Can only be called by addresses with MAINTAINER_ROLE
+
+---
+
+```solidity
+function unpause() external onlyRole(MAINTAINER_ROLE)
+```
+
+Unpauses the contract, re-enabling operations.
+
+Restrictions:
+- Can only be called by addresses with MAINTAINER_ROLE
+
+---
+
+```solidity
+function updateMinStakeAmount(uint256 newMinStake) external onlyRole(MAINTAINER_ROLE)
+```
+
+Updates the minimum amount required for staking.
+
+Parameters:
+- `newMinStake`: New minimum stake amount
+
+Restrictions:
+- Can only be called by addresses with MAINTAINER_ROLE
+
+Events:
+- `MinStakeUpdated(uint256 newMinStake)`
+
+---
+
+```solidity
+function updateTrustedForwarder(address trustedForwarderAddress) external onlyRole(MAINTAINER_ROLE)
+```
+
+Updates the trusted forwarder address for meta-transactions.
+
+Parameters:
+- `trustedForwarderAddress`: New trusted forwarder address
+
+Restrictions:
+- Can only be called by addresses with MAINTAINER_ROLE
+
+---
+
+```solidity
+function updateVanaPoolEntity(address newVanaPoolEntityAddress) external onlyRole(MAINTAINER_ROLE)
+```
+
+Updates the VanaPoolEntity contract address.
+
+Parameters:
+- `newVanaPoolEntityAddress`: New VanaPoolEntity contract address
+
+Restrictions:
+- Can only be called by addresses with MAINTAINER_ROLE
+- New address must be valid and different from current
+
+Events:
+- Role revoked from old address
+- Role granted to new address
+
+---
+
+```solidity
+function updateVanaPoolTreasury(address newVanaPoolTreasuryAddress) external onlyRole(MAINTAINER_ROLE)
+```
+
+Updates the VanaPoolTreasury contract address.
+
+Parameters:
+- `newVanaPoolTreasuryAddress`: New VanaPoolTreasury contract address
+
+Restrictions:
+- Can only be called by addresses with MAINTAINER_ROLE
+- New address must be valid and different from current
+
+---
+
+```solidity
+function stake(
+    uint256 entityId,
+    address recipient,
+    uint256 shareAmountMin
+) external payable
+```
+
+Stakes VANA tokens into a specific entity and allocates shares to a recipient.
+
+Parameters:
+- `entityId`: ID of the entity to stake into
+- `recipient`: Address that will receive the shares
+- `shareAmountMin`: Minimum amount of shares to receive (for slippage protection)
+
+Restrictions:
+- Contract must not be paused
+- Entity must be active
+- Recipient address must be valid
+- Stake amount must meet minimum requirements
+
+Events:
+- `Staked(uint256 indexed entityId, address indexed staker, uint256 amount, uint256 sharesIssued)`
+
+---
+
+```solidity
+function unstake(
+    uint256 entityId,
+    uint256 shareAmount,
+    uint256 vanaAmountMin
+) external
+```
+
+Unstakes VANA tokens from a specific entity by burning shares.
+
+Parameters:
+- `entityId`: ID of the entity to unstake from
+- `shareAmount`: Amount of shares to burn
+- `vanaAmountMin`: Minimum amount of VANA to receive (for slippage protection)
+
+Restrictions:
+- Contract must not be paused
+- Staker must have sufficient shares
+- Entity must be active
+- For entity owners, cannot unstake below registration stake
+
+Events:
+- `Unstaked(uint256 indexed entityId, address indexed staker, uint256 amount, uint256 sharesBurned)`
+
+---
+
+```solidity
+function registerEntityStake(
+    uint256 entityId,
+    address ownerAddress,
+    uint256 registrationStake
+) external onlyRole(VANA_POOL_ENTITY_ROLE)
+```
+
+Registers initial stake for a new entity owner.
+
+Parameters:
+- `entityId`: ID of the entity
+- `ownerAddress`: Address of the entity owner
+- `registrationStake`: Amount of the registration stake
+
+Restrictions:
+- Can only be called by VanaPoolEntity contract
+- Contract must not be paused
+
+Events:
+- `Staked(uint256 indexed entityId, address indexed staker, uint256 amount, uint256 sharesIssued)`
+
+---
+
+<a id="contracts-vanapool-treasury"></a>
+### VanaPoolTreasury
+
+```solidity
+function initialize(address ownerAddress, address vanaPoolAddress) external initializer
+```
+
+Initializes the VanaPoolTreasury contract with essential parameters.
+
+Parameters:
+- `ownerAddress`: Address that will receive admin privileges
+- `vanaPoolAddress`: Address of the VanaPoolStaking contract
+
+Restrictions:
+- Can only be called once due to initializer modifier
+
+---
+
+```solidity
+function version() external pure returns (uint256)
+```
+
+Returns the implementation version of the contract.
+
+Returns:
+- `uint256`: Current version number (1)
+
+---
+
+```solidity
+function pause() external onlyRole(DEFAULT_ADMIN_ROLE)
+```
+
+Pauses the contract, preventing certain operations.
+
+Restrictions:
+- Can only be called by addresses with DEFAULT_ADMIN_ROLE
+
+---
+
+```solidity
+function unpause() external onlyRole(DEFAULT_ADMIN_ROLE)
+```
+
+Unpauses the contract, re-enabling operations.
+
+Restrictions:
+- Can only be called by addresses with DEFAULT_ADMIN_ROLE
+
+---
+
+```solidity
+function updateVanaPool(address vanaPoolAddress) external onlyRole(DEFAULT_ADMIN_ROLE)
+```
+
+Updates the VanaPoolStaking contract address.
+
+Parameters:
+- `vanaPoolAddress`: New VanaPoolStaking contract address
+
+Restrictions:
+- Can only be called by addresses with DEFAULT_ADMIN_ROLE
+
+Events:
+- Role revoked from old address
+- Role granted to new address
+
+---
+
+```solidity
+function transferVana(address payable to, uint256 value) external onlyRole(DEFAULT_ADMIN_ROLE) returns (bool)
+```
+
+Transfers VANA tokens to a specified address.
+
+Parameters:
+- `to`: Recipient address
+- `value`: Amount to transfer
+
+Returns:
+- `bool`: Success status
+
+Restrictions:
+- Can only be called by addresses with DEFAULT_ADMIN_ROLE
+- Contract must not be paused
+
+---
+
+```solidity
+receive() external payable
+```
+
+Allows the contract to receive VANA tokens.
+
+---
+
+<a id="contracts-dlp-root-epoch"></a>
+### DLPRootEpoch
 
 ```solidity
 struct InitParams {
@@ -1420,7 +2077,6 @@ The contract maintains role-based access control:
 - MAINTAINER_ROLE: System maintenance and parameter updates
 - MANAGER_ROLE: Epoch scores and performance metrics
 
-
 ---  
 
 <a id="contracts-dlp-root-metrics"></a>
@@ -1754,14 +2410,14 @@ Restrictions: None
 The treasuries function as secure vaults for different types of funds in the DLP ecosystem:
 
 1. **DLPRootStakesTreasury**:
-   - Holds staked VANA tokens from DLP owners and stakers
-   - Manages stake withdrawals after delay periods
-   - Ensures stake security and withdrawal restrictions
+    - Holds staked VANA tokens from DLP owners and stakers
+    - Manages stake withdrawals after delay periods
+    - Ensures stake security and withdrawal restrictions
 
 2. **DLPRootRewardsTreasury**:
-   - Holds VANA tokens allocated for rewards
-   - Distributes rewards to DLPs and their stakers
-   - Manages reward calculations and distributions based on performance metrics
+    - Holds VANA tokens allocated for rewards
+    - Distributes rewards to DLPs and their stakers
+    - Manages reward calculations and distributions based on performance metrics
 
 Both treasuries are controlled by the DLPRoot contract through the DEFAULT_ADMIN_ROLE, ensuring secure and coordinated fund management in the ecosystem.
 
@@ -1784,6 +2440,7 @@ function initialize(
 
 Initializes the contract with the given parameters.
 
+Parameters:
 - `ownerAddress`: The address that will be set as the owner of the contract.
 - `_minDepositAmount`: The minimum amount allowed for a deposit.
 - `_maxDepositAmount`: The maximum amount allowed for a deposit.
@@ -1800,12 +2457,13 @@ function updateMinDepositAmount(uint256 newMinDepositAmount) external onlyOwner
 
 Updates the minimum deposit amount.
 
+Parameters:
 - `newMinDepositAmount`: The new minimum deposit amount to set.
 
 Restrictions:
 - Can only be called by the contract owner.
 
-Events emitted:
+Events Emitted:
 - `MinDepositAmountUpdated(uint256 newMinDepositAmount)`
 
 ---
@@ -1816,12 +2474,13 @@ function updateMaxDepositAmount(uint256 newMaxDepositAmount) external onlyOwner
 
 Updates the maximum deposit amount.
 
+Parameters:
 - `newMaxDepositAmount`: The new maximum deposit amount to set.
 
 Restrictions:
 - Can only be called by the contract owner.
 
-Events emitted:
+Events Emitted:
 - `MaxDepositAmountUpdated(uint256 newMaxDepositAmount)`
 
 ---
@@ -1832,12 +2491,13 @@ function updateRestricted(bool _restricted) external onlyOwner
 
 Updates the restricted status of the contract.
 
+Parameters:
 - `_restricted`: The new restricted status to set.
 
 Restrictions:
 - Can only be called by the contract owner.
 
-Events emitted:
+Events Emitted:
 - `RestrictedUpdated(bool newRestricted)`
 
 ---
@@ -1848,12 +2508,13 @@ function addAllowedValidators(bytes[] memory validatorPublicKeys) external onlyO
 
 Adds new validator public keys to the list of allowed validators.
 
+Parameters:
 - `validatorPublicKeys`: An array of validator public keys to be added to the allowed list.
 
 Restrictions:
 - Can only be called by the contract owner.
 
-Events emitted:
+Events Emitted:
 - `AllowedValidatorsAdded(bytes validatorPublicKey)` for each added validator
 
 ---
@@ -1864,12 +2525,13 @@ function removeAllowedValidators(bytes[] memory validatorPublicKeys) external on
 
 Removes validator public keys from the list of allowed validators.
 
+Parameters:
 - `validatorPublicKeys`: An array of validator public keys to be removed from the allowed list.
 
 Restrictions:
 - Can only be called by the contract owner.
 
-Events emitted:
+Events Emitted:
 - `AllowedValidatorsRemoved(bytes validatorPublicKey)` for each removed validator
 
 ---
@@ -1907,6 +2569,7 @@ function deposit(
 
 Processes a deposit for a validator.
 
+Parameters:
 - `pubkey`: A BLS12-381 public key (48 bytes).
 - `withdrawal_credentials`: Commitment to a public key for withdrawals (32 bytes).
 - `signature`: A BLS12-381 signature (96 bytes).
@@ -1921,7 +2584,7 @@ Restrictions:
 - The deposit amount must be a multiple of 1 gwei.
 - The total number of deposits must not exceed `MAX_DEPOSIT_COUNT`.
 
-Events emitted:
+Events Emitted:
 - `DepositEvent(bytes pubkey, bytes withdrawal_credentials, bytes amount, bytes signature, bytes index)`
 
 ---
@@ -1932,6 +2595,7 @@ function supportsInterface(bytes4 interfaceId) external pure returns (bool)
 
 Checks if the contract supports a given interface.
 
+Parameters:
 - `interfaceId`: The interface identifier to check.
 
 Returns:
@@ -1956,27 +2620,27 @@ function initialize(InitParams memory params) external initializer
 ```
 Initializes the contract with the given parameters.
 
-**Parameters:**
+Parameters:
 - `params`: A struct containing initialization parameters
-   - `trustedForwarder`: The address of the trusted forwarder contract. See [this section](#env-truested_forwarder_address) for more details.
-   - `ownerAddress`: The address of the contract owner. (E.g. **0x853407D0C625Ce7E43C0a2596fBc470C3a6f8305**)
-   - `tokenAddress`: The address of the ERC20 token used for rewards. (E.g. **0xF3D9A139a7ba707843dD4f1FDfE0F9E55D9D8d6b**)
-   - `dataRegistryAddress`: The address of the data registry contract. (E.g. **0xEA882bb75C54DE9A08bC46b46c396727B4BFe9a5**)
-   - `teePoolAddress`: The address of the TEE pool contract. (E.g. **0xF084Ca24B4E29Aa843898e0B12c465fAFD089965**)
-   - `name`: The name of the data liquidity pool. (E.g. **CookieDLP**)
-   - `publicKey`: A public key for your DLP, used for encryption purposes. See [this section](#env-dlp-public-key) for more details.
-   - `proofInstruction`: The instruction for generating proofs. (E.g. **https://github.com/vana-com/vana-satya-proof-template/releases/download/v24/gsc-my-proof-24.tar.gz**)
-   - `fileRewardFactor`: The factor used to calculate file rewards. (E.g. **2e18** => the reward multiplier is 2)
+    - `trustedForwarder`: The address of the trusted forwarder contract. See [this section](#env-truested_forwarder_address) for more details.
+    - `ownerAddress`: The address of the contract owner. (E.g. **0x853407D0C625Ce7E43C0a2596fBc470C3a6f8305**)
+    - `tokenAddress`: The address of the ERC20 token used for rewards. (E.g. **0xF3D9A139a7ba707843dD4f1FDfE0F9E55D9D8d6b**)
+    - `dataRegistryAddress`: The address of the data registry contract. (E.g. **0xEA882bb75C54DE9A08bC46b46c396727B4BFe9a5**)
+    - `teePoolAddress`: The address of the TEE pool contract. (E.g. **0xF084Ca24B4E29Aa843898e0B12c465fAFD089965**)
+    - `name`: The name of the data liquidity pool. (E.g. **CookieDLP**)
+    - `publicKey`: A public key for your DLP, used for encryption purposes. See [this section](#env-dlp-public-key) for more details.
+    - `proofInstruction`: The instruction for generating proofs. (E.g. **https://github.com/vana-com/vana-satya-proof-template/releases/download/v24/gsc-my-proof-24.tar.gz**)
+    - `fileRewardFactor`: The factor used to calculate file rewards. (E.g. **2e18** => the reward multiplier is 2)
 
 
 Tee validators calculate a total score for the files they verify, based on the set of instructions executed to generate the proof. This score ranges between 0 and 1 (i.e., between 0 and 1e18). At the end, the dataContributor will receive a reward. DLP_FILE_REWARD_FACTOR is used to convert the score into the amount of DLP tokens the data contributor receives for their file. Essentially, the reward is calculated using the formula:  
 ```reward = fileScore * DLP_FILE_REWARD_FACTOR ```
 
-**Restrictions:** Can only be called once during contract deployment
+Restrictions: Can only be called once during contract deployment
 
-**Events Emitted:** None
+Events Emitted: None
 
-**Errors:**
+Errors:
 - `InvalidInitialization`: Thrown if the contract has already been initialized
 
 ---
@@ -1986,9 +2650,9 @@ function version() external pure returns (uint256)
 ```
 Returns the version of the contract.
 
-**Returns:** The version number
+Returns: The version number
 
-**Restrictions:** None
+Restrictions: None
 
 ---
 
@@ -1997,16 +2661,16 @@ function files(uint256 fileId) public view returns (FileResponse memory)
 ```
 Retrieves information about a specific file.
 
-**Parameters:**
+Parameters:
 - `fileId`: The ID of the file
 
-**Returns:** `FileResponse` struct containing:
+Returns: `FileResponse` struct containing:
 - `fileId`: The ID of the file
 - `timestamp`: The timestamp when the file was added
 - `proofIndex`: The index of the proof associated with the file
 - `rewardAmount`: The amount of reward for the file
 
-**Restrictions:** None
+Restrictions: None
 
 ---
 
@@ -2015,9 +2679,9 @@ function filesListCount() external view returns (uint256)
 ```
 Returns the total number of files in the pool.
 
-**Returns:** The number of files
+Returns: The number of files
 
-**Restrictions:** None
+Restrictions: None
 
 ---
 
@@ -2026,12 +2690,12 @@ function filesListAt(uint256 index) external view returns (uint256)
 ```
 Retrieves the file ID at a specific index in the files list.
 
-**Parameters:**
+Parameters:
 - `index`: The index in the files list
 
-**Returns:** The file ID at the given index
+Returns: The file ID at the given index
 
-**Restrictions:** None
+Restrictions: None
 
 ---
 
@@ -2040,14 +2704,14 @@ function contributors(uint256 index) external view returns (ContributorInfoRespo
 ```
 Retrieves information about a contributor at a specific index.
 
-**Parameters:**
+Parameters:
 - `index`: The index of the contributor
 
-**Returns:** `ContributorInfoResponse` struct containing:
+Returns: `ContributorInfoResponse` struct containing:
 - `contributorAddress`: The address of the contributor
 - `filesListCount`: The number of files contributed by this contributor
 
-**Restrictions:** None
+Restrictions: None
 
 ---
 
@@ -2056,12 +2720,12 @@ function contributorInfo(address contributorAddress) public view returns (Contri
 ```
 Retrieves information about a specific contributor.
 
-**Parameters:**
+Parameters:
 - `contributorAddress`: The address of the contributor
 
-**Returns:** `ContributorInfoResponse` struct (same as `contributors` method)
+Returns: `ContributorInfoResponse` struct (same as `contributors` method)
 
-**Restrictions:** None
+Restrictions: None
 
 ---
 
@@ -2070,13 +2734,13 @@ function contributorFiles(address contributorAddress, uint256 index) external vi
 ```
 Retrieves information about a specific file contributed by a contributor.
 
-**Parameters:**
+Parameters:
 - `contributorAddress`: The address of the contributor
 - `index`: The index of the file in the contributor's files list
 
-**Returns:** `FileResponse` struct (same as `files` method)
+Returns: `FileResponse` struct (same as `files` method)
 
-**Restrictions:** None
+Restrictions: None
 
 ---
 
@@ -2085,11 +2749,11 @@ function pause() external
 ```
 Pauses the contract, preventing certain operations.
 
-**Restrictions:** Can only be called by the contract owner
+Restrictions: Can only be called by the contract owner
 
-**Events Emitted:** None (inherited from PausableUpgradeable)
+Events Emitted: None (inherited from PausableUpgradeable)
 
-**Errors:**
+Errors:
 - `OwnableUnauthorizedAccount`: Thrown if called by any account other than the owner
 
 ---
@@ -2099,11 +2763,11 @@ function unpause() external
 ```
 Unpauses the contract, re-enabling paused operations.
 
-**Restrictions:** Can only be called by the contract owner
+Restrictions: Can only be called by the contract owner
 
-**Events Emitted:** None (inherited from PausableUpgradeable)
+Events Emitted: None (inherited from PausableUpgradeable)
 
-**Errors:**
+Errors:
 - `OwnableUnauthorizedAccount`: Thrown if called by any account other than the owner
 
 ---
@@ -2113,14 +2777,14 @@ function updateFileRewardFactor(uint256 newFileRewardFactor) external
 ```
 Updates the file reward factor used to calculate rewards.
 
-**Parameters:**
+Parameters:
 - `newFileRewardFactor`: The new file reward factor
 
-**Restrictions:** Can only be called by the contract owner
+Restrictions: Can only be called by the contract owner
 
-**Events Emitted:** `FileRewardFactorUpdated`
+Events Emitted: `FileRewardFactorUpdated`
 
-**Errors:**
+Errors:
 - `OwnableUnauthorizedAccount`: Thrown if called by any account other than the owner
 
 ---
@@ -2130,14 +2794,14 @@ function updateTeePool(address newTeePool) external
 ```
 Updates the address of the TEE pool contract.
 
-**Parameters:**
+Parameters:
 - `newTeePool`: The new TEE pool contract address
 
-**Restrictions:** Can only be called by the contract owner
+Restrictions: Can only be called by the contract owner
 
-**Events Emitted:** None
+Events Emitted: None
 
-**Errors:**
+Errors:
 - `OwnableUnauthorizedAccount`: Thrown if called by any account other than the owner
 
 ---
@@ -2147,14 +2811,14 @@ function updateProofInstruction(string calldata newProofInstruction) external
 ```
 Updates the proof instruction used for validating proofs.
 
-**Parameters:**
+Parameters:
 - `newProofInstruction`: The new proof instruction.
 
-**Restrictions:** Can only be called by the contract owner
+Restrictions: Can only be called by the contract owner
 
-**Events Emitted:** `ProofInstructionUpdated`
+Events Emitted: `ProofInstructionUpdated`
 
-**Errors:**
+Errors:
 - `OwnableUnauthorizedAccount`: Thrown if called by any account other than the owner
 
 ---
@@ -2164,14 +2828,14 @@ function updatePublicKey(string calldata newPublicKey) external
 ```
 Updates the public key of the pool.
 
-**Parameters:**
+Parameters:
 - `newPublicKey`: The new public key (E.g. **0x04bfcab8282071e4c17b3ae235928ec9dd9fb8e2b2f981c56c4a5215c9e7a1fcf1a84924476b8b56f17f719d3d3b729688bb7c39a60b00414d53ae8491df5791fa**)
 
-**Restrictions:** Can only be called by the contract owner
+Restrictions: Can only be called by the contract owner
 
-**Events Emitted:** `PublicKeyUpdated`
+Events Emitted: `PublicKeyUpdated`
 
-**Errors:**
+Errors:
 - `OwnableUnauthorizedAccount`: Thrown if called by any account other than the owner
 
 ---
@@ -2181,18 +2845,18 @@ function requestReward(uint256 fileId, uint256 proofIndex) external
 ```
 Requests a reward for a file based on its proof.
 
-**Parameters:**
+Parameters:
 - `fileId`: The ID of the file from the data registry
 - `proofIndex`: The index of the proof for the file
 
-**Restrictions:**
+Restrictions:
 - Contract must not be paused
 - File must not have been already rewarded
 - Proof must be valid and signed by a registered TEE
 
-**Events Emitted:** `RewardRequested`
+Events Emitted: `RewardRequested`
 
-**Errors:**
+Errors:
 - `EnforcedPause`: Thrown if the contract is paused
 - `FileAlreadyAdded`: Thrown if the file has already been rewarded
 - `InvalidProof`: Thrown if the proof instruction doesn't match the contract's proof instruction
@@ -2205,20 +2869,16 @@ function addRewardsForContributors(uint256 contributorsRewardAmount) external
 ```
 Adds rewards to the pool for contributors.
 
-**Parameters:**
+Parameters:
 - `contributorsRewardAmount`: The amount of rewards to add
 
-**Restrictions:** None
+Restrictions: None
 
-**Events Emitted:** None
+Events Emitted: None
 
-**Errors:**
+Errors:
 - `ERC20InsufficientAllowance`: Thrown if the caller has not approved enough tokens for transfer
 - `ERC20InsufficientBalance`: Thrown if the caller does not have enough tokens to transfer
-
-
-### 
-###
 
 ---
 
@@ -2230,12 +2890,11 @@ The DAT contract is an ERC20 token with additional governance features, includin
 
 This contract inherits from OpenZeppelin's ERC20, ERC20Permit, ERC20Votes, and Ownable2Step contracts, providing standard ERC20 functionality along with permit capabilities for gasless approvals, voting mechanisms, and secure ownership management.
 
-###
 ```solidity
 constructor(string memory name, string memory symbol, address ownerAddress)
 ```
 
-Description: Initializes the contract by setting a name, symbol, and owner address.
+Initializes the contract by setting a name, symbol, and owner address.
 
 Parameters:
 - `name`: Name of the token
@@ -2246,94 +2905,100 @@ Restrictions: None
 
 Events Emitted: None (inherited from ERC20 and Ownable)
 
-###
+---
+
 ```solidity
 function clock() public view override returns (uint48)
 ```
 
-Description: Returns the current timestamp, used for ERC20Votes functionality.
+Returns the current timestamp, used for ERC20Votes functionality.
 
 Parameters: None
 
-Return Value:
+Returns:
 - `uint48`: Current block timestamp
 
 Restrictions: None
 
 Events Emitted: None
 
-###
+---
+
 ```solidity
 function CLOCK_MODE() public pure override returns (string memory)
 ```
 
-Description: Returns the mode of the clock (timestamp-based).
+Returns the mode of the clock (timestamp-based).
 
 Parameters: None
 
-Return Value:
+Returns:
 - `string`: "mode=timestamp"
 
 Restrictions: None
 
 Events Emitted: None
 
-###
+---
+
 ```solidity
 function blockListLength() external view returns (uint256)
 ```
 
-Description: Returns the number of addresses in the block list.
+Returns the number of addresses in the block list.
 
 Parameters: None
 
-Return Value:
+Returns:
 - `uint256`: Length of the block list
 
 Restrictions: None
 
 Events Emitted: None
 
-###
+---
+
 ```solidity
 function blockListAt(uint256 _index) external view returns (address)
 ```
 
-Description: Returns the address at a given index in the block list.
+Returns the address at a given index in the block list.
 
 Parameters:
 - `_index`: Index in the block list
 
-Return Value:
+Returns:
 - `address`: Address at the specified index
 
 Restrictions: None
 
 Events Emitted: None
 
-###
+---
+
 ```solidity
 function nonces(address owner) public view virtual override(ERC20Permit, Nonces) returns (uint256)
 ```
 
-Description: Returns the current nonce for an address, used for ERC20Permit functionality.
+Returns the current nonce for an address, used for ERC20Permit functionality.
 
 Parameters:
 - `owner`: Address to check the nonce for
 
-Return Value:
+Returns:
 - `uint256`: Current nonce for the address
 
 Restrictions: None
 
 Events Emitted: None
 
-###
+---
+
 ```solidity
 function mint(address to, uint256 amount) external virtual onlyOwner whenMintIsAllowed
 ```
 
-Description: Mints new tokens to a specified address.
+Mints new tokens to a specified address.
 
 Parameters:
 - `to`: Address to mint tokens to
@@ -2345,12 +3010,13 @@ Restrictions:
 
 Events Emitted: Transfer event (inherited from ERC20)
 
-###
+---
+
 ```solidity
 function changeAdmin(address newAdmin) external virtual onlyOwner
 ```
 
-Description: Changes the admin address.
+Changes the admin address.
 
 Parameters:
 - `newAdmin`: New admin address
@@ -2360,12 +3026,13 @@ Restrictions: Only owner can call
 Events Emitted:
 - `AdminChanged(address indexed oldAdmin, address indexed newAdmin)`
 
-###
+---
+
 ```solidity
 function blockMint() external virtual onlyOwner whenMintIsAllowed
 ```
 
-Description: Blocks further minting of tokens permanently.
+Blocks further minting of tokens permanently.
 
 Parameters: None
 
@@ -2376,12 +3043,13 @@ Restrictions:
 Events Emitted:
 - `MintBlocked()`
 
-###
+---
+
 ```solidity
 function blockAddress(address addressToBeBlocked) external virtual onlyAdmin
 ```
 
-Description: Adds an address to the block list, preventing it from transferring tokens.
+Adds an address to the block list, preventing it from transferring tokens.
 
 Parameters:
 - `addressToBeBlocked`: Address to be blocked
@@ -2391,12 +3059,13 @@ Restrictions: Only admin can call
 Events Emitted:
 - `AddressBlocked(address indexed blockedAddress)`
 
-###
+---
+
 ```solidity
 function unblockAddress(address addressToBeUnblocked) external virtual onlyAdmin
 ```
 
-Description: Removes an address from the block list.
+Removes an address from the block list.
 
 Parameters:
 - `addressToBeUnblocked`: Address to be unblocked
@@ -2406,6 +3075,7 @@ Restrictions: Only admin can call
 Events Emitted:
 - `AddressUnblocked(address indexed unblockedAddress)`
 
+---
 
 ### Utilities Contracts
 
