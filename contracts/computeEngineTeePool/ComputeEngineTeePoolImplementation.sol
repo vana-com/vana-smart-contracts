@@ -55,18 +55,18 @@ contract ComputeEngineTeePoolImplementation is
      */
     function initialize(
         address ownerAddress,
-        address _computeEngine,
-        TeePoolType _teePoolType,
-        HardwareType _hardwareType,
-        uint80 _maxTimeout
+        address initComputeEngine,
+        TeePoolType initTeePoolType,
+        HardwareType initHardwareType,
+        uint80 initMaxTimeout
     ) external initializer {
         __Pausable_init();
         __AccessControl_init();
 
-        computeEngine = _computeEngine;
-        teePoolType = _teePoolType;
-        hardwareType = _hardwareType;
-        maxTimeout = _maxTimeout;
+        computeEngine = initComputeEngine;
+        teePoolType = initTeePoolType;
+        hardwareType = initHardwareType;
+        maxTimeout = initMaxTimeout;
 
         _setRoleAdmin(MAINTAINER_ROLE, DEFAULT_ADMIN_ROLE);
         _grantRole(DEFAULT_ADMIN_ROLE, ownerAddress);

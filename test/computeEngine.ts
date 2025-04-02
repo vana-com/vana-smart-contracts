@@ -17,7 +17,7 @@ import {
 } from "../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { getReceipt, parseEther } from "../utils/helpers";
-import { keccak256 } from "ethers";
+import { Addressable, keccak256 } from "ethers";
 import { teePool } from "../typechain-types/contracts";
 import { parse } from "path";
 
@@ -97,6 +97,7 @@ describe("ComputeEngine", () => {
     let dataRefinerRegistry: DataRefinerRegistryImplementation;
     let computeInstructionRegistry: ComputeInstructionRegistryImplementation;
     let dlpRootCoreMock: DLPRootCoreMock;
+    let teePoolFactoryAddress: string;
 
     const DEFAULT_ADMIN_ROLE =
         "0x0000000000000000000000000000000000000000000000000000000000000000";
@@ -110,8 +111,8 @@ describe("ComputeEngine", () => {
     const TeeAssignmentFailedSelector = ethers.id("TeeAssignmentFailed(uint256,bytes)");
     const TeeAssignmentSucceededSelector = ethers.id("TeeAssignmentSucceeded(uint256,address,address)");
 
-    const getTeePoolAddress = async function (teePoolType: number, hardwareType: number, maxTimeout: number | bigint) {
-        const salt = ethers.keccak256(ethers.toUtf8Bytes("ComputeEngineTeePool"));
+    const getTeePoolAddress = async function (teePoolType: number, hardwareType: number, maxTimeout: number | bigint, deployer: string, nonce: number) {
+        const salt = ethers.keccak256(ethers.solidityPacked(["address", "uint256"], [deployer, nonce]));
 
         const abi = [
             "function initialize(address ownerAddress, address computeEngineAddress, uint8 teePoolType, uint8 hardwareType, uint80 maxTimeout)",
@@ -237,6 +238,8 @@ describe("ComputeEngine", () => {
             teePoolFactoryDeploy.target,
         );
 
+        teePoolFactoryAddress = await teePoolFactory.getAddress();
+
         await teePoolFactory
             .connect(owner)
             .grantRole(MAINTAINER_ROLE, maintainer.address);
@@ -293,8 +296,6 @@ describe("ComputeEngine", () => {
         });
 
         it("should have correct treasury address after deploy", async function () {
-            const dataAccessTreasurySalt = ethers.keccak256(ethers.toUtf8Bytes("DataAccessTreasury"));
-
             // initialize function of DataAccessTreasuryImplementation
             const dataAccessTreasuryAbi = [
                 "function initialize(address ownerAddress, address custodian)",
@@ -310,11 +311,11 @@ describe("ComputeEngine", () => {
             const computeEngineTreasuryProxyInitCode = ethers.solidityPacked(["bytes", "bytes"], [beaconProxyFactory.bytecode, computeEngineTreasuryProxyArgs]);
             const computeEngineTreasuryProxyAddress = ethers.getCreate2Address(
                 dataAccessTreasuryBeacon.target.toString(), // beaconProxy's deployer
-                dataAccessTreasurySalt,
+                ethers.keccak256(ethers.solidityPacked(["address", "uint256"], [computeEngine.target, 1])),
                 ethers.keccak256(computeEngineTreasuryProxyInitCode),
             );
             computeEngineTreasury.should.eq(computeEngineTreasuryProxyAddress);
-            computeEngineTreasuryProxyAddress.should.eq(await dataAccessTreasuryBeacon.getProxyAddress(computeEngineTreasuryInitializeData));
+            computeEngineTreasuryProxyAddress.should.eq(await dataAccessTreasuryBeacon.getProxyAddress(computeEngineTreasuryInitializeData, computeEngine.target, 1));
         });
 
         it("should grant or revoke roles when admin", async function () {
@@ -554,13 +555,16 @@ describe("ComputeEngine", () => {
     });
 
     describe("TeePool Factory", () => {
+        let nonce: number;
+        
         beforeEach(async () => {
             await deploy();
+            nonce = 0;
         });
 
         it("should createTeePool only when maintainer", async function () {
             // Ephemeral + Standard
-            const ephemeralStandardAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.Standard, ephemeralTimeout);
+            const ephemeralStandardAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.Standard, ephemeralTimeout, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -582,7 +586,7 @@ describe("ComputeEngine", () => {
             (await teePoolFactory.teePools(TeePoolType.Ephemeral, HardwareType.Standard)).should.eq(ephemeralStandardAddress);
 
             // Ephemeral + GPU
-            const ephemeralGPUAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.GPU, ephemeralTimeout);
+            const ephemeralGPUAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.GPU, ephemeralTimeout, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -602,7 +606,7 @@ describe("ComputeEngine", () => {
             (await teePoolFactory.teePools(TeePoolType.Ephemeral, HardwareType.GPU)).should.eq(ephemeralGPUAddress);
 
             // Persistent + Standard
-            const persistentStandardAddress = await getTeePoolAddress(TeePoolType.Persistent, HardwareType.Standard, persistentTimeout);
+            const persistentStandardAddress = await getTeePoolAddress(TeePoolType.Persistent, HardwareType.Standard, persistentTimeout, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -622,7 +626,7 @@ describe("ComputeEngine", () => {
             (await teePoolFactory.teePools(TeePoolType.Persistent, HardwareType.Standard)).should.eq(persistentStandardAddress);
 
             // Persistent + GPU
-            const persistentGPUAddress = await getTeePoolAddress(TeePoolType.Persistent, HardwareType.GPU, persistentTimeout);
+            const persistentGPUAddress = await getTeePoolAddress(TeePoolType.Persistent, HardwareType.GPU, persistentTimeout, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -642,7 +646,7 @@ describe("ComputeEngine", () => {
             (await teePoolFactory.teePools(TeePoolType.Persistent, HardwareType.GPU)).should.eq(persistentGPUAddress);
 
             // Dedicated + Standard
-            const dedicatedStandardAddress = await getTeePoolAddress(TeePoolType.Dedicated, HardwareType.Standard, maxUint80);
+            const dedicatedStandardAddress = await getTeePoolAddress(TeePoolType.Dedicated, HardwareType.Standard, maxUint80, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -662,7 +666,7 @@ describe("ComputeEngine", () => {
             (await teePoolFactory.teePools(TeePoolType.Dedicated, HardwareType.Standard)).should.eq(dedicatedStandardAddress);
 
             // Dedicated + GPU
-            const dedicatedGPUAddress = await getTeePoolAddress(TeePoolType.Dedicated, HardwareType.GPU, maxUint80);
+            const dedicatedGPUAddress = await getTeePoolAddress(TeePoolType.Dedicated, HardwareType.GPU, maxUint80, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -753,7 +757,7 @@ describe("ComputeEngine", () => {
                     `AccessControlUnauthorizedAccount("${user1.address}", "${MAINTAINER_ROLE}")`,
                 );
 
-            const ephemeralStandardAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.Standard, newEphemeralTimeout);
+            const ephemeralStandardAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.Standard, newEphemeralTimeout, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -778,7 +782,7 @@ describe("ComputeEngine", () => {
             (await teePoolFactory.ephemeralTimeout()).should.eq(newEphemeralTimeout);
             (await ephemeralStandardTeePool.maxTimeout()).should.eq(newEphemeralTimeout);
 
-            const ephemeralGPUAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.GPU, newEphemeralTimeout);
+            const ephemeralGPUAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.GPU, newEphemeralTimeout, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -824,7 +828,7 @@ describe("ComputeEngine", () => {
                     `AccessControlUnauthorizedAccount("${user1.address}", "${MAINTAINER_ROLE}")`,
                 );
 
-            const persistentStandardAddress = await getTeePoolAddress(TeePoolType.Persistent, HardwareType.Standard, newPersistentTimeout);
+            const persistentStandardAddress = await getTeePoolAddress(TeePoolType.Persistent, HardwareType.Standard, newPersistentTimeout, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -849,7 +853,7 @@ describe("ComputeEngine", () => {
             (await teePoolFactory.persistentTimeout()).should.eq(newPersistentTimeout);
             (await persistentStandardTeePool.maxTimeout()).should.eq(newPersistentTimeout);
 
-            const persistentGPUAddress = await getTeePoolAddress(TeePoolType.Persistent, HardwareType.GPU, newPersistentTimeout);
+            const persistentGPUAddress = await getTeePoolAddress(TeePoolType.Persistent, HardwareType.GPU, newPersistentTimeout, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -888,9 +892,6 @@ describe("ComputeEngine", () => {
                 .updatePersistentTimeout(maxUint80)
                 .should.be.rejectedWith("InvalidTimeout()");
         });
-
-        it("should getTeePoolAddress correctly", async function () {
-        });
     });
 
     describe("TeePool", () => {
@@ -923,8 +924,12 @@ describe("ComputeEngine", () => {
         let dedicatedStandardTee1: HardhatEthersSigner;
         let dedicatedStandardTee2: HardhatEthersSigner;
 
+        let nonce: number;
+
         beforeEach(async () => {
             await deploy();
+
+            nonce = 0;
 
             [
                 ephemeralStandardTee1,
@@ -944,7 +949,7 @@ describe("ComputeEngine", () => {
                 .should.emit(computeInstructionRegistry, "ComputeInstructionAdded")
                 .withArgs(instructionId1, user1, "instructionUrl1", instructionHash1);
 
-            const ephemeralStandardAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.Standard, ephemeralTimeout);
+            const ephemeralStandardAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.Standard, ephemeralTimeout, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -957,7 +962,7 @@ describe("ComputeEngine", () => {
                 ephemeralStandardAddress,
             );
 
-            const dedicatedStandardAddress = await getTeePoolAddress(TeePoolType.Dedicated, HardwareType.Standard, maxUint80);
+            const dedicatedStandardAddress = await getTeePoolAddress(TeePoolType.Dedicated, HardwareType.Standard, maxUint80, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -1224,6 +1229,8 @@ describe("ComputeEngine", () => {
         const jobId19 = 19;
         const jobId20 = 20;
 
+        let nonce: number;
+
 
         const getJobsCountTee = async (teePool: ComputeEngineTeePoolImplementation, teeAddress: any) => {
             const teeInfo = await teePool.tees(teeAddress);
@@ -1233,6 +1240,8 @@ describe("ComputeEngine", () => {
         beforeEach(async () => {
             await deploy();
 
+            nonce = 0;
+            
             const instructionHash1 = keccak256(ethers.toUtf8Bytes("instruction1"));
             await computeInstructionRegistry
                 .connect(user1)
@@ -1319,7 +1328,7 @@ describe("ComputeEngine", () => {
             const gpuRequired = true;
 
             // Deploy TeePool
-            const ephemeralGPUAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.GPU, ephemeralTimeout);
+            const ephemeralGPUAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.GPU, ephemeralTimeout, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -1381,7 +1390,7 @@ describe("ComputeEngine", () => {
             [ephemeralGPUTee1, ephemeralGPUTee2, ephemeralGPUTee3] = await ethers.getSigners();
 
             // Deploy TeePools
-            const ephemeralStandardAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.Standard, ephemeralTimeout);
+            const ephemeralStandardAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.Standard, ephemeralTimeout, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -1394,7 +1403,7 @@ describe("ComputeEngine", () => {
                 ephemeralStandardAddress,
             );
 
-            const ephemeralGPUAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.GPU, ephemeralTimeout);
+            const ephemeralGPUAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.GPU, ephemeralTimeout, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -1689,7 +1698,7 @@ describe("ComputeEngine", () => {
                 .should.be.rejectedWith(`FailedToAssignTee()`);
 
             // Deploy TeePools
-            const ephemeralGPUAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.GPU, ephemeralTimeout);
+            const ephemeralGPUAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.GPU, ephemeralTimeout, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -1793,7 +1802,7 @@ describe("ComputeEngine", () => {
                 .should.be.rejectedWith(`FailedToAssignTee()`);
 
             // Deploy TeePools
-            const dedicatedGPUAddress = await getTeePoolAddress(TeePoolType.Dedicated, HardwareType.GPU, maxUint80);
+            const dedicatedGPUAddress = await getTeePoolAddress(TeePoolType.Dedicated, HardwareType.GPU, maxUint80, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -1813,7 +1822,7 @@ describe("ComputeEngine", () => {
                 )
                 .should.be.rejectedWith(`FailedToAssignTee()`);
 
-            const dedicatedStandardAddress = await getTeePoolAddress(TeePoolType.Dedicated, HardwareType.Standard, maxUint80);
+            const dedicatedStandardAddress = await getTeePoolAddress(TeePoolType.Dedicated, HardwareType.Standard, maxUint80, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -1889,7 +1898,7 @@ describe("ComputeEngine", () => {
             [dedicatedStandardTee1] = await ethers.getSigners();
 
             // Deploy TeePools
-            const dedicatedGPUAddress = await getTeePoolAddress(TeePoolType.Dedicated, HardwareType.GPU, maxUint80);
+            const dedicatedGPUAddress = await getTeePoolAddress(TeePoolType.Dedicated, HardwareType.GPU, maxUint80, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -1898,7 +1907,7 @@ describe("ComputeEngine", () => {
                 .should.emit(teePoolFactory, "TeePoolCreated")
                 .withArgs(dedicatedGPUAddress, TeePoolType.Dedicated, HardwareType.GPU, maxUint80);
 
-            const dedicatedStandardAddress = await getTeePoolAddress(TeePoolType.Dedicated, HardwareType.Standard, maxUint80);
+            const dedicatedStandardAddress = await getTeePoolAddress(TeePoolType.Dedicated, HardwareType.Standard, maxUint80, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -2013,7 +2022,7 @@ describe("ComputeEngine", () => {
                 .should.be.rejectedWith(`NotTee()`);
 
             // Deploy TeePools
-            const ephemeralGPUAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.GPU, ephemeralTimeout);
+            const ephemeralGPUAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.GPU, ephemeralTimeout, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -2274,7 +2283,7 @@ describe("ComputeEngine", () => {
             (await computeEngine.jobs(jobId6)).teeAddress.should.eq(ethers.ZeroAddress);
 
             // Deploy TeePools
-            const ephemeralStandardAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.Standard, ephemeralTimeout);
+            const ephemeralStandardAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.Standard, ephemeralTimeout, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -2288,7 +2297,7 @@ describe("ComputeEngine", () => {
             );
             (await ephemeralStandardTeePool.teesCount()).should.eq(0);
 
-            const ephemeralGPUAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.GPU, ephemeralTimeout);
+            const ephemeralGPUAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.GPU, ephemeralTimeout, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -2302,7 +2311,7 @@ describe("ComputeEngine", () => {
             );
             (await ephemeralGPUTeePool.teesCount()).should.eq(0);
 
-            const persistentStandardAddress = await getTeePoolAddress(TeePoolType.Persistent, HardwareType.Standard, persistentTimeout);
+            const persistentStandardAddress = await getTeePoolAddress(TeePoolType.Persistent, HardwareType.Standard, persistentTimeout, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -2316,7 +2325,7 @@ describe("ComputeEngine", () => {
             );
             (await persistentStandardTeePool.teesCount()).should.eq(0);
 
-            const persistentGPUAddress = await getTeePoolAddress(TeePoolType.Persistent, HardwareType.GPU, persistentTimeout);
+            const persistentGPUAddress = await getTeePoolAddress(TeePoolType.Persistent, HardwareType.GPU, persistentTimeout, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -2330,7 +2339,7 @@ describe("ComputeEngine", () => {
             );
             (await persistentGPUTeePool.teesCount()).should.eq(0);
 
-            const dedicatedStandardAddress = await getTeePoolAddress(TeePoolType.Dedicated, HardwareType.Standard, maxUint80);
+            const dedicatedStandardAddress = await getTeePoolAddress(TeePoolType.Dedicated, HardwareType.Standard, maxUint80, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -2344,7 +2353,7 @@ describe("ComputeEngine", () => {
             );
             (await dedicatedStandardTeePool.teesCount()).should.eq(0);
 
-            const dedicatedGPUAddress = await getTeePoolAddress(TeePoolType.Dedicated, HardwareType.GPU, maxUint80);
+            const dedicatedGPUAddress = await getTeePoolAddress(TeePoolType.Dedicated, HardwareType.GPU, maxUint80, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -2757,7 +2766,7 @@ describe("ComputeEngine", () => {
                 .should.be.rejectedWith(`JobAlreadyDoneOrCanceled()`);
 
             // Deploy TeePools
-            const ephemeralGPUAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.GPU, ephemeralTimeout);
+            const ephemeralGPUAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.GPU, ephemeralTimeout, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -2830,7 +2839,7 @@ describe("ComputeEngine", () => {
                 ephemeralGPUTeePool.target, // teePoolAddress
             ]);
 
-            const dedicatedStandardAddress = await getTeePoolAddress(TeePoolType.Dedicated, HardwareType.Standard, maxUint80);
+            const dedicatedStandardAddress = await getTeePoolAddress(TeePoolType.Dedicated, HardwareType.Standard, maxUint80, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(
@@ -2951,9 +2960,12 @@ describe("ComputeEngine", () => {
         let user1ERC20Balance = parseEther(1_000);
         let user2ERC20Balance = parseEther(2_000);
         let erc20Mock: ERC20Mock;
+        let nonce: number;
 
         beforeEach(async () => {
             await deploy();
+
+            nonce = 0;
 
             const erc20MockDeploy = await ethers.getContractFactory("ERC20Mock", {
                 signer: dlp1Owner,
@@ -3181,7 +3193,7 @@ describe("ComputeEngine", () => {
                 .should.be.rejectedWith(`JobNotSubmitted(${jobId1})`);
 
             // Deploy TeePools
-            const ephemeralStandardAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.Standard, ephemeralTimeout);
+            const ephemeralStandardAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.Standard, ephemeralTimeout, teePoolFactoryAddress, nonce++);
             await teePoolFactory
                 .connect(maintainer)
                 .createTeePool(

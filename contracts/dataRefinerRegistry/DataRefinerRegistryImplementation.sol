@@ -43,12 +43,12 @@ contract DataRefinerRegistryImplementation is
      *
      * @param ownerAddress Address of the owner
      */
-    function initialize(address ownerAddress, address dlpRootCoreAddress) external initializer {
+    function initialize(address ownerAddress, address initDlpRootCoreAddress) external initializer {
         __UUPSUpgradeable_init();
         __Pausable_init();
         __AccessControl_init();
 
-        dlpRootCore = IDLPRootCoreReadOnly(dlpRootCoreAddress);
+        dlpRootCore = IDLPRootCoreReadOnly(initDlpRootCoreAddress);
 
         _setRoleAdmin(MAINTAINER_ROLE, DEFAULT_ADMIN_ROLE);
         _grantRole(DEFAULT_ADMIN_ROLE, ownerAddress);
@@ -64,8 +64,8 @@ contract DataRefinerRegistryImplementation is
     function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     /// @inheritdoc IDataRefinerRegistry
-    function updateDlpRootCore(address dlpRootCoreAddress) external onlyRole(MAINTAINER_ROLE) {
-        dlpRootCore = IDLPRootCoreReadOnly(dlpRootCoreAddress);
+    function updateDlpRootCore(address newDlpRootCoreAddress) external onlyRole(MAINTAINER_ROLE) {
+        dlpRootCore = IDLPRootCoreReadOnly(newDlpRootCoreAddress);
     }
 
     /// @inheritdoc IDataRefinerRegistry

@@ -247,8 +247,6 @@ describe("QueryEngine", () => {
         });
 
         it("should have correct treasury addresses after deploy", async function () {
-            const dataAccessTreasurySalt = ethers.keccak256(ethers.toUtf8Bytes("DataAccessTreasury"));
-
             // initialize function of DataAccessTreasuryImplementation
             const dataAccessTreasuryAbi = [
                 "function initialize(address ownerAddress, address custodian)",
@@ -264,11 +262,11 @@ describe("QueryEngine", () => {
             const queryEngineTreasuryProxyInitCode = ethers.solidityPacked(["bytes", "bytes"], [beaconProxyFactory.bytecode, queryEngineTreasuryProxyArgs]);
             const queryEngineTreasuryProxyAddress = ethers.getCreate2Address(
                 dataAccessTreasuryBeacon.target.toString(), // beaconProxy's deployer
-                dataAccessTreasurySalt,
+                ethers.keccak256(ethers.solidityPacked(["address", "uint256"], [queryEngine.target, 0])),
                 ethers.keccak256(queryEngineTreasuryProxyInitCode),
             );
             queryEngineTreasury.should.eq(queryEngineTreasuryProxyAddress);
-            queryEngineTreasuryProxyAddress.should.eq(await dataAccessTreasuryBeacon.getProxyAddress(queryEngineTreasuryInitializeData));
+            queryEngineTreasuryProxyAddress.should.eq(await dataAccessTreasuryBeacon.getProxyAddress(queryEngineTreasuryInitializeData, queryEngine.target, 0));
 
             const computeEngineTreasuryInitializeData = dataAccessTreasuryIface.encodeFunctionData("initialize", [
                 owner.address,
@@ -278,11 +276,11 @@ describe("QueryEngine", () => {
             const computeEngineTreasuryProxyInitCode = ethers.solidityPacked(["bytes", "bytes"], [beaconProxyFactory.bytecode, computeEngineTreasuryProxyArgs]);
             const computeEngineTreasuryProxyAddress = ethers.getCreate2Address(
                 dataAccessTreasuryBeacon.target.toString(), // beaconProxy's deployer
-                dataAccessTreasurySalt,
+                ethers.keccak256(ethers.solidityPacked(["address", "uint256"], [computeEngine.target, 1])),
                 ethers.keccak256(computeEngineTreasuryProxyInitCode),
             );
             computeEngineTreasury.should.eq(computeEngineTreasuryProxyAddress);
-            computeEngineTreasuryProxyAddress.should.eq(await dataAccessTreasuryBeacon.getProxyAddress(computeEngineTreasuryInitializeData));
+            computeEngineTreasuryProxyAddress.should.eq(await dataAccessTreasuryBeacon.getProxyAddress(computeEngineTreasuryInitializeData, computeEngine.target, 1));
         });
 
         it("should grant or revoke roles when admin", async function () {
@@ -772,8 +770,8 @@ describe("QueryEngine", () => {
 
         const depositAmount = parseEther(100);
 
-        const getTeePoolAddress = async function (teePoolType: number, hardwareType: number, maxTimeout: number | bigint) {
-            const salt = ethers.keccak256(ethers.toUtf8Bytes("ComputeEngineTeePool"));
+        const getTeePoolAddress = async function (teePoolType: number, hardwareType: number, maxTimeout: number | bigint, deployer: string, nonce: number) {
+            const salt = ethers.keccak256(ethers.solidityPacked(["address", "uint256"], [deployer, nonce]));
 
             const abi = [
                 "function initialize(address ownerAddress, address computeEngineAddress, uint8 teePoolType, uint8 hardwareType, uint80 maxTimeout)",
@@ -809,7 +807,7 @@ describe("QueryEngine", () => {
                 .addRefiner(dlpId1, "refiner1", "schema1", "instruction1", "publicKey1");
 
             // Maintainer creates a dedicated TEE pool
-            const teePoolProxyAddress = await getTeePoolAddress(TeePoolType.Dedicated, HardwareType.GPU, maxUint80);
+            const teePoolProxyAddress = await getTeePoolAddress(TeePoolType.Dedicated, HardwareType.GPU, maxUint80, await teePoolFactory.getAddress(), 0);
 
             await teePoolFactory
                 .connect(maintainer)

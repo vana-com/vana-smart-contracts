@@ -82,18 +82,18 @@ contract QueryEngineImplementation is
      */
     function initialize(
         address ownerAddress,
-        address refinerRegistryAddress,
-        address dataAccessTreasuryFactory
+        address initRefinerRegistryAddress,
+        address initDataAccessTreasuryFactory
     ) external initializer {
         __UUPSUpgradeable_init();
         __Pausable_init();
         __AccessControl_init();
         __ReentrancyGuard_init();
 
-        refinerRegistry = IDataRefinerRegistry(refinerRegistryAddress);
+        refinerRegistry = IDataRefinerRegistry(initRefinerRegistryAddress);
 
         /// @dev Deploy a new data access treasury for the query engine via beacon proxy
-        DataAccessTreasuryFactoryBeacon factoryBeacon = DataAccessTreasuryFactoryBeacon(dataAccessTreasuryFactory);
+        DataAccessTreasuryFactoryBeacon factoryBeacon = DataAccessTreasuryFactoryBeacon(initDataAccessTreasuryFactory);
         address impl = factoryBeacon.implementation();
         address proxy = factoryBeacon.createBeaconProxy(
             abi.encodeCall(DataAccessTreasuryImplementation(payable(impl)).initialize, (ownerAddress, address(this)))
@@ -114,29 +114,29 @@ contract QueryEngineImplementation is
      */
     function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
-    function updateRefinerRegistry(address refinerRegistryAddress) external override onlyRole(MAINTAINER_ROLE) {
-        refinerRegistry = IDataRefinerRegistry(refinerRegistryAddress);
+    function updateRefinerRegistry(address newRefinerRegistryAddress) external override onlyRole(MAINTAINER_ROLE) {
+        refinerRegistry = IDataRefinerRegistry(newRefinerRegistryAddress);
     }
 
-    function updateComputeEngine(address computeEngineAddress) external override onlyRole(MAINTAINER_ROLE) {
-        computeEngine = IComputeEngine(computeEngineAddress);
+    function updateComputeEngine(address newComputeEngineAddress) external override onlyRole(MAINTAINER_ROLE) {
+        computeEngine = IComputeEngine(newComputeEngineAddress);
     }
 
-    function updateDlpPaymentPercentage(uint256 _dlpPaymentPercentage) external override onlyRole(MAINTAINER_ROLE) {
-        if (_dlpPaymentPercentage > ONE_HUNDRED_PERCENT) {
+    function updateDlpPaymentPercentage(uint256 newDlpPaymentPercentage) external override onlyRole(MAINTAINER_ROLE) {
+        if (newDlpPaymentPercentage > ONE_HUNDRED_PERCENT) {
             revert InvalidDlpPaymentPercentage();
         }
-        dlpPaymentPercentage = _dlpPaymentPercentage;
+        dlpPaymentPercentage = newDlpPaymentPercentage;
     }
 
-    function updateVanaTreasury(address _vanaTreasury) external override onlyRole(MAINTAINER_ROLE) {
-        vanaTreasury = _vanaTreasury;
+    function updateVanaTreasury(address newVanaTreasury) external override onlyRole(MAINTAINER_ROLE) {
+        vanaTreasury = newVanaTreasury;
     }
 
     function updateQueryEngineTreasury(
-        IDataAccessTreasury _queryEngineTreasury
+        IDataAccessTreasury newQueryEngineTreasury
     ) external override onlyRole(MAINTAINER_ROLE) {
-        queryEngineTreasury = _queryEngineTreasury;
+        queryEngineTreasury = newQueryEngineTreasury;
     }
 
     /// @inheritdoc IQueryEngine

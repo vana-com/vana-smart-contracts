@@ -74,23 +74,23 @@ contract ComputeEngineImplementation is
      */
     function initialize(
         address ownerAddress,
-        address _queryEngine,
-        IComputeEngineTeePoolFactory _teePoolFactory,
-        DataAccessTreasuryFactoryBeacon _dataAccessTreasuryFactory
+        address initQueryEngine,
+        IComputeEngineTeePoolFactory initTeePoolFactory,
+        DataAccessTreasuryFactoryBeacon initDataAccessTreasuryFactory
     ) external initializer {
         __UUPSUpgradeable_init();
         __Pausable_init();
         __AccessControl_init();
         __ReentrancyGuard_init();
 
-        queryEngine = _queryEngine;
+        queryEngine = initQueryEngine;
 
-        teePoolFactory = _teePoolFactory;
+        teePoolFactory = initTeePoolFactory;
 
         /// @dev Deploy a new data access treasury for the query engine via beacon proxy
-        address proxy = _dataAccessTreasuryFactory.createBeaconProxy(
+        address proxy = initDataAccessTreasuryFactory.createBeaconProxy(
             abi.encodeCall(
-                DataAccessTreasuryImplementation(payable(_dataAccessTreasuryFactory.implementation())).initialize,
+                DataAccessTreasuryImplementation(payable(initDataAccessTreasuryFactory.implementation())).initialize,
                 (ownerAddress, address(this))
             )
         );
@@ -124,26 +124,26 @@ contract ComputeEngineImplementation is
         _unpause();
     }
 
-    function updateQueryEngine(address _queryEngineAddress) external override onlyRole(MAINTAINER_ROLE) {
-        queryEngine = _queryEngineAddress;
+    function updateQueryEngine(address newQueryEngineAddress) external override onlyRole(MAINTAINER_ROLE) {
+        queryEngine = newQueryEngineAddress;
     }
 
     function updateComputeEngineTreasury(
-        IDataAccessTreasury _computeEngineTreasuryAddress
+        IDataAccessTreasury newComputeEngineTreasuryAddress
     ) external override onlyRole(MAINTAINER_ROLE) {
-        computeEngineTreasury = _computeEngineTreasuryAddress;
+        computeEngineTreasury = newComputeEngineTreasuryAddress;
     }
 
     function updateInstructionRegistry(
-        IComputeInstructionRegistry _instructionRegistry
+        IComputeInstructionRegistry newInstructionRegistry
     ) external override onlyRole(MAINTAINER_ROLE) {
-        instructionRegistry = _instructionRegistry;
+        instructionRegistry = newInstructionRegistry;
     }
 
     function updateTeePoolFactory(
-        IComputeEngineTeePoolFactory _teePoolFactory
+        IComputeEngineTeePoolFactory newTeePoolFactory
     ) external override onlyRole(MAINTAINER_ROLE) {
-        teePoolFactory = _teePoolFactory;
+        teePoolFactory = newTeePoolFactory;
     }
 
     ////////////////////////

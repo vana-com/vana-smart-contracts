@@ -33,15 +33,15 @@ contract DataAccessTreasuryImplementation is
      *
      * @param ownerAddress Address of the owner
      */
-    function initialize(address ownerAddress, address _custodian) external initializer {
+    function initialize(address ownerAddress, address initCustodian) external initializer {
         __Pausable_init();
         __AccessControl_init();
         __ReentrancyGuard_init();
 
-        custodian = _custodian;
+        custodian = initCustodian;
 
         _grantRole(DEFAULT_ADMIN_ROLE, ownerAddress);
-        _grantRole(DEFAULT_ADMIN_ROLE, _custodian);
+        _grantRole(DEFAULT_ADMIN_ROLE, initCustodian);
     }
 
     /// @inheritdoc IDataAccessTreasury
@@ -60,10 +60,10 @@ contract DataAccessTreasuryImplementation is
     }
 
     /// @inheritdoc IDataAccessTreasury
-    function updateCustodian(address _custodian) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+    function updateCustodian(address newCustodian) external override onlyRole(DEFAULT_ADMIN_ROLE) {
         _revokeRole(DEFAULT_ADMIN_ROLE, custodian);
-        custodian = _custodian;
-        _grantRole(DEFAULT_ADMIN_ROLE, _custodian);
+        custodian = newCustodian;
+        _grantRole(DEFAULT_ADMIN_ROLE, newCustodian);
     }
 
     /// @inheritdoc IDataAccessTreasury

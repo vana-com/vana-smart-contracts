@@ -40,17 +40,17 @@ contract ComputeEngineTeePoolFactoryImplementation is
      */
     function initialize(
         address ownerAddress,
-        ComputeEngineTeePoolFactoryBeacon _teePoolFactoryBeacon,
-        uint80 _ephemeralTimeout,
-        uint80 _persistentTimeout
+        ComputeEngineTeePoolFactoryBeacon initTeePoolFactoryBeacon,
+        uint80 initEphemeralTimeout,
+        uint80 initPersistentTimeout
     ) external initializer {
         __UUPSUpgradeable_init();
         __Pausable_init();
         __AccessControl_init();
 
-        teePoolFactoryBeacon = _teePoolFactoryBeacon;
-        ephemeralTimeout = _ephemeralTimeout;
-        persistentTimeout = _persistentTimeout;
+        teePoolFactoryBeacon = initTeePoolFactoryBeacon;
+        ephemeralTimeout = initEphemeralTimeout;
+        persistentTimeout = initPersistentTimeout;
 
         _setRoleAdmin(MAINTAINER_ROLE, DEFAULT_ADMIN_ROLE);
         _grantRole(DEFAULT_ADMIN_ROLE, ownerAddress);
@@ -82,14 +82,14 @@ contract ComputeEngineTeePoolFactoryImplementation is
 
     /// @inheritdoc IComputeEngineTeePoolFactory
     function updateTeePoolFactoryBeacon(
-        ComputeEngineTeePoolFactoryBeacon _teePoolFactoryBeacon
+        ComputeEngineTeePoolFactoryBeacon newTeePoolFactoryBeacon
     ) external override onlyRole(MAINTAINER_ROLE) {
-        teePoolFactoryBeacon = _teePoolFactoryBeacon;
+        teePoolFactoryBeacon = newTeePoolFactoryBeacon;
     }
 
     /// @inheritdoc IComputeEngineTeePoolFactory
-    function updateComputeEngine(address _computeEngine) external override onlyRole(MAINTAINER_ROLE) {
-        computeEngine = _computeEngine;
+    function updateComputeEngine(address newComputeEngine) external override onlyRole(MAINTAINER_ROLE) {
+        computeEngine = newComputeEngine;
     }
 
     ///////////////////////////
