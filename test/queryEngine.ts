@@ -1003,17 +1003,7 @@ describe("QueryEngine", () => {
                 .updateComputeEngine(maliciousComputeEngine.target)
                 .should.be.fulfilled;
 
-            // The malicious compute engine still needs QUERY_ENGINE_ROLE to call back to the query engine
-            await queryEngine
-                .connect(queryEngineTEE)
-                .requestPaymentInVana(dataAccessCost, jobId1, refinerId1)
-                .should.be.rejectedWith(
-                    `AccessControlUnauthorizedAccount("${maliciousComputeEngine.target}", "${QUERY_ENGINE_ROLE}")`,
-                );
-
-            await queryEngine.connect(owner).grantRole(QUERY_ENGINE_ROLE, maliciousComputeEngine.target);
-
-            // Even when the malicious compute engine has QUERY_ENGINE_ROLE, it should still be rejected by ReentrancyGuard
+            // It should be rejected by ReentrancyGuard
             await queryEngine
                 .connect(queryEngineTEE)
                 .requestPaymentInVana(dataAccessCost, jobId1, refinerId1)

@@ -316,7 +316,7 @@ contract QueryEngineImplementation is
         uint256 amount,
         uint256 jobId,
         uint256 refinerId
-    ) external onlyRole(QUERY_ENGINE_ROLE) nonReentrant {
+    ) external nonReentrant onlyRole(QUERY_ENGINE_ROLE) {
         bytes memory metadata = abi.encode(jobId, refinerId);
         _requestPayment(VANA, amount, metadata);
     }
@@ -325,7 +325,7 @@ contract QueryEngineImplementation is
         address token,
         uint256 amount,
         bytes memory metadata
-    ) external onlyRole(QUERY_ENGINE_ROLE) nonReentrant {
+    ) external nonReentrant onlyRole(QUERY_ENGINE_ROLE) {
         _requestPayment(token, amount, metadata);
     }
 
@@ -371,7 +371,7 @@ contract QueryEngineImplementation is
         _dlpPayments[dlpId][token] += dlpPaymentAmount;
     }
 
-    function claimDlpPayment(uint256 dlpId, address token) external whenNotPaused nonReentrant {
+    function claimDlpPayment(uint256 dlpId, address token) external nonReentrant whenNotPaused {
         IDLPRootCoreReadOnly.DlpInfo memory dlp = refinerRegistry.dlpRootCore().dlps(dlpId);
         if (dlp.ownerAddress != msg.sender) {
             revert NotDlpOwner();

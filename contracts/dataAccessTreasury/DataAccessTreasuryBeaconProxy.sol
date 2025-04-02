@@ -7,7 +7,7 @@ import {UpgradeableBeacon} from "@openzeppelin/contracts/proxy/beacon/Upgradeabl
 contract DataAccessTreasuryFactoryBeacon is UpgradeableBeacon {
     uint256 public nonce;
 
-    constructor(address _implementation, address _owner) UpgradeableBeacon(_implementation, _owner) {}
+    constructor(address initImplementation, address initOwner) UpgradeableBeacon(initImplementation, initOwner) {}
 
     function createBeaconProxy(bytes memory data) external returns (address) {
         bytes32 SALT = keccak256(abi.encodePacked(msg.sender, nonce));

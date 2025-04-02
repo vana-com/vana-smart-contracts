@@ -71,7 +71,7 @@ contract DataAccessTreasuryImplementation is
         address to,
         address token,
         uint256 amount
-    ) external override onlyRole(DEFAULT_ADMIN_ROLE) whenNotPaused nonReentrant {
+    ) external override nonReentrant whenNotPaused onlyRole(DEFAULT_ADMIN_ROLE) {
         if (token == VANA) {
             payable(to).sendValue(amount);
         } else {

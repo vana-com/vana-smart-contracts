@@ -43,7 +43,6 @@ contract ComputeEngineImplementation is
     error NotLongRunningJob();
     error TeePoolNotFound();
 
-    error TeeNotFound();
     error ZeroTeeAddress();
     error InvalidStatusTransition(JobStatus currentStatus, JobStatus newStatus);
     error NotQueryEngine();
@@ -252,6 +251,10 @@ contract ComputeEngineImplementation is
     }
 
     function _resubmitJobWithTee(uint256 jobId, address teeAddress) internal whenNotPaused {
+        if (jobId == 0 || jobId > jobsCount) {
+            revert JobNotFound(jobId);
+        }
+
         Job storage job = _jobs[jobId];
         if (job.teeAddress != address(0)) {
             revert TeeAlreadyAssigned(jobId);
@@ -292,7 +295,6 @@ contract ComputeEngineImplementation is
             emit TeeAssignmentFailed(jobId, abi.encodeWithSelector(TeePoolNotFound.selector));
             return address(0);
         }
-        job.teePoolAddress = address(teePoolAddress);
 
         /// @dev submitJob should not revert. If the job cannot be assigned to a Tee,
         /// its status will be Registered.
@@ -302,6 +304,7 @@ contract ComputeEngineImplementation is
             emit TeeAssignmentFailed(jobId, reason);
             return address(0);
         }
+        job.teePoolAddress = address(teePoolAddress);
         emit TeeAssignmentSucceeded(jobId, address(teePoolAddress), assignedTeeAddress);
         return assignedTeeAddress;
     }
@@ -333,7 +336,7 @@ contract ComputeEngineImplementation is
 
         /// @dev Remove the job from the TeePool if it's completed or failed
         if (status == JobStatus.Completed || status == JobStatus.Failed) {
-            IComputeEngineTeePool teePool = teePoolFactory.getTeePoolAddress(job.maxTimeout, job.gpuRequired);
+            IComputeEngineTeePool teePool = IComputeEngineTeePool(job.teePoolAddress);
             if (address(teePool) != address(0)) {
                 teePool.removeJob(jobId);
             }
@@ -358,7 +361,7 @@ contract ComputeEngineImplementation is
         emit JobCanceled(jobId);
 
         if (status == JobStatus.Submitted || status == JobStatus.Running) {
-            IComputeEngineTeePool teePool = teePoolFactory.getTeePoolAddress(job.maxTimeout, job.gpuRequired);
+            IComputeEngineTeePool teePool = IComputeEngineTeePool(job.teePoolAddress);
             if (address(teePool) != address(0)) {
                 teePool.removeJob(jobId);
             }
@@ -392,7 +395,7 @@ contract ComputeEngineImplementation is
         }
     }
 
-    function withdraw(address token, uint256 amount) external override whenNotPaused nonReentrant {
+    function withdraw(address token, uint256 amount) external override nonReentrant whenNotPaused {
         if (amount == 0) {
             revert InvalidAmount();
         }
@@ -417,7 +420,7 @@ contract ComputeEngineImplementation is
         address token,
         uint256 amount,
         bytes calldata metadata
-    ) external override whenNotPaused nonReentrant {
+    ) external override nonReentrant whenNotPaused {
         if (msg.sender == queryEngine) {
             _executePaymentRequestFromQueryEngine(token, amount, metadata);
         } else {

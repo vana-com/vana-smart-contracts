@@ -1364,7 +1364,7 @@ describe("ComputeEngine", () => {
                 instructionId1, // computeInstructionId
                 await ethers.provider.getBlock("latest").then((block) => block ? block.timestamp : 0), // addedTimestamp
                 "", // statusMessage
-                ephemeralGPUTeePool.target, // teePoolAddress
+                ethers.ZeroAddress, // teePoolAddress
             ]);
         });
 
@@ -1489,7 +1489,7 @@ describe("ComputeEngine", () => {
                 instructionId1, // computeInstructionId
                 await ethers.provider.getBlock("latest").then((block) => block ? block.timestamp : 0), // addedTimestamp
                 "", // statusMessage
-                ephemeralStandardTeePool.target, // teePoolAddress
+                ethers.ZeroAddress, // teePoolAddress
             ]);
 
             // jobId3 -> ephemeralGPUTee2 (2 % 2 = 0 -> 2 = len)
@@ -1953,7 +1953,7 @@ describe("ComputeEngine", () => {
                 instructionId1, // computeInstructionId
                 addedTimestamp, // addedTimestamp
                 "", // statusMessage
-                dedicatedStandardTeePool.target, // teePoolAddress
+                ethers.ZeroAddress, // teePoolAddress
             ]);
 
             // Resubmit the job without a Tee -> FailedToAssignTee
