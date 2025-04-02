@@ -68,9 +68,9 @@ The contract implements dynamic share pricing that automatically adjusts based o
 
 VanaPoolEntity also handles entity lifecycle management including registration, updates, and status changes, while enforcing protocol rules such as minimum stake requirements and valid naming conventions.
 
-Moksha: [0xaFd522186C8d0cfd9eC7Aa6aa1D42A48ED3dA10A](https://moksha.vanascan.io/address/0xaFd522186C8d0cfd9eC7Aa6aa1D42A48ED3dA10A)
+Moksha: [0x44f20490A82e1f1F1cC25Dd3BA8647034eDdce30](https://moksha.vanascan.io/address/0x44f20490A82e1f1F1cC25Dd3BA8647034eDdce30)
 
-Vana mainnet: [0xaFd522186C8d0cfd9eC7Aa6aa1D42A48ED3dA10A](https://vanascan.io/address/0xaFd522186C8d0cfd9eC7Aa6aa1D42A48ED3dA10A)
+Vana mainnet: [0x44f20490A82e1f1F1cC25Dd3BA8647034eDdce30](https://vanascan.io/address/0x44f20490A82e1f1F1cC25Dd3BA8647034eDdce30)
 
 ### VanaPoolStaking Contract
 
@@ -80,9 +80,9 @@ The contract implements comprehensive slippage protection mechanisms to prevent 
 
 VanaPoolStaking maintains detailed records of all user positions across different entities, enabling portfolio diversification while preserving accurate accounting. It coordinates closely with VanaPoolEntity to ensure that reward processing occurs at critical moments such as stake or unstake operations.
 
-Moksha: [0x5ABE1D3F075c8F98C45e090E44dd119b2e4c3774](https://moksha.vanascan.io/address/0x5ABE1D3F075c8F98C45e090E44dd119b2e4c3774)
+Moksha: [0x641C18E2F286c86f96CE95C8ec1EB9fC0415Ca0e](https://moksha.vanascan.io/address/0x641C18E2F286c86f96CE95C8ec1EB9fC0415Ca0e)
 
-Vana mainnet: [0x5ABE1D3F075c8F98C45e090E44dd119b2e4c3774](https://vanascan.io/address/0x5ABE1D3F075c8F98C45e090E44dd119b2e4c3774)
+Vana mainnet: [0x641C18E2F286c86f96CE95C8ec1EB9fC0415Ca0e](https://vanascan.io/address/0x641C18E2F286c86f96CE95C8ec1EB9fC0415Ca0e)
 
 ### VanaPoolTreasury Contract
 
@@ -104,12 +104,12 @@ Each epoch has a defined start and end block, a total reward amount to be distri
 
 The contract implements sophisticated reward calculation and distribution mechanisms that account for both the stake amount and performance rating of each DLP. It provides functions to query historical data about epochs and DLP participation, allowing for transparent tracking of rewards and performance over time. The epoch structure is configurable, with adjustable parameters like epoch size, reward amount, and maximum DLPs per epoch, providing flexibility to adapt the protocol as the ecosystem grows.
 
-Moksha:  [0xc3d176cF6BccFCB9225b53B87a95147218e1537F](https://moksha.vanascan.io/address/0xc3d176cF6BccFCB9225b53B87a95147218e1537F)
+Moksha:  [0xc3d176cF6BccFCB9225b53B87a95147218e1537F](https://moksha.vanascan.io/address/0x143BE72CF2541604A7691933CAccd6D9cC17c003)
 
-Vana mainnet: [0xc3d176cF6BccFCB9225b53B87a95147218e1537F](https://vanascan.io/address/0xc3d176cF6BccFCB9225b53B87a95147218e1537F)
+Vana mainnet: [0xc3d176cF6BccFCB9225b53B87a95147218e1537F](https://vanascan.io/address/0x143BE72CF2541604A7691933CAccd6D9cC17c003)
 
 
-### Root Core Contract
+### DLPRootCore Contract
 Manages the DLP (Delegation Liquidity Provider) lifecycle including registration, verification, and stake management with eligibility thresholds.
 
 The DLPRootCore contract manages the lifecycle of Delegation Liquidity Providers (DLPs) in the Vana ecosystem, handling registration, verification, and eligibility status. It serves as the central registry for all DLPs, storing critical information such as their addresses, ownership details, stake amounts, and verification status, which determine their eligibility to participate in the ecosystem.
@@ -123,11 +123,11 @@ Moksha:  [0x0aBa5e28228c323A67712101d61a54d4ff5720FD](https://moksha.vanascan.io
 Vana mainnet: [0x0aBa5e28228c323A67712101d61a54d4ff5720FD](https://vanascan.io/address/0x0aBa5e28228c323A67712101d61a54d4ff5720FD)
 
 
-### Root Network Contract
+### DLPRoot Staking Contract
 
 Core contract managing staking functionality including stake creation, withdrawal, migration, and reward claiming.
 
-The DLPRootImplementation contract serves as the central hub of the Vana staking ecosystem, managing the core staking functionality for users who want to support DLPs. It coordinates the interactions between stakers, DLPs, and the various specialized contracts in the system, including DLPRootCore, DLPRootEpoch, DLPRootMetrics, and DLPRootTreasury.
+The DLPRoot contract serves as the central hub of the Vana staking ecosystem, managing the core staking functionality for users who want to support DLPs. It coordinates the interactions between stakers, DLPs, and the various specialized contracts in the system, including DLPRootCore, DLPRootEpoch, DLPRootMetrics, and DLPRootTreasury.
 
 The contract enables users to create stakes on DLPs, with stakes tracked by amount, start block, and associated DLP. It implements a sophisticated reward calculation system based on stake duration and the performance of the chosen DLP, with longer stake periods receiving multiplier bonuses. Stakers can close and withdraw their stakes after optional waiting periods, or migrate their stakes to different DLPs, providing flexibility while ensuring system stability.
 
