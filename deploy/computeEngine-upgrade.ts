@@ -30,6 +30,11 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   await verifyContract(implementationDeploy.address, []);
 
+  console.log(`***************************************************`);
+  console.log(`***************************************************`);
+  console.log(`***************************************************`);
+  console.log(`********** Upgrade to new implementation **********`);
+
   const proxyAddress = (await deployments.get(proxyContractName)).address;
   const proxy = await ethers.getContractAt(implementationContractName, proxyAddress);
 

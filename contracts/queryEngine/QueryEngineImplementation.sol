@@ -58,6 +58,7 @@ contract QueryEngineImplementation is
     error NotDlpOwner();
     error ColumnNameUnexpected();
     error RefinerNotFound();
+    error ZeroAddress();
 
     /// @notice Reverts if the caller is not the owner of the refiner
     /// @param refinerId The ID of the refiner
@@ -130,12 +131,18 @@ contract QueryEngineImplementation is
     }
 
     function updateVanaTreasury(address newVanaTreasury) external override onlyRole(MAINTAINER_ROLE) {
+        if (newVanaTreasury == address(0)) {
+            revert ZeroAddress();
+        }
         vanaTreasury = newVanaTreasury;
     }
 
     function updateQueryEngineTreasury(
         IDataAccessTreasury newQueryEngineTreasury
     ) external override onlyRole(MAINTAINER_ROLE) {
+        if (address(newQueryEngineTreasury) == address(0)) {
+            revert ZeroAddress();
+        }
         queryEngineTreasury = newQueryEngineTreasury;
     }
 

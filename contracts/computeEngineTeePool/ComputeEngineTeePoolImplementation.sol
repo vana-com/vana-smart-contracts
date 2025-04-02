@@ -24,6 +24,7 @@ contract ComputeEngineTeePoolImplementation is
     error TeeNotActive(address teeAddress);
     error NoActiveTee(address teePoolAddress);
     error NotComputeEngine();
+    error NotTeePoolFactory();
     error HWRequirementNotMet();
     error MaxTimeoutExceeded();
 
@@ -38,7 +39,7 @@ contract ComputeEngineTeePoolImplementation is
 
     modifier onlyTeePoolFactory() {
         if (msg.sender != teePoolFactory) {
-            revert NotComputeEngine();
+            revert NotTeePoolFactory();
         }
         _;
     }

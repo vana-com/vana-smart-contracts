@@ -44,6 +44,7 @@ contract ComputeEngineImplementation is
     error TeePoolNotFound();
 
     error ZeroTeeAddress();
+    error ZeroAddress();
     error InvalidStatusTransition(JobStatus currentStatus, JobStatus newStatus);
     error NotQueryEngine();
     error UnauthorizedPaymentRequestor();
@@ -130,6 +131,9 @@ contract ComputeEngineImplementation is
     function updateComputeEngineTreasury(
         IDataAccessTreasury newComputeEngineTreasuryAddress
     ) external override onlyRole(MAINTAINER_ROLE) {
+        if (address(newComputeEngineTreasuryAddress) == address(0)) {
+            revert ZeroAddress();
+        }
         computeEngineTreasury = newComputeEngineTreasuryAddress;
     }
 
@@ -428,7 +432,7 @@ contract ComputeEngineImplementation is
         }
     }
 
-    function _executePaymentRequestFromQueryEngine(address token, uint256 amount, bytes calldata metadata) onlyQueryEngine internal {
+    function _executePaymentRequestFromQueryEngine(address token, uint256 amount, bytes calldata metadata) internal {
         uint256 jobId = abi.decode(metadata, (uint256));
         Job storage job = _jobs[jobId];
 
