@@ -5,11 +5,11 @@ import {
     QueryEngineImplementation,
     ComputeEngineImplementation,
     DataAccessTreasuryImplementation,
-    DataAccessTreasuryFactoryBeacon,
+    DataAccessTreasuryProxyFactory,
     DataRefinerRegistryImplementation,
     ComputeInstructionRegistryImplementation,
     ComputeEngineTeePoolFactoryImplementation,
-    ComputeEngineTeePoolFactoryBeacon,
+    ComputeEngineTeePoolProxyFactory,
     DLPRootCoreMock
 } from "../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
@@ -58,14 +58,14 @@ describe("QueryEngine", () => {
     let queryEngine: QueryEngineImplementation;
     let computeEngine: ComputeEngineImplementation;
     let dataAccessTreasuryImpl: DataAccessTreasuryImplementation;
-    let dataAccessTreasuryBeacon: DataAccessTreasuryFactoryBeacon;
+    let dataAccessTreasuryFactory: DataAccessTreasuryProxyFactory;
     let queryEngineTreasury: DataAccessTreasuryImplementation;
     let computeEngineTreasury: DataAccessTreasuryImplementation;
     let dataRefinerRegistry: DataRefinerRegistryImplementation;
     let computeInstructionRegistry: ComputeInstructionRegistryImplementation;
     let dlpRootCoreMock: DLPRootCoreMock;
     let teePoolFactory: ComputeEngineTeePoolFactoryImplementation;
-    let teePoolProxyFactory: ComputeEngineTeePoolFactoryBeacon;
+    let teePoolProxyFactory: ComputeEngineTeePoolProxyFactory;
 
     const DEFAULT_ADMIN_ROLE =
         "0x0000000000000000000000000000000000000000000000000000000000000000";
@@ -126,20 +126,20 @@ describe("QueryEngine", () => {
             computeInstructionRegistryDeploy.target,
         );
 
-        // Deploy DataAccessTreasuryFactoryBeacon
+        // Deploy DataAccessTreasuryProxyFactory
         dataAccessTreasuryImpl = await ethers.deployContract(
             "DataAccessTreasuryImplementation",
         );
 
-        dataAccessTreasuryBeacon = await ethers.deployContract(
-            "DataAccessTreasuryFactoryBeacon",
+        dataAccessTreasuryFactory = await ethers.deployContract(
+            "DataAccessTreasuryProxyFactory",
             [dataAccessTreasuryImpl.target, owner.address],
         );
 
         // Deploy QueryEngine
         const queryEngineDeploy = await upgrades.deployProxy(
             await ethers.getContractFactory("QueryEngineImplementation"),
-            [owner.address, dataRefinerRegistry.target, dataAccessTreasuryBeacon.target],
+            [owner.address, dataRefinerRegistry.target, dataAccessTreasuryFactory.target],
             {
                 kind: "uups",
             },
@@ -155,13 +155,13 @@ describe("QueryEngine", () => {
             await queryEngine.queryEngineTreasury(),
         );
 
-        // Deploy ComputeEngineTeePoolFactoryBeacon
+        // Deploy ComputeEngineTeePoolProxyFactory
         const teePoolImpl = await ethers.deployContract(
             "ComputeEngineTeePoolImplementation",
         );
 
         teePoolProxyFactory = await ethers.deployContract(
-            "ComputeEngineTeePoolFactoryBeacon",
+            "ComputeEngineTeePoolProxyFactory",
             [teePoolImpl.target, owner.address],
         );
 
@@ -186,7 +186,7 @@ describe("QueryEngine", () => {
         // Deploy ComputeEngine
         const computeEngineDeploy = await upgrades.deployProxy(
             await ethers.getContractFactory("ComputeEngineImplementation"),
-            [owner.address, queryEngine.target, teePoolFactory.target, dataAccessTreasuryBeacon.target],
+            [owner.address, queryEngine.target, teePoolFactory.target, dataAccessTreasuryFactory.target],
             {
                 kind: "uups",
             },
@@ -258,29 +258,29 @@ describe("QueryEngine", () => {
                 owner.address,
                 queryEngine.target,
             ]);
-            const queryEngineTreasuryProxyArgs = ethers.AbiCoder.defaultAbiCoder().encode(["address", "bytes"], [dataAccessTreasuryBeacon.target, queryEngineTreasuryInitializeData]);
+            const queryEngineTreasuryProxyArgs = ethers.AbiCoder.defaultAbiCoder().encode(["address", "bytes"], [dataAccessTreasuryFactory.target, queryEngineTreasuryInitializeData]);
             const queryEngineTreasuryProxyInitCode = ethers.solidityPacked(["bytes", "bytes"], [beaconProxyFactory.bytecode, queryEngineTreasuryProxyArgs]);
             const queryEngineTreasuryProxyAddress = ethers.getCreate2Address(
-                dataAccessTreasuryBeacon.target.toString(), // beaconProxy's deployer
-                ethers.keccak256(ethers.solidityPacked(["address", "uint256"], [queryEngine.target, 0])),
+                dataAccessTreasuryFactory.target.toString(), // beaconProxy's deployer
+                ethers.keccak256(ethers.solidityPacked(["address"], [queryEngine.target])),
                 ethers.keccak256(queryEngineTreasuryProxyInitCode),
             );
             queryEngineTreasury.should.eq(queryEngineTreasuryProxyAddress);
-            queryEngineTreasuryProxyAddress.should.eq(await dataAccessTreasuryBeacon.getProxyAddress(queryEngineTreasuryInitializeData, queryEngine.target, 0));
+            queryEngineTreasuryProxyAddress.should.eq(await dataAccessTreasuryFactory.getProxyAddress(queryEngineTreasuryInitializeData, queryEngine.target));
 
             const computeEngineTreasuryInitializeData = dataAccessTreasuryIface.encodeFunctionData("initialize", [
                 owner.address,
                 computeEngine.target,
             ]);
-            const computeEngineTreasuryProxyArgs = ethers.AbiCoder.defaultAbiCoder().encode(["address", "bytes"], [dataAccessTreasuryBeacon.target, computeEngineTreasuryInitializeData]);
+            const computeEngineTreasuryProxyArgs = ethers.AbiCoder.defaultAbiCoder().encode(["address", "bytes"], [dataAccessTreasuryFactory.target, computeEngineTreasuryInitializeData]);
             const computeEngineTreasuryProxyInitCode = ethers.solidityPacked(["bytes", "bytes"], [beaconProxyFactory.bytecode, computeEngineTreasuryProxyArgs]);
             const computeEngineTreasuryProxyAddress = ethers.getCreate2Address(
-                dataAccessTreasuryBeacon.target.toString(), // beaconProxy's deployer
-                ethers.keccak256(ethers.solidityPacked(["address", "uint256"], [computeEngine.target, 1])),
+                dataAccessTreasuryFactory.target.toString(), // beaconProxy's deployer
+                ethers.keccak256(ethers.solidityPacked(["address"], [computeEngine.target])),
                 ethers.keccak256(computeEngineTreasuryProxyInitCode),
             );
             computeEngineTreasury.should.eq(computeEngineTreasuryProxyAddress);
-            computeEngineTreasuryProxyAddress.should.eq(await dataAccessTreasuryBeacon.getProxyAddress(computeEngineTreasuryInitializeData, computeEngine.target, 1));
+            computeEngineTreasuryProxyAddress.should.eq(await dataAccessTreasuryFactory.getProxyAddress(computeEngineTreasuryInitializeData, computeEngine.target));
         });
 
         it("should grant or revoke roles when admin", async function () {
@@ -770,8 +770,8 @@ describe("QueryEngine", () => {
 
         const depositAmount = parseEther(100);
 
-        const getTeePoolAddress = async function (teePoolType: number, hardwareType: number, maxTimeout: number | bigint, deployer: string, nonce: number) {
-            const salt = ethers.keccak256(ethers.solidityPacked(["address", "uint256"], [deployer, nonce]));
+        const getTeePoolAddress = async function (teePoolType: number, hardwareType: number, maxTimeout: number | bigint, deployer: string) {
+            const salt = ethers.keccak256(ethers.solidityPacked(["address"], [deployer]));
 
             const abi = [
                 "function initialize(address ownerAddress, address computeEngineAddress, uint8 teePoolType, uint8 hardwareType, uint80 maxTimeout)",
@@ -807,7 +807,7 @@ describe("QueryEngine", () => {
                 .addRefiner(dlpId1, "refiner1", "schema1", "instruction1", "publicKey1");
 
             // Maintainer creates a dedicated TEE pool
-            const teePoolProxyAddress = await getTeePoolAddress(TeePoolType.Dedicated, HardwareType.GPU, maxUint80, await teePoolFactory.getAddress(), 0);
+            const teePoolProxyAddress = await getTeePoolAddress(TeePoolType.Dedicated, HardwareType.GPU, maxUint80, await teePoolFactory.getAddress());
 
             await teePoolFactory
                 .connect(maintainer)

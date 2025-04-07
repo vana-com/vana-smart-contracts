@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-import "../../computeEngineTeePool/ComputeEngineTeePoolBeaconProxy.sol";
+import "../../computeEngineTeePool/ComputeEngineTeePoolProxyFactory.sol";
 import "../../computeEngineTeePool/interfaces/IComputeEngineTeePool.sol";
 
 interface IComputeEngineTeePoolFactory {
@@ -15,9 +15,9 @@ interface IComputeEngineTeePoolFactory {
     /// @notice Unpauses the contract
     function unpause() external;
 
-    function teePoolFactoryBeacon() external view returns (ComputeEngineTeePoolFactoryBeacon);
+    function teePoolProxyFactory() external view returns (ComputeEngineTeePoolProxyFactory);
 
-    function updateTeePoolFactoryBeacon(ComputeEngineTeePoolFactoryBeacon _teePoolFactoryBeacon) external;
+    function updateTeePoolProxyFactory(ComputeEngineTeePoolProxyFactory _teePoolProxyFactory) external;
 
     function computeEngine() external view returns (address);
 

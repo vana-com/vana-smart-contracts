@@ -42,15 +42,17 @@ interface IComputeEngineTeePool is ITeePool {
     /// @notice Returns the type of the Tee pool
     function teePoolType() external view returns (TeePoolType);
 
-    /// @notice Updates the type of the Tee pool
-    /// @param teePoolType The new type of the Tee pool
-    function updateTeePoolType(TeePoolType teePoolType) external;
+    // /// @notice Updates the type of the Tee pool
+    // /// @param teePoolType The new type of the Tee pool
+    // /// @dev Only callable by the TeePoolFactory contract to ensure consistency
+    // function updateTeePoolType(TeePoolType teePoolType) external;
 
     /// @notice Returns the hardware type of the Tee pool
     function hardwareType() external view returns (HardwareType);
 
-    /// @notice Updates the hardware type of the Tee pool
-    function updateHardwareType(HardwareType hardwareType) external;
+    // /// @notice Updates the hardware type of the Tee pool
+    // /// @dev Only callable by the TeePoolFactory contract to ensure consistency
+    // function updateHardwareType(HardwareType hardwareType) external;
 
     /// @notice Returns the maximum timeout for a job
     function maxTimeout() external view returns (uint80);

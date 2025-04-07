@@ -60,6 +60,43 @@ export async function verifyProxy(
   }
 }
 
+export async function verifyBeacon(
+  beaconAddress: string,
+  implementationAddress: string,
+  ownerAddress: string,
+  beaconContractPath: string,
+) {
+  console.log(``);
+  console.log(``);
+  console.log(``);
+  console.log(`**************************************************************`);
+  console.log(`**************************************************************`);
+  console.log(`**************************************************************`);
+  console.log(`********** Verify the contracts on blockscout **********`);
+  console.log("!!!! There might be errors but you can ignore them");
+
+  try {
+    await run("verify:verify", {
+      address: implementationAddress,
+      force: true,
+      constructorArguments: [],
+    });
+  } catch (e) {
+    console.log(e);
+  }
+
+  try {
+    await run("verify:verify", {
+      address: beaconAddress,
+      force: true,
+      contract: beaconContractPath,
+      constructorArguments: [implementationAddress, ownerAddress],
+    });
+  } catch (e) {
+    console.log(e);
+  }
+}
+
 export async function verifyContract(
   address: string,
   constructorArguments: string[],
@@ -148,11 +185,79 @@ export async function deployProxy(
   };
 }
 
+export async function deterministicDeployProxy(
+  deployer: HardhatEthersSigner,
+  proxyContractName: string,
+  implementationContractName: string,
+  initializeParams:
+    | (string | number | bigint | object)[]
+    | (string | number | bigint)[][],
+  salt: string,
+): Promise<{
+  proxyAddress: string;
+  implementationAddress: string;
+  initializeData: string;
+}> {
+  console.log(``);
+  console.log(``);
+  console.log(``);
+  console.log(`**************************************************************`);
+  console.log(`**************************************************************`);
+  console.log(`**************************************************************`);
+  console.log(`********** Deploying ${proxyContractName} **********`);
+
+  // Deploy the implementation contract
+  const implementationFactory = await ethers.getContractFactory(
+    implementationContractName,
+  );
+
+  const implementationDeploy = await deployments.deploy(
+    implementationContractName,
+    {
+      from: deployer.address,
+      args: [],
+      log: true,
+      deterministicDeployment: ethers.keccak256(ethers.toUtf8Bytes(salt)),
+    },
+  );
+
+  // Encode the initializer function call
+  const initializeData = implementationFactory.interface.encodeFunctionData(
+    "initialize",
+    initializeParams,
+  );
+
+  const proxyDeploy = await deployments.deploy(proxyContractName, {
+    from: deployer.address,
+    args: [implementationDeploy.address, initializeData],
+    log: true,
+    deterministicDeployment: ethers.keccak256(ethers.toUtf8Bytes(salt)),
+  });
+
+  console.log(``);
+  console.log(``);
+  console.log(``);
+  console.log(`**************************************************************`);
+  console.log(`**************************************************************`);
+  console.log(`**************************************************************`);
+  console.log(`********** Save contract to .openzeppelin file **********`);
+  await upgrades.forceImport(proxyDeploy.address, implementationFactory, {
+    kind: "uups",
+  });
+
+  return {
+    proxyAddress: proxyDeploy.address,
+    implementationAddress: implementationDeploy.address,
+    initializeData,
+  };
+}
+
 export async function deployBeaconProxy(
   deployer: HardhatEthersSigner,
   beaconContractName: string,
   implementationContractName: string,
   beaconOwner: string,
+  salt: string,
 ): Promise<{
   beaconAddress: string;
   implementationAddress: string;
@@ -176,6 +281,7 @@ export async function deployBeaconProxy(
       from: deployer.address,
       args: [],
       log: true,
+      deterministicDeployment: ethers.keccak256(ethers.toUtf8Bytes(salt)),
     },
   );
 
@@ -183,6 +289,7 @@ export async function deployBeaconProxy(
     from: deployer.address,
     args: [implementationDeploy.address, beaconOwner],
     log: true,
+    deterministicDeployment: ethers.keccak256(ethers.toUtf8Bytes(salt)),
   });
 
   console.log(``);

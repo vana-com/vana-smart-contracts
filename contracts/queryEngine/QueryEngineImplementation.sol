@@ -11,7 +11,7 @@ import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol
 import {IDataRefinerRegistry} from "../dataRefinerRegistry/interfaces/IDataRefinerRegistry.sol";
 import {IPaymentExecutor} from "../dataAccessPayment/interfaces/IPaymentExecutor.sol";
 import {IDLPRootCoreReadOnly} from "../rootCore/interfaces/IDLPRootCore.sol";
-import "../dataAccessTreasury/DataAccessTreasuryBeaconProxy.sol";
+import "../dataAccessTreasury/DataAccessTreasuryProxyFactory.sol";
 import "../dataAccessTreasury/DataAccessTreasuryImplementation.sol";
 import "./interfaces/QueryEngineStorageV1.sol";
 
@@ -84,7 +84,7 @@ contract QueryEngineImplementation is
     function initialize(
         address ownerAddress,
         address initRefinerRegistryAddress,
-        address initDataAccessTreasuryFactory
+        DataAccessTreasuryProxyFactory initDataAccessTreasuryFactory
     ) external initializer {
         __UUPSUpgradeable_init();
         __Pausable_init();
@@ -94,9 +94,8 @@ contract QueryEngineImplementation is
         refinerRegistry = IDataRefinerRegistry(initRefinerRegistryAddress);
 
         /// @dev Deploy a new data access treasury for the query engine via beacon proxy
-        DataAccessTreasuryFactoryBeacon factoryBeacon = DataAccessTreasuryFactoryBeacon(initDataAccessTreasuryFactory);
-        address impl = factoryBeacon.implementation();
-        address proxy = factoryBeacon.createBeaconProxy(
+        address impl = initDataAccessTreasuryFactory.implementation();
+        address proxy = initDataAccessTreasuryFactory.createBeaconProxy(
             abi.encodeCall(DataAccessTreasuryImplementation(payable(impl)).initialize, (ownerAddress, address(this)))
         );
         queryEngineTreasury = IDataAccessTreasury(proxy);

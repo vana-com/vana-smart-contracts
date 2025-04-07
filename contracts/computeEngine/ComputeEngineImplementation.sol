@@ -8,7 +8,7 @@ import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "../dataAccessPayment/interfaces/IPaymentRequestor.sol";
-import "../dataAccessTreasury/DataAccessTreasuryBeaconProxy.sol";
+import "../dataAccessTreasury/DataAccessTreasuryProxyFactory.sol";
 import "../dataAccessTreasury/DataAccessTreasuryImplementation.sol";
 import "./interfaces/ComputeEngineStorageV1.sol";
 
@@ -76,7 +76,7 @@ contract ComputeEngineImplementation is
         address ownerAddress,
         address initQueryEngine,
         IComputeEngineTeePoolFactory initTeePoolFactory,
-        DataAccessTreasuryFactoryBeacon initDataAccessTreasuryFactory
+        DataAccessTreasuryProxyFactory initDataAccessTreasuryFactory
     ) external initializer {
         __UUPSUpgradeable_init();
         __Pausable_init();

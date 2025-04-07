@@ -328,13 +328,6 @@ contract DataRegistryImplementation is
         return _files[fileId].refinements[refinerId];
     }
 
-    /// @notice Checks if the account has permission to access the file.
-    /// @param fileId The ID of the file to check.
-    /// @param account The address of the account to check.
-    function _hasPermission(uint256 fileId, address account) internal view returns (bool) {
-        return bytes(_files[fileId].permissions[account]).length != 0;
-    }
-
     /**
      * @notice Adds a file to the registry
      *

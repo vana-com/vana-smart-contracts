@@ -1,7 +1,7 @@
 import { ethers } from "hardhat";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { DeployFunction } from "hardhat-deploy/types";
-import { deployProxy, getNextDeploymentAddress, verifyProxy } from "./helpers";
+import { deterministicDeployProxy, getNextDeploymentAddress, verifyProxy } from "./helpers";
 
 const implementationContractName = "ComputeInstructionRegistryImplementation";
 const proxyContractName = "ComputeInstructionRegistryProxy";
@@ -12,6 +12,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const [deployer] = await ethers.getSigners();
 
   const ownerAddress = process.env.OWNER_ADDRESS ?? deployer.address;
+
+  const salt = process.env.CREATE2_SALT ?? proxyContractName;
 
   const dlpRootCoreContractAddress = process.env.DLP_ROOT_CORE_CONTRACT_ADDRESS;
   if (!dlpRootCoreContractAddress) {
@@ -24,12 +26,15 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   const initializeParams = [ownerAddress, dlpRootCoreContractAddress];
 
-  const proxyDeploy = await deployProxy(
+  const proxyDeploy = await deterministicDeployProxy(
     deployer,
     proxyContractName,
     implementationContractName,
     initializeParams,
+    salt,
   );
+
+  console.log("initializeData:", proxyDeploy.initializeData);
 
   await verifyProxy(
     proxyDeploy.proxyAddress,

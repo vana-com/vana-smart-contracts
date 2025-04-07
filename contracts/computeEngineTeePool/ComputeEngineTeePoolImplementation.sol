@@ -99,18 +99,6 @@ contract ComputeEngineTeePoolImplementation is
     }
 
     /// @inheritdoc IComputeEngineTeePool
-    function updateTeePoolType(TeePoolType newTeePoolType) external override onlyTeePoolFactory {
-        teePoolType = newTeePoolType;
-        emit TeePoolTypeUpdated(newTeePoolType);
-    }
-
-    /// @inheritdoc IComputeEngineTeePool
-    function updateHardwareType(HardwareType newHardwareType) external override onlyTeePoolFactory {
-        hardwareType = newHardwareType;
-        emit HardwareTypeUpdated(newHardwareType);
-    }
-
-    /// @inheritdoc IComputeEngineTeePool
     function updateMaxTimeout(uint80 newMaxTimeout) external override onlyTeePoolFactory {
         maxTimeout = newMaxTimeout;
     }

@@ -27,6 +27,7 @@ contract ComputeEngineTeePoolFactoryImplementation is
     error InvalidTeePoolParams();
     error TeePoolAlreadyCreated();
     error InvalidTimeout();
+    error ComputeEngineNotSet();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -40,7 +41,7 @@ contract ComputeEngineTeePoolFactoryImplementation is
      */
     function initialize(
         address ownerAddress,
-        ComputeEngineTeePoolFactoryBeacon initTeePoolFactoryBeacon,
+        ComputeEngineTeePoolProxyFactory initTeePoolProxyFactory,
         uint80 initEphemeralTimeout,
         uint80 initPersistentTimeout
     ) external initializer {
@@ -48,7 +49,7 @@ contract ComputeEngineTeePoolFactoryImplementation is
         __Pausable_init();
         __AccessControl_init();
 
-        teePoolFactoryBeacon = initTeePoolFactoryBeacon;
+        teePoolProxyFactory = initTeePoolProxyFactory;
         ephemeralTimeout = initEphemeralTimeout;
         persistentTimeout = initPersistentTimeout;
 
@@ -81,10 +82,10 @@ contract ComputeEngineTeePoolFactoryImplementation is
     }
 
     /// @inheritdoc IComputeEngineTeePoolFactory
-    function updateTeePoolFactoryBeacon(
-        ComputeEngineTeePoolFactoryBeacon newTeePoolFactoryBeacon
+    function updateTeePoolProxyFactory(
+        ComputeEngineTeePoolProxyFactory newTeePoolProxyFactory
     ) external override onlyRole(MAINTAINER_ROLE) {
-        teePoolFactoryBeacon = newTeePoolFactoryBeacon;
+        teePoolProxyFactory = newTeePoolProxyFactory;
     }
 
     /// @inheritdoc IComputeEngineTeePoolFactory
@@ -101,6 +102,9 @@ contract ComputeEngineTeePoolFactoryImplementation is
         IComputeEngineTeePool.TeePoolType teePoolType,
         IComputeEngineTeePool.HardwareType hardwareType
     ) external override onlyRole(MAINTAINER_ROLE) returns (address) {
+        if (computeEngine == address(0)) {
+            revert ComputeEngineNotSet();
+        }
         if (
             teePoolType == IComputeEngineTeePool.TeePoolType.None ||
             hardwareType == IComputeEngineTeePool.HardwareType.None
@@ -115,8 +119,8 @@ contract ComputeEngineTeePoolFactoryImplementation is
 
         uint80 maxTimeout = _maxTimeout(teePoolType);
 
-        address teePoolImpl = teePoolFactoryBeacon.implementation();
-        address teePoolProxy = teePoolFactoryBeacon.createBeaconProxy(
+        address teePoolImpl = teePoolProxyFactory.implementation();
+        address teePoolProxy = teePoolProxyFactory.createBeaconProxy(
             abi.encodeCall(
                 ComputeEngineTeePoolImplementation(teePoolImpl).initialize,
                 (msg.sender, computeEngine, teePoolType, hardwareType, maxTimeout)

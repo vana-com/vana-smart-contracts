@@ -11,7 +11,7 @@ import "./IComputeEngineTeePoolFactory.sol";
 abstract contract ComputeEngineTeePoolFactoryStorageV1 is IComputeEngineTeePoolFactory {
     uint80 public override ephemeralTimeout;
     uint80 public override persistentTimeout;
-    ComputeEngineTeePoolFactoryBeacon public override teePoolFactoryBeacon;
+    ComputeEngineTeePoolProxyFactory public override teePoolProxyFactory;
     address public override computeEngine;
     mapping(bytes32 teePoolTypeId => IComputeEngineTeePool teePool) internal _teePools;
 }

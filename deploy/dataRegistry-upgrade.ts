@@ -3,6 +3,8 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { DeployFunction } from "hardhat-deploy/types";
 import { verifyContract } from "./helpers";
 
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 const implementationContractName = "DataRegistryImplementation";
 const previousImplementationContractName = "DataRegistryImplementationOld";
 const proxyContractName = "DataRegistryProxy";
@@ -36,6 +38,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   );
 
   console.log(implementationContractName, implementationDeploy.address);
+
+  await delay(6000);
 
   await verifyContract(implementationDeploy.address, []);
 
