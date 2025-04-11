@@ -17,6 +17,6 @@ abstract contract ComputeEngineStorageV1 is IComputeEngine {
 
     address public override queryEngine;
     IDataAccessTreasury public override computeEngineTreasury;
-    mapping(uint256 jobId => mapping(address provider => PaymentInfo paymentInfo)) internal _jobPayments;
+    mapping(uint256 jobId => mapping(uint256 dlpId => PaymentInfo paymentInfo)) internal _jobPayments;
     mapping(address account => mapping(address token => uint256 balance)) internal _accountBalances;
 }

@@ -123,7 +123,7 @@ contract ComputeEngineTeePoolFactoryImplementation is
         address teePoolProxy = teePoolProxyFactory.createBeaconProxy(
             abi.encodeCall(
                 ComputeEngineTeePoolImplementation(teePoolImpl).initialize,
-                (msg.sender, computeEngine, teePoolType, hardwareType, maxTimeout)
+                (msg.sender, computeEngine, address(this), teePoolType, hardwareType, maxTimeout)
             )
         );
 
@@ -206,7 +206,10 @@ contract ComputeEngineTeePoolFactoryImplementation is
             );
     }
 
-    function getTeePoolAddress(uint80 maxTimeout, bool gpuRequired) external view override returns (IComputeEngineTeePool) {
+    function getTeePoolAddress(
+        uint80 maxTimeout,
+        bool gpuRequired
+    ) external view override returns (IComputeEngineTeePool) {
         IComputeEngineTeePool.HardwareType hardwareType = gpuRequired
             ? IComputeEngineTeePool.HardwareType.GPU
             : IComputeEngineTeePool.HardwareType.Standard;

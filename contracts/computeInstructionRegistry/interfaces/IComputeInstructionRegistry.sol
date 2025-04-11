@@ -48,6 +48,11 @@ interface IComputeInstructionRegistry {
     /// @return Whether the compute instruction has been approved against the refiner
     function isApproved(uint256 instructionId, uint256 refinerId) external view returns (bool);
 
+    /// @notice Checks if the instruction ID is valid
+    /// @param instructionId The ID of the compute instruction
+    /// @return Whether the instruction ID is valid
+    function isValidInstructionId(uint256 instructionId) external view returns (bool);
+
     /// @notice Adds a compute instruction to the registry
     /// @param hash The hash of the compute instruction
     /// @param url The URL of the compute instruction

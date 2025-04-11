@@ -348,7 +348,7 @@ contract QueryEngineImplementation is
         uint256 initialBalance = isVana ? address(this).balance : IERC20(token).balanceOf(address(this));
 
         // Request payment from compute engine
-        IPaymentExecutor(computeEngine).executePaymentRequest(token, amount, abi.encode(jobId));
+        IPaymentExecutor(computeEngine).executePaymentRequest(token, amount, abi.encode(jobId, dlpId));
 
         // Verify payment was received
         uint256 finalBalance = isVana ? address(this).balance : IERC20(token).balanceOf(address(this));

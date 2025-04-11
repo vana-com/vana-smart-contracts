@@ -115,13 +115,14 @@ describe("ComputeEngine", () => {
         const salt = ethers.keccak256(ethers.solidityPacked(["address"], [deployer]));
 
         const abi = [
-            "function initialize(address ownerAddress, address computeEngineAddress, uint8 teePoolType, uint8 hardwareType, uint80 maxTimeout)",
+            "function initialize(address ownerAddress, address computeEngineAddress, address teePoolFactoryAddress, uint8 teePoolType, uint8 hardwareType, uint80 maxTimeout)",
         ];
         const iface = new ethers.Interface(abi);
         const beaconProxyFactory = await ethers.getContractFactory("BeaconProxy");
         const initializeData = iface.encodeFunctionData("initialize", [
             maintainer.address,
             computeEngine.target,
+            teePoolFactory.target,
             teePoolType,
             hardwareType,
             maxTimeout,
@@ -2107,7 +2108,7 @@ describe("ComputeEngine", () => {
             await computeEngine
                 .connect(ephemeralGPUTee1)
                 .updateJobStatus(jobId2, JobStatus.Failed, "reason1")
-                .should.be.rejectedWith(`JobAlreadyDoneOrCanceled()`);
+                .should.be.rejectedWith(`JobAlreadyDone()`);
 
             // jobId1 -> ephemeralGPUTee2 - internalJobsCount = 2 (2 % 2 = 0 -> 2)
             await computeEngine
@@ -2752,7 +2753,7 @@ describe("ComputeEngine", () => {
             await computeEngine
                 .connect(user2)
                 .resubmitJob(jobId1)
-                .should.be.rejectedWith(`JobAlreadyDoneOrCanceled()`);
+                .should.be.rejectedWith(`OnlyRegisteredJobStatus()`);
 
             // Deploy TeePools
             const ephemeralGPUAddress = await getTeePoolAddress(TeePoolType.Ephemeral, HardwareType.GPU, ephemeralTimeout, teePoolFactoryAddress);
@@ -3114,6 +3115,9 @@ describe("ComputeEngine", () => {
             const jobId2 = 2;
             const jobId3 = 3;
 
+            const dlpId1 = 1;
+            const dlpId2 = 2;
+
             const instructionId1 = 1;
 
             let mockQueryEngine: HardhatEthersSigner;
@@ -3123,9 +3127,9 @@ describe("ComputeEngine", () => {
             [mockQueryEngine, ephemeralStandardTee1, dedicatedStandardTee2] = await ethers.getSigners();
 
             const requestedAmount = parseEther(100);
-            const requestParams1 = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [jobId1]);
-            const requestParams2 = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [jobId2]);
-            const requestParams3 = ethers.AbiCoder.defaultAbiCoder().encode(["uint256"], [jobId3]);
+            const requestParams1 = ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "uint256"], [jobId1, dlpId1]);
+            const requestParams2 = ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "uint256"], [jobId2, dlpId1]);
+            const requestParams3 = ethers.AbiCoder.defaultAbiCoder().encode(["uint256", "uint256"], [jobId3, dlpId2]);
 
             await computeEngine
                 .connect(user1)

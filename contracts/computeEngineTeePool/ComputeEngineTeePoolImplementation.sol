@@ -57,6 +57,7 @@ contract ComputeEngineTeePoolImplementation is
     function initialize(
         address ownerAddress,
         address initComputeEngine,
+        address initTeePoolFactory,
         TeePoolType initTeePoolType,
         HardwareType initHardwareType,
         uint80 initMaxTimeout
@@ -65,6 +66,7 @@ contract ComputeEngineTeePoolImplementation is
         __AccessControl_init();
 
         computeEngine = initComputeEngine;
+        teePoolFactory = initTeePoolFactory;
         teePoolType = initTeePoolType;
         hardwareType = initHardwareType;
         maxTimeout = initMaxTimeout;

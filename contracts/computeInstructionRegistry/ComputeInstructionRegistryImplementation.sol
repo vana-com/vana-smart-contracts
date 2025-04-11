@@ -24,7 +24,7 @@ contract ComputeInstructionRegistryImplementation is
     event ComputeInstructionUpdated(uint256 indexed computeInstructionId, uint256 indexed dlpId, bool approved);
 
     error NotDlpOwner();
-    error DlpNotFound(uint256 dlpId);
+    error ComputeInstructionNotFound(uint256 instructionId);
 
     modifier onlyDlpOwner(uint256 dlpId) {
         if (dlpRootCore.dlps(dlpId).ownerAddress != msg.sender) {
@@ -95,6 +95,11 @@ contract ComputeInstructionRegistryImplementation is
     }
 
     /// @inheritdoc IComputeInstructionRegistry
+    function isValidInstructionId(uint256 instructionId) external view returns (bool) {
+        return instructionId > 0 && instructionId <= instructionsCount;
+    }
+
+    /// @inheritdoc IComputeInstructionRegistry
     function addComputeInstruction(bytes32 hash, string calldata url) external whenNotPaused returns (uint256 computeInstructionId) {
         computeInstructionId = ++instructionsCount;
 
@@ -112,6 +117,9 @@ contract ComputeInstructionRegistryImplementation is
         uint256 dlpId,
         bool approved
     ) external onlyDlpOwner(dlpId) whenNotPaused {
+        if (instructionId == 0 || instructionId > instructionsCount) {
+            revert ComputeInstructionNotFound(instructionId);
+        }
         ComputeInstruction storage instruction = _instructions[instructionId];
         if (instruction.dlpApprovals[dlpId] != approved) {
             instruction.dlpApprovals[dlpId] = approved;

@@ -14,7 +14,7 @@ import {
 } from "../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { getReceipt, parseEther } from "../utils/helpers";
-import { keccak256 } from "ethers";
+import { keccak256, ZeroAddress } from "ethers";
 
 chai.use(chaiAsPromised);
 should();
@@ -74,6 +74,9 @@ describe("QueryEngine", () => {
     );
     const QUERY_ENGINE_ROLE = ethers.keccak256(
         ethers.toUtf8Bytes("QUERY_ENGINE_ROLE"),
+    );
+    const CUSTODIAN_ROLE = ethers.keccak256(
+        ethers.toUtf8Bytes("CUSTODIAN_ROLE"),
     );
 
     const deploy = async () => {
@@ -512,8 +515,7 @@ describe("QueryEngine", () => {
         });
 
         it("should updateVanaTreasury only when maintainer", async function () {
-            let newVanaTreasury: HardhatEthersSigner;
-            [newVanaTreasury] = await ethers.getSigners();
+            let newVanaTreasury = await ethers.Wallet.createRandom();
 
             await queryEngine
                 .connect(maintainer)
@@ -774,13 +776,14 @@ describe("QueryEngine", () => {
             const salt = ethers.keccak256(ethers.solidityPacked(["address"], [deployer]));
 
             const abi = [
-                "function initialize(address ownerAddress, address computeEngineAddress, uint8 teePoolType, uint8 hardwareType, uint80 maxTimeout)",
+                "function initialize(address ownerAddress, address computeEngineAddress, address teePoolFactoryAddress, uint8 teePoolType, uint8 hardwareType, uint80 maxTimeout)",
             ];
             const iface = new ethers.Interface(abi);
             const beaconProxyFactory = await ethers.getContractFactory("BeaconProxy");
             const initializeData = iface.encodeFunctionData("initialize", [
                 maintainer.address,
                 computeEngine.target,
+                teePoolFactory.target,
                 teePoolType,
                 hardwareType,
                 maxTimeout,
@@ -878,7 +881,7 @@ describe("QueryEngine", () => {
                 .withArgs(
                     VanaToken,
                     dataAccessCost,
-                    jobId1, 
+                    jobId1,
                     refinerId1);
 
             (await computeEngine.balanceOf(user1, VanaToken)).should.eq(depositAmount - dataAccessCost);
@@ -1021,7 +1024,7 @@ describe("QueryEngine", () => {
                 .withArgs(
                     VanaToken,
                     dataAccessCost,
-                    jobId1, 
+                    jobId1,
                     refinerId1);
 
             await queryEngine
@@ -1090,7 +1093,7 @@ describe("QueryEngine", () => {
                 .withArgs(
                     VanaToken,
                     dataAccessCost,
-                    jobId4, 
+                    jobId4,
                     refinerId3);
 
             await queryEngine
@@ -1098,8 +1101,7 @@ describe("QueryEngine", () => {
                 .claimDlpPayment(dlpId2, VanaToken)
                 .should.be.rejectedWith("InvalidDlpTreasuryAddress()");
 
-            let dlp2Treasury: HardhatEthersSigner;
-            [dlp2Treasury] = await ethers.getSigners();
+            let dlp2Treasury = await ethers.Wallet.createRandom();
             await dlpRootCoreMock.connect(dlp2Owner).updateDlpTreasuryAddress(dlpId2, dlp2Treasury);
 
             const dlp2TreasuryBalanceBefore = await ethers.provider.getBalance(dlp2Treasury);
@@ -1125,7 +1127,7 @@ describe("QueryEngine", () => {
                 .withArgs(
                     VanaToken,
                     dataAccessCost,
-                    jobId1, 
+                    jobId1,
                     refinerId1);
 
             await queryEngine
@@ -1150,7 +1152,7 @@ describe("QueryEngine", () => {
                 .withArgs(
                     VanaToken,
                     dataAccessCost,
-                    jobId1, 
+                    jobId1,
                     refinerId1);
 
             await queryEngineTreasury
@@ -1174,6 +1176,119 @@ describe("QueryEngine", () => {
                 .connect(queryEngineTEE)
                 .requestPaymentInVana(dataAccessCost, jobId1, refinerId1)
                 .should.be.rejectedWith("EnforcedPause()");
+        });
+    });
+
+    describe("Treasury", () => {
+        beforeEach(async () => {
+            await deploy();
+        });
+
+        it("should have correct roles", async function () {
+            (await queryEngineTreasury.hasRole(DEFAULT_ADMIN_ROLE, owner)).should.eq(true);
+            (await queryEngineTreasury.hasRole(CUSTODIAN_ROLE, owner)).should.eq(true);
+            (await queryEngineTreasury.hasRole(CUSTODIAN_ROLE, queryEngine.target)).should.eq(true);
+            (await queryEngineTreasury.hasRole(DEFAULT_ADMIN_ROLE, queryEngine.target)).should.eq(false);
+        });
+
+        it("should updateCustodian only when admin", async function () {
+            let newCustodian = await ethers.Wallet.createRandom();
+
+            newCustodian.address.should.not.eq(owner.address);
+            (await queryEngineTreasury.hasRole(DEFAULT_ADMIN_ROLE, newCustodian)).should.eq(false);
+            (await queryEngineTreasury.hasRole(CUSTODIAN_ROLE, newCustodian)).should.eq(false);
+
+            await queryEngineTreasury
+                .connect(owner)
+                .updateCustodian(newCustodian)
+                .should.be.fulfilled;
+            (await queryEngineTreasury.custodian()).should.eq(newCustodian);
+            (await queryEngineTreasury.hasRole(CUSTODIAN_ROLE, newCustodian)).should.eq(true);
+            (await queryEngineTreasury.hasRole(CUSTODIAN_ROLE, owner)).should.eq(true);
+            (await queryEngineTreasury.hasRole(CUSTODIAN_ROLE, queryEngine.target)).should.eq(false);
+            (await queryEngineTreasury.hasRole(DEFAULT_ADMIN_ROLE, newCustodian)).should.eq(false);
+
+            await queryEngineTreasury
+                .connect(user1)
+                .updateCustodian(newCustodian)
+                .should.be.rejectedWith(
+                    `AccessControlUnauthorizedAccount("${user1.address}", "${DEFAULT_ADMIN_ROLE}")`,
+                );
+        });
+
+        it("should grant or revoke CUSTODIAN_ROLE only when admin", async function () {
+            let newCustodian = await ethers.Wallet.createRandom();
+
+            (await queryEngineTreasury.hasRole(CUSTODIAN_ROLE, newCustodian)).should.eq(false);
+            (await queryEngineTreasury.hasRole(DEFAULT_ADMIN_ROLE, newCustodian)).should.eq(false);
+
+            await queryEngineTreasury
+                .connect(owner)
+                .grantRole(CUSTODIAN_ROLE, newCustodian)
+                .should.be.fulfilled;
+            (await queryEngineTreasury.hasRole(CUSTODIAN_ROLE, newCustodian)).should.eq(true);
+            // (await queryEngineTreasury.hasRole(DEFAULT_ADMIN_ROLE, newCustodian)).should.eq(false);
+
+            await queryEngineTreasury
+                .connect(owner)
+                .revokeRole(CUSTODIAN_ROLE, newCustodian)
+                .should.be.fulfilled;
+            (await queryEngineTreasury.hasRole(CUSTODIAN_ROLE, newCustodian)).should.eq(false);
+            (await queryEngineTreasury.hasRole(DEFAULT_ADMIN_ROLE, newCustodian)).should.eq(false);
+
+            await queryEngineTreasury
+                .connect(user1)
+                .grantRole(CUSTODIAN_ROLE, newCustodian)
+                .should.be.rejectedWith(
+                    `AccessControlUnauthorizedAccount("${user1.address}", "${DEFAULT_ADMIN_ROLE}")`,
+                );
+            await queryEngineTreasury
+                .connect(user1)
+                .revokeRole(CUSTODIAN_ROLE, newCustodian)
+                .should.be.rejectedWith(
+                    `AccessControlUnauthorizedAccount("${user1.address}", "${DEFAULT_ADMIN_ROLE}")`,
+                );
+        });
+
+        it("should transfer only when CUSTODIAN_ROLE", async function () {
+            let recoveryAddress = await ethers.Wallet.createRandom();
+
+            (await ethers.provider.getBalance(queryEngineTreasury.target)).should.eq(0);
+
+            await owner.sendTransaction({
+                to: queryEngineTreasury.target,
+                value: parseEther(1),
+            });
+
+            (await queryEngineTreasury.hasRole(CUSTODIAN_ROLE, owner)).should.eq(true);
+            await queryEngineTreasury
+                .connect(owner)
+                .transfer(recoveryAddress, VanaToken, 0n)
+                .should.be.rejectedWith("ZeroAmount()");
+
+            await queryEngineTreasury
+                .connect(owner)
+                .transfer(ethers.ZeroAddress, VanaToken, parseEther(1))
+                .should.be.rejectedWith("ZeroAddress()");
+
+            await queryEngineTreasury
+                .connect(owner)
+                .transfer(recoveryAddress, VanaToken, parseEther(2))
+                .should.not.be.fulfilled;
+
+            await queryEngineTreasury
+                .connect(owner)
+                .transfer(recoveryAddress, VanaToken, parseEther(1))
+                .should.be.fulfilled;
+            (await ethers.provider.getBalance(queryEngineTreasury.target)).should.eq(0);
+            (await ethers.provider.getBalance(recoveryAddress)).should.eq(parseEther(1));
+
+            await queryEngineTreasury
+                .connect(user1)
+                .transfer(recoveryAddress, VanaToken, 1n)
+                .should.be.rejectedWith(
+                    `AccessControlUnauthorizedAccount("${user1.address}", "${CUSTODIAN_ROLE}")`,
+                );
         });
     });
 });

@@ -17,9 +17,14 @@ contract DataAccessTreasuryImplementation is
     using SafeERC20 for IERC20;
     using Address for address payable;
 
+    bytes32 public constant CUSTODIAN_ROLE = keccak256("CUSTODIAN_ROLE");
+
     address public constant VANA = address(0);
 
     event Transfer(address indexed to, address indexed token, uint256 amount);
+    
+    error ZeroAmount();
+    error ZeroAddress();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -40,8 +45,10 @@ contract DataAccessTreasuryImplementation is
 
         custodian = initCustodian;
 
+        _setRoleAdmin(CUSTODIAN_ROLE, DEFAULT_ADMIN_ROLE);
         _grantRole(DEFAULT_ADMIN_ROLE, ownerAddress);
-        _grantRole(DEFAULT_ADMIN_ROLE, initCustodian);
+        _grantRole(CUSTODIAN_ROLE, ownerAddress);
+        _grantRole(CUSTODIAN_ROLE, initCustodian);
     }
 
     /// @inheritdoc IDataAccessTreasury
@@ -61,9 +68,9 @@ contract DataAccessTreasuryImplementation is
 
     /// @inheritdoc IDataAccessTreasury
     function updateCustodian(address newCustodian) external override onlyRole(DEFAULT_ADMIN_ROLE) {
-        _revokeRole(DEFAULT_ADMIN_ROLE, custodian);
+        _revokeRole(CUSTODIAN_ROLE, custodian);
         custodian = newCustodian;
-        _grantRole(DEFAULT_ADMIN_ROLE, newCustodian);
+        _grantRole(CUSTODIAN_ROLE, newCustodian);
     }
 
     /// @inheritdoc IDataAccessTreasury
@@ -71,7 +78,14 @@ contract DataAccessTreasuryImplementation is
         address to,
         address token,
         uint256 amount
-    ) external override nonReentrant whenNotPaused onlyRole(DEFAULT_ADMIN_ROLE) {
+    ) external override nonReentrant whenNotPaused onlyRole(CUSTODIAN_ROLE) {
+        if (amount == 0) {
+            revert ZeroAmount();
+        }
+        if (to == address(0)) {
+            revert ZeroAddress();
+        }
+
         if (token == VANA) {
             payable(to).sendValue(amount);
         } else {

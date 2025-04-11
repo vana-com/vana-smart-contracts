@@ -93,7 +93,7 @@ interface IComputeEngine is IPaymentExecutor {
     /// @param computeInstructionId The ID of the compute instruction
     /// @param teeAddress The address of the Tee to assign the job to
     function submitJobWithTee(
-        uint256 maxTimeout,
+        uint80 maxTimeout,
         bool gpuRequired,
         uint256 computeInstructionId,
         address teeAddress

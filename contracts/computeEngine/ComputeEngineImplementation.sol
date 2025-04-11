@@ -36,7 +36,9 @@ contract ComputeEngineImplementation is
     event TeeAssignmentSucceeded(uint256 indexed jobId, address indexed teePoolAddress, address teeAddress);
 
     error NotJobOwner();
-    error JobAlreadyDoneOrCanceled();
+    error JobAlreadyDone();
+    error JobLifeCycleEnded();
+    error OnlyRegisteredJobStatus();
     error NotTee();
     error TeeAlreadyAssigned(uint256 jobId);
     error FailedToAssignTee();
@@ -51,6 +53,7 @@ contract ComputeEngineImplementation is
     error InsufficientBalance();
     error InvalidVanaAmount();
     error InvalidAmount();
+    error UnexpectedVanaDeposit();
     error JobNotFound(uint256 jobId);
     error JobNotSubmitted(uint256 jobId);
     error InstructionNotFound(uint256 computeInstructionId);
@@ -178,7 +181,7 @@ contract ComputeEngineImplementation is
 
     /// @inheritdoc IComputeEngine
     function submitJobWithTee(
-        uint256 maxTimeout,
+        uint80 maxTimeout,
         bool gpuRequired,
         uint256 computeInstructionId,
         address teeAddress
@@ -215,14 +218,11 @@ contract ComputeEngineImplementation is
     /// @param computeInstructionId The ID of the compute instruction
     /// @return jobId The ID of the job
     function _registerJob(
-        uint256 maxTimeout,
+        uint80 maxTimeout,
         bool gpuRequired,
         uint256 computeInstructionId
     ) internal whenNotPaused returns (uint256 jobId) {
-        IComputeInstructionRegistry.ComputeInstructionInfo memory computeInstruction = instructionRegistry.instructions(
-            computeInstructionId
-        );
-        if (computeInstruction.owner == address(0)) {
+        if (!instructionRegistry.isValidInstructionId(computeInstructionId)) {
             revert InstructionNotFound(computeInstructionId);
         }
 
@@ -234,7 +234,7 @@ contract ComputeEngineImplementation is
         jobId = ++jobsCount;
         Job storage job = _jobs[jobId];
         job.ownerAddress = msg.sender;
-        job.maxTimeout = uint80(maxTimeout);
+        job.maxTimeout = maxTimeout;
         job.gpuRequired = gpuRequired;
         job.status = JobStatus.Registered;
         job.computeInstructionId = uint32(computeInstructionId);
@@ -265,7 +265,7 @@ contract ComputeEngineImplementation is
         }
 
         if (job.status != JobStatus.Registered) {
-            revert JobAlreadyDoneOrCanceled();
+            revert OnlyRegisteredJobStatus();
         }
 
         // if (teeAddress != address(0) && job.maxTimeout <= teePoolFactory.persistentTimeout()) {
@@ -328,7 +328,7 @@ contract ComputeEngineImplementation is
 
         JobStatus currentStatus = job.status;
         if (currentStatus == JobStatus.Completed || currentStatus == JobStatus.Failed) {
-            revert JobAlreadyDoneOrCanceled();
+            revert JobAlreadyDone();
         }
         if (status == JobStatus.Canceled || status <= currentStatus) {
             revert InvalidStatusTransition(currentStatus, status);
@@ -358,7 +358,7 @@ contract ComputeEngineImplementation is
         JobStatus status = job.status;
 
         if (status >= JobStatus.Completed) {
-            revert JobAlreadyDoneOrCanceled();
+            revert JobLifeCycleEnded();
         }
 
         job.status = JobStatus.Canceled;
@@ -394,6 +394,11 @@ contract ComputeEngineImplementation is
             }
             payable(address(computeEngineTreasury)).sendValue(amount);
         } else {
+            /// @dev VANA is not accepted in ERC20 deposits
+            if (msg.value > 0) {
+                revert UnexpectedVanaDeposit();
+            }
+            /// @dev We do 2-step transfer to avoid the need of exposing computeEngineTreasury to the user
             IERC20(token).safeTransferFrom(from, address(this), amount);
             IERC20(token).safeTransfer(address(computeEngineTreasury), amount);
         }
@@ -433,7 +438,7 @@ contract ComputeEngineImplementation is
     }
 
     function _executePaymentRequestFromQueryEngine(address token, uint256 amount, bytes calldata metadata) internal {
-        uint256 jobId = abi.decode(metadata, (uint256));
+        (uint256 jobId, uint256 dlpId) = abi.decode(metadata, (uint256, uint256));
         Job storage job = _jobs[jobId];
 
         address jobOwner = _jobs[jobId].ownerAddress;
@@ -453,7 +458,7 @@ contract ComputeEngineImplementation is
             _accountBalances[jobOwner][token] -= amount;
         }
 
-        PaymentInfo storage paymentInfo = _jobPayments[jobId][token];
+        PaymentInfo storage paymentInfo = _jobPayments[jobId][dlpId];
         paymentInfo.paidAmounts[token] += amount;
         paymentInfo.payer = jobOwner;
 

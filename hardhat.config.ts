@@ -102,8 +102,10 @@ const config: HardhatUserConfig = {
         network: "moksha",
         chainId: 14800,
         urls: {
-          apiURL: process.env.MOKSHA_RPC_URL || "",
-          browserURL: process.env.MOKSHA_BROWSER_URL || "",
+          // apiURL: process.env.MOKSHA_API_URL || "",
+          // browserURL: process.env.MOKSHA_BROWSER_URL || "",
+          apiURL: "https://moksha.vanascan.io/api",
+          browserURL: "https://moksha.vanascan.io"
         },
       },
       {
