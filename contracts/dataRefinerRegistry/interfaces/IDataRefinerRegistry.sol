@@ -15,25 +15,30 @@ interface IDataRefinerRegistry {
 
     /// @notice Returns the version of the contract.
     function version() external pure returns (uint256);
-    
+
     /// @notice Pauses the contract.
     function pause() external;
-    
+
     /// @notice Unpauses the contract.
     function unpause() external;
 
     /// @notice Returns the DLPRootCore contract address.
     function dlpRootCore() external view returns (IDLPRootCoreReadOnly);
-    
+
     /// @notice Updates the DLPRootCore contract address.
     function updateDlpRootCore(address dlpRootCoreAddress) external;
 
     /// @notice Returns the number of refiners.
     function refinersCount() external view returns (uint256);
-    
+
     /// @notice Returns the refiner with the given ID.
     /// @param refinerId The ID of the refiner.
     function refiners(uint256 refinerId) external view returns (Refiner memory);
+
+    /// @notice Returns the refiner IDs for a given DLP ID.
+    /// @param dlpId The ID of the DLP.
+    /// @return An array of refiner IDs.
+    function dlpRefiners(uint256 dlpId) external view returns (uint256[] memory);
 
     /// @notice Adds a refiner to the registry.
     /// @param dlpId The ID of the DLP.
@@ -49,4 +54,13 @@ interface IDataRefinerRegistry {
         string calldata refinementInstructionUrl,
         string calldata publicKey
     ) external returns (uint256);
+
+    /// @notice Updates the owner of a refiner.
+    /// @param refinerId The ID of the refiner.
+    function updateRefinerOwner(uint256 refinerId) external;
+
+    /// @notice Updates the owner of all refiners for a given DLP.
+    /// @param dlpId The ID of the DLP.
+    /// @dev This function is called when the DLP owner changes.
+    function updateDlpRefinersOwner(uint256 dlpId) external;
 }

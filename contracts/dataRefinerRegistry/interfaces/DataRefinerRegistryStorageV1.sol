@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
+import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "./IDataRefinerRegistry.sol";
 
 /**
@@ -13,4 +14,5 @@ abstract contract DataRefinerRegistryStorageV1 is IDataRefinerRegistry {
     uint256 public override refinersCount;
     
     mapping(uint256 refinerId => Refiner) internal _refiners;
+    mapping(uint256 dlpId => EnumerableSet.UintSet refinerIds) internal _dlpRefiners;
 }
