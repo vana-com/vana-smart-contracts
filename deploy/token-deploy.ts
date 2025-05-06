@@ -67,7 +67,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     log: true,
   });
   
-  await verifyContract(linearDeploy.address, toStrArray(linearArgs));
+  const linearContractPath = "contracts/token/vestingWallet/LinearVestingWallet.sol:LinearVestingWallet";
+  await verifyContract(linearDeploy.address, toStrArray(linearArgs),linearContractPath);
 
   // CliffVestingWallet (cliff < total)
   const cliffArgs: (string | number)[] = [ownerAddress, now, 1, 2]; // start, 1-sec cliff, 2-sec total
