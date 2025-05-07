@@ -6,13 +6,12 @@ dotenv.config();
 
 const {
   MOKSHA_RPC_URL,
-  BENEFICIARY_PRIVATE_KEY,
-  DAT_ADDRESS,
+  DEPLOYER_PRIVATE_KEY,
   OWNER_ADDRESS,
 } = process.env;
 
-if (!MOKSHA_RPC_URL || !BENEFICIARY_PRIVATE_KEY || !DAT_ADDRESS || !OWNER_ADDRESS) {
-  throw new Error("Missing env vars: MOKSHA_RPC_URL, BENEFICIARY_PRIVATE_KEY, DAT_ADDRESS, WALLET_ADDRESS, OWNER_ADDRESS");
+if (!MOKSHA_RPC_URL || !DEPLOYER_PRIVATE_KEY || !OWNER_ADDRESS) {
+  throw new Error("Missing env vars: MOKSHA_RPC_URL, DEPLOYER_PRIVATE_KEY, DAT_ADDRESS, WALLET_ADDRESS, OWNER_ADDRESS");
 }
 
 const VESTING_WALLET_ABI = [
@@ -27,9 +26,11 @@ const ERC20_ABI = [
 ];
 
 async function main() {
-  const WALLET_ADDRESS = "0xe4E5BD91bc68D8EBcF6b74F2d5FC32A2fbe5AC19";  
+  const WALLET_ADDRESS = "0x87cC21B9598f46158C3673C3e907C16F89142590";  
+  const DAT_ADDRESS="0x541C89acFD6109Ca837a8928E1A3fe0F86a8D5aA";
+  const BENEFICIARY_ADDRESS = OWNER_ADDRESS;
   const provider = new ethers.JsonRpcProvider(MOKSHA_RPC_URL);
-  const signer = new ethers.Wallet(BENEFICIARY_PRIVATE_KEY as string, provider);
+  const signer = new ethers.Wallet(DEPLOYER_PRIVATE_KEY as string, provider);
 
   const token = new ethers.Contract(DAT_ADDRESS as string, ERC20_ABI, provider);
   const vestingWallet = new ethers.Contract(WALLET_ADDRESS as string, VESTING_WALLET_ABI, signer);
@@ -37,7 +38,7 @@ async function main() {
   const symbol = await token.symbol();
   const tokenDecimals = 18;
 
-  const balanceBefore = await token.balanceOf(signer.address);
+  const balanceBefore = await token.balanceOf(BENEFICIARY_ADDRESS);
   const releasable = await vestingWallet["releasable"](DAT_ADDRESS);
   const releasedBefore = await vestingWallet["released"](DAT_ADDRESS);
 
@@ -60,7 +61,7 @@ async function main() {
     return;
   }
 
-  const balanceAfter = await token.balanceOf(signer.address);
+  const balanceAfter = await token.balanceOf(BENEFICIARY_ADDRESS);
   const releasedAfter = await vestingWallet["released"](DAT_ADDRESS);
 
   const received = balanceAfter - balanceBefore;
