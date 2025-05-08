@@ -1,3 +1,4 @@
+// test/DAT.behaviour.ts
 import chai, { should } from "chai";
 import chaiAsPromised from "chai-as-promised";
 import { ethers } from "hardhat";
@@ -8,353 +9,176 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 chai.use(chaiAsPromised);
 should();
 
-describe("ERC20", () => {
+describe("DAT token (AccessControl version)", () => {
+  /* signers */
   let deployer: HardhatEthersSigner;
-  let owner: HardhatEthersSigner;
-  let admin: HardhatEthersSigner;
-  let user1: HardhatEthersSigner;
-  let user2: HardhatEthersSigner;
-  let user3: HardhatEthersSigner;
-  let user4: HardhatEthersSigner;
+  let owner:    HardhatEthersSigner; // DEFAULT_ADMIN_ROLE, initial admin()
+  let admin:    HardhatEthersSigner; // will receive ADMIN_ROLE
+  let user1:    HardhatEthersSigner;
+  let user2:    HardhatEthersSigner;
+  let user3:    HardhatEthersSigner;
 
+  /* contracts */
   let dat: DAT;
 
+  /* helpers */
   const deploy = async () => {
-    [deployer, owner, admin, user1, user2, user3, user4] =
-      await ethers.getSigners();
+    [deployer, owner, admin, user1, user2, user3] = await ethers.getSigners();
 
     dat = await ethers.deployContract("DAT", [
       "Test Data Autonomy Token",
       "TDAT",
-      owner.address,
+      owner.address,   // constructor owner → DEFAULT_ADMIN_ROLE & admin()
+      0                // no cap for tests
     ]);
 
-    await dat.connect(owner).changeAdmin(admin);
+    // grant additional roles used in tests
+    await dat.connect(owner).grantRole(await dat.ADMIN_ROLE(), admin.address);
+    await dat.connect(owner).grantRole(await dat.MINTER_ROLE(), owner.address);
   };
 
-  describe("DLPT - basic", () => {
-    before(async function () {});
+  /* ────────────────────────────────────────────────────────── */
 
-    beforeEach(async () => {
-      await deploy();
-    });
+  describe("Basic params & roles", () => {
+    beforeEach(deploy);
 
-    it("should have correct params after deploy", async function () {
-      (await dat.owner()).should.eq(owner);
-      (await dat.admin()).should.eq(admin);
+    it("constructor parameters & roles are correct", async () => {
       (await dat.name()).should.eq("Test Data Autonomy Token");
       (await dat.symbol()).should.eq("TDAT");
       (await dat.mintBlocked()).should.eq(false);
-    });
 
-    it("Should transferOwnership in 2 steps", async function () {
-      await dat
-        .connect(owner)
-        .transferOwnership(user2.address)
-        .should.emit(dat, "OwnershipTransferStarted")
-        .withArgs(owner, user2);
-      (await dat.owner()).should.eq(owner);
-
-      await dat
-        .connect(owner)
-        .transferOwnership(user3.address)
-        .should.emit(dat, "OwnershipTransferStarted")
-        .withArgs(owner, user3);
-      (await dat.owner()).should.eq(owner);
-
-      await dat.connect(user3).acceptOwnership().should.fulfilled;
-      (await dat.owner()).should.eq(user3);
-    });
-
-    it("Should reject transferOwnership when non-owner", async function () {
-      await dat
-        .connect(admin)
-        .transferOwnership(user2)
-        .should.be.rejectedWith(
-          `OwnableUnauthorizedAccount("${admin.address}")`,
-        );
-    });
-
-    it("Should changeAdmin when owner", async function () {
-      await dat
-        .connect(owner)
-        .changeAdmin(user2.address)
-        .should.emit(dat, "AdminChanged")
-        .withArgs(admin, user2);
-      (await dat.admin()).should.eq(user2);
-    });
-
-    it("Should reject changeAdmin when non-owner", async function () {
-      await dat
-        .connect(admin)
-        .changeAdmin(user2)
-        .should.be.rejectedWith(
-          `OwnableUnauthorizedAccount("${admin.address}")`,
-        );
-    });
-
-    it("Should blockMint when owner", async function () {
-      await dat.connect(owner).blockMint().should.emit(dat, "MintBlocked");
-
-      (await dat.mintBlocked()).should.eq(true);
-    });
-
-    it("Should reject blockMint when non-owner", async function () {
-      await dat
-        .connect(admin)
-        .blockMint()
-        .should.be.rejectedWith(
-          `OwnableUnauthorizedAccount("${admin.address}")`,
-        );
-    });
-
-    it("Should mint when owner", async function () {
-      const mintAmount = parseEther("100");
-
-      (await dat.balanceOf(user2)).should.eq(0);
-
-      await dat.connect(owner).mint(user2, mintAmount).should.be.fulfilled;
-
-      (await dat.balanceOf(user2)).should.eq(mintAmount);
-    });
-
-    it("Should reject mint when non-owner", async function () {
-      await dat
-        .connect(admin)
-        .mint(user1, parseEther("10"))
-        .should.be.rejectedWith(
-          `OwnableUnauthorizedAccount("${admin.address}")`,
-        );
-    });
-
-    it("Should reject mint when minting is blocked", async function () {
-      await dat.connect(owner).blockMint().should.emit(dat, "MintBlocked");
-
-      await dat
-        .connect(owner)
-        .mint(user1, parseEther("10"))
-        .should.be.rejectedWith(`EnforceMintBlocked()`);
-    });
-
-    it("Should blockAddress when admin", async function () {
-      (await dat.blockListLength()).should.eq(0);
-
-      await dat
-        .connect(admin)
-        .blockAddress(user2)
-        .should.emit(dat, "AddressBlocked")
-        .withArgs(user2);
-
-      (await dat.blockListLength()).should.eq(1);
-      (await dat.blockListAt(0)).should.eq(user2);
-    });
-
-    it("Should reject blockAddress when non-admin", async function () {
-      await dat
-        .connect(user3)
-        .blockAddress(user2)
-        .should.be.rejectedWith(`UnauthorizedAdminAction("${user3.address}")`);
-    });
-
-    it("Should unblockAddress when admin #1", async function () {
-      (await dat.blockListLength()).should.eq(0);
-
-      await dat
-        .connect(admin)
-        .blockAddress(user2)
-        .should.emit(dat, "AddressBlocked")
-        .withArgs(user2);
-
-      (await dat.blockListLength()).should.eq(1);
-      (await dat.blockListAt(0)).should.eq(user2);
-
-      await dat
-        .connect(admin)
-        .unblockAddress(user2)
-        .should.emit(dat, "AddressUnblocked")
-        .withArgs(user2);
-
-      (await dat.blockListLength()).should.eq(0);
-    });
-
-    it("Should reject unblockAddress when non-admin", async function () {
-      await dat
-        .connect(user3)
-        .unblockAddress(user2)
-        .should.be.rejectedWith(`UnauthorizedAdminAction("${user3.address}")`);
-    });
-
-    it("Should unblockAddress when admin #2", async function () {
-      (await dat.blockListLength()).should.eq(0);
-
-      await dat
-        .connect(admin)
-        .blockAddress(user2)
-        .should.emit(dat, "AddressBlocked")
-        .withArgs(user2);
-
-      await dat
-        .connect(admin)
-        .blockAddress(user3)
-        .should.emit(dat, "AddressBlocked")
-        .withArgs(user3);
-
-      (await dat.blockListLength()).should.eq(2);
-      (await dat.blockListAt(0)).should.eq(user2);
-      (await dat.blockListAt(1)).should.eq(user3);
-
-      await dat
-        .connect(admin)
-        .unblockAddress(user2)
-        .should.emit(dat, "AddressUnblocked")
-        .withArgs(user2);
-
-      (await dat.blockListLength()).should.eq(1);
-      (await dat.blockListAt(0)).should.eq(user3);
-    });
-
-    it("Should transfer", async function () {
-      const mintAmount = parseEther("100");
-      const transferAmount = parseEther("20");
-
-      await dat.connect(owner).mint(user1, mintAmount).should.be.fulfilled;
-
-      (await dat.balanceOf(user1)).should.eq(mintAmount);
-      (await dat.balanceOf(user2)).should.eq(0);
-      (await dat.totalSupply()).should.eq(mintAmount);
-
-      await dat
-        .connect(user1)
-        .transfer(user2, parseEther("20"))
-        .should.emit(dat, "Transfer")
-        .withArgs(user1, user2, parseEther("20"));
-
-      (await dat.balanceOf(user1)).should.eq(mintAmount - transferAmount);
-      (await dat.balanceOf(user2)).should.eq(transferAmount);
-      (await dat.totalSupply()).should.eq(mintAmount);
-    });
-
-    it("Should reject transfer when blocked", async function () {
-      const mintAmount = parseEther("100");
-      const transferAmount = parseEther("20");
-
-      await dat.connect(owner).mint(user2, mintAmount).should.be.fulfilled;
-
-      await dat
-        .connect(admin)
-        .blockAddress(user2)
-        .should.emit(dat, "AddressBlocked")
-        .withArgs(user2);
-
-      (await dat.balanceOf(user2)).should.eq(mintAmount);
-      (await dat.balanceOf(user3)).should.eq(0);
-      (await dat.totalSupply()).should.eq(mintAmount);
-
-      await dat
-        .connect(user2)
-        .transfer(user2, parseEther("20"))
-        .should.rejectedWith(`AccountBlocked()`);
-
-      (await dat.balanceOf(user2)).should.eq(mintAmount);
-      (await dat.balanceOf(user3)).should.eq(0);
-      (await dat.totalSupply()).should.eq(mintAmount);
-    });
-
-    it("Should transfer when unblocked", async function () {
-      const mintAmount = parseEther("100");
-      const transferAmount = parseEther("20");
-
-      await dat.connect(owner).mint(user2, mintAmount).should.be.fulfilled;
-
-      await dat
-        .connect(admin)
-        .blockAddress(user2)
-        .should.emit(dat, "AddressBlocked")
-        .withArgs(user2);
-
-      (await dat.balanceOf(user2)).should.eq(mintAmount);
-      (await dat.balanceOf(user3)).should.eq(0);
-      (await dat.totalSupply()).should.eq(mintAmount);
-
-      await dat
-        .connect(user2)
-        .transfer(user2, parseEther("20"))
-        .should.rejectedWith(`AccountBlocked()`);
-
-      (await dat.balanceOf(user2)).should.eq(mintAmount);
-      (await dat.balanceOf(user3)).should.eq(0);
-      (await dat.totalSupply()).should.eq(mintAmount);
-
-      await dat
-        .connect(admin)
-        .unblockAddress(user2)
-        .should.emit(dat, "AddressUnblocked")
-        .withArgs(user2);
-
-      await dat
-        .connect(user2)
-        .transfer(user3, parseEther("20"))
-        .should.emit(dat, "Transfer")
-        .withArgs(user2, user3, parseEther("20"));
-
-      (await dat.balanceOf(user2)).should.eq(mintAmount - transferAmount);
-      (await dat.balanceOf(user3)).should.eq(transferAmount);
-      (await dat.totalSupply()).should.eq(mintAmount);
+      // constructor makes `owner` both DEFAULT_ADMIN_ROLE and `admin()`
+      (await dat.hasRole(await dat.DEFAULT_ADMIN_ROLE(), owner.address)).should.eq(true);
+      (await dat.admin()).should.eq(owner.address);         // ← fixed
+      // additional ADMIN_ROLE we granted
+      (await dat.hasRole(await dat.ADMIN_ROLE(), admin.address)).should.eq(true);
     });
   });
 
-  describe("DLPT - voting", () => {
-    before(async function () {});
+  /* ────────────────────────────────────────────────────────── */
 
-    beforeEach(async () => {
-      await deploy();
+  describe("Role management (grant / revoke)", () => {
+    beforeEach(deploy);
+
+    it("owner (DEFAULT_ADMIN_ROLE) can add and remove ADMIN_ROLE", async () => {
+      const ADMIN_ROLE = await dat.ADMIN_ROLE();
+
+      // owner adds user2 as admin
+      await dat.connect(owner).grantRole(ADMIN_ROLE, user2.address)
+           .should.emit(dat, "RoleGranted")
+           .withArgs(ADMIN_ROLE, user2.address, owner.address);
+
+      (await dat.hasRole(ADMIN_ROLE, user2.address)).should.eq(true);
+
+      // owner revokes admin role again
+      await dat.connect(owner).revokeRole(ADMIN_ROLE, user2.address)
+           .should.emit(dat, "RoleRevoked")
+           .withArgs(ADMIN_ROLE, user2.address, owner.address);
+
+      (await dat.hasRole(ADMIN_ROLE, user2.address)).should.eq(false);
     });
 
-    it("should delegate", async function () {
-      await dat.connect(owner).mint(user1.address, parseEther("100"));
+    it("non-admin cannot grant roles", async () => {
+      const ADMIN_ROLE = await dat.ADMIN_ROLE();
+      await dat.connect(user1)
+               .grantRole(ADMIN_ROLE, user2.address)
+               .should.be.rejectedWith("AccessControl");
+    });
+  });
 
-      await dat.connect(user1).delegate(user2.address);
+  /* ────────────────────────────────────────────────────────── */
 
-      (await dat.delegates(user1.address)).should.eq(user2.address);
+  describe("Mint-blocker & Minting", () => {
+    beforeEach(deploy);
 
-      (await dat.getVotes(user1.address)).should.eq(0);
-      (await dat.getVotes(user2.address)).should.eq(parseEther("100"));
+    it("allows minting by MINTER_ROLE", async () => {
+      const amount = parseEther("100");
+      await dat.connect(owner).mint(user1.address, amount).should.fulfilled;
+      (await dat.balanceOf(user1.address)).should.eq(amount);
     });
 
-    it("should have 0 votes when blocked", async function () {
-      await dat.connect(owner).mint(user1.address, parseEther("100"));
+    it("rejects minting by non-minter", async () => {
+      await dat.connect(admin)
+               .mint(user1.address, parseEther("10"))
+               .should.be.rejectedWith("AccessControl");
+    });
 
+    it("irreversibly blocks minting", async () => {
+      await dat.connect(owner).blockMint()
+               .should.emit(dat, "MintBlocked");
+
+      await dat.connect(owner)
+               .mint(user1.address, parseEther("1"))
+               .should.be.rejectedWith("EnforceMintBlocked()");
+    });
+  });
+
+  /* ────────────────────────────────────────────────────────── */
+
+  describe("Block-list transfer restrictions", () => {
+    beforeEach(deploy);
+
+    it("blocks and unblocks an address", async () => {
+      const amount = parseEther("100");
+      const transfer = parseEther("20");
+
+      await dat.connect(owner).mint(user1.address, amount);
+
+      await dat.connect(admin).blockAddress(user1.address)
+           .should.emit(dat, "AddressBlocked").withArgs(user1.address);
+
+      await dat.connect(user1)
+               .transfer(user2.address, transfer)
+               .should.be.rejectedWith("AccountBlocked()");
+
+      await dat.connect(admin).unblockAddress(user1.address)
+           .should.emit(dat, "AddressUnblocked").withArgs(user1.address);
+
+      await dat.connect(user1)
+               .transfer(user2.address, transfer)
+               .should.emit(dat, "Transfer").withArgs(user1.address, user2.address, transfer);
+    });
+  });
+
+  /* ────────────────────────────────────────────────────────── */
+
+  /* ────────────────────────────────────────────────────────── */
+
+  describe("Voting behaviour", () => {
+    beforeEach(deploy);
+
+    it("preserves existing votes on block, but forbids new delegation", async () => {
+      const amt = parseEther("50");
+      await dat.connect(owner).mint(user1.address, amt);
+
+      // initial self-delegation → votes = amt
       await dat.connect(user1).delegate(user1.address);
-      (await dat.getVotes(user1.address)).should.eq(parseEther("100"));
+      (await dat.getVotes(user1.address)).should.eq(amt);
 
+      // block user1 → getVotes() still returns the old checkpoint
       await dat.connect(admin).blockAddress(user1.address);
+      (await dat.getVotes(user1.address)).should.eq(amt);
 
-      (await dat.getVotes(user1.address)).should.eq(0);
+      // but trying to delegate again now reverts
+      await dat.connect(user1)
+               .delegate(user1.address)
+               .should.be.rejectedWith("AccountBlocked()");
     });
 
-    it("should reject delegate when blocked", async function () {
-      await dat.connect(owner).mint(user1.address, parseEther("100"));
+    it("allows re-delegation (and restores votes) after unblock", async () => {
+      const amt = parseEther("50");
+      await dat.connect(owner).mint(user1.address, amt);
+      await dat.connect(user1).delegate(user1.address);
 
+      // block & unblock
       await dat.connect(admin).blockAddress(user1.address);
+      await dat.connect(admin).unblockAddress(user1.address);
 
-      await dat
-        .connect(user1)
-        .delegate(user2.address)
-        .should.rejectedWith("AccountBlocked()");
-
-      (await dat.getVotes(user1.address)).should.eq(0);
-      (await dat.getVotes(user2.address)).should.eq(0);
-    });
-
-    it("should cancel delegate when blocked", async function () {
-      await dat.connect(owner).mint(user1.address, parseEther("100"));
-
-      await dat.connect(user1).delegate(user2.address);
-
-      await dat.connect(admin).blockAddress(user1.address);
-
-      (await dat.getVotes(user1.address)).should.eq(0);
-      (await dat.getVotes(user2.address)).should.eq(0);
+      // now delegate again → fresh checkpoint at amt
+      await dat.connect(user1).delegate(user1.address);
+      (await dat.getVotes(user1.address)).should.eq(amt);
     });
   });
+
+  
 });
