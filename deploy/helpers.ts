@@ -63,6 +63,7 @@ export async function verifyProxy(
 export async function verifyContract(
   address: string,
   constructorArguments: string[],
+  contractPath?: string // e.g. "contracts/token/vestingWallet/LinearVestingWallet.sol:LinearVestingWallet"
 ) {
   console.log(``);
   console.log(``);
@@ -72,13 +73,19 @@ export async function verifyContract(
   console.log(`**************************************************************`);
   console.log(`********** Verify the contract on blockscout **********`);
   console.log("!!!! There might be errors but you can ignore them");
-
+  
   try {
-    await run("verify:verify", {
-      address: address,
+    const args: any = {
+      address,
+      constructorArguments,
       force: true,
-      constructorArguments: constructorArguments,
-    });
+    };
+
+    if (contractPath) {
+      args.contract = contractPath;
+    }
+
+    await run("verify:verify", args);
   } catch (e) {
     console.log(e);
   }
