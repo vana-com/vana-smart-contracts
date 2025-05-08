@@ -28,7 +28,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const factory = await ethers.getContractAt("DATFactory", factoryDeployment.address) as DATFactory;
 
   /* ───────────────────────── token parameters ─────────────────────────── */
-  const name   = process.env.NAME   || "Data Accesibility Token";
+  const name   = process.env.NAME   || "DAT Token";
   const symbol = process.env.SYMBOL || "DAT";
 
   const owner  = process.env.OWNER  || deployer.address;
@@ -38,17 +38,27 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   /* Vesting schedule example – customise as required */
   const start  = parseInt(process.env.VEST_START  || (now() + 60).toString()); // default: +60s
   const cliff  = parseInt(process.env.VEST_CLIFF  || (60 * 60 * 24 * 30).toString()); // 30 days
-  const end    = parseInt(process.env.VEST_END    || (start + cliff + 60 * 60 * 24 * 365).toString()); // 1y after cliff
-
+  
+  // IMPORTANT: duration is the TOTAL period including cliff
+  const duration = parseInt(process.env.VEST_DURATION || 
+                           ((60 * 60 * 24 * 365).toString())); // 1 year vesting
+  
   const beneficiary = process.env.BENEFICIARY || deployer.address;
   const amount      = parseEther(process.env.VEST_AMOUNT || "100000");
+
+  log(`Vesting Details:
+  - Beneficiary: ${beneficiary}
+  - Start: ${new Date(start * 1000).toISOString()} (unix: ${start})
+  - Cliff: ${cliff / (60 * 60 * 24)} days
+  - Duration: ${duration / (60 * 60 * 24)} days (including cliff)
+  - Amount: ${ethers.formatEther(amount)} tokens`);
 
   const schedules: DATFactory.VestingParamsStruct[] = [
     {
       beneficiary,
       start,
-      end,
       cliff,
+      duration,
       amount,
     },
   ];
@@ -81,8 +91,25 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const token = (await ethers.getContractAt("DAT", tokenAddr)) as DAT;
   await token.waitForDeployment();
 
-  log("Total supply:", (await token.totalSupply()).toString());
+  log("Total supply:", ethers.formatEther(await token.totalSupply()));
+  log("Cap:", cap === 0n ? "Uncapped" : ethers.formatEther(await token.cap()));
   log("Owner (DEFAULT_ADMIN_ROLE):", owner);
+  
+  // Get vesting wallet events to display created wallets
+  const vestingEvents = receipt!.logs.filter((l) => {
+    return 'fragment' in l && l.fragment?.name === "VestingWalletCreated";
+  });
+  
+  if (vestingEvents.length > 0) {
+    log("\nCreated Vesting Wallets:");
+    for (const evt of vestingEvents) {
+      if ('args' in evt) {
+        const walletAddr = evt.args.wallet;
+        const beneficiary = evt.args.beneficiary;
+        log(`- Wallet: ${walletAddr} for beneficiary: ${beneficiary}`);
+      }
+    }
+  }
   
   log("\n✅  DAT token creation complete");
 };

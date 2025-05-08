@@ -54,10 +54,9 @@ describe("DATFactory + DAT integration", () => {
       /* vesting schedule: two beneficiaries */
       const now    = await latestTimestamp();
 
-      const start       = now + 100;                  // token generation event in 100 s
-      const cliff       = 60 * 60 * 24 * 30;          // 30 days (in seconds)
-      const durationSec = 60 * 60 * 24 * 365;         // 1 year
-      const end         = start + cliff + durationSec; // final unlock
+      const start      = now + 100;                // token generation event in 100 s
+      const cliff      = 60 * 60 * 24 * 30;        // 30 days (in seconds)
+      const duration   = cliff + 60 * 60 * 24 * 365; // 30 days cliff + 1 year vesting
 
       const amount1 = parseEther("100000");
       const amount2 = parseEther("200000");
@@ -66,15 +65,15 @@ describe("DATFactory + DAT integration", () => {
         {
           beneficiary: beneficiary1.address,
           start,
-          end,
           cliff,
+          duration,
           amount: amount1,
         },
         {
           beneficiary: beneficiary2.address,
           start,
-          end,
           cliff,
+          duration,
           amount: amount2,
         },
       ];
@@ -129,11 +128,11 @@ describe("DATFactory + DAT integration", () => {
       (await wallet1.owner()).should.eq(beneficiary1.address);
       (await wallet1.start()).should.eq(start + cliff); // the factory adds the cliff to start
 
-      const expectedDuration = end <= start + cliff ? 1 : end - (start + cliff);
+      const expectedDuration = duration - cliff; // OpenZeppelin duration is post-cliff duration
       (await wallet1.duration()).should.eq(expectedDuration);
 
       /* ───── simulate full vesting & release ───── */
-      await increaseTime(expectedDuration + cliff + 200); // jump past full vesting period
+      await increaseTime(duration + 200); // jump past full vesting period
 
       // before release: beneficiary has no tokens
       (await clone.balanceOf(beneficiary1.address)).should.eq(0n);
@@ -188,8 +187,8 @@ describe("DATFactory + DAT integration", () => {
     });
   });
 
-  /* ───────────────────────────── Cap validation ──────────────────────────── */
-  describe("Cap validation", () => {
+  /* ───────────────────────────── Parameter validation ───────────────────────────── */
+  describe("Parameter validation", () => {
     beforeEach(deployFactory);
 
     it("reverts when cap == 1 (CapTooLow)", async () => {
@@ -198,6 +197,41 @@ describe("DATFactory + DAT integration", () => {
         .createToken("Fail", "FAIL", owner.address, 1, schedules, ethers.ZeroHash)
         .should.be.rejectedWith("CapTooLow()");
     });
+    
+    it("reverts when cap is excessively high", async () => {
+      const schedules: DATFactory.VestingParamsStruct[] = [];
+      const excessiveCap = ethers.parseUnits("1", 40); // This should exceed uint128 max
+      
+      await factory
+        .createToken("ExcessiveCap", "ECAP", owner.address, excessiveCap, schedules, ethers.ZeroHash)
+        .should.be.rejectedWith("ExcessiveCap");
+    });
+
+    it("reverts when name is empty", async () => {
+      const schedules: DATFactory.VestingParamsStruct[] = [];
+      await factory
+        .createToken("", "SYM", owner.address, 0, schedules, ethers.ZeroHash)
+        .should.be.rejectedWith("EmptyName");
+    });
+
+    it("reverts when symbol is empty", async () => {
+      const schedules: DATFactory.VestingParamsStruct[] = [];
+      await factory
+        .createToken("Name", "", owner.address, 0, schedules, ethers.ZeroHash)
+        .should.be.rejectedWith("EmptySymbol");
+    });
+
+    it("reverts when owner is zero address", async () => {
+      const schedules: DATFactory.VestingParamsStruct[] = [];
+      await factory
+        .createToken("Name", "SYM", ethers.ZeroAddress, 0, schedules, ethers.ZeroHash)
+        .should.be.rejectedWith("ZeroOwner");
+    });
+  });
+  
+  /* ───────────────────────────── Cap validation ──────────────────────────── */
+  describe("Cap validation", () => {
+    beforeEach(deployFactory);
 
     it("reverts when total mint exceeds cap", async () => {
       const amount = parseEther("100");
@@ -206,18 +240,121 @@ describe("DATFactory + DAT integration", () => {
       const now  = await latestTs();
       const start = now + 10;
       const cliff = 0;
-      const end   = start + 1000;
+      const duration = 1000;
 
       const schedules: DATFactory.VestingParamsStruct[] = [
-        { beneficiary: beneficiary1.address, start, end, cliff, amount },
+        { beneficiary: beneficiary1.address, start, cliff, duration, amount },
       ];
 
       await factory
         .createToken("Over", "OVR", owner.address, cap, schedules, ethers.ZeroHash)
-        .should.be.rejectedWith("ERC20ExceededCap");
+        .should.be.rejectedWith("ExceedsCap");
+    });
+    
+    it("handles multiple vesting schedules totaling to cap exactly", async () => {
+      const cap = parseEther("200");
+      const amount1 = parseEther("75");
+      const amount2 = parseEther("125");
+      
+      const now = await latestTs();
+      const start = now + 10;
+      const cliff = 0;
+      const duration = 1000;
+      
+      const schedules: DATFactory.VestingParamsStruct[] = [
+        { beneficiary: beneficiary1.address, start, cliff, duration, amount: amount1 },
+        { beneficiary: beneficiary2.address, start, cliff, duration, amount: amount2 }
+      ];
+      
+      // Should not revert since total amount equals cap
+      const tx = await factory.createToken("ExactCap", "ECAP", owner.address, cap, schedules, ethers.ZeroHash);
+      const receipt = await tx.wait();
+      
+      // Get token address from event
+      const event = receipt?.logs.find((l: any) => l.fragment?.name === "DATCreated") as any;
+      const tokenAddr = event?.args?.token;
+      
+      // Verify cap and total supply
+      const token = await ethers.getContractAt("DAT", tokenAddr);
+      (await token.cap()).should.eq(cap);
+      (await token.totalSupply()).should.eq(amount1 + amount2);
     });
   });
 
+  /* ─────────────────────── Vesting parameter validation ────────────────────── */
+  describe("Vesting parameter validation", () => {
+    beforeEach(deployFactory);
+    
+    it("reverts when beneficiary is zero address", async () => {
+      const now = await latestTs();
+      const schedules: DATFactory.VestingParamsStruct[] = [
+        { 
+          beneficiary: ethers.ZeroAddress, 
+          start: now + 10, 
+          cliff: 0, 
+          duration: 1000, 
+          amount: parseEther("100") 
+        }
+      ];
+      
+      await factory
+        .createToken("ZeroAddr", "ZERO", owner.address, 0, schedules, ethers.ZeroHash)
+        .should.be.rejectedWith("ZeroAddress");
+    });
+    
+    it("reverts when amount is zero", async () => {
+      const now = await latestTs();
+      const schedules: DATFactory.VestingParamsStruct[] = [
+        { 
+          beneficiary: beneficiary1.address, 
+          start: now + 10, 
+          cliff: 0, 
+          duration: 1000, 
+          amount: 0 
+        }
+      ];
+      
+      await factory
+        .createToken("ZeroAmt", "ZAMT", owner.address, 0, schedules, ethers.ZeroHash)
+        .should.be.rejectedWith("ZeroAmount");
+    });
+    
+    it("reverts when duration is less than or equal to cliff", async () => {
+      const now = await latestTs();
+      const cliff = 1000;
+      // Duration equal to cliff should fail
+      const schedules: DATFactory.VestingParamsStruct[] = [
+        { 
+          beneficiary: beneficiary1.address, 
+          start: now + 10, 
+          cliff: cliff, 
+          duration: cliff, 
+          amount: parseEther("100")
+        }
+      ];
+      
+      await factory
+        .createToken("BadDuration", "BDUR", owner.address, 0, schedules, ethers.ZeroHash)
+        .should.be.rejectedWith("DurationTooShort");
+    });
+    
+    it("reverts when start time is zero", async () => {
+      const schedules: DATFactory.VestingParamsStruct[] = [
+        { 
+          beneficiary: beneficiary1.address, 
+          start: 0,  // Zero start time 
+          cliff: 0, 
+          duration: 1000, 
+          amount: parseEther("100")
+        }
+      ];
+      
+      await factory
+        .createToken("ZeroStart", "ZSTR", owner.address, 0, schedules, ethers.ZeroHash)
+        .should.be.rejectedWith("ZeroStartTime");
+    });
+  });
+  
   /* ─────────────────────── Vesting schedule edge‑cases ────────────────────── */
   describe("Vesting schedule edge‑cases", () => {
     beforeEach(deployFactory);
@@ -226,11 +363,11 @@ describe("DATFactory + DAT integration", () => {
       const now     = await latestTs();
       const start   = now + 30; // 30s ahead
       const cliff   = 60;       // 1 min
-      const end     = start + cliff; // == start + cliff ⇒ duration = 1 per factory logic
+      const duration = cliff + 1; // 1 second vesting after cliff
       const amount  = parseEther("1000");
 
       const schedules: DATFactory.VestingParamsStruct[] = [
-        { beneficiary: beneficiary1.address, start, end, cliff, amount },
+        { beneficiary: beneficiary1.address, start, cliff, duration, amount },
       ];
 
       const tx = await factory.createToken("Cliff", "CLF", owner.address, 0, schedules, ethers.ZeroHash);
@@ -246,7 +383,7 @@ describe("DATFactory + DAT integration", () => {
       (await wallet.duration()).should.eq(1n);
 
       // fast‑forward beyond cliff
-      await timeTravel(end + 5);
+      await timeTravel(start + duration + 5);
 
       await wallet.connect(beneficiary1)["release(address)"](cloneAddr);
       (await clone.balanceOf(beneficiary1.address)).should.eq(amount);
@@ -256,11 +393,11 @@ describe("DATFactory + DAT integration", () => {
       const now    = await latestTs();
       const start  = now + 10;
       const cliff  = 0;
-      const end    = start + 300; // 5 min vesting
+      const duration = 300; // 5 min vesting
       const amount = parseEther("200");
 
       const schedules: DATFactory.VestingParamsStruct[] = [
-        { beneficiary: beneficiary1.address, start, end, cliff, amount },
+        { beneficiary: beneficiary1.address, start, cliff, duration, amount },
       ];
 
       const tx = await factory.createToken("ZeroCliff", "ZCF", owner.address, 0, schedules, ethers.ZeroHash);
@@ -271,7 +408,7 @@ describe("DATFactory + DAT integration", () => {
       const wallet    = await ethers.getContractAt("VestingWallet", ev.args.to) as any;
 
       (await wallet.start()).should.eq(start);
-      (await wallet.duration()).should.eq(end - start);
+      (await wallet.duration()).should.eq(duration);
     });
   });
 

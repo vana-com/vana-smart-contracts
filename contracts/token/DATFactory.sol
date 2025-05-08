@@ -8,7 +8,25 @@ import "@openzeppelin/contracts/finance/VestingWallet.sol";
 /*  Local */
 import "./DAT.sol";
 
+/* Import error types */
+import {ZeroAmount, ZeroAddress, ExcessiveCap} from "./DAT.sol";
+
 contract DATFactory {
+    /* ───── custom errors ───── */
+    error ZeroSalt();
+    error DurationTooShort(uint64 duration, uint64 cliff);
+    error EmptyName();
+    error EmptySymbol();
+    error ZeroOwner();
+    error StartTimeOverflow(uint64 start, uint64 cliff);
+    error ZeroStartTime();
+    error ZeroDuration();
+    error InvalidArrayLengths();
+    error ParameterOverflow(string paramName, uint256 value, uint256 max);
+    error TotalAmountOverflow(uint256 current, uint256 toAdd);
+    error ExceedsCap(uint256 total, uint256 cap);
+    error PostCliffDurationOverflow(uint64 duration, uint64 cliff);
+
     /* one immutable logic contract */
     address public immutable implementation;
 
@@ -20,8 +38,8 @@ contract DATFactory {
     struct VestingParams {
         address beneficiary;   // receiver
         uint64  start;         // unix, token generation event
-        uint64  end;           // unix, final unlock (≥ start)
         uint64  cliff;         // seconds after start before first release
+        uint64  duration;      // TOTAL seconds for vesting period INCLUDING cliff
         uint256 amount;        // token units
     }
 
@@ -38,8 +56,8 @@ contract DATFactory {
         address indexed wallet,
         address indexed beneficiary,
         uint64  start,
-        uint64  end,
         uint64  cliff,
+        uint64  duration,
         uint256 amount
     );
 
@@ -56,7 +74,30 @@ contract DATFactory {
         VestingParams[] calldata schedules,
         bytes32         salt
     ) external returns (address tokenAddr) {
-
+        // Validate input parameters
+        if (bytes(name_).length == 0) revert EmptyName();
+        if (bytes(symbol_).length == 0) revert EmptySymbol();
+        if (owner_ == address(0)) revert ZeroOwner();
+        
+        // Validate cap - reuse the same validation from DAT.sol for consistency
+        if (cap_ == 1) revert CapTooLow();
+        if (cap_ > type(uint128).max) revert ExcessiveCap(cap_);
+        
+        // Calculate total vesting amount and validate against cap
+        if (cap_ > 0 && schedules.length > 0) {
+            uint256 totalVestingAmount = 0;
+            for (uint256 i = 0; i < schedules.length; i++) {
+                // Check for arithmetic overflow
+                if (totalVestingAmount > type(uint256).max - schedules[i].amount) 
+                    revert TotalAmountOverflow(totalVestingAmount, schedules[i].amount);
+                totalVestingAmount += schedules[i].amount;
+            }
+            
+            // Check if total amount exceeds cap
+            if (totalVestingAmount > cap_) 
+                revert ExceedsCap(totalVestingAmount, cap_);
+        }
+        
         /* 1 – clone token */
         tokenAddr = (salt == bytes32(0))
             ? Clones.clone(implementation)
@@ -92,7 +133,7 @@ contract DATFactory {
         view
         returns (address)
     {
-        require(salt != bytes32(0), "DATFactory: salt is zero");
+        if (salt == bytes32(0)) revert ZeroSalt();
         return Clones.predictDeterministicAddress(implementation, salt);
     }
 
@@ -101,21 +142,41 @@ contract DATFactory {
         private
         returns (address wallet)
     {
+        // Validate parameters
+        if (s.beneficiary == address(0)) revert ZeroAddress();
+        if (s.start == 0) revert ZeroStartTime();
+        if (s.duration == 0) revert ZeroDuration();
+        
+        // Prevent parameter overflows
+        if (s.duration > type(uint64).max) revert ParameterOverflow("duration", s.duration, type(uint64).max);
+        if (s.start > type(uint64).max) revert ParameterOverflow("start", s.start, type(uint64).max);
+        if (s.cliff > type(uint64).max) revert ParameterOverflow("cliff", s.cliff, type(uint64).max);
+        
+        // Ensure duration and cliff relationship is valid
+        if (s.duration <= s.cliff) revert DurationTooShort(s.duration, s.cliff);
+        if (s.amount == 0) revert ZeroAmount();
+        
+        // Prevent overflow when adding start + cliff
+        if (s.start > type(uint64).max - s.cliff) revert StartTimeOverflow(s.start, s.cliff);
+        
+        // Calculate OpenZeppelin VestingWallet parameters
         uint64 startPlusCliff = s.start + s.cliff;
-        uint64 duration       = (s.end <= startPlusCliff)
-            ? 1
-            : s.end - startPlusCliff;
-
+        uint64 postCliffDuration = s.duration - s.cliff;
+        
+        // Ensure postCliffDuration is valid and won't cause problems in VestingWallet
+        // This is redundant with the duration > cliff check above, but adds a specific error type
+        if (postCliffDuration == 0) revert PostCliffDurationOverflow(s.duration, s.cliff);
+        
         wallet = address(
-            new VestingWallet(s.beneficiary, startPlusCliff, duration)
+            new VestingWallet(s.beneficiary, startPlusCliff, postCliffDuration)
         );
-
+        
         emit VestingWalletCreated(
             wallet,
             s.beneficiary,
             s.start,
-            s.end,
             s.cliff,
+            s.duration,
             s.amount
         );
     }

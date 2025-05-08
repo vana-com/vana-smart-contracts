@@ -13,13 +13,21 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
-/* ─── custom errors (unchanged) ─── */
+/* ─── custom errors ─── */
 error EnforceMintBlocked();
-error UnauthorizedAdminAction(address);
+error UnauthorizedAdminAction(address caller);
 error AccountBlocked();
 error ZeroAddress();
 error ZeroAmount();
 error CapTooLow();
+error EmptyString(string paramName);
+error ExcessiveCap(uint256 cap);
+error ArrayLengthMismatch(uint256 length1, uint256 length2);
+error IndexOutOfBounds(uint256 index, uint256 length);
+error ExcessiveMintAmount(uint256 amount, uint256 cap);
+error BlockingRejected(address addr, string reason);
+error BlockListContains(address addr); // More specific error for blocklist checks
+error BlockListDoesNotContain(address addr); // For unblock operations
 
 contract DAT is
     Initializable,
@@ -65,9 +73,13 @@ contract DAT is
         address[] memory receivers,
         uint256[] memory amounts
     ) external initializer {
+        // Validate input parameters
+        if (bytes(name_).length == 0) revert EmptyString("name");
+        if (bytes(symbol_).length == 0) revert EmptyString("symbol");
         if (cap_ == 1) revert CapTooLow();
+        if (cap_ > type(uint128).max) revert ExcessiveCap(cap_);
         if (owner_ == address(0)) revert ZeroAddress();
-        if (receivers.length != amounts.length) revert ZeroAmount();
+        if (receivers.length != amounts.length) revert ArrayLengthMismatch(receivers.length, amounts.length);
 
         __ERC20_init(name_, symbol_);
         __ERC20Capped_init(cap_ == 0 ? type(uint256).max : cap_);
@@ -125,6 +137,12 @@ contract DAT is
     {
         if (to == address(0)) revert ZeroAddress();
         if (amount == 0)      revert ZeroAmount();
+        if (amount > type(uint128).max) revert ExcessiveMintAmount(amount, type(uint128).max);
+        
+        // Check that this mint wouldn't exceed the cap
+        uint256 totalSupplyAfter = totalSupply() + amount;
+        if (totalSupplyAfter > cap()) revert ExcessiveMintAmount(amount, cap() - totalSupply());
+        
         _mint(to, amount);
     }
 
@@ -137,17 +155,28 @@ contract DAT is
         emit MintBlocked();
     }
 
-    /* ─── block-list ops (unchanged) ─── */
+    /* ─── block-list ops ─── */
     function blockAddress(address addr) external onlyAdmin {
+        // Don't allow blocking critical addresses
+        if (addr == address(0)) revert BlockingRejected(addr, "Cannot block zero address");
+        if (addr == admin) revert BlockingRejected(addr, "Cannot block admin");
+        if (hasRole(DEFAULT_ADMIN_ROLE, addr)) revert BlockingRejected(addr, "Cannot block address with admin role");
+        
         if (_blockList.add(addr)) emit AddressBlocked(addr);
     }
+    
     function unblockAddress(address addr) external onlyAdmin {
+        // Verify address is actually in blocklist before attempting removal
+        if (!_blockList.contains(addr)) revert BlockListDoesNotContain(addr);
         if (_blockList.remove(addr)) emit AddressUnblocked(addr);
     }
+    
     function blockListLength() external view returns (uint256) {
         return _blockList.length();
     }
+    
     function blockListAt(uint256 i) external view returns (address) {
+        if (i >= _blockList.length()) revert IndexOutOfBounds(i, _blockList.length());
         return _blockList.at(i);
     }
 
@@ -163,17 +192,21 @@ contract DAT is
         whenNotBlocked(from, to)
     { super._update(from, to, v); }
 
-    function _delegate(address d, address e)
+    function _delegate(address delegator, address delegatee)
         internal
         override
-        whenNotBlocked(d, e)
-    { super._delegate(d, e); }
+        whenNotBlocked(delegator, delegatee)
+    { 
+        // If delegatee is in blocklist, delegation should revert
+        if (_blockList.contains(delegatee)) revert BlockListContains(delegatee);
+        super._delegate(delegator, delegatee);
+    }
 
-    function _transferVotingUnits(address f, address t, uint256 v)
+    function _transferVotingUnits(address from, address to, uint256 amount)
         internal
         override
-        whenNotBlocked(f, t)
-    { super._transferVotingUnits(f, t, v); }
+        whenNotBlocked(from, to)
+    { super._transferVotingUnits(from, to, amount); }
 
     /* ─── IERC-6372 clock ─── */
     function clock() public view override returns (uint48) {
