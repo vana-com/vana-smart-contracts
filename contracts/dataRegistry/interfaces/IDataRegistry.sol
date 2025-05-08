@@ -22,6 +22,8 @@ interface IDataRegistry {
         uint256 proofsCount;
         mapping(uint256 proofId => Proof proof) proofs;
         mapping(address account => string key) permissions;
+        /// @dev refinements is a mapping of refinerId to an URL of the File's refinement against the refiner.
+        mapping(uint256 refinerId => string url) refinements;
     }
 
     struct FileResponse {
@@ -52,4 +54,24 @@ interface IDataRegistry {
     ) external returns (uint256);
     function addProof(uint256 fileId, Proof memory proof) external;
     function addFilePermission(uint256 fileId, address account, string memory key) external;
+    
+    /// @notice Adds a refinement to a file with the given fileId.
+    /// @param fileId The ID of the file to add the refinement to.
+    /// @param refinerId The ID of the refiner.
+    /// @param url The URL of the refinement against the refiner.
+    /// @param account The account to add the permission for.
+    /// @param key The encryption key for the account.
+    function addRefinementWithPermission(
+        uint256 fileId,
+        uint256 refinerId,
+        string calldata url,
+        address account,
+        string calldata key
+    ) external;
+
+    /// @notice Returns the refinement URL of fileId against the refiner refinerId.
+    /// @param fileId The ID of the file to get the refinement for.
+    /// @param refinerId The ID of the refiner.
+    /// @return The URL of the refinement against the refiner.
+    function fileRefinements(uint256 fileId, uint256 refinerId) external view returns (string memory);
 }

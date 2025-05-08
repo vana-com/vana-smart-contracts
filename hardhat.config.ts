@@ -1,5 +1,6 @@
 import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
+import "@nomicfoundation/hardhat-verify";
 import "@openzeppelin/hardhat-upgrades";
 import "hardhat-deploy";
 import * as dotenv from "dotenv";
@@ -12,13 +13,17 @@ const config: HardhatUserConfig = {
     settings: {
       optimizer: {
         enabled: true,
-        runs: 200,
+        runs: 1,
       },
     },
   },
   networks: {
     hardhat: {
       allowUnlimitedContractSize: true,
+      // forking: {
+      //   url: "https://archive.vana.org",
+      //   // blockNumber: 1288639,
+      // },
     },
     vana: {
       url: process.env.VANA_RPC_URL || "",
@@ -29,6 +34,16 @@ const config: HardhatUserConfig = {
       allowUnlimitedContractSize: true,
     },
     moksha: {
+      allowUnlimitedContractSize: true,
+      url: process.env.MOKSHA_RPC_URL || "",
+      chainId: 14800,
+      accounts:
+        process.env.DEPLOYER_PRIVATE_KEY !== undefined
+          ? [process.env.DEPLOYER_PRIVATE_KEY]
+          : [],
+    },
+    moksha2: {
+      allowUnlimitedContractSize: true,
       url: process.env.MOKSHA_RPC_URL || "",
       chainId: 14800,
       accounts:
@@ -37,8 +52,28 @@ const config: HardhatUserConfig = {
           : [],
     },
     satori: {
+      allowUnlimitedContractSize: true,
+      gasPrice: 1000000000, // Adjust the gas price (in wei)
+      gas: 5000000, // Optionally adjust the gas limit
       url: process.env.SATORI_RPC_URL || "",
-      chainId: 14801,
+      accounts:
+        process.env.DEPLOYER_PRIVATE_KEY !== undefined
+          ? [process.env.DEPLOYER_PRIVATE_KEY]
+          : [],
+    },
+    maya: {
+      gasPrice: 1000000000, // Adjust the gas price (in wei)
+      gas: 5000000, // Optionally adjust the gas limit
+      url: process.env.MAYA_RPC_URL || "",
+      accounts:
+        process.env.DEPLOYER_PRIVATE_KEY !== undefined
+          ? [process.env.DEPLOYER_PRIVATE_KEY]
+          : [],
+      allowUnlimitedContractSize: true,
+    },
+    baseSepolia: {
+      allowUnlimitedContractSize: true,
+      url: process.env.BASE_SEPOLIA_RPC_URL || "",
       accounts:
         process.env.DEPLOYER_PRIVATE_KEY !== undefined
           ? [process.env.DEPLOYER_PRIVATE_KEY]
@@ -49,8 +84,10 @@ const config: HardhatUserConfig = {
     apiKey: {
       // Is not required by blockscout. Can be any non-empty string
       vana: "abc",
-      moksha: "abc",
       satori: "abc",
+      moksha: "abc",
+      moksha2: "abc",
+      maya: "abc",
     },
     customChains: [
       {
@@ -65,6 +102,16 @@ const config: HardhatUserConfig = {
         network: "moksha",
         chainId: 14800,
         urls: {
+          // apiURL: process.env.MOKSHA_API_URL || "",
+          // browserURL: process.env.MOKSHA_BROWSER_URL || "",
+          apiURL: "https://moksha.vanascan.io/api",
+          browserURL: "https://moksha.vanascan.io"
+        },
+      },
+      {
+        network: "moksha2",
+        chainId: 14800,
+        urls: {
           apiURL: "https://api.moksha.vanascan.io/api/",
           browserURL: "https://moksha.vanascan.io",
         },
@@ -75,6 +122,14 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: process.env.SATORI_API_URL || "",
           browserURL: process.env.SATORI_BROWSER_URL || "",
+        },
+      },
+      {
+        network: "maya",
+        chainId: 14808,
+        urls: {
+          apiURL: process.env.MAYA_API_URL || "",
+          browserURL: process.env.MAYA_BROWSER_URL || "",
         },
       },
     ],
@@ -89,7 +144,7 @@ const config: HardhatUserConfig = {
     artifacts: "./artifacts",
   },
   mocha: {
-    timeout: 40000,
+    timeout: 1800000,
   },
   gasReporter: {
     enabled: true,
