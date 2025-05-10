@@ -5,14 +5,12 @@ pragma solidity ^0.8.24;
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import "@openzeppelin/contracts/proxy/Clones.sol";
 import "@openzeppelin/contracts/finance/VestingWallet.sol";
+import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import "@openzeppelin/contracts/proxy/Clones.sol";
 
-import "./DAT.sol";
-
-/* Import error types */
-import {ZeroAmount, ZeroAddress} from "./DAT.sol";
 import {DATFactoryStorageV1} from "./interfaces/DATFactoryStorageV1.sol";
+import {IDAT} from "./interfaces/IDAT.sol";
 
 contract DATFactoryImplementation is
     UUPSUpgradeable,
@@ -43,33 +41,40 @@ contract DATFactoryImplementation is
     );
 
     /* ───── custom errors ───── */
-    error ZeroSalt();
     error DurationTooShort(uint64 duration, uint64 cliff);
-    error EmptyName();
-    error EmptySymbol();
     error ZeroOwner();
+    error ZeroAmount();
+    error ZeroAddress();
     error StartTimeOverflow(uint64 start, uint64 cliff);
     error ZeroStartTime();
     error ZeroDuration();
-    error InvalidArrayLengths();
-    error ParameterOverflow(string paramName, uint256 value, uint256 max);
-    error TotalAmountOverflow(uint256 current, uint256 toAdd);
+    error ZeroSalt();
     error ExceedsCap(uint256 total, uint256 cap);
-    error PostCliffDurationOverflow(uint64 duration, uint64 cliff);
     error CapTooLow();
     error ExcessiveCap();
+    error InvalidDATType(DATType datType);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
     }
 
-    function initialize(address ownerAddress, uint256 minCap, uint256 maxCap) external initializer {
+    function initialize(
+        address ownerAddress,
+        uint256 minCap,
+        uint256 maxCap,
+        address datImplementation,
+        address datVotesImplementation,
+        address datPausableImplementation
+    ) external initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
         __Pausable_init();
 
-        datTemplates[DATType.DEFAULT] = address(new DAT());
+        /// @dev Use clones to avoid importing the whole DAT contracts
+        datTemplates[DATType.DEFAULT] = datImplementation;
+        datTemplates[DATType.VOTES] = datVotesImplementation;
+        datTemplates[DATType.PAUSABLE] = datPausableImplementation;
 
         minCapDefault = minCap;
         maxCapDefault = maxCap;
@@ -93,75 +98,66 @@ contract DATFactoryImplementation is
     }
 
     /**
-     * Deploy a VRC-20 clone + its vesting wallets.
+     * Deploy a VRC-20 + its vesting wallets.
      *
      * Pass `salt = 0x0` for a non-deterministic address.
      */
-    function createToken(
-        string calldata name_,
-        string calldata symbol_,
-        address owner_,
-        uint256 cap_,
-        VestingParams[] calldata schedules,
-        bytes32 salt
-    ) external override returns (address tokenAddr) {
+    function createToken(CreateTokenParams calldata params) external override returns (address tokenAddr) {
         // Validate input parameters
-        if (bytes(name_).length == 0) revert EmptyName();
-        if (bytes(symbol_).length == 0) revert EmptySymbol();
-        if (owner_ == address(0)) revert ZeroOwner();
+        /// @dev name_ and symbol_ will be validated in the DAT constructor
+        if (params.owner == address(0)) revert ZeroOwner();
+
+        /// @dev DAT assumes that zero _cap means type(uint256).max cap
+        uint256 cap_ = params.cap;
+        if (cap_ == 0) cap_ = type(uint256).max;
 
         if (cap_ < minCapDefault) revert CapTooLow();
         if (cap_ > maxCapDefault) revert ExcessiveCap();
 
-        // Validate cap - reuse the same validation from DAT.sol for consistency
-        //        if (cap_ == 1) revert CapTooLow();
-        //        if (cap_ > type(uint128).max) revert ExcessiveCap(cap_);
-
         // Calculate total vesting amount and validate against cap
-        if (cap_ > 0 && schedules.length > 0) {
-            uint256 totalVestingAmount = 0;
-            for (uint256 i = 0; i < schedules.length; i++) {
-                // Check for arithmetic overflow
-                if (totalVestingAmount > type(uint256).max - schedules[i].amount)
-                    revert TotalAmountOverflow(totalVestingAmount, schedules[i].amount);
-                totalVestingAmount += schedules[i].amount;
+        /// @dev cap_ should be always positive here
+        uint256 len = params.schedules.length;
+        uint256 totalVestingAmount = 0;
+        for (uint256 i; i < len; ) {
+            /// @dev No need to explicitly check for arithmetic overflow in Solidity 0.8.x
+            totalVestingAmount += params.schedules[i].amount;
+            unchecked {
+                ++i;
             }
-
-            // Check if total amount exceeds cap
-            if (totalVestingAmount > cap_) revert ExceedsCap(totalVestingAmount, cap_);
         }
+        // Check if total amount exceeds cap
+        if (totalVestingAmount > cap_) revert ExceedsCap(totalVestingAmount, cap_);
 
-        /* 1 – clone token */
-        tokenAddr = (salt == bytes32(0))
-            ? Clones.clone(datTemplates[DATType.DEFAULT])
-            : Clones.cloneDeterministic(datTemplates[DATType.DEFAULT], salt);
-
-        //todo: check if we can remove the EIP-1967 and introduce a standard deployment
-        //        tokenAddr = address(new DAT());
-
-        _datList.add(tokenAddr);
-
-        /* 2 – deploy vesting wallets, gather mint arrays */
-        uint256 len = schedules.length;
+        /* 1 – deploy vesting wallets, gather mint arrays */
         address[] memory receivers = new address[](len);
         uint256[] memory amounts = new uint256[](len);
 
-        for (uint256 i; i < len; ++i) {
+        for (uint256 i; i < len; ) {
             /* compute schedule adapted to OZ VestingWallet */
-            address wallet = _deployVesting(schedules[i]);
-            receivers[i] = wallet;
-            amounts[i] = schedules[i].amount;
+            receivers[i] = _deployVesting(params.schedules[i]);
+            amounts[i] = params.schedules[i].amount;
+            unchecked {
+                ++i;
+            }
         }
 
+        /* 2 – clone token */
+        tokenAddr = (params.salt == bytes32(0))
+            ? Clones.clone(datTemplates[params.datType])
+            : Clones.cloneDeterministic(datTemplates[params.datType], params.salt);
+
+        _datList.add(tokenAddr);
+
         /* 3 – initialise token (mints to the wallets) */
-        DAT(tokenAddr).initialize(name_, symbol_, owner_, cap_, receivers, amounts);
-        emit DATCreated(tokenAddr, salt, name_, symbol_, owner_, cap_);
+        IDAT(tokenAddr).initialize(params.name, params.symbol, params.owner, cap_, receivers, amounts);
+
+        emit DATCreated(tokenAddr, params.salt, params.name, params.symbol, params.owner, cap_);
     }
 
     /* helper: predict the clone address this factory will deploy */
-    function predictAddress(bytes32 salt) external view override returns (address) {
+    function predictAddress(DATType datType, bytes32 salt) external view override returns (address) {
         if (salt == bytes32(0)) revert ZeroSalt();
-        return Clones.predictDeterministicAddress(datTemplates[DATType.DEFAULT], salt);
+        return Clones.predictDeterministicAddress(datTemplates[datType], salt);
     }
 
     /* ---- helper ---- */
@@ -170,11 +166,6 @@ contract DATFactoryImplementation is
         if (params.beneficiary == address(0)) revert ZeroAddress();
         if (params.start == 0) revert ZeroStartTime();
         if (params.duration == 0) revert ZeroDuration();
-
-        // Prevent parameter overflows
-        if (params.duration > type(uint64).max) revert ParameterOverflow("duration", params.duration, type(uint64).max);
-        if (params.start > type(uint64).max) revert ParameterOverflow("start", params.start, type(uint64).max);
-        if (params.cliff > type(uint64).max) revert ParameterOverflow("cliff", params.cliff, type(uint64).max);
 
         // Ensure duration and cliff relationship is valid
         if (params.duration <= params.cliff) revert DurationTooShort(params.duration, params.cliff);
@@ -186,10 +177,6 @@ contract DATFactoryImplementation is
         // Calculate OpenZeppelin VestingWallet parameters
         uint64 startPlusCliff = params.start + params.cliff;
         uint64 postCliffDuration = params.duration - params.cliff;
-
-        // Ensure postCliffDuration is valid and won't cause problems in VestingWallet
-        // This is redundant with the duration > cliff check above, but adds a specific error type
-        if (postCliffDuration == 0) revert PostCliffDurationOverflow(params.duration, params.cliff);
 
         wallet = address(new VestingWallet(params.beneficiary, startPlusCliff, postCliffDuration));
 
