@@ -18,16 +18,17 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const tokenName = process.env.DLP_TOKEN_NAME ?? "Custom Data Autonomy Token";
   const tokenSymbol = process.env.DLP_TOKEN_SYMBOL ?? "CUSTOMDAT";
 
-  const teePoolContractAddress = process.env.TEE_POOL_CONTRACT_ADDRESS ?? "";
+  const teePoolContractAddress = process.env.TEE_POOL_CONTRACT_ADDRESS ?? deployer.address;
   const dataRegistryContractAddress =
-    process.env.DATA_REGISTRY_CONTRACT_ADDRESS ?? "";
+    process.env.DATA_REGISTRY_CONTRACT_ADDRESS ?? deployer.address;
 
-  const dlpPubicKey = process.env.DLP_PUBLIC_KEY ?? "pubicKey";
+  const dlpPublicKey = process.env.DLP_PUBLIC_KEY ?? "publicKey";
   const proofInstruction =
     process.env.DLP_PROOF_INSTRUCTION ?? "proofInstruction";
   const dlpName = process.env.DLP_NAME ?? "DLP Name";
   const dlpFileRewardFactor =
     process.env.DLP_FILE_REWARD_FACTOR ?? parseEther(1);
+  const trustedForwarder = process.env.TRUSTED_FORWARDER_ADDRESS ?? deployer.address;
 
   console.log(``);
   console.log(``);
@@ -51,9 +52,10 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     dataRegistryAddress: dataRegistryContractAddress,
     teePoolAddress: teePoolContractAddress,
     tokenAddress: token.target,
-    pubicKey: dlpPubicKey,
+    publicKey: dlpPublicKey,
     proofInstruction: proofInstruction,
     fileRewardFactor: dlpFileRewardFactor,
+    trustedForwarder: trustedForwarder,
   };
 
   const proxyDeploy = await deployProxy(
@@ -101,6 +103,15 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     proxyDeploy.initializeData,
     proxyContractPath,
   );
+
+  console.log(``);
+  console.log(`**************************************************************`);
+  console.log(`******************** DEPLOYMENT SUMMARY *********************`);
+  console.log(`**************************************************************`);
+  console.log(`DAT Token Address: ${tokenDeploy.address}`);
+  console.log(`DLP Proxy Address: ${proxyDeploy.proxyAddress}`);
+  console.log(`DLP Implementation Address: ${proxyDeploy.implementationAddress}`);
+  console.log(`**************************************************************`);
 
   return;
 };
