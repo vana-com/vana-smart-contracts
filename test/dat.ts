@@ -9,10 +9,7 @@ import {
     DAT, DATPausable, DATVotes, CloneHelper,
     DATFactoryImplementation, VestingWallet,
 } from "../typechain-types";
-import { Contract, EventLog } from "ethers";
-import { get } from "http";
-import { dat } from "../typechain-types/contracts";
-import { token } from "../typechain-types/@openzeppelin/contracts";
+import { EventLog } from "ethers";
 
 chai.use(chaiAsPromised);
 should();

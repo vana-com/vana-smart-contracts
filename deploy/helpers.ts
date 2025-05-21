@@ -125,11 +125,19 @@ export async function deployProxy(
     },
   );
 
+  console.log(
+    `${implementationContractName} deployed to: ${implementationDeploy.address}`,
+  );
+
+  console.log("Initializer params: ", initializeParams);
+
   // Encode the initializer function call
   const initializeData = implementationFactory.interface.encodeFunctionData(
     "initialize",
     initializeParams,
   );
+
+  console.log(`Initialize data: ${initializeData}`);
 
   const proxyDeploy = await deployments.deploy(proxyContractName, {
     from: deployer.address,
