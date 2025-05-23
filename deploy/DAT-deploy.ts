@@ -6,7 +6,7 @@ import { verifyContract, deployProxy, verifyProxy } from "./helpers";
 const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     const [deployer] = await ethers.getSigners();
 
-    const ownerAddress = process.env.OWNER_ADDRESS ?? deployer.address;
+    const ownerAddress = process.env.OWNER_ADDRESS || deployer.address;
 
     const DATDeploy = await deployments.deploy("DAT", {
         from: deployer.address,

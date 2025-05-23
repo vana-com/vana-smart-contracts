@@ -10,11 +10,11 @@ const proxyContractPath = "contracts/teePool/TeePoolProxy.sol:TeePoolProxy";
 const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const [deployer] = await ethers.getSigners();
 
-  const ownerAddress = process.env.OWNER_ADDRESS ?? deployer.address;
+  const ownerAddress = process.env.OWNER_ADDRESS || deployer.address;
   const dataRegistryContractAddress =
-    process.env.DATA_REGISTRY_CONTRACT_ADDRESS ?? ethers.ZeroAddress;
+    process.env.DATA_REGISTRY_CONTRACT_ADDRESS || ethers.ZeroAddress;
   const trustedForwarderAddress =
-    process.env.TRUSTED_FORWARDER_ADDRESS ?? ethers.ZeroAddress;
+    process.env.TRUSTED_FORWARDER_ADDRESS || ethers.ZeroAddress;
 
   const initialCancelDelay = 100; // 100 blocks
 

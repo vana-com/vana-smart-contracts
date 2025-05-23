@@ -19,8 +19,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       ? process.env.OWNER_ADDRESS
       : deployer.address;
 
-  const tokenName   = process.env.DLP_TOKEN_NAME   ?? "Custom Data Autonomy Token";
-  const tokenSymbol = process.env.DLP_TOKEN_SYMBOL ?? "CUSTOMDAT";
+  const tokenName   = process.env.DLP_TOKEN_NAME   || "Custom Data Autonomy Token";
+  const tokenSymbol = process.env.DLP_TOKEN_SYMBOL || "CUSTOMDAT";
 
   /* ---------------------------------------------------------------------- */
   /* 1. DAT token                                                           */
@@ -37,7 +37,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     tokenName,
     tokenSymbol,
     ownerAddress,
-    0,
+    "0",
   ]);
 
   /* ---------------------------------------------------------------------- */

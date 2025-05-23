@@ -19,7 +19,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     throw new Error("Network is not active yet");
   }
 
-  const ownerAddress = process.env.OWNER_ADDRESS ?? deployer.address;
+  const ownerAddress = process.env.OWNER_ADDRESS || deployer.address;
 
   const initializeParams = [
     ownerAddress,
