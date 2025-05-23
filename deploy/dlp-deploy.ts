@@ -1,4 +1,4 @@
-import { ethers } from "hardhat";
+import { ethers, run } from "hardhat";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { DeployFunction } from "hardhat-deploy/types";
 import { deployProxy, verifyContract, verifyProxy } from "./helpers";
@@ -98,6 +98,12 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const tokenAddress = createEvent.args[0];
   console.log(`Token Address: ${tokenAddress}`);
 
+  const vestingWalletCreatedEvent = receipt.logs.find(
+    (log) => (log as EventLog).fragment?.name === "VestingWalletCreated",
+  ) as EventLog;
+  const vestingWalletAddress = vestingWalletCreatedEvent.args[0];
+  console.log(`Vesting Wallet Address: ${vestingWalletAddress}`);
+
   const params = {
     trustedForwarder: trustedForwarderAddress,
     ownerAddress: ownerAddress,
@@ -121,12 +127,24 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   console.log("Proxy deployed to:", proxyDeploy.proxyAddress);
 
+  console.log("Verifying contracts...");
   await verifyProxy(
     proxyDeploy.proxyAddress,
     proxyDeploy.implementationAddress,
     proxyDeploy.initializeData,
     proxyContractPath,
   );
+
+  console.log("Verifying vesting wallet...");
+  try {
+    await run("verify:verify", {
+      address: vestingWalletAddress,
+      force: true,
+      constructorArguments: [beneficiaryAddress, vestingStart + vestingCliff, vestingDuration - vestingCliff],
+    });
+  } catch (e) {
+    console.log(e);
+  }
 
   return;
 };
