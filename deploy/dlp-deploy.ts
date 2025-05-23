@@ -140,9 +140,9 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     [params],
   );
 
-  console.log("Proxy deployed to:", proxyDeploy.proxyAddress);
+  console.log(`${proxyContractName} deployed to:`, proxyDeploy.proxyAddress);
 
-  console.log("Verifying contracts...");
+  console.log("Starting contract verification...");
   await verifyProxy(
     proxyDeploy.proxyAddress,
     proxyDeploy.implementationAddress,
@@ -150,7 +150,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     proxyContractPath,
   );
 
-  console.log("Verifying vesting wallet...");
+  console.log("Attempting to verify vesting wallet contract...");
   try {
     await run("verify:verify", {
       address: vestingWalletAddress,
@@ -162,8 +162,15 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       ],
     });
   } catch (e) {
+    console.log("Vesting wallet verification failed or already verified:");
     console.log(e);
   }
+
+  console.log("\n✅ Deployment Summary:");
+  console.log(`   📦 Token successfully deployed at: ${tokenAddress}`);
+  console.log(`   🧠 ${proxyContractName} proxy is live at: ${proxyDeploy.proxyAddress}`);
+  console.log(`   🎁 Vesting wallet set up at: ${vestingWalletAddress}`);
+  console.log("🚀 All components deployed and verified (or attempted). Ready to roll!");
 
   return;
 };

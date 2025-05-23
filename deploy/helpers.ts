@@ -4,19 +4,16 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 export async function getUUPSImplementationAddress(
   proxyAddress: string,
 ): Promise<string> {
-  // The storage slot where the implementation address is stored for UUPS proxies
   const IMPLEMENTATION_SLOT =
     "0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc";
 
   const provider = ethers.provider;
 
-  // Fetch the implementation address from the specified storage slot
   const implementationAddressHex = await provider.getStorage(
     proxyAddress,
     IMPLEMENTATION_SLOT,
   );
 
-  // Strip leading zeros
   const strippedImplementationAddress =
     "0x" + implementationAddressHex.substring(26);
 
@@ -29,51 +26,43 @@ export async function verifyProxy(
   initializeData: string,
   proxyContractPath: string,
 ) {
-  console.log(``);
-  console.log(``);
-  console.log(``);
-  console.log(`**************************************************************`);
-  console.log(`**************************************************************`);
-  console.log(`**************************************************************`);
-  console.log(`********** Verify the contracts on blockscout **********`);
-  console.log("!!!! There might be errors but you can ignore them");
+  console.log(`\n🔍 Starting verification of contracts on Blockscout`);
+  console.log(`   Note: You might see errors (e.g., already verified), you can safely ignore them.\n`);
 
   try {
+    console.log(`🔹 Verifying implementation contract at: ${rootImplementationAddress}`);
     await run("verify:verify", {
       address: rootImplementationAddress,
       force: true,
       constructorArguments: [],
     });
+    console.log(`✅ Implementation verified successfully!\n`);
   } catch (e) {
-    console.log(e);
+    console.log(`⚠️ Implementation verification issue:\n`, e);
   }
 
   try {
+    console.log(`🔹 Verifying proxy contract at: ${rootProxyAddress}`);
     await run("verify:verify", {
       address: rootProxyAddress,
       force: true,
       contract: proxyContractPath,
       constructorArguments: [rootImplementationAddress, initializeData],
     });
+    console.log(`✅ Proxy verified successfully!\n`);
   } catch (e) {
-    console.log(e);
+    console.log(`⚠️ Proxy verification issue:\n`, e);
   }
 }
 
 export async function verifyContract(
   address: string,
   constructorArguments: string[],
-  contractPath?: string // e.g. "contracts/token/vestingWallet/LinearVestingWallet.sol:LinearVestingWallet"
+  contractPath?: string
 ) {
-  console.log(``);
-  console.log(``);
-  console.log(``);
-  console.log(`**************************************************************`);
-  console.log(`**************************************************************`);
-  console.log(`**************************************************************`);
-  console.log(`********** Verify the contract on blockscout **********`);
-  console.log("!!!! There might be errors but you can ignore them");
-  
+  console.log(`\n🔍 Starting contract verification on Blockscout`);
+  console.log(`   Note: Errors may appear (e.g., contract already verified), these can be ignored.\n`);
+
   try {
     const args: any = {
       address,
@@ -86,8 +75,9 @@ export async function verifyContract(
     }
 
     await run("verify:verify", args);
+    console.log(`✅ Contract verified successfully at: ${address}\n`);
   } catch (e) {
-    console.log(e);
+    console.log(`⚠️ Verification failed or already verified:\n`, e);
   }
 }
 
@@ -103,15 +93,8 @@ export async function deployProxy(
   implementationAddress: string;
   initializeData: string;
 }> {
-  console.log(``);
-  console.log(``);
-  console.log(``);
-  console.log(`**************************************************************`);
-  console.log(`**************************************************************`);
-  console.log(`**************************************************************`);
-  console.log(`********** Deploying ${proxyContractName} **********`);
+  console.log(`\n🚀 Starting deployment of ${proxyContractName}`);
 
-  // Deploy the implementation contract
   const implementationFactory = await ethers.getContractFactory(
     implementationContractName,
   );
@@ -125,19 +108,12 @@ export async function deployProxy(
     },
   );
 
-  console.log(
-    `${implementationContractName} deployed to: ${implementationDeploy.address}`,
-  );
+  console.log(`✅ ${implementationContractName} deployed at: ${implementationDeploy.address}`);
 
-  console.log("Initializer params: ", initializeParams);
-
-  // Encode the initializer function call
   const initializeData = implementationFactory.interface.encodeFunctionData(
     "initialize",
     initializeParams,
   );
-
-  console.log(`Initialize data: ${initializeData}`);
 
   const proxyDeploy = await deployments.deploy(proxyContractName, {
     from: deployer.address,
@@ -145,16 +121,14 @@ export async function deployProxy(
     log: true,
   });
 
-  console.log(``);
-  console.log(``);
-  console.log(``);
-  console.log(`**************************************************************`);
-  console.log(`**************************************************************`);
-  console.log(`**************************************************************`);
-  console.log(`********** Save contract to .openzeppelin file **********`);
+  console.log(`✅ ${proxyContractName} proxy deployed at: ${proxyDeploy.address}`);
+
+  console.log(`📝 Registering proxy with OpenZeppelin upgrades system...`);
   await upgrades.forceImport(proxyDeploy.address, implementationFactory, {
     kind: "uups",
   });
+
+  console.log(`🎉 Deployment complete. Proxy and implementation are live and registered.\n`);
 
   return {
     proxyAddress: proxyDeploy.address,
