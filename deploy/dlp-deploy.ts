@@ -3,7 +3,7 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { DeployFunction } from "hardhat-deploy/types";
 import { deployProxy, verifyContract, verifyProxy } from "./helpers";
 import { getReceipt, parseEther } from "../utils/helpers";
-import { EventLog } from "ethers";
+import { EventLog, formatEther } from "ethers";
 
 const implementationContractName = "DataLiquidityPoolImplementation";
 const proxyContractName = "DataLiquidityPoolProxy";
@@ -13,34 +13,37 @@ const proxyContractPath =
 const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const [deployer] = await ethers.getSigners();
 
-  const ownerAddress = process.env.OWNER_ADDRESS ?? deployer.address;
+  const ownerAddress = process.env.OWNER_ADDRESS || deployer.address;
 
   const trustedForwarderAddress =
-    process.env.TRUSTED_FORWARDER_ADDRESS ?? deployer.address;
+    process.env.TRUSTED_FORWARDER_ADDRESS || deployer.address;
 
-  const tokenName = process.env.DLP_TOKEN_NAME ?? "Custom Data Autonomy Token";
-  const tokenSymbol = process.env.DLP_TOKEN_SYMBOL ?? "CUSTOMDAT";
-  const tokenSalt = process.env.DLP_TOKEN_SALT ?? "customDataAutonomyToken";
-  const tokenCap = process.env.DLP_TOKEN_CAP ?? parseEther(1_000_000_000);
-  const datType = process.env.DAT_TYPE ?? 0;
+  const beneficiaryAddress =
+    process.env.VESTING_BENEFICIARY || ownerAddress;
 
-  const teePoolContractAddress = process.env.TEE_POOL_CONTRACT_ADDRESS ?? "";
+  const tokenName = process.env.DLP_TOKEN_NAME || "Custom Data Autonomy Token";
+  const tokenSymbol = process.env.DLP_TOKEN_SYMBOL || "CUSTOMDAT";
+  const tokenSalt = process.env.DLP_TOKEN_SALT || "customDataAutonomyToken";
+  const tokenCap = process.env.DLP_TOKEN_CAP || parseEther(1_000_000_000);
+  const datType = process.env.DAT_TYPE || 0;
+
+  const teePoolContractAddress = process.env.TEE_POOL_CONTRACT_ADDRESS || "";
   const dataRegistryContractAddress =
-    process.env.DATA_REGISTRY_CONTRACT_ADDRESS ?? "";
+    process.env.DATA_REGISTRY_CONTRACT_ADDRESS || "";
 
   const datFactoryContractAddress =
-    process.env.DAT_FACTORY_CONTRACT_ADDRESS ?? "";
+    process.env.DAT_FACTORY_CONTRACT_ADDRESS || "";
   const datFactoryContract = await ethers.getContractAt(
     "DATFactoryImplementation",
     datFactoryContractAddress,
   );
 
-  const dlpPubicKey = process.env.DLP_PUBLIC_KEY ?? "pubicKey";
+  const dlpPubicKey = process.env.DLP_PUBLIC_KEY || "pubicKey";
   const proofInstruction =
-    process.env.DLP_PROOF_INSTRUCTION ?? "proofInstruction";
-  const dlpName = process.env.DLP_NAME ?? "DLP Name";
+    process.env.DLP_PROOF_INSTRUCTION || "proofInstruction";
+  const dlpName = process.env.DLP_NAME || "DLP Name";
   const dlpFileRewardFactor =
-    process.env.DLP_FILE_REWARD_FACTOR ?? parseEther(1);
+    process.env.DLP_FILE_REWARD_FACTOR || parseEther(1);
 
   console.log(``);
   console.log(``);
@@ -53,20 +56,27 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   console.log(`DAT Factory Address: ${datFactoryContractAddress}`);
   console.log(`DLP Token Name: ${tokenName}`);
   console.log(`DLP Token Symbol: ${tokenSymbol}`);
-  console.log(`DLP Token Cap: ${tokenCap}`);
+  console.log(`DLP Token Cap: ${formatEther(tokenCap)}`);
   console.log(`DLP Token Salt: ${tokenSalt}`);
   console.log(`DLP Type: ${datType}`);
   console.log(`Owner Address: ${ownerAddress}`);
+  console.log(`Vesting Address: ${beneficiaryAddress}`);
   console.log(`Trusted Forwarder Address: ${trustedForwarderAddress}`);
 
   const secondsInYear = 60 * 60 * 24 * 365;
   const secondsInMonth = 60 * 60 * 24 * 30;
-  const beneficiaryAddress =
-    process.env.VESTING_BENEFICIARY ?? deployer.address;
   const vestingStart = process.env.VESTING_START
     ? parseInt(process.env.VESTING_START)
     : Math.floor(Date.now() / 1000);
-  const vestingAmount = BigInt(process.env.VESTING_AMOUNT ?? 0);
+
+  const vestingAmount = parseEther(process.env.VESTING_AMOUNT || 0);
+
+  if (BigInt(vestingAmount) > BigInt(tokenCap)) {
+    throw new Error(
+      `Vesting amount ${formatEther(vestingAmount)} exceeds token cap ${formatEther(tokenCap)}`,
+    );
+  }
+
   const vestingDuration = process.env.VESTING_DURATION
     ? parseInt(process.env.VESTING_DURATION)
     : 3 * secondsInYear; // 3 years
