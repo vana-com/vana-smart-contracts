@@ -20,7 +20,10 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   const tokenName = process.env.DLP_TOKEN_NAME ?? "Custom Data Autonomy Token";
   const tokenSymbol = process.env.DLP_TOKEN_SYMBOL ?? "CUSTOMDAT";
-  const tokenSalt = process.env.DLP_TOKEN_SALT ?? "customDataAutonomyToken";
+  // Generate a random salt for the token if not provided in the environment variables
+  const tokenSalt =
+    process.env.DLP_TOKEN_SALT ??
+    `DLP_TOKEN_SALT_${Math.floor(Math.random() * 1000000).toString()}`;
   const tokenCap = process.env.DLP_TOKEN_CAP ?? parseEther(1_000_000_000);
   const datType = process.env.DAT_TYPE ?? 0;
 
@@ -79,13 +82,15 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     name: tokenName,
     symbol: tokenSymbol,
     cap: tokenCap,
-    schedules: [{
-      beneficiary: beneficiaryAddress,
-      start: vestingStart,
-      cliff: vestingCliff,
-      duration: vestingDuration,
-      amount: vestingAmount,
-    }],
+    schedules: [
+      {
+        beneficiary: beneficiaryAddress,
+        start: vestingStart,
+        cliff: vestingCliff,
+        duration: vestingDuration,
+        amount: vestingAmount,
+      },
+    ],
     salt: ethers.id(tokenSalt),
     owner: ownerAddress,
   });
@@ -140,7 +145,11 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     await run("verify:verify", {
       address: vestingWalletAddress,
       force: true,
-      constructorArguments: [beneficiaryAddress, vestingStart + vestingCliff, vestingDuration - vestingCliff],
+      constructorArguments: [
+        beneficiaryAddress,
+        vestingStart + vestingCliff,
+        vestingDuration - vestingCliff,
+      ],
     });
   } catch (e) {
     console.log(e);
