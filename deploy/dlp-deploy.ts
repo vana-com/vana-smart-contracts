@@ -59,12 +59,33 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   console.log(`Owner Address: ${ownerAddress}`);
   console.log(`Trusted Forwarder Address: ${trustedForwarderAddress}`);
 
+  const secondsInYear = 60 * 60 * 24 * 365;
+  const secondsInMonth = 60 * 60 * 24 * 30;
+  const beneficiaryAddress =
+    process.env.VESTING_BENEFICIARY ?? deployer.address;
+  const vestingStart = process.env.VESTING_START
+    ? parseInt(process.env.VESTING_START)
+    : Math.floor(Date.now() / 1000);
+  const vestingAmount = BigInt(process.env.VESTING_AMOUNT ?? 0);
+  const vestingDuration = process.env.VESTING_DURATION
+    ? parseInt(process.env.VESTING_DURATION)
+    : 3 * secondsInYear; // 3 years
+  const vestingCliff = process.env.VESTING_CLIFF
+    ? parseInt(process.env.VESTING_CLIFF)
+    : 6 * secondsInMonth; // 6 months
+
   const tx = await datFactoryContract.createToken({
     datType: datType,
     name: tokenName,
     symbol: tokenSymbol,
     cap: tokenCap,
-    schedules: [],
+    schedules: [{
+      beneficiary: beneficiaryAddress,
+      start: vestingStart,
+      cliff: vestingCliff,
+      duration: vestingDuration,
+      amount: vestingAmount,
+    }],
     salt: ethers.id(tokenSalt),
     owner: ownerAddress,
   });
