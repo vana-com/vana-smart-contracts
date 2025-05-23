@@ -233,8 +233,6 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   console.log(`   📦 Token successfully deployed at: ${tokenAddress}`);
   console.log(`   🧠 ${proxyContractName} proxy is live at: ${proxyDeploy.proxyAddress}`);
   console.log(`   🎁 Vesting wallet set up at: ${vestingWalletAddress}`);
-  console.log(`   💰 1,000,000 tokens minted and added as rewards`);
-  console.log(`   👑 Roles granted to: ${ownerAddress} (DEFAULT_ADMIN_ROLE + MINTER_ROLE)`);
   console.log("🚀 All components deployed and verified (or attempted). Ready to roll!");
 
   return;
