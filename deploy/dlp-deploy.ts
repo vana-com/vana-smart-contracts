@@ -49,11 +49,6 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     process.env.DLP_FILE_REWARD_FACTOR || parseEther(1);
 
   console.log(``);
-  console.log(``);
-  console.log(``);
-  console.log(`**************************************************************`);
-  console.log(`**************************************************************`);
-  console.log(`**************************************************************`);
   console.log(`********** Deploying DAT **********`);
 
   console.log(`DAT Factory Address: ${datFactoryContractAddress}`);

@@ -38,7 +38,7 @@ export async function verifyProxy(
     });
     console.log(`✅ Implementation verified successfully!\n`);
   } catch (e) {
-    console.log(`⚠️ Implementation verification issue:\n`, e);
+    // console.log(`⚠️ Implementation verification issue:\n`, e);
   }
 
   try {
@@ -51,7 +51,7 @@ export async function verifyProxy(
     });
     console.log(`✅ Proxy verified successfully!\n`);
   } catch (e) {
-    console.log(`⚠️ Proxy verification issue:\n`, e);
+    // console.log(`⚠️ Proxy verification issue:\n`, e);
   }
 }
 
@@ -77,7 +77,7 @@ export async function verifyContract(
     await run("verify:verify", args);
     console.log(`✅ Contract verified successfully at: ${address}\n`);
   } catch (e) {
-    console.log(`⚠️ Verification failed or already verified:\n`, e);
+    // console.log(`⚠️ Verification failed or already verified:\n`, e);
   }
 }
 
