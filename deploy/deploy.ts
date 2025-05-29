@@ -6,11 +6,11 @@ import { verifyContract } from "./helpers";
 const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const [deployer] = await ethers.getSigners();
 
-  const ownerAddress = process.env.OWNER_ADDRESS ?? deployer.address;
+  const ownerAddress = process.env.OWNER_ADDRESS || deployer.address;
 
   const tokenContractName = "DAT";
-  const tokenName = process.env.DLP_TOKEN_NAME ?? "Custom Data Autonomy Token";
-  const tokenSymbol = process.env.DLP_TOKEN_SYMBOL ?? "CUSTOMDAT";
+  const tokenName = process.env.DLP_TOKEN_NAME || "Custom Data Autonomy Token";
+  const tokenSymbol = process.env.DLP_TOKEN_SYMBOL || "CUSTOMDAT";
 
   console.log(``);
   console.log(``);

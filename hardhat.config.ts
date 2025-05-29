@@ -42,38 +42,11 @@ const config: HardhatUserConfig = {
           ? [process.env.DEPLOYER_PRIVATE_KEY]
           : [],
     },
-    moksha2: {
-      allowUnlimitedContractSize: true,
-      url: process.env.MOKSHA_RPC_URL || "",
-      chainId: 14800,
-      accounts:
-        process.env.DEPLOYER_PRIVATE_KEY !== undefined
-          ? [process.env.DEPLOYER_PRIVATE_KEY]
-          : [],
-    },
     satori: {
       allowUnlimitedContractSize: true,
       gasPrice: 1000000000, // Adjust the gas price (in wei)
       gas: 5000000, // Optionally adjust the gas limit
       url: process.env.SATORI_RPC_URL || "",
-      accounts:
-        process.env.DEPLOYER_PRIVATE_KEY !== undefined
-          ? [process.env.DEPLOYER_PRIVATE_KEY]
-          : [],
-    },
-    maya: {
-      gasPrice: 1000000000, // Adjust the gas price (in wei)
-      gas: 5000000, // Optionally adjust the gas limit
-      url: process.env.MAYA_RPC_URL || "",
-      accounts:
-        process.env.DEPLOYER_PRIVATE_KEY !== undefined
-          ? [process.env.DEPLOYER_PRIVATE_KEY]
-          : [],
-      allowUnlimitedContractSize: true,
-    },
-    baseSepolia: {
-      allowUnlimitedContractSize: true,
-      url: process.env.BASE_SEPOLIA_RPC_URL || "",
       accounts:
         process.env.DEPLOYER_PRIVATE_KEY !== undefined
           ? [process.env.DEPLOYER_PRIVATE_KEY]
@@ -86,8 +59,6 @@ const config: HardhatUserConfig = {
       vana: "abc",
       satori: "abc",
       moksha: "abc",
-      moksha2: "abc",
-      maya: "abc",
     },
     customChains: [
       {
@@ -102,18 +73,8 @@ const config: HardhatUserConfig = {
         network: "moksha",
         chainId: 14800,
         urls: {
-          // apiURL: process.env.MOKSHA_API_URL || "",
-          // browserURL: process.env.MOKSHA_BROWSER_URL || "",
-          apiURL: "https://moksha.vanascan.io/api",
-          browserURL: "https://moksha.vanascan.io"
-        },
-      },
-      {
-        network: "moksha2",
-        chainId: 14800,
-        urls: {
-          apiURL: "https://api.moksha.vanascan.io/api/",
-          browserURL: "https://moksha.vanascan.io",
+          apiURL: process.env.MOKSHA_API_URL || "",
+          browserURL: process.env.MOKSHA_BROWSER_URL || "",
         },
       },
       {
@@ -122,14 +83,6 @@ const config: HardhatUserConfig = {
         urls: {
           apiURL: process.env.SATORI_API_URL || "",
           browserURL: process.env.SATORI_BROWSER_URL || "",
-        },
-      },
-      {
-        network: "maya",
-        chainId: 14808,
-        urls: {
-          apiURL: process.env.MAYA_API_URL || "",
-          browserURL: process.env.MAYA_BROWSER_URL || "",
         },
       },
     ],
