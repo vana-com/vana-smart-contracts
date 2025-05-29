@@ -22,7 +22,7 @@ contract DATVotes is ERC20PermitUpgradeable, ERC20VotesUpgradeable, DAT {
      * @param cap_       Cap amount, if 0, use max uint256
      * @param receivers  Vesting-wallet addresses
      * @param amounts    Matching mint amounts
-     * 
+     *
      * @dev By using ERC20Votes, the max supply is capped to type(uint208).max
      */
     function initialize(
@@ -56,6 +56,26 @@ contract DATVotes is ERC20PermitUpgradeable, ERC20VotesUpgradeable, DAT {
     /* ─── ERC-2612 nonce clash fix ─── */
     function nonces(address owner) public view override(ERC20PermitUpgradeable, NoncesUpgradeable) returns (uint256) {
         return super.nonces(owner);
+    }
+
+    /**
+     * @dev Returns the current amount of votes that `account` has or 0 if the account is blocked.
+     */
+    function getVotes(address account) public view virtual override returns (uint256) {
+        if (_blockList.contains(account)) {
+            return 0;
+        }
+        return super.getVotes(account);
+    }
+
+    /**
+     * @dev Returns the amount of votes that `account` had at a specific moment in the past or 0 if the account is blocked.
+     */
+    function getPastVotes(address account, uint256 timepoint) public view virtual override returns (uint256) {
+        if (_blockList.contains(account)) {
+            return 0;
+        }
+        return super.getPastVotes(account, timepoint);
     }
 
     /* ─── ERC-20 / Votes hooks ─── */

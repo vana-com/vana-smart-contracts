@@ -52,6 +52,7 @@ contract DATFactoryImplementation is
     error ExceedsCap(uint256 total, uint256 cap);
     error CapTooLow();
     error ExcessiveCap();
+    error InvalidDefaultCap();
     error InvalidDATType(DATType datType);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -75,6 +76,10 @@ contract DATFactoryImplementation is
         datTemplates[DATType.DEFAULT] = datImplementation;
         datTemplates[DATType.VOTES] = datVotesImplementation;
         datTemplates[DATType.PAUSABLE] = datPausableImplementation;
+
+        if (maxCap < minCap || minCap == 0 || maxCap == 0 || maxCap > type(uint208).max) {
+            revert InvalidDefaultCap();
+        }
 
         minCapDefault = minCap;
         maxCapDefault = maxCap;
@@ -109,7 +114,7 @@ contract DATFactoryImplementation is
 
         /// @dev DAT assumes that zero _cap means type(uint256).max cap
         uint256 cap_ = params.cap;
-        if (cap_ == 0) cap_ = type(uint256).max;
+        if (cap_ == 0) cap_ = maxCapDefault;
 
         if (cap_ < minCapDefault) revert CapTooLow();
         if (cap_ > maxCapDefault) revert ExcessiveCap();
