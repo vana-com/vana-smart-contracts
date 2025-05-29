@@ -1,5 +1,6 @@
 import { HardhatUserConfig } from "hardhat/config";
 import "@nomicfoundation/hardhat-toolbox";
+import "@nomicfoundation/hardhat-verify";
 import "@openzeppelin/hardhat-upgrades";
 import "hardhat-deploy";
 import * as dotenv from "dotenv";
@@ -19,6 +20,10 @@ const config: HardhatUserConfig = {
   networks: {
     hardhat: {
       allowUnlimitedContractSize: true,
+      // forking: {
+      //   url: "https://archive.vana.org",
+      //   // blockNumber: 1288639,
+      // },
     },
     vana: {
       url: process.env.VANA_RPC_URL || "",
@@ -29,6 +34,7 @@ const config: HardhatUserConfig = {
       allowUnlimitedContractSize: true,
     },
     moksha: {
+      allowUnlimitedContractSize: true,
       url: process.env.MOKSHA_RPC_URL || "",
       chainId: 14800,
       accounts:
@@ -37,8 +43,10 @@ const config: HardhatUserConfig = {
           : [],
     },
     satori: {
+      allowUnlimitedContractSize: true,
+      gasPrice: 1000000000, // Adjust the gas price (in wei)
+      gas: 5000000, // Optionally adjust the gas limit
       url: process.env.SATORI_RPC_URL || "",
-      chainId: 14801,
       accounts:
         process.env.DEPLOYER_PRIVATE_KEY !== undefined
           ? [process.env.DEPLOYER_PRIVATE_KEY]
@@ -49,8 +57,8 @@ const config: HardhatUserConfig = {
     apiKey: {
       // Is not required by blockscout. Can be any non-empty string
       vana: "abc",
-      moksha: "abc",
       satori: "abc",
+      moksha: "abc",
     },
     customChains: [
       {
@@ -89,7 +97,7 @@ const config: HardhatUserConfig = {
     artifacts: "./artifacts",
   },
   mocha: {
-    timeout: 40000,
+    timeout: 1800000,
   },
   gasReporter: {
     enabled: true,
