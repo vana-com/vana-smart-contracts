@@ -1,0 +1,22 @@
+{
+  "name": "calculate-epoch-scorings",
+  "version": "1.0.0",
+  "description": "Script to calculate DLP epoch scorings using multicall",
+  "main": "calculateEpochScorings.ts",
+  "scripts": {
+    "start": "yarn ts-node calculateEpochScorings.ts",
+    "build": "yarn tsc",
+    "format": "yarn prettier --write ."
+  },
+  "dependencies": {
+    "dotenv": "^16.0.3",
+    "ethers": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^18.11.18",
+    "@types/yargs": "^17.0.33",
+    "prettier": "^2.8.3",
+    "ts-node": "^10.9.1",
+    "typescript": "^4.9.4"
+  }
+}
