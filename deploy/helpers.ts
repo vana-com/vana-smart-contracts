@@ -221,6 +221,7 @@ export async function deterministicDeployProxy(
     args: [implementationDeploy.address, initializeData],
     log: true,
     deterministicDeployment: ethers.keccak256(ethers.toUtf8Bytes(salt)),
+    gasLimit: 5000000, // Adjust gas limit as needed
   });
 
   console.log(``);
