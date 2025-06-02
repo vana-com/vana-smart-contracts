@@ -27,6 +27,7 @@ const config: HardhatUserConfig = {
     },
     vana: {
       url: process.env.VANA_RPC_URL || "",
+      chainId: 1480,
       accounts:
         process.env.DEPLOYER_PRIVATE_KEY !== undefined
           ? [process.env.DEPLOYER_PRIVATE_KEY]
