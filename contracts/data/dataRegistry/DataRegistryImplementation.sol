@@ -58,6 +58,15 @@ contract DataRegistryImplementation is
     event RefinementAdded(uint256 indexed fileId, uint256 indexed refinerId, string url);
 
     /**
+     * @notice Triggered when user has updated a refinement to the file
+     *
+     * @param fileId                            id of the file
+     * @param refinerId                         id of the refiner
+     * @param url                               url of the refinement
+     */
+    event RefinementUpdated(uint256 indexed fileId, uint256 indexed refinerId, string url);
+
+    /**
      * @notice Triggered when user has authorized an account to access the file
      *
      * @param fileId                            id of the file
@@ -68,7 +77,6 @@ contract DataRegistryImplementation is
     error NotFileOwner();
     error FileUrlAlreadyUsed();
     error FileNotFound();
-    error RefinementAlreadyAdded();
     error NoPermission();
     error InvalidUrl();
 
@@ -153,6 +161,12 @@ contract DataRegistryImplementation is
      */
     function updateTrustedForwarder(address trustedForwarderAddress) external onlyRole(MAINTAINER_ROLE) {
         _trustedForwarder = trustedForwarderAddress;
+    }
+
+    function updateDataRefinerRegistry(
+        IDataRefinerRegistry newDataRefinerRegistry
+    ) external onlyRole(MAINTAINER_ROLE) {
+        dataRefinerRegistry = newDataRefinerRegistry;
     }
 
     /**
@@ -294,7 +308,10 @@ contract DataRegistryImplementation is
         // @dev Only the account with REFINEMENT_SERVICE_ROLE or with a permission to decrypt the file key can add refinements.
         // This is to prevent malicious actors from adding refinements to files they don't have access to
         // or adding arbitrary permissions to the file.
-        if (!hasRole(REFINEMENT_SERVICE_ROLE, msg.sender) && !_hasPermission(fileId, _msgSender())) {
+        if (
+            !hasRole(REFINEMENT_SERVICE_ROLE, msg.sender) &&
+            !dataRefinerRegistry.isRefinementService(refinerId, _msgSender())
+        ) {
             revert NoPermission();
         }
 
@@ -313,10 +330,11 @@ contract DataRegistryImplementation is
         }
 
         if (bytes(_file.refinements[refinerId]).length != 0) {
-            revert RefinementAlreadyAdded();
+            emit RefinementUpdated(fileId, refinerId, url);
+        } else {
+            emit RefinementAdded(fileId, refinerId, url);
         }
         _file.refinements[refinerId] = url;
-        emit RefinementAdded(fileId, refinerId, url);
 
         // @dev Add permission for the account to access the refinement.
         // The permission for an account is not allowed to be changed once set,
@@ -325,13 +343,6 @@ contract DataRegistryImplementation is
             _file.permissions[account] = key;
             emit PermissionGranted(fileId, account);
         }
-    }
-
-    /// @notice _hasPermission checks if the account has permission to access the file.
-    /// @param fileId The ID of the file to check.
-    /// @param account The address of the account to check.
-    function _hasPermission(uint256 fileId, address account) internal view returns (bool) {
-        return bytes(_files[fileId].permissions[account]).length != 0;
     }
 
     /// @inheritdoc IDataRegistry

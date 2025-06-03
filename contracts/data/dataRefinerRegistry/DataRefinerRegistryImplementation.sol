@@ -14,6 +14,7 @@ contract DataRefinerRegistryImplementation is
     DataRefinerRegistryStorageV1
 {
     using EnumerableSet for EnumerableSet.UintSet;
+    using EnumerableSet for EnumerableSet.AddressSet;
 
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
 
@@ -87,8 +88,15 @@ contract DataRefinerRegistryImplementation is
     }
 
     /// @inheritdoc IDataRefinerRegistry
-    function refiners(uint256 refinerId) external view override returns (Refiner memory) {
-        return _refiners[refinerId];
+    function refiners(uint256 refinerId) external view override returns (RefinerInfo memory) {
+        Refiner storage refiner = _refiners[refinerId];
+        return RefinerInfo({
+            dlpId: refiner.dlpId,
+            owner: refiner.owner,
+            name: refiner.name,
+            schemaDefinitionUrl: refiner.schemaDefinitionUrl,
+            refinementInstructionUrl: refiner.refinementInstructionUrl
+        });
     }
 
     /// @inheritdoc IDataRefinerRegistry
@@ -101,8 +109,7 @@ contract DataRefinerRegistryImplementation is
         uint256 dlpId,
         string calldata name,
         string calldata schemaDefinitionUrl,
-        string calldata refinementInstructionUrl,
-        string calldata publicKey
+        string calldata refinementInstructionUrl
     ) external override onlyDlpOwner(dlpId) whenNotPaused returns (uint256) {
         uint256 newRefinerId = ++refinersCount;
 
@@ -113,7 +120,6 @@ contract DataRefinerRegistryImplementation is
             newRefiner.name = name;
             newRefiner.schemaDefinitionUrl = schemaDefinitionUrl;
             newRefiner.refinementInstructionUrl = refinementInstructionUrl;
-            newRefiner.publicKey = publicKey;
         }
 
         _dlpRefiners[dlpId].add(newRefinerId);
@@ -148,5 +154,32 @@ contract DataRefinerRegistryImplementation is
                 ++i;
             }
         }
+    }
+
+    function addRefinementService(
+        uint256 dlpId,
+        address refinementService
+    ) external override onlyDlpOwner(dlpId) whenNotPaused {
+        _dlpRefinementServices[dlpId].add(refinementService);
+    }
+
+    function removeRefinementService(
+        uint256 dlpId,
+        address refinementService
+    ) external override onlyDlpOwner(dlpId) whenNotPaused {
+        _dlpRefinementServices[dlpId].remove(refinementService);
+    }
+
+    function dlpRefinementServices(
+        uint256 dlpId
+    ) external view override returns (address[] memory) {
+        return _dlpRefinementServices[dlpId].values();
+    }
+
+    function isRefinementService(
+        uint256 refinerId,
+        address refinementService
+    ) external view override returns (bool) {
+        return _dlpRefinementServices[_refiners[refinerId].dlpId].contains(refinementService);
     }
 }

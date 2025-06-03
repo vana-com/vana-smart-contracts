@@ -10,7 +10,15 @@ interface IDataRefinerRegistry {
         string name;
         string schemaDefinitionUrl;
         string refinementInstructionUrl;
-        string publicKey;
+        string publicKey; // Obsolete, kept for backward compatibility
+    }
+
+    struct RefinerInfo {
+        uint256 dlpId;
+        address owner;
+        string name;
+        string schemaDefinitionUrl;
+        string refinementInstructionUrl;
     }
 
     /// @notice Returns the version of the contract.
@@ -33,7 +41,7 @@ interface IDataRefinerRegistry {
 
     /// @notice Returns the refiner with the given ID.
     /// @param refinerId The ID of the refiner.
-    function refiners(uint256 refinerId) external view returns (Refiner memory);
+    function refiners(uint256 refinerId) external view returns (RefinerInfo memory);
 
     /// @notice Returns the refiner IDs for a given DLP ID.
     /// @param dlpId The ID of the DLP.
@@ -45,14 +53,12 @@ interface IDataRefinerRegistry {
     /// @param name The name of the refiner.
     /// @param schemaDefinitionUrl The URL of the schema definition.
     /// @param refinementInstructionUrl The URL of the refinement Docker image.
-    /// @param publicKey The public key to encrypt the refined encryption key (REK).
     /// @return The ID of the refiner.
     function addRefiner(
         uint256 dlpId,
         string calldata name,
         string calldata schemaDefinitionUrl,
-        string calldata refinementInstructionUrl,
-        string calldata publicKey
+        string calldata refinementInstructionUrl
     ) external returns (uint256);
 
     /// @notice Updates the owner of a refiner.
@@ -63,4 +69,23 @@ interface IDataRefinerRegistry {
     /// @param dlpId The ID of the DLP.
     /// @dev This function is called when the DLP owner changes.
     function updateDlpRefinersOwner(uint256 dlpId) external;
+
+    function addRefinementService(
+        uint256 dlpId,
+        address refinementService
+    ) external;
+
+    function removeRefinementService(
+        uint256 dlpId,
+        address refinementService
+    ) external;
+
+    function dlpRefinementServices(
+        uint256 dlpId
+    ) external view returns (address[] memory);
+
+    function isRefinementService(
+        uint256 refinerId,
+        address refinementService
+    ) external view returns (bool);
 }
