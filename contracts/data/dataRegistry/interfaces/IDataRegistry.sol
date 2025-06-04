@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
+import "../../dataRefinerRegistry/interfaces/IDataRefinerRegistry.sol";
+
 interface IDataRegistry {
     struct ProofData {
         uint256 score;
@@ -54,6 +56,10 @@ interface IDataRegistry {
     ) external returns (uint256);
     function addProof(uint256 fileId, Proof memory proof) external;
     function addFilePermission(uint256 fileId, address account, string memory key) external;
+
+    function dataRefinerRegistry() external view returns (IDataRefinerRegistry);
+
+    function updateDataRefinerRegistry(IDataRefinerRegistry newDataRefinerRegistry) external;
     
     /// @notice Adds a refinement to a file with the given fileId.
     /// @param fileId The ID of the file to add the refinement to.

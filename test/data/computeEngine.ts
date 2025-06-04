@@ -4068,7 +4068,7 @@ describe("ComputeEngine", () => {
                             attacker.receive
                                 computeEngine.withdraw
                                     revert ReentrancyGuardReentrantCall
-                        revert FailedInnerCall
+                        revert FailedInnerCall  
             */
       await attacker
         .connect(user1)

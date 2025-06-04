@@ -13,4 +13,6 @@ abstract contract DataRegistryStorageV1 is IDataRegistry {
     uint256 public override filesCount;
     mapping(uint256 fileId => File) internal _files;
     mapping(bytes32 => uint256) internal _urlHashToFileId;
+
+    IDataRefinerRegistry public override dataRefinerRegistry;
 }
