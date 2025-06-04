@@ -15,3 +15,22 @@ export async function getReceipt(tx: any): Promise<ContractTransactionReceipt> {
   }
   return receipt;
 }
+
+export function toHex(bigint: bigint): string {
+  return "0x" + bigint.toString(16);
+}
+
+export function sqrtBigInt(n: bigint): bigint {
+  if (n < 0n) throw new Error("Square root of negative bigint");
+  if (n < 2n) return n;
+
+  let x0 = n;
+  let x1 = (x0 + n / x0) >> 1n;
+
+  while (x1 < x0) {
+    x0 = x1;
+    x1 = (x0 + n / x0) >> 1n;
+  }
+
+  return x0;
+}

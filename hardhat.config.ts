@@ -75,6 +75,18 @@ const config: HardhatUserConfig = {
       //   // url: process.env.MOKSHA_RPC_URL || "",
       //   // blockNumber: 2_569_780,
       // },
+      chains: {
+        1480: {
+          hardforkHistory: {
+            london: 0,
+          }
+        },
+        14800: {
+          hardforkHistory: {
+            london: 0,
+          }
+        },
+      },
     },
     vana: {
       url: process.env.VANA_RPC_URL || "",

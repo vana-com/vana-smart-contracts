@@ -21,7 +21,7 @@
     "add": "^2.0.6",
     "chai": "^4.2.0",
     "ethers": "^6.4.0",
-    "hardhat": "^2.22.8",
+    "hardhat": "^2.22.17",
     "hardhat-deploy": "^0.12.1",
     "hardhat-gas-reporter": "^1.0.8",
     "prettier": "^3.3.3",
