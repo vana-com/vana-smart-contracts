@@ -1,6 +1,6 @@
 import chai, { should, use } from "chai";
 import chaiAsPromised from "chai-as-promised";
-import { ethers, upgrades } from "hardhat";
+import { ethers, upgrades, artifacts } from "hardhat";
 import {
   QueryEngineImplementation,
   ComputeEngineImplementation,
@@ -13,13 +13,10 @@ import {
   ComputeEngineTeePoolProxyFactory,
   DLPRegistryMock,
   ERC20Mock,
-  ComputeEngineMaliciousContract,
 } from "../../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { getReceipt, parseEther } from "../../utils/helpers";
-import { Addressable, keccak256 } from "ethers";
-import { teePool } from "../../typechain-types/contracts";
-import { parse } from "path";
+import { keccak256 } from "ethers";
 
 chai.use(chaiAsPromised);
 should();
@@ -343,6 +340,7 @@ describe("ComputeEngine", () => {
       const dataAccessTreasuryIface = new ethers.Interface(
         dataAccessTreasuryAbi,
       );
+      // const beaconProxyArtifact = await artifacts.readArtifact("BeaconProxy");
       const beaconProxyFactory = await ethers.getContractFactory("BeaconProxy");
 
       const computeEngineTreasuryInitializeData =
@@ -360,7 +358,10 @@ describe("ComputeEngine", () => {
         );
       const computeEngineTreasuryProxyInitCode = ethers.solidityPacked(
         ["bytes", "bytes"],
-        [beaconProxyFactory.bytecode, computeEngineTreasuryProxyArgs],
+        [
+          beaconProxyFactory.bytecode,
+          computeEngineTreasuryProxyArgs,
+        ],
       );
       const computeEngineTreasuryProxyAddress = ethers.getCreate2Address(
         dataAccessTreasuryProxyFactory.target.toString(), // beaconProxy's deployer
@@ -369,8 +370,9 @@ describe("ComputeEngine", () => {
         ),
         ethers.keccak256(computeEngineTreasuryProxyInitCode),
       );
+
       computeEngineTreasury.should.eq(computeEngineTreasuryProxyAddress);
-      computeEngineTreasuryProxyAddress.should.eq(
+      computeEngineTreasury.should.eq(
         await dataAccessTreasuryProxyFactory.getProxyAddress(
           computeEngineTreasuryInitializeData,
           computeEngine.target,

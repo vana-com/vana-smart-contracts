@@ -247,13 +247,13 @@ describe("DataRefinerRegistry", () => {
 
       await dataRefinerRegistry
         .connect(dlp1Owner)
-        .addRefiner(1, "refiner1", "schema1", "instruction1", "publicKey1")
+        .addRefiner(1, "refiner1", "schema1", "instruction1")
         .should.emit(dataRefinerRegistry, "RefinerAdded")
         .withArgs(1, 1, "refiner1", "schema1", "instruction1");
 
       await dataRefinerRegistry
         .connect(dlp1Owner)
-        .addRefiner(1, "refiner2", "schema2", "instruction2", "publicKey2")
+        .addRefiner(1, "refiner2", "schema2", "instruction2")
         .should.emit(dataRefinerRegistry, "RefinerAdded")
         .withArgs(2, 1, "refiner2", "schema2", "instruction2");
 
@@ -263,7 +263,6 @@ describe("DataRefinerRegistry", () => {
       refiner1.name.should.eq("refiner1");
       refiner1.schemaDefinitionUrl.should.eq("schema1");
       refiner1.refinementInstructionUrl.should.eq("instruction1");
-      refiner1.publicKey.should.eq("publicKey1");
 
       const refiner2 = await dataRefinerRegistry.refiners(2);
       refiner2.dlpId.should.eq(1);
@@ -271,11 +270,10 @@ describe("DataRefinerRegistry", () => {
       refiner2.name.should.eq("refiner2");
       refiner2.schemaDefinitionUrl.should.eq("schema2");
       refiner2.refinementInstructionUrl.should.eq("instruction2");
-      refiner2.publicKey.should.eq("publicKey2");
 
       await dataRefinerRegistry
         .connect(dlp2Owner)
-        .addRefiner(1, "refiner2", "schema2", "instruction2", "publicKey2")
+        .addRefiner(1, "refiner2", "schema2", "instruction2")
         .should.be.rejectedWith("NotDlpOwner()");
     });
 
@@ -284,7 +282,7 @@ describe("DataRefinerRegistry", () => {
 
       await dataRefinerRegistry
         .connect(dlp1Owner)
-        .addRefiner(1, "refiner1", "schema1", "instruction1", "publicKey1")
+        .addRefiner(1, "refiner1", "schema1", "instruction1")
         .should.be.rejectedWith("EnforcedPause");
 
       await dataRefinerRegistry.connect(maintainer).unpause().should.be
@@ -292,7 +290,7 @@ describe("DataRefinerRegistry", () => {
 
       await dataRefinerRegistry
         .connect(dlp1Owner)
-        .addRefiner(1, "refiner1", "schema1", "instruction1", "publicKey1")
+        .addRefiner(1, "refiner1", "schema1", "instruction1")
         .should.be.fulfilled;
     });
   });

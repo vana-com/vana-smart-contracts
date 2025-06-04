@@ -14,6 +14,10 @@ const FIRST_COMPILER_SETTINGS = {
       enabled: true,
       runs: 1,
     },
+    metadata: {
+      useLiteralContent: true,         // embed full source instead of path
+      bytecodeHash: "none"
+    },
   },
 };
 
@@ -45,6 +49,21 @@ const config: HardhatUserConfig = {
       DEFAULT_COMPILER_SETTINGS,
       UNISWAP_INTEGRATION_COMPILER_SETTINGS,
     ],
+    overrides: {
+      "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol": {
+        version: "0.8.24",
+        settings: {
+          optimizer: {
+            enabled: true,
+            runs: 1,
+          },
+          metadata: {
+            useLiteralContent: true,         // embed full source instead of path
+            bytecodeHash: "none"
+          },
+        },
+      },
+    },
   },
   networks: {
     hardhat: {

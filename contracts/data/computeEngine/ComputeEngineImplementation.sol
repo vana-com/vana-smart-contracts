@@ -90,7 +90,7 @@ contract ComputeEngineImplementation is
 
         teePoolFactory = initTeePoolFactory;
 
-        /// @dev Deploy a new data access treasury for the query engine via beacon proxy
+        /// @dev Deploy a new data access treasury for the compute engine via beacon proxy
         address proxy = initDataAccessTreasuryFactory.createBeaconProxy(
             abi.encodeCall(
                 DataAccessTreasuryImplementation(payable(initDataAccessTreasuryFactory.implementation())).initialize,

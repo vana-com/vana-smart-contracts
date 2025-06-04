@@ -587,11 +587,11 @@ describe("QueryEngine", () => {
 
       await dataRefinerRegistry
         .connect(dlp1Owner)
-        .addRefiner(1, "refiner1", "schema1", "instruction1", "publicKey1");
+        .addRefiner(1, "refiner1", "schema1", "instruction1");
 
       await dataRefinerRegistry
         .connect(dlp2Owner)
-        .addRefiner(2, "refiner2", "schema2", "instruction2", "publicKey2");
+        .addRefiner(2, "refiner2", "schema2", "instruction2");
     });
 
     it("should addPermission only when DLP owner", async function () {
@@ -874,7 +874,6 @@ describe("QueryEngine", () => {
           "refiner1",
           "schema1",
           "instruction1",
-          "publicKey1",
         );
 
       // Maintainer creates a dedicated TEE pool
@@ -1152,12 +1151,12 @@ describe("QueryEngine", () => {
 
       await dataRefinerRegistry
         .connect(dlp1Owner)
-        .addRefiner(dlpId1, "refiner2", "schema2", "instruction2", "publicKey2")
+        .addRefiner(dlpId1, "refiner2", "schema2", "instruction2")
         .should.be.fulfilled;
 
       await dataRefinerRegistry
         .connect(dlp2Owner)
-        .addRefiner(dlpId2, "refiner3", "schema3", "instruction3", "publicKey3")
+        .addRefiner(dlpId2, "refiner3", "schema3", "instruction3")
         .should.be.fulfilled;
 
       await computeEngine
