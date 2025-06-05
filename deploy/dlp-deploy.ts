@@ -18,8 +18,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const trustedForwarderAddress =
     process.env.TRUSTED_FORWARDER_ADDRESS || deployer.address;
 
-  const beneficiaryAddress =
-    process.env.VESTING_BENEFICIARY || ownerAddress;
+  const beneficiaryAddress = process.env.VESTING_BENEFICIARY || ownerAddress;
 
   const tokenName = process.env.DLP_TOKEN_NAME || "Custom Data Autonomy Token";
   const tokenSymbol = process.env.DLP_TOKEN_SYMBOL || "CUSTOMDAT";
@@ -27,7 +26,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const tokenSalt =
     process.env.DLP_TOKEN_SALT ||
     `DLP_TOKEN_SALT_${Math.floor(Math.random() * 1000000).toString()}`;
-  const tokenCap = process.env.DLP_TOKEN_CAP || parseEther(1_000_000_000);
+  const tokenCap = parseEther(process.env.DLP_TOKEN_CAP || 1000000000);
   const datType = process.env.DAT_TYPE || 0;
 
   const teePoolContractAddress = process.env.TEE_POOL_CONTRACT_ADDRESS || "";
@@ -51,6 +50,14 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   console.log(``);
   console.log(`********** Deploying DAT **********`);
 
+  const vestingAmount = parseEther(process.env.VESTING_AMOUNT || 0);
+
+  if (BigInt(vestingAmount) > BigInt(tokenCap)) {
+    throw new Error(
+      `Vesting amount ${formatEther(vestingAmount)} exceeds token cap ${formatEther(tokenCap)}`,
+    );
+  }
+
   console.log(`DAT Factory Address: ${datFactoryContractAddress}`);
   console.log(`DLP Token Name: ${tokenName}`);
   console.log(`DLP Token Symbol: ${tokenSymbol}`);
@@ -59,21 +66,18 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   console.log(`DLP Type: ${datType}`);
   console.log(`Owner Address: ${ownerAddress}`);
   console.log(`Vesting Address: ${beneficiaryAddress}`);
+  console.log(`Vesting Amount: ${vestingAmount}`);
   console.log(`Trusted Forwarder Address: ${trustedForwarderAddress}`);
+
+  if (vestingAmount == 0n) {
+    console.log(`No vesting amount provided, skipping vesting setup.`);
+  }
 
   const secondsInYear = 60 * 60 * 24 * 365;
   const secondsInMonth = 60 * 60 * 24 * 30;
   const vestingStart = process.env.VESTING_START
     ? parseInt(process.env.VESTING_START)
     : Math.floor(Date.now() / 1000);
-
-  const vestingAmount = parseEther(process.env.VESTING_AMOUNT || 0);
-
-  if (BigInt(vestingAmount) > BigInt(tokenCap)) {
-    throw new Error(
-      `Vesting amount ${formatEther(vestingAmount)} exceeds token cap ${formatEther(tokenCap)}`,
-    );
-  }
 
   const vestingDuration = process.env.VESTING_DURATION
     ? parseInt(process.env.VESTING_DURATION)
@@ -87,15 +91,18 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     name: tokenName,
     symbol: tokenSymbol,
     cap: tokenCap,
-    schedules: [
-      {
-        beneficiary: beneficiaryAddress,
-        start: vestingStart,
-        cliff: vestingCliff,
-        duration: vestingDuration,
-        amount: vestingAmount,
-      },
-    ],
+    schedules:
+      vestingAmount > 0
+        ? [
+            {
+              beneficiary: beneficiaryAddress,
+              start: vestingStart,
+              cliff: vestingCliff,
+              duration: vestingDuration,
+              amount: vestingAmount,
+            },
+          ]
+        : [],
     salt: ethers.id(tokenSalt),
     owner: deployer.address,
   });
@@ -108,11 +115,14 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const tokenAddress = createEvent.args[0];
   console.log(`Token Address: ${tokenAddress}`);
 
-  const vestingWalletCreatedEvent = receipt.logs.find(
-    (log) => (log as EventLog).fragment?.name === "VestingWalletCreated",
-  ) as EventLog;
-  const vestingWalletAddress = vestingWalletCreatedEvent.args[0];
-  console.log(`Vesting Wallet Address: ${vestingWalletAddress}`);
+  let vestingWalletAddress = "";
+  if (vestingAmount > 0) {
+    const vestingWalletCreatedEvent = receipt.logs.find(
+      (log) => (log as EventLog).fragment?.name === "VestingWalletCreated",
+    ) as EventLog;
+    vestingWalletAddress = vestingWalletCreatedEvent.args[0];
+    console.log(`Vesting Wallet Address: ${vestingWalletAddress}`);
+  }
 
   const params = {
     trustedForwarder: trustedForwarderAddress,
@@ -125,8 +135,6 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     proofInstruction: proofInstruction,
     fileRewardFactor: dlpFileRewardFactor,
   };
-
-  console.log(`DLP Params: ${JSON.stringify(params)}`);
 
   const proxyDeploy = await deployProxy(
     deployer,
@@ -145,20 +153,22 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     proxyContractPath,
   );
 
-  console.log("Attempting to verify vesting wallet contract...");
-  try {
-    await run("verify:verify", {
-      address: vestingWalletAddress,
-      force: true,
-      constructorArguments: [
-        beneficiaryAddress,
-        vestingStart + vestingCliff,
-        vestingDuration - vestingCliff,
-      ],
-    });
-  } catch (e) {
-    console.log("Vesting wallet verification failed or already verified:");
-    console.log(e);
+  if (vestingAmount > 0) {
+    console.log("Attempting to verify vesting wallet contract...");
+    try {
+      await run("verify:verify", {
+        address: vestingWalletAddress,
+        force: true,
+        constructorArguments: [
+          beneficiaryAddress,
+          vestingStart + vestingCliff,
+          vestingDuration - vestingCliff,
+        ],
+      });
+    } catch (e) {
+      console.log("Vesting wallet verification failed or already verified:");
+      console.log(e);
+    }
   }
 
   // Added minting section here
@@ -169,7 +179,10 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   // Get contract instances
   const token = await ethers.getContractAt("DAT", tokenAddress);
-  const dlp = await ethers.getContractAt("DataLiquidityPoolImplementation", proxyDeploy.proxyAddress);
+  const dlp = await ethers.getContractAt(
+    "DataLiquidityPoolImplementation",
+    proxyDeploy.proxyAddress,
+  );
 
   console.log(`Minting 1,000,000 tokens to deployer...`);
   const txMint = await token
@@ -195,8 +208,10 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   console.log(`Granting roles to ${ownerAddress}...`);
 
   // Define role constants
-  const DEFAULT_ADMIN_ROLE = "0x0000000000000000000000000000000000000000000000000000000000000000";
-  const MINTER_ROLE = "0x9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a6";
+  const DEFAULT_ADMIN_ROLE =
+    "0x0000000000000000000000000000000000000000000000000000000000000000";
+  const MINTER_ROLE =
+    "0x9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a6";
 
   // Grant DEFAULT_ADMIN_ROLE to ownerAddress
   const txGrantAdminRole = await token
@@ -231,9 +246,19 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   console.log("\n✅ Deployment Summary:");
   console.log(`   📦 Token successfully deployed at: ${tokenAddress}`);
-  console.log(`   🧠 ${proxyContractName} proxy is live at: ${proxyDeploy.proxyAddress}`);
-  console.log(`   🎁 Vesting wallet set up at: ${vestingWalletAddress}`);
-  console.log("🚀 All components deployed and verified (or attempted). Ready to roll!");
+  console.log(
+    `   🧠 ${proxyContractName} proxy is live at: ${proxyDeploy.proxyAddress}`,
+  );
+  if (vestingAmount > 0) {
+    console.log(
+      `   💰 Vesting setup complete for ${beneficiaryAddress} with amount: ${formatEther(
+        vestingAmount,
+      )}`,
+    );
+  }
+  console.log(
+    "🚀 All components deployed and verified (or attempted). Ready to roll!",
+  );
 
   return;
 };
