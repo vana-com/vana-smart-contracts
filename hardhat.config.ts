@@ -7,23 +7,86 @@ import * as dotenv from "dotenv";
 
 dotenv.config();
 
+const FIRST_COMPILER_SETTINGS = {
+  version: "0.8.24",
+  settings: {
+    optimizer: {
+      enabled: true,
+      runs: 1,
+    },
+    metadata: {
+      useLiteralContent: true,         // embed full source instead of path
+      bytecodeHash: "none"
+    },
+  },
+};
+
+const DEFAULT_COMPILER_SETTINGS = {
+  version: "0.8.28",
+  settings: {
+    optimizer: {
+      enabled: true,
+      runs: 1,
+    },
+  },
+};
+
+const UNISWAP_INTEGRATION_COMPILER_SETTINGS = {
+  version: "0.8.26",
+  settings: {
+    viaIR: true,
+    optimizer: {
+      enabled: true,
+      runs: 1,
+    },
+  },
+};
+
 const config: HardhatUserConfig = {
   solidity: {
-    version: "0.8.24",
-    settings: {
-      optimizer: {
-        enabled: true,
-        runs: 1,
+    compilers: [
+      FIRST_COMPILER_SETTINGS,
+      DEFAULT_COMPILER_SETTINGS,
+      UNISWAP_INTEGRATION_COMPILER_SETTINGS,
+    ],
+    overrides: {
+      "@openzeppelin/contracts/proxy/beacon/BeaconProxy.sol": {
+        version: "0.8.24",
+        settings: {
+          optimizer: {
+            enabled: true,
+            runs: 1,
+          },
+          metadata: {
+            useLiteralContent: true,         // embed full source instead of path
+            bytecodeHash: "none"
+          },
+        },
       },
     },
   },
   networks: {
     hardhat: {
       allowUnlimitedContractSize: true,
+      chainId: 1480,
       // forking: {
-      //   url: "https://archive.vana.org",
-      //   // blockNumber: 1288639,
+      //   url: process.env.VANA_RPC_URL || "",
+      //   blockNumber: 2_500_000,
+      //   // url: process.env.MOKSHA_RPC_URL || "",
+      //   // blockNumber: 2_569_780,
       // },
+      chains: {
+        1480: {
+          hardforkHistory: {
+            london: 0,
+          }
+        },
+        14800: {
+          hardforkHistory: {
+            london: 0,
+          }
+        },
+      },
     },
     vana: {
       url: process.env.VANA_RPC_URL || "",
