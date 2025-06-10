@@ -2,81 +2,7 @@
 
 This folder contains the essential smart contract templates that DataDAO creators must deploy to launch their own Data Liquidity Pools (DLPs) within the Vana ecosystem. These templates provide the foundational implementations for creating DataDAOs - collectively governed datasets that aggregate, verify, and monetize individual user data while maintaining user ownership and control through cryptographic mechanisms.
 
-## Quick Start: Launch a DataDAO in 30 Minutes
-
-This guide walks you through the minimum steps needed to spin up a working DataDAO on the **Moksha Testnet**. For the complete guide, see [Create a DataDAO](https://docs.vana.org/docs/quick-start-create-a-datadao). For support and questions, join the [Vana Builders Discord](https://discord.gg/vana) to connect with other developers.
-
-### What You'll Build
-
-| Component | Purpose |
-|-----------|---------|
-| VRC-20 Token Contract | Represents dataset value for trading and rewards |
-| DataDAO Contract | Manages data uploads and interactions onchain |
-| Proof-of-Contribution (PoC) | Validates data authenticity using the Satya network |
-| Refiner + Schema | Structures data for querying, ensuring VRC-15 compliance |
-| Contributor UI | A React app for contributing the data |
-
-### Prerequisites
-
-Install and configure these tools. Use [Moksha Faucet](https://faucet.vana.org) to cover gas fees.
-
-| Tool | Version | Install Instructions |
-|------|---------|---------------------|
-| Node.js | 20+ | `brew install node` or [Node.js](https://nodejs.org) |
-| Docker | Latest | [Docker Desktop](https://docker.com) |
-| Python | 3+ | `brew install python` or [Python](https://python.org) |
-| Poetry | Latest | `pip install poetry` or [Poetry](https://python-poetry.org) |
-| GitHub Account | - | [Sign up →](https://github.com) |
-| Pinata Account | - | [Sign up →](https://pinata.cloud) |
-
-### Add Vana Testnet to Your Wallet
-
-To use the Vana testnet (Moksha) from the browser, add it to your wallet (MetaMask, Rabby, etc.):
-
-```
-Network Name:  Vana Moksha
-RPC URL:       https://rpc.moksha.vana.org
-Chain ID:      14800
-Currency:      VANA
-Explorer:      https://moksha.vanascan.io
-```
-
-### Create a Vana Wallet
-
-For this guide, you'll need a wallet with access to the `address`, `private_key`, and `public_key` to manage your DataDAO. We recommend creating a fresh wallet to keep things clean and secure.
-
-**Quick Wallet Setup (Testnet Only):**
-1. Go to https://privatekeys.pw/keys/ethereum/random
-2. Pick any random key from the list
-3. Copy the:
-    - **Private key** (62-64 characters)
-    - **Address** (40-42 characters with 0x prefix)
-    - **Uncompressed public key** (128-132 characters, from "Public Keys" tab)
-
-**⚠️ Security Note:** This method is for testing only. For production, use a securely generated wallet from Vana CLI, hardware wallet, or trusted EVM-compatible tool.
-
-**Import into MetaMask:**
-1. Click your account name → **Add Account** → **Private Key**
-2. Paste the private key
-
-**Import into Rabby:**
-1. Click your address → **Add New Address** → **Import Private Key**
-2. Paste the same private key
-
-### Fund Your Wallet with Testnet $VANA
-
-1. Go to the [Vana Faucet](https://faucet.vana.org)
-2. Paste your `address` into the input field
-3. Click **"Follow us on X"** to unlock the faucet
-4. Pass the CAPTCHA and click **"Get 10 $VANA"**
-
-**Confirm your balance:**
-1. Visit [moksha.vanascan.io](https://moksha.vanascan.io)
-2. Paste your address into the search bar
-3. Within ~1-2 minutes, you should see your balance update
-4. Open the **"Internal Transactions"** tab to view the faucet transfer
-
-💡 **Tip:** The faucet may take up to five minutes to send $VANA to your wallet.
+For a full tutorial about how to create a DataDAO visit: https://docs.vana.org/docs/quick-start-create-a-datadao
 
 ### 1. Deploy Smart Contracts
 
@@ -86,13 +12,9 @@ Set up and deploy your DataDAO's smart contracts on the Moksha Testnet. For the 
 ```bash
 git clone https://github.com/vana-com/vana-smart-contracts.git
 cd vana-smart-contracts
-git fetch origin develop
-git checkout develop
 npm install
 cp .env.example .env
 ```
-
-📘 **Tip:** The `develop` branch contains the first implementation of VRC-20 standard. It's currently undergoing audit and will be merged into the main branch soon.
 
 **Configure `.env`:**
 
@@ -109,7 +31,7 @@ DLP_TOKEN_SYMBOL=QTKN              # Token symbol
 
 🚧 **Security Note:** `.env` files contain sensitive keys. Do **not** commit this file to Git or share it — anyone with access to your `DEPLOYER_PRIVATE_KEY` can take control of your contracts.
 
-**Example Values (Format Reference Only):**
+**These examples are for format reference only — do not use them in production:**
 ```bash
 DEPLOYER_PRIVATE_KEY=48fe86dc5053bf2c6004a24c0965bd2142fe921a074ffe93b440f0ada662d16d
 OWNER_ADDRESS=0x18781A2B6B843E0BBe4F491B28139abb6942d785
@@ -146,7 +68,7 @@ Now that you've deployed your smart contracts, register your DataDAO onchain in 
 
 **Register via DLPRegistryProxy:**
 
-1. Navigate to the `registerDlp` method in DLPRegistryProxy on [Vanascan](https://moksha.vanascan.io)
+1. Navigate to the [registerDlp](https://moksha.vanascan.io/address/0x4D59880a924526d1dD33260552Ff4328b1E18a43?tab=read_write_proxy&source_address=0x752301d732e3Ef8fbFCAa700e25C3Fa1a6D1629e#0x9d4def70) method in DLPRegistryProxy on Vanascan
 2. Fill in the `registrationInfo` fields:
     - `dlpAddress`: The `DataLiquidityPoolProxy` address you saved from deployment
     - `ownerAddress`: Your wallet address
@@ -162,7 +84,7 @@ Now that you've deployed your smart contracts, register your DataDAO onchain in 
 4. Connect your wallet (`OWNER_ADDRESS`) to Vanascan and submit the transaction
 
 5. **Retrieve your `dlpId`:**
-    - Go to the `dlpIds` method in the DLPRegistryProxy contract
+    - Go to the [dlpIds](https://moksha.vanascan.io/address/0x4D59880a924526d1dD33260552Ff4328b1E18a43?tab=read_write_proxy&source_address=0x752301d732e3Ef8fbFCAa700e25C3Fa1a6D1629e#0xc06020b0) method in the DLPRegistryProxy contract
     - Use your `dlpAddress` to query your dlpId from the blockchain
 
 🚧 **Tip:** You can update your registration info later using the `updateDlp` function. All metadata is editable.
