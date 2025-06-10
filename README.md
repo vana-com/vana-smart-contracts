@@ -14,7 +14,7 @@ This repository contains the smart contracts that power the Vana ecosystem. Thes
 
 The smart contracts are organized into distinct categories, each located in its own folder with dedicated documentation:
 
-### [DlpTemplates](/dlpTemplates/)
+### [DlpTemplates](/contracts/dlpTemplates/)
 The DLP Templates contracts provide the foundational smart contract implementations that DataDAO creators must deploy to launch their own Data Liquidity Pools within the Vana ecosystem. Unlike the core Vana infrastructure contracts (DataRegistry, TEEPool, and RootNetwork) which are pre-deployed and maintained by the Vana team, these template contracts must be customized and deployed by each individual DataDAO creator to establish their specific data marketplace. The templates include both the Data Liquidity Pool (DLP) contract that handles validator registration, data validation, and reward distribution, as well as the accompanying VRC-20 token contract that enables tokenized data contributions and governance rights.
 
 These templates serve as the technical foundation for DataDAOs - collectively governed datasets that aggregate and verify individual user data while solving critical challenges of sybil resistance through proof-of-contribution mechanisms and data valuation through dataset-specific validation logic. The repository provides example implementations that developers are encouraged to customize for their specific use cases, whether creating a standard DLP or developing highly customized solutions, while ensuring integration with the core Vana contracts to qualify for the DataDAO rewards program. Each deployment creates a unique data marketplace with its own validation logic, reward mechanisms, and governance structure, enabling diverse data types and business models within the broader Vana ecosystem.
@@ -23,14 +23,14 @@ The dat and dlp subfolders contain the specific contract implementations and dep
 
 DataDAO creators deploy these contracts to establish their position in the data economy, where contributors earn dataset-specific tokens for validated data contributions, AI builders burn VANA plus DataDAO tokens for secure data access through TEE environments, and value flows back to token holders based on actual data usage and market demand. This creates a permissionless system where anyone can create a DataDAO around any data source without requiring approval from original platforms, leveraging existing data privacy regulations that guarantee users the right to export and control their personal data.
 
-### [Data](/data/)
+### [Data](/contracts/data/)
 The data contracts form the foundational infrastructure for data management, validation, and access control within the Vana network. These core smart contracts work together to provide a comprehensive ecosystem that enables secure, private, and transparent data operations across the entire platform.
 
 At the heart of this system is the Data Registry, which serves as the central repository and file catalog for all data in the network, managing unique identifiers, access permissions, and metadata storage. The TEE Pool orchestrates Trusted Execution Environments in the Satya Network, enabling privacy-preserving validation of data contributions through Proof of Contribution mechanisms while ensuring data remains shielded from validators and external parties during processing.
 
 This category includes contracts for job execution management, data access permissions with transparent pricing, and data refinement workflows that support DataDAO operations. Together, these contracts provide the essential building blocks for data liquidity and monetization within the Vana ecosystem.
 
-### [DlpRewards](/dlpRewards/)
+### [DlpRewards](/contracts/dlpRewards/)
 
 The DLP Rewards contracts form a sophisticated ecosystem for managing and distributing rewards across Data Liquidity Pools (DLPs) and DataDAOs within the Vana network. This system operates on a quarterly epoch-based model where rewards are allocated based on three key performance metrics: Token Trading Volume (30%), Unique Data Contributors (20%), and Data Access Fees (50%), with the total reward pool starting at 0.5% of VANA supply and increasing by 0.5% for every $500M in Total Data Value Locked (TDVL) . The architecture includes specialized contracts for performance tracking, reward calculation, treasury management, and automated token swapping to ensure efficient distribution and market liquidity.
 
@@ -40,20 +40,20 @@ The dlpPerformance contract tracks real-time metrics including data access fees,
 
 To maintain ecosystem health, the system includes comprehensive eligibility requirements and mechanisms to return unclaimed rewards to the global pool if DataDAOs fail to maintain sufficient liquidity or compliance standards. This creates a sustainable, market-driven approach to data monetization where rewards align with real utility and foster long-term growth of the DataFi ecosystem, focusing purely on performance metrics.
 
-### [VanaStaking](/vanaStaking/)
+### [VanaStaking](/contracts/vanaStaking/)
 The VanaPool protocol offers a flexible, yield-generating staking ecosystem built on the Vana blockchain that creates a marketplace where users can stake their VANA tokens into various entities, each with its own risk profile, APY settings, and reward structure, allowing for diversification across investment options while maintaining liquidity. This system has evolved beyond the previous DataDAO-specific staking model to provide a more comprehensive and secure staking infrastructure that supports multiple entity types and use cases across the Vana ecosystem.
 
 The architecture centers around VanaPoolStaking as the user-facing interface that manages the issuance and redemption of entity shares representing proportional ownership in staking pools, while VanaPoolEntity serves as the central registry maintaining entity status, reward pools, and configuration settings with sophisticated continuous compounding formulas. VanaPoolTreasury acts as the secure vault for all protocol assets, implementing strict access controls and accurate accounting to ensure only authorized contracts can withdraw funds, while the system supports flexible staking options including delegation and custody solutions with comprehensive slippage protection mechanisms. This modular design ensures security, scalability, and fair reward distribution while enabling users to diversify their staking positions across different entities within the Vana ecosystem.
 
-### [Chain](/chain/)
+### [Chain](/contracts/chain/)
 The chain contracts provide essential blockchain infrastructure and utility functions that support the core operations of the Vana network. These contracts include Multicall3 for batching multiple smart contract calls into single transactions to reduce gas costs and improve efficiency, and the multisend contract that allows users to send multiple transactions in a single call for batch operations such as distributing rewards or gas fees to multiple addresses . Additionally, the l1deposit contract manages layer-1 blockchain deposit operations, ensuring seamless interaction between different network layers.
 
 These infrastructure contracts are designed to optimize gas usage, reduce transaction overhead, and provide sophisticated call aggregation patterns with configurable error handling . They serve as fundamental building blocks that enable more complex operations across the Vana ecosystem, supporting everything from reward distributions to cross-chain functionality while maintaining the security and efficiency standards required for a robust blockchain network.
 
-### [Utils/Treasury](/utils/treasury/)
-The TEE Pool contract manages and coordinates the TEE Validators and serves as an escrow for holding fees associated with validation tasks. Users pay a fee to submit data for validation, and the contract ensures that the validators process the data and provide proof of validation. Utility contracts for secure fund management, batch operations, and protocol utilities.
+### [Utils](/contracts/utils/)
+The Utils contracts folder contains utility smart contracts that provide supporting functionality and shared services used across other contract categories within the Vana ecosystem. These contracts implement common patterns, helper functions, and reusable components that enhance the functionality of the core data, chain, staking, and reward systems, ensuring code efficiency, standardization, and maintainability throughout the smart contract architecture.RetryClaude can make mistakes. Please double-check responses.
 
-### [DlpRoot - deprecated](/dlpRoot/)
+### [DlpRoot - deprecated](/contracts/dlpRoot/)
 Core DLP management system handling registration, staking, epoch-based operations, and reward distribution across the Vana ecosystem. The contracts were deprecated in favor of the new Data Validator Staking model and DlpRewards system.
 
 ## Getting Started
