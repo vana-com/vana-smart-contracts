@@ -1,0 +1,448 @@
+{
+  "address": "0x011D527151Ae1f80991c07F8AE64350655A4AeA0",
+  "abi": [
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "amountIn",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "used",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "spareVana",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "unusedVana",
+          "type": "uint256"
+        }
+      ],
+      "name": "DLPRewardSwap__AmountMismatch",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "expected",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "actual",
+          "type": "uint256"
+        }
+      ],
+      "name": "DLPRewardSwap__InsufficientAmount",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "DLPRewardSwap__InvalidLpTokenId",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "DLPRewardSwap__InvalidRange",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "DLPRewardSwap__InvalidRewardPercentage",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "DLPRewardSwap__InvalidSlippagePercentage",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "DLPRewardSwap__LPAmountMismatch",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint128",
+          "name": "expected",
+          "type": "uint128"
+        },
+        {
+          "internalType": "uint128",
+          "name": "actual",
+          "type": "uint128"
+        }
+      ],
+      "name": "DLPRewardSwap__LiquidityMismatch",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "token",
+          "type": "address"
+        },
+        {
+          "internalType": "uint256",
+          "name": "expected",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "actual",
+          "type": "uint256"
+        }
+      ],
+      "name": "DLPRewardSwap__SpareAmountMismatch",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "expected",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "actual",
+          "type": "uint256"
+        }
+      ],
+      "name": "DLPRewardSwap__VanaInMismatch",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "DLPRewardSwap__ZeroAddress",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "DLPRewardSwap__ZeroAmount",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "DLPRewardSwap__ZeroAmountSwapIn",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "DLPRewardSwap__ZeroLiquidity",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "ONE_HUNDRED_PERCENT",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "VANA",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint256",
+              "name": "amountIn",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "lpTokenId",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "rewardPercentage",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "maximumSlippagePercentage",
+              "type": "uint256"
+            }
+          ],
+          "internalType": "struct DLPRewardSwapMock.QuoteSplitRewardSwapParams",
+          "name": "params",
+          "type": "tuple"
+        }
+      ],
+      "name": "quoteSplitRewardSwap",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokenRewardAmount",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "spareToken",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "spareVana",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "usedVanaAmount",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "_tokenRewardAmount",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "_spareToken",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "_spareVana",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "_usedVanaAmount",
+          "type": "uint256"
+        }
+      ],
+      "name": "setSplitRewardSwapResponse",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "spareToken",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "spareVana",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "components": [
+            {
+              "internalType": "uint256",
+              "name": "lpTokenId",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "rewardPercentage",
+              "type": "uint256"
+            },
+            {
+              "internalType": "uint256",
+              "name": "maximumSlippagePercentage",
+              "type": "uint256"
+            },
+            {
+              "internalType": "address",
+              "name": "rewardRecipient",
+              "type": "address"
+            },
+            {
+              "internalType": "address",
+              "name": "spareRecipient",
+              "type": "address"
+            }
+          ],
+          "internalType": "struct DLPRewardSwapMock.SplitRewardSwapParams",
+          "name": "params",
+          "type": "tuple"
+        }
+      ],
+      "name": "splitRewardSwap",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "tokenRewardAmount",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "spareToken",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "spareVana",
+          "type": "uint256"
+        },
+        {
+          "internalType": "uint256",
+          "name": "usedVanaAmount",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "payable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "tokenRewardAmount",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "usedVanaAmount",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    }
+  ],
+  "transactionHash": "0x30fd0018e44fcfcc4062c94402bb080aebdd10a1131c0df807c8dfa6cff77aa9",
+  "receipt": {
+    "to": null,
+    "from": "0x2AC93684679a5bdA03C6160def908CdB8D46792f",
+    "contractAddress": "0x011D527151Ae1f80991c07F8AE64350655A4AeA0",
+    "transactionIndex": 0,
+    "gasUsed": "451363",
+    "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "blockHash": "0x65a1bc59aeccec99ad2fe21f14338b6e60a9b30ed8c2d695448031ecb0fe63e9",
+    "transactionHash": "0x30fd0018e44fcfcc4062c94402bb080aebdd10a1131c0df807c8dfa6cff77aa9",
+    "logs": [],
+    "blockNumber": 2616419,
+    "cumulativeGasUsed": "451363",
+    "status": 1,
+    "byzantium": true
+  },
+  "args": [],
+  "numDeployments": 1,
+  "solcInputHash": "a5c192d668caed6d9f75ceb36ad1a78b",
+  "metadata": "{\"compiler\":{\"version\":\"0.8.28+commit.7893614a\"},\"language\":\"Solidity\",\"output\":{\"abi\":[{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"amountIn\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"used\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"spareVana\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"unusedVana\",\"type\":\"uint256\"}],\"name\":\"DLPRewardSwap__AmountMismatch\",\"type\":\"error\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"token\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"expected\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"actual\",\"type\":\"uint256\"}],\"name\":\"DLPRewardSwap__InsufficientAmount\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"DLPRewardSwap__InvalidLpTokenId\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"DLPRewardSwap__InvalidRange\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"DLPRewardSwap__InvalidRewardPercentage\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"DLPRewardSwap__InvalidSlippagePercentage\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"DLPRewardSwap__LPAmountMismatch\",\"type\":\"error\"},{\"inputs\":[{\"internalType\":\"uint128\",\"name\":\"expected\",\"type\":\"uint128\"},{\"internalType\":\"uint128\",\"name\":\"actual\",\"type\":\"uint128\"}],\"name\":\"DLPRewardSwap__LiquidityMismatch\",\"type\":\"error\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"token\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"expected\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"actual\",\"type\":\"uint256\"}],\"name\":\"DLPRewardSwap__SpareAmountMismatch\",\"type\":\"error\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"expected\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"actual\",\"type\":\"uint256\"}],\"name\":\"DLPRewardSwap__VanaInMismatch\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"DLPRewardSwap__ZeroAddress\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"DLPRewardSwap__ZeroAmount\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"DLPRewardSwap__ZeroAmountSwapIn\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"DLPRewardSwap__ZeroLiquidity\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"ONE_HUNDRED_PERCENT\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"VANA\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"components\":[{\"internalType\":\"uint256\",\"name\":\"amountIn\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"lpTokenId\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"rewardPercentage\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"maximumSlippagePercentage\",\"type\":\"uint256\"}],\"internalType\":\"struct DLPRewardSwapMock.QuoteSplitRewardSwapParams\",\"name\":\"params\",\"type\":\"tuple\"}],\"name\":\"quoteSplitRewardSwap\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"tokenRewardAmount\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"spareToken\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"spareVana\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"usedVanaAmount\",\"type\":\"uint256\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"_tokenRewardAmount\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"_spareToken\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"_spareVana\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"_usedVanaAmount\",\"type\":\"uint256\"}],\"name\":\"setSplitRewardSwapResponse\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"spareToken\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"spareVana\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"components\":[{\"internalType\":\"uint256\",\"name\":\"lpTokenId\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"rewardPercentage\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"maximumSlippagePercentage\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"rewardRecipient\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"spareRecipient\",\"type\":\"address\"}],\"internalType\":\"struct DLPRewardSwapMock.SplitRewardSwapParams\",\"name\":\"params\",\"type\":\"tuple\"}],\"name\":\"splitRewardSwap\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"tokenRewardAmount\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"spareToken\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"spareVana\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"usedVanaAmount\",\"type\":\"uint256\"}],\"stateMutability\":\"payable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"tokenRewardAmount\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"usedVanaAmount\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"}],\"devdoc\":{\"kind\":\"dev\",\"methods\":{},\"version\":1},\"userdoc\":{\"kind\":\"user\",\"methods\":{},\"version\":1}},\"settings\":{\"compilationTarget\":{\"contracts/mocks/dlpRewardSwapMock/DLPRewardSwapMock.sol\":\"DLPRewardSwapMock\"},\"evmVersion\":\"paris\",\"libraries\":{},\"metadata\":{\"bytecodeHash\":\"ipfs\",\"useLiteralContent\":true},\"optimizer\":{\"enabled\":true,\"runs\":1},\"remappings\":[]},\"sources\":{\"contracts/mocks/dlpRewardSwapMock/DLPRewardSwapMock.sol\":{\"content\":\"// SPDX-License-Identifier: MIT\\npragma solidity 0.8.28;\\n\\ncontract DLPRewardSwapMock\\n{\\n    address public constant VANA = address(0);\\n    uint256 public constant ONE_HUNDRED_PERCENT = 100e18;\\n\\n    error DLPRewardSwap__ZeroAddress();\\n    error DLPRewardSwap__ZeroAmount();\\n    error DLPRewardSwap__ZeroAmountSwapIn();\\n    error DLPRewardSwap__ZeroLiquidity();\\n    error DLPRewardSwap__InsufficientAmount(address token, uint256 expected, uint256 actual);\\n    error DLPRewardSwap__InvalidRange();\\n    error DLPRewardSwap__LPAmountMismatch();\\n    error DLPRewardSwap__SpareAmountMismatch(address token, uint256 expected, uint256 actual);\\n    error DLPRewardSwap__LiquidityMismatch(uint128 expected, uint128 actual);\\n    error DLPRewardSwap__VanaInMismatch(uint256 expected, uint256 actual);\\n    error DLPRewardSwap__AmountMismatch(uint256 amountIn, uint256 used, uint256 spareVana, uint256 unusedVana);\\n    error DLPRewardSwap__InvalidSlippagePercentage();\\n    error DLPRewardSwap__InvalidRewardPercentage();\\n    error DLPRewardSwap__InvalidLpTokenId();\\n\\n    uint256 public tokenRewardAmount;\\n    uint256 public spareToken;\\n    uint256 public spareVana;\\n    uint256 public usedVanaAmount;\\n\\n    function setSplitRewardSwapResponse(\\n        uint256 _tokenRewardAmount,\\n        uint256 _spareToken,\\n        uint256 _spareVana,\\n        uint256 _usedVanaAmount\\n    ) external {\\n        tokenRewardAmount = _tokenRewardAmount;\\n        spareToken = _spareToken;\\n        spareVana = _spareVana;\\n        usedVanaAmount = _usedVanaAmount;\\n    }\\n\\n    struct SplitRewardSwapParams {\\n        uint256 lpTokenId;\\n        uint256 rewardPercentage;\\n        uint256 maximumSlippagePercentage;\\n        address rewardRecipient;\\n        address spareRecipient;\\n    }\\n\\n    struct QuoteSplitRewardSwapParams {\\n        uint256 amountIn;\\n        uint256 lpTokenId;\\n        uint256 rewardPercentage;\\n        uint256 maximumSlippagePercentage;\\n    }\\n\\n    function splitRewardSwap(\\n        SplitRewardSwapParams calldata params\\n    )\\n        external\\n        payable\\n        returns (uint256 tokenRewardAmount, uint256 spareToken, uint256 spareVana, uint256 usedVanaAmount)\\n    {\\n        uint256 amountIn = msg.value;\\n        require(amountIn > 0, DLPRewardSwap__ZeroAmount());\\n        require(params.rewardPercentage <= ONE_HUNDRED_PERCENT, DLPRewardSwap__InvalidRewardPercentage());\\n        require(params.maximumSlippagePercentage <= ONE_HUNDRED_PERCENT, DLPRewardSwap__InvalidSlippagePercentage());\\n        require(params.rewardRecipient != address(0), DLPRewardSwap__ZeroAddress());\\n        require(params.spareRecipient != address(0), DLPRewardSwap__ZeroAddress());\\n\\n        tokenRewardAmount = this.tokenRewardAmount();\\n        spareToken = this.spareToken();\\n        spareVana = this.spareVana();\\n        usedVanaAmount = this.usedVanaAmount();\\n    }\\n\\n    function quoteSplitRewardSwap(\\n        QuoteSplitRewardSwapParams calldata params\\n    )\\n        external\\n        returns (uint256 tokenRewardAmount, uint256 spareToken, uint256 spareVana, uint256 usedVanaAmount)\\n    {\\n        require(params.amountIn > 0, DLPRewardSwap__ZeroAmount());\\n        require(params.rewardPercentage <= ONE_HUNDRED_PERCENT, DLPRewardSwap__InvalidRewardPercentage());\\n        require(params.maximumSlippagePercentage <= ONE_HUNDRED_PERCENT, DLPRewardSwap__InvalidSlippagePercentage());\\n\\n        tokenRewardAmount = this.tokenRewardAmount();\\n        spareToken = this.spareToken();\\n        spareVana = this.spareVana();\\n        usedVanaAmount = this.usedVanaAmount();\\n    }\\n}\\n\",\"keccak256\":\"0x8b755b791befbc0c2ed26caa1bd215ca39b74de5f952e88c5e79d3a0a3785abd\",\"license\":\"MIT\"}},\"version\":1}",
+  "bytecode": "0x6080604052348015600f57600080fd5b506107348061001f6000396000f3fe6080604052600436106100765760003560e01c806325656a631461007b57806344fd3939146100b357806377119f79146100e05780639c642d5d14610104578063aeb4ad551461011a578063c2c5e23d1461013a578063c674bf621461016b578063dd0081c714610181578063e112439b1461019e575b600080fd5b61008e610089366004610655565b6101b4565b6040805194855260208501939093529183015260608201526080015b60405180910390f35b3480156100bf57600080fd5b506100c8600081565b6040516001600160a01b0390911681526020016100aa565b3480156100ec57600080fd5b506100f660025481565b6040519081526020016100aa565b34801561011057600080fd5b506100f660005481565b34801561012657600080fd5b5061008e610135366004610670565b61043e565b34801561014657600080fd5b50610169610155366004610683565b600093909355600191909155600255600355565b005b34801561017757600080fd5b506100f660015481565b34801561018d57600080fd5b506100f668056bc75e2d6310000081565b3480156101aa57600080fd5b506100f660035481565b600080808034806101d857604051630cdbe5ed60e11b815260040160405180910390fd5b68056bc75e2d631000008660200135111561020657604051633de9f84960e01b815260040160405180910390fd5b68056bc75e2d63100000866040013511156102345760405163fc46777360e01b815260040160405180910390fd5b600061024660808801606089016106b5565b6001600160a01b03160361026d576040516343b70e1d60e11b815260040160405180910390fd5b600061027f60a08801608089016106b5565b6001600160a01b0316036102a6576040516343b70e1d60e11b815260040160405180910390fd5b306001600160a01b0316639c642d5d6040518163ffffffff1660e01b8152600401602060405180830381865afa1580156102e4573d6000803e3d6000fd5b505050506040513d601f19601f8201168201806040525081019061030891906106e5565b9450306001600160a01b031663c674bf626040518163ffffffff1660e01b8152600401602060405180830381865afa158015610348573d6000803e3d6000fd5b505050506040513d601f19601f8201168201806040525081019061036c91906106e5565b9350306001600160a01b03166377119f796040518163ffffffff1660e01b8152600401602060405180830381865afa1580156103ac573d6000803e3d6000fd5b505050506040513d601f19601f820116820180604052508101906103d091906106e5565b9250306001600160a01b031663e112439b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015610410573d6000803e3d6000fd5b505050506040513d601f19601f8201168201806040525081019061043491906106e5565b9150509193509193565b6000808080843561046257604051630cdbe5ed60e11b815260040160405180910390fd5b68056bc75e2d631000008560400135111561049057604051633de9f84960e01b815260040160405180910390fd5b68056bc75e2d63100000856060013511156104be5760405163fc46777360e01b815260040160405180910390fd5b306001600160a01b0316639c642d5d6040518163ffffffff1660e01b8152600401602060405180830381865afa1580156104fc573d6000803e3d6000fd5b505050506040513d601f19601f8201168201806040525081019061052091906106e5565b9350306001600160a01b031663c674bf626040518163ffffffff1660e01b8152600401602060405180830381865afa158015610560573d6000803e3d6000fd5b505050506040513d601f19601f8201168201806040525081019061058491906106e5565b9250306001600160a01b03166377119f796040518163ffffffff1660e01b8152600401602060405180830381865afa1580156105c4573d6000803e3d6000fd5b505050506040513d601f19601f820116820180604052508101906105e891906106e5565b9150306001600160a01b031663e112439b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015610628573d6000803e3d6000fd5b505050506040513d601f19601f8201168201806040525081019061064c91906106e5565b90509193509193565b600060a082840312801561066857600080fd5b509092915050565b6000608082840312801561066857600080fd5b6000806000806080858703121561069957600080fd5b5050823594602084013594506040840135936060013592509050565b6000602082840312156106c757600080fd5b81356001600160a01b03811681146106de57600080fd5b9392505050565b6000602082840312156106f757600080fd5b505191905056fea2646970667358221220805b478733b24e3d38b9358e917e4363a893a6e47e340d10243855f57aa33a8864736f6c634300081c0033",
+  "deployedBytecode": "0x6080604052600436106100765760003560e01c806325656a631461007b57806344fd3939146100b357806377119f79146100e05780639c642d5d14610104578063aeb4ad551461011a578063c2c5e23d1461013a578063c674bf621461016b578063dd0081c714610181578063e112439b1461019e575b600080fd5b61008e610089366004610655565b6101b4565b6040805194855260208501939093529183015260608201526080015b60405180910390f35b3480156100bf57600080fd5b506100c8600081565b6040516001600160a01b0390911681526020016100aa565b3480156100ec57600080fd5b506100f660025481565b6040519081526020016100aa565b34801561011057600080fd5b506100f660005481565b34801561012657600080fd5b5061008e610135366004610670565b61043e565b34801561014657600080fd5b50610169610155366004610683565b600093909355600191909155600255600355565b005b34801561017757600080fd5b506100f660015481565b34801561018d57600080fd5b506100f668056bc75e2d6310000081565b3480156101aa57600080fd5b506100f660035481565b600080808034806101d857604051630cdbe5ed60e11b815260040160405180910390fd5b68056bc75e2d631000008660200135111561020657604051633de9f84960e01b815260040160405180910390fd5b68056bc75e2d63100000866040013511156102345760405163fc46777360e01b815260040160405180910390fd5b600061024660808801606089016106b5565b6001600160a01b03160361026d576040516343b70e1d60e11b815260040160405180910390fd5b600061027f60a08801608089016106b5565b6001600160a01b0316036102a6576040516343b70e1d60e11b815260040160405180910390fd5b306001600160a01b0316639c642d5d6040518163ffffffff1660e01b8152600401602060405180830381865afa1580156102e4573d6000803e3d6000fd5b505050506040513d601f19601f8201168201806040525081019061030891906106e5565b9450306001600160a01b031663c674bf626040518163ffffffff1660e01b8152600401602060405180830381865afa158015610348573d6000803e3d6000fd5b505050506040513d601f19601f8201168201806040525081019061036c91906106e5565b9350306001600160a01b03166377119f796040518163ffffffff1660e01b8152600401602060405180830381865afa1580156103ac573d6000803e3d6000fd5b505050506040513d601f19601f820116820180604052508101906103d091906106e5565b9250306001600160a01b031663e112439b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015610410573d6000803e3d6000fd5b505050506040513d601f19601f8201168201806040525081019061043491906106e5565b9150509193509193565b6000808080843561046257604051630cdbe5ed60e11b815260040160405180910390fd5b68056bc75e2d631000008560400135111561049057604051633de9f84960e01b815260040160405180910390fd5b68056bc75e2d63100000856060013511156104be5760405163fc46777360e01b815260040160405180910390fd5b306001600160a01b0316639c642d5d6040518163ffffffff1660e01b8152600401602060405180830381865afa1580156104fc573d6000803e3d6000fd5b505050506040513d601f19601f8201168201806040525081019061052091906106e5565b9350306001600160a01b031663c674bf626040518163ffffffff1660e01b8152600401602060405180830381865afa158015610560573d6000803e3d6000fd5b505050506040513d601f19601f8201168201806040525081019061058491906106e5565b9250306001600160a01b03166377119f796040518163ffffffff1660e01b8152600401602060405180830381865afa1580156105c4573d6000803e3d6000fd5b505050506040513d601f19601f820116820180604052508101906105e891906106e5565b9150306001600160a01b031663e112439b6040518163ffffffff1660e01b8152600401602060405180830381865afa158015610628573d6000803e3d6000fd5b505050506040513d601f19601f8201168201806040525081019061064c91906106e5565b90509193509193565b600060a082840312801561066857600080fd5b509092915050565b6000608082840312801561066857600080fd5b6000806000806080858703121561069957600080fd5b5050823594602084013594506040840135936060013592509050565b6000602082840312156106c757600080fd5b81356001600160a01b03811681146106de57600080fd5b9392505050565b6000602082840312156106f757600080fd5b505191905056fea2646970667358221220805b478733b24e3d38b9358e917e4363a893a6e47e340d10243855f57aa33a8864736f6c634300081c0033",
+  "devdoc": {
+    "kind": "dev",
+    "methods": {},
+    "version": 1
+  },
+  "userdoc": {
+    "kind": "user",
+    "methods": {},
+    "version": 1
+  },
+  "storageLayout": {
+    "storage": [
+      {
+        "astId": 68,
+        "contract": "contracts/mocks/dlpRewardSwapMock/DLPRewardSwapMock.sol:DLPRewardSwapMock",
+        "label": "tokenRewardAmount",
+        "offset": 0,
+        "slot": "0",
+        "type": "t_uint256"
+      },
+      {
+        "astId": 70,
+        "contract": "contracts/mocks/dlpRewardSwapMock/DLPRewardSwapMock.sol:DLPRewardSwapMock",
+        "label": "spareToken",
+        "offset": 0,
+        "slot": "1",
+        "type": "t_uint256"
+      },
+      {
+        "astId": 72,
+        "contract": "contracts/mocks/dlpRewardSwapMock/DLPRewardSwapMock.sol:DLPRewardSwapMock",
+        "label": "spareVana",
+        "offset": 0,
+        "slot": "2",
+        "type": "t_uint256"
+      },
+      {
+        "astId": 74,
+        "contract": "contracts/mocks/dlpRewardSwapMock/DLPRewardSwapMock.sol:DLPRewardSwapMock",
+        "label": "usedVanaAmount",
+        "offset": 0,
+        "slot": "3",
+        "type": "t_uint256"
+      }
+    ],
+    "types": {
+      "t_uint256": {
+        "encoding": "inplace",
+        "label": "uint256",
+        "numberOfBytes": "32"
+      }
+    }
+  }
+}

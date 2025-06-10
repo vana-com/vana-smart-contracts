@@ -1,0 +1,1433 @@
+{
+  "address": "0x3615CF3a8A4A6298a62260Bf1227d933326c43Fe",
+  "abi": [
+    {
+      "inputs": [],
+      "stateMutability": "nonpayable",
+      "type": "constructor"
+    },
+    {
+      "inputs": [],
+      "name": "AccessControlBadConfirmation",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        },
+        {
+          "internalType": "bytes32",
+          "name": "neededRole",
+          "type": "bytes32"
+        }
+      ],
+      "name": "AccessControlUnauthorizedAccount",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "EnforcedPause",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "ExpectedPause",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "HWRequirementNotMet",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "InvalidInitialization",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "MaxTimeoutExceeded",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "teePoolAddress",
+          "type": "address"
+        }
+      ],
+      "name": "NoActiveTee",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NotComputeEngine",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NotInitializing",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "NotTeePoolFactory",
+      "type": "error"
+    },
+    {
+      "inputs": [],
+      "name": "TeeAlreadyAdded",
+      "type": "error"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "teeAddress",
+          "type": "address"
+        }
+      ],
+      "name": "TeeNotActive",
+      "type": "error"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "enum IComputeEngineTeePool.HardwareType",
+          "name": "newHardwareType",
+          "type": "uint8"
+        }
+      ],
+      "name": "HardwareTypeUpdated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "uint64",
+          "name": "version",
+          "type": "uint64"
+        }
+      ],
+      "name": "Initialized",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "jobId",
+          "type": "uint256"
+        }
+      ],
+      "name": "JobRemoved",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "uint256",
+          "name": "jobId",
+          "type": "uint256"
+        },
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "teeAddress",
+          "type": "address"
+        }
+      ],
+      "name": "JobSubmitted",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        }
+      ],
+      "name": "Paused",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "role",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "previousAdminRole",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "newAdminRole",
+          "type": "bytes32"
+        }
+      ],
+      "name": "RoleAdminChanged",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "role",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "sender",
+          "type": "address"
+        }
+      ],
+      "name": "RoleGranted",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "bytes32",
+          "name": "role",
+          "type": "bytes32"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        },
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "sender",
+          "type": "address"
+        }
+      ],
+      "name": "RoleRevoked",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "teeAddress",
+          "type": "address"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "url",
+          "type": "string"
+        },
+        {
+          "indexed": false,
+          "internalType": "string",
+          "name": "publicKey",
+          "type": "string"
+        }
+      ],
+      "name": "TeeAdded",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "enum IComputeEngineTeePool.TeePoolType",
+          "name": "newTeePoolType",
+          "type": "uint8"
+        }
+      ],
+      "name": "TeePoolTypeUpdated",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": true,
+          "internalType": "address",
+          "name": "teeAddress",
+          "type": "address"
+        }
+      ],
+      "name": "TeeRemoved",
+      "type": "event"
+    },
+    {
+      "anonymous": false,
+      "inputs": [
+        {
+          "indexed": false,
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        }
+      ],
+      "name": "Unpaused",
+      "type": "event"
+    },
+    {
+      "inputs": [],
+      "name": "DEFAULT_ADMIN_ROLE",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "MAINTAINER_ROLE",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "activeTeeList",
+      "outputs": [
+        {
+          "internalType": "address[]",
+          "name": "",
+          "type": "address[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "index",
+          "type": "uint256"
+        }
+      ],
+      "name": "activeTeeListAt",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "address",
+              "name": "teeAddress",
+              "type": "address"
+            },
+            {
+              "internalType": "string",
+              "name": "url",
+              "type": "string"
+            },
+            {
+              "internalType": "enum IComputeEngineTeePool.TeeStatus",
+              "name": "status",
+              "type": "uint8"
+            },
+            {
+              "internalType": "uint256",
+              "name": "jobsCount",
+              "type": "uint256"
+            },
+            {
+              "internalType": "string",
+              "name": "publicKey",
+              "type": "string"
+            }
+          ],
+          "internalType": "struct IComputeEngineTeePool.TeeInfo",
+          "name": "",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "activeTeesCount",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "teeAddress",
+          "type": "address"
+        },
+        {
+          "internalType": "bytes",
+          "name": "params",
+          "type": "bytes"
+        }
+      ],
+      "name": "addTee",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "computeEngine",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "role",
+          "type": "bytes32"
+        }
+      ],
+      "name": "getRoleAdmin",
+      "outputs": [
+        {
+          "internalType": "bytes32",
+          "name": "",
+          "type": "bytes32"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "role",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        }
+      ],
+      "name": "grantRole",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "hardwareType",
+      "outputs": [
+        {
+          "internalType": "enum IComputeEngineTeePool.HardwareType",
+          "name": "",
+          "type": "uint8"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "role",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        }
+      ],
+      "name": "hasRole",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "ownerAddress",
+          "type": "address"
+        },
+        {
+          "internalType": "address",
+          "name": "initComputeEngine",
+          "type": "address"
+        },
+        {
+          "internalType": "enum IComputeEngineTeePool.TeePoolType",
+          "name": "initTeePoolType",
+          "type": "uint8"
+        },
+        {
+          "internalType": "enum IComputeEngineTeePool.HardwareType",
+          "name": "initHardwareType",
+          "type": "uint8"
+        },
+        {
+          "internalType": "uint80",
+          "name": "initMaxTimeout",
+          "type": "uint80"
+        }
+      ],
+      "name": "initialize",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "teeAddress",
+          "type": "address"
+        }
+      ],
+      "name": "isTee",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "maxTimeout",
+      "outputs": [
+        {
+          "internalType": "uint80",
+          "name": "",
+          "type": "uint80"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "pause",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "paused",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "jobId",
+          "type": "uint256"
+        }
+      ],
+      "name": "removeJob",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "teeAddress",
+          "type": "address"
+        }
+      ],
+      "name": "removeTee",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "role",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "address",
+          "name": "callerConfirmation",
+          "type": "address"
+        }
+      ],
+      "name": "renounceRole",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes32",
+          "name": "role",
+          "type": "bytes32"
+        },
+        {
+          "internalType": "address",
+          "name": "account",
+          "type": "address"
+        }
+      ],
+      "name": "revokeRole",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes",
+          "name": "params",
+          "type": "bytes"
+        }
+      ],
+      "name": "submitJob",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        },
+        {
+          "internalType": "bytes",
+          "name": "",
+          "type": "bytes"
+        }
+      ],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "bytes4",
+          "name": "interfaceId",
+          "type": "bytes4"
+        }
+      ],
+      "name": "supportsInterface",
+      "outputs": [
+        {
+          "internalType": "bool",
+          "name": "",
+          "type": "bool"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "teeList",
+      "outputs": [
+        {
+          "internalType": "address[]",
+          "name": "",
+          "type": "address[]"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint256",
+          "name": "index",
+          "type": "uint256"
+        }
+      ],
+      "name": "teeListAt",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "address",
+              "name": "teeAddress",
+              "type": "address"
+            },
+            {
+              "internalType": "string",
+              "name": "url",
+              "type": "string"
+            },
+            {
+              "internalType": "enum IComputeEngineTeePool.TeeStatus",
+              "name": "status",
+              "type": "uint8"
+            },
+            {
+              "internalType": "uint256",
+              "name": "jobsCount",
+              "type": "uint256"
+            },
+            {
+              "internalType": "string",
+              "name": "publicKey",
+              "type": "string"
+            }
+          ],
+          "internalType": "struct IComputeEngineTeePool.TeeInfo",
+          "name": "",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "teePoolFactory",
+      "outputs": [
+        {
+          "internalType": "address",
+          "name": "",
+          "type": "address"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "teePoolType",
+      "outputs": [
+        {
+          "internalType": "enum IComputeEngineTeePool.TeePoolType",
+          "name": "",
+          "type": "uint8"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "teeAddress",
+          "type": "address"
+        }
+      ],
+      "name": "tees",
+      "outputs": [
+        {
+          "components": [
+            {
+              "internalType": "address",
+              "name": "teeAddress",
+              "type": "address"
+            },
+            {
+              "internalType": "string",
+              "name": "url",
+              "type": "string"
+            },
+            {
+              "internalType": "enum IComputeEngineTeePool.TeeStatus",
+              "name": "status",
+              "type": "uint8"
+            },
+            {
+              "internalType": "uint256",
+              "name": "jobsCount",
+              "type": "uint256"
+            },
+            {
+              "internalType": "string",
+              "name": "publicKey",
+              "type": "string"
+            }
+          ],
+          "internalType": "struct IComputeEngineTeePool.TeeInfo",
+          "name": "",
+          "type": "tuple"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "teesCount",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "view",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "unpause",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "newComputeEngine",
+          "type": "address"
+        }
+      ],
+      "name": "updateComputeEngine",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "uint80",
+          "name": "newMaxTimeout",
+          "type": "uint80"
+        }
+      ],
+      "name": "updateMaxTimeout",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [
+        {
+          "internalType": "address",
+          "name": "newTeePoolFactory",
+          "type": "address"
+        }
+      ],
+      "name": "updateTeePoolFactory",
+      "outputs": [],
+      "stateMutability": "nonpayable",
+      "type": "function"
+    },
+    {
+      "inputs": [],
+      "name": "version",
+      "outputs": [
+        {
+          "internalType": "uint256",
+          "name": "",
+          "type": "uint256"
+        }
+      ],
+      "stateMutability": "pure",
+      "type": "function"
+    }
+  ],
+  "transactionHash": "0xa9e7676c1dfce512c84979b7a64c79053cb1655bc7079a8349ed410df4f2c9fa",
+  "receipt": {
+    "to": "0x4e59b44847b379578588920cA78FbF26c0B4956C",
+    "from": "0x2AC93684679a5bdA03C6160def908CdB8D46792f",
+    "contractAddress": null,
+    "transactionIndex": 1,
+    "gasUsed": "1700835",
+    "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000800000000000000000000000080000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004000000004000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "blockHash": "0x95d1dd78b0e61e90aa873a4d8bd8bd5f1d28273a23f57b5039dcbdf1b7f637a7",
+    "transactionHash": "0xa9e7676c1dfce512c84979b7a64c79053cb1655bc7079a8349ed410df4f2c9fa",
+    "logs": [
+      {
+        "transactionIndex": 1,
+        "blockNumber": 2211016,
+        "transactionHash": "0xa9e7676c1dfce512c84979b7a64c79053cb1655bc7079a8349ed410df4f2c9fa",
+        "address": "0x3615CF3a8A4A6298a62260Bf1227d933326c43Fe",
+        "topics": [
+          "0xc7f505b2f371ae2175ee4913f4499e1f2633a7b5936321eed1cdaeb6115181d2"
+        ],
+        "data": "0x000000000000000000000000000000000000000000000000ffffffffffffffff",
+        "logIndex": 1,
+        "blockHash": "0x95d1dd78b0e61e90aa873a4d8bd8bd5f1d28273a23f57b5039dcbdf1b7f637a7"
+      }
+    ],
+    "blockNumber": 2211016,
+    "cumulativeGasUsed": "2003990",
+    "status": 1,
+    "byzantium": true
+  },
+  "args": [],
+  "numDeployments": 1,
+  "solcInputHash": "8ed094972a966fa9855323d7fc4d263f",
+  "metadata": "{\"compiler\":{\"version\":\"0.8.24+commit.e11b9ed9\"},\"language\":\"Solidity\",\"output\":{\"abi\":[{\"inputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"constructor\"},{\"inputs\":[],\"name\":\"AccessControlBadConfirmation\",\"type\":\"error\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"},{\"internalType\":\"bytes32\",\"name\":\"neededRole\",\"type\":\"bytes32\"}],\"name\":\"AccessControlUnauthorizedAccount\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"EnforcedPause\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"ExpectedPause\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"HWRequirementNotMet\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"InvalidInitialization\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"MaxTimeoutExceeded\",\"type\":\"error\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"teePoolAddress\",\"type\":\"address\"}],\"name\":\"NoActiveTee\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"NotComputeEngine\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"NotInitializing\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"NotTeePoolFactory\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"TeeAlreadyAdded\",\"type\":\"error\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"teeAddress\",\"type\":\"address\"}],\"name\":\"TeeNotActive\",\"type\":\"error\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"enum IComputeEngineTeePool.HardwareType\",\"name\":\"newHardwareType\",\"type\":\"uint8\"}],\"name\":\"HardwareTypeUpdated\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"uint64\",\"name\":\"version\",\"type\":\"uint64\"}],\"name\":\"Initialized\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"uint256\",\"name\":\"jobId\",\"type\":\"uint256\"}],\"name\":\"JobRemoved\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"uint256\",\"name\":\"jobId\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"address\",\"name\":\"teeAddress\",\"type\":\"address\"}],\"name\":\"JobSubmitted\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"}],\"name\":\"Paused\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"},{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"previousAdminRole\",\"type\":\"bytes32\"},{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"newAdminRole\",\"type\":\"bytes32\"}],\"name\":\"RoleAdminChanged\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"sender\",\"type\":\"address\"}],\"name\":\"RoleGranted\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"sender\",\"type\":\"address\"}],\"name\":\"RoleRevoked\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"teeAddress\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"string\",\"name\":\"url\",\"type\":\"string\"},{\"indexed\":false,\"internalType\":\"string\",\"name\":\"publicKey\",\"type\":\"string\"}],\"name\":\"TeeAdded\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"enum IComputeEngineTeePool.TeePoolType\",\"name\":\"newTeePoolType\",\"type\":\"uint8\"}],\"name\":\"TeePoolTypeUpdated\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"teeAddress\",\"type\":\"address\"}],\"name\":\"TeeRemoved\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"}],\"name\":\"Unpaused\",\"type\":\"event\"},{\"inputs\":[],\"name\":\"DEFAULT_ADMIN_ROLE\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"MAINTAINER_ROLE\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"activeTeeList\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"\",\"type\":\"address[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"index\",\"type\":\"uint256\"}],\"name\":\"activeTeeListAt\",\"outputs\":[{\"components\":[{\"internalType\":\"address\",\"name\":\"teeAddress\",\"type\":\"address\"},{\"internalType\":\"string\",\"name\":\"url\",\"type\":\"string\"},{\"internalType\":\"enum IComputeEngineTeePool.TeeStatus\",\"name\":\"status\",\"type\":\"uint8\"},{\"internalType\":\"uint256\",\"name\":\"jobsCount\",\"type\":\"uint256\"},{\"internalType\":\"string\",\"name\":\"publicKey\",\"type\":\"string\"}],\"internalType\":\"struct IComputeEngineTeePool.TeeInfo\",\"name\":\"\",\"type\":\"tuple\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"activeTeesCount\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"teeAddress\",\"type\":\"address\"},{\"internalType\":\"bytes\",\"name\":\"params\",\"type\":\"bytes\"}],\"name\":\"addTee\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"computeEngine\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"}],\"name\":\"getRoleAdmin\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"\",\"type\":\"bytes32\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"},{\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"}],\"name\":\"grantRole\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"hardwareType\",\"outputs\":[{\"internalType\":\"enum IComputeEngineTeePool.HardwareType\",\"name\":\"\",\"type\":\"uint8\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"},{\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"}],\"name\":\"hasRole\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"ownerAddress\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"initComputeEngine\",\"type\":\"address\"},{\"internalType\":\"enum IComputeEngineTeePool.TeePoolType\",\"name\":\"initTeePoolType\",\"type\":\"uint8\"},{\"internalType\":\"enum IComputeEngineTeePool.HardwareType\",\"name\":\"initHardwareType\",\"type\":\"uint8\"},{\"internalType\":\"uint80\",\"name\":\"initMaxTimeout\",\"type\":\"uint80\"}],\"name\":\"initialize\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"teeAddress\",\"type\":\"address\"}],\"name\":\"isTee\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"maxTimeout\",\"outputs\":[{\"internalType\":\"uint80\",\"name\":\"\",\"type\":\"uint80\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"pause\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"paused\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"jobId\",\"type\":\"uint256\"}],\"name\":\"removeJob\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"teeAddress\",\"type\":\"address\"}],\"name\":\"removeTee\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"},{\"internalType\":\"address\",\"name\":\"callerConfirmation\",\"type\":\"address\"}],\"name\":\"renounceRole\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"role\",\"type\":\"bytes32\"},{\"internalType\":\"address\",\"name\":\"account\",\"type\":\"address\"}],\"name\":\"revokeRole\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes\",\"name\":\"params\",\"type\":\"bytes\"}],\"name\":\"submitJob\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"bytes\",\"name\":\"\",\"type\":\"bytes\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes4\",\"name\":\"interfaceId\",\"type\":\"bytes4\"}],\"name\":\"supportsInterface\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"teeList\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"\",\"type\":\"address[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"index\",\"type\":\"uint256\"}],\"name\":\"teeListAt\",\"outputs\":[{\"components\":[{\"internalType\":\"address\",\"name\":\"teeAddress\",\"type\":\"address\"},{\"internalType\":\"string\",\"name\":\"url\",\"type\":\"string\"},{\"internalType\":\"enum IComputeEngineTeePool.TeeStatus\",\"name\":\"status\",\"type\":\"uint8\"},{\"internalType\":\"uint256\",\"name\":\"jobsCount\",\"type\":\"uint256\"},{\"internalType\":\"string\",\"name\":\"publicKey\",\"type\":\"string\"}],\"internalType\":\"struct IComputeEngineTeePool.TeeInfo\",\"name\":\"\",\"type\":\"tuple\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"teePoolFactory\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"teePoolType\",\"outputs\":[{\"internalType\":\"enum IComputeEngineTeePool.TeePoolType\",\"name\":\"\",\"type\":\"uint8\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"teeAddress\",\"type\":\"address\"}],\"name\":\"tees\",\"outputs\":[{\"components\":[{\"internalType\":\"address\",\"name\":\"teeAddress\",\"type\":\"address\"},{\"internalType\":\"string\",\"name\":\"url\",\"type\":\"string\"},{\"internalType\":\"enum IComputeEngineTeePool.TeeStatus\",\"name\":\"status\",\"type\":\"uint8\"},{\"internalType\":\"uint256\",\"name\":\"jobsCount\",\"type\":\"uint256\"},{\"internalType\":\"string\",\"name\":\"publicKey\",\"type\":\"string\"}],\"internalType\":\"struct IComputeEngineTeePool.TeeInfo\",\"name\":\"\",\"type\":\"tuple\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"teesCount\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"unpause\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"newComputeEngine\",\"type\":\"address\"}],\"name\":\"updateComputeEngine\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint80\",\"name\":\"newMaxTimeout\",\"type\":\"uint80\"}],\"name\":\"updateMaxTimeout\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"newTeePoolFactory\",\"type\":\"address\"}],\"name\":\"updateTeePoolFactory\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"version\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"pure\",\"type\":\"function\"}],\"devdoc\":{\"errors\":{\"AccessControlBadConfirmation()\":[{\"details\":\"The caller of a function is not the expected one. NOTE: Don't confuse with {AccessControlUnauthorizedAccount}.\"}],\"AccessControlUnauthorizedAccount(address,bytes32)\":[{\"details\":\"The `account` is missing a role.\"}],\"EnforcedPause()\":[{\"details\":\"The operation failed because the contract is paused.\"}],\"ExpectedPause()\":[{\"details\":\"The operation failed because the contract is not paused.\"}],\"InvalidInitialization()\":[{\"details\":\"The contract is already initialized.\"}],\"NotInitializing()\":[{\"details\":\"The contract is not initializing.\"}]},\"events\":{\"Initialized(uint64)\":{\"details\":\"Triggered when the contract has been initialized or reinitialized.\"},\"Paused(address)\":{\"details\":\"Emitted when the pause is triggered by `account`.\"},\"RoleAdminChanged(bytes32,bytes32,bytes32)\":{\"details\":\"Emitted when `newAdminRole` is set as ``role``'s admin role, replacing `previousAdminRole` `DEFAULT_ADMIN_ROLE` is the starting admin for all roles, despite {RoleAdminChanged} not being emitted signaling this.\"},\"RoleGranted(bytes32,address,address)\":{\"details\":\"Emitted when `account` is granted `role`. `sender` is the account that originated the contract call, an admin role bearer except when using {AccessControl-_setupRole}.\"},\"RoleRevoked(bytes32,address,address)\":{\"details\":\"Emitted when `account` is revoked `role`. `sender` is the account that originated the contract call:   - if using `revokeRole`, it is the admin role bearer   - if using `renounceRole`, it is the role bearer (i.e. `account`)\"},\"Unpaused(address)\":{\"details\":\"Emitted when the pause is lifted by `account`.\"}},\"kind\":\"dev\",\"methods\":{\"activeTeeList()\":{\"returns\":{\"_0\":\"The list of active Tee addresses\"}},\"activeTeeListAt(uint256)\":{\"params\":{\"index\":\"The index of the active Tee\"},\"returns\":{\"_0\":\"The Tee info\"}},\"activeTeesCount()\":{\"returns\":{\"_0\":\"The number of active Tees\"}},\"addTee(address,bytes)\":{\"params\":{\"params\":\"The parameters for the Tee\",\"teeAddress\":\"The address of the Tee\"}},\"constructor\":{\"custom:oz-upgrades-unsafe-allow\":\"constructor\"},\"getRoleAdmin(bytes32)\":{\"details\":\"Returns the admin role that controls `role`. See {grantRole} and {revokeRole}. To change a role's admin, use {_setRoleAdmin}.\"},\"grantRole(bytes32,address)\":{\"details\":\"Grants `role` to `account`. If `account` had not been already granted `role`, emits a {RoleGranted} event. Requirements: - the caller must have ``role``'s admin role. May emit a {RoleGranted} event.\"},\"hasRole(bytes32,address)\":{\"details\":\"Returns `true` if `account` has been granted `role`.\"},\"initialize(address,address,uint8,uint8,uint80)\":{\"params\":{\"ownerAddress\":\"Address of the owner\"}},\"isTee(address)\":{\"params\":{\"teeAddress\":\"The address to check\"},\"returns\":{\"_0\":\"True if the address is a Tee, false otherwise\"}},\"paused()\":{\"details\":\"Returns true if the contract is paused, and false otherwise.\"},\"removeJob(uint256)\":{\"details\":\"Only the ComputeEngine contract can remove jobs from their TeePool.\",\"params\":{\"jobId\":\"The ID of the job to remove\"}},\"removeTee(address)\":{\"params\":{\"teeAddress\":\"The address of the Tee\"}},\"renounceRole(bytes32,address)\":{\"details\":\"Revokes `role` from the calling account. Roles are often managed via {grantRole} and {revokeRole}: this function's purpose is to provide a mechanism for accounts to lose their privileges if they are compromised (such as when a trusted device is misplaced). If the calling account had been revoked `role`, emits a {RoleRevoked} event. Requirements: - the caller must be `callerConfirmation`. May emit a {RoleRevoked} event.\"},\"revokeRole(bytes32,address)\":{\"details\":\"Revokes `role` from `account`. If `account` had been granted `role`, emits a {RoleRevoked} event. Requirements: - the caller must have ``role``'s admin role. May emit a {RoleRevoked} event.\"},\"submitJob(bytes)\":{\"details\":\"Only the ComputeEngine contract can submit jobs to its TeePool.\",\"params\":{\"params\":\"The parameters for the job\"},\"returns\":{\"_0\":\"The address of the Tee assigned to the job\"}},\"supportsInterface(bytes4)\":{\"details\":\"See {IERC165-supportsInterface}.\"},\"teeList()\":{\"returns\":{\"_0\":\"The list of Tee addresses\"}},\"teeListAt(uint256)\":{\"params\":{\"index\":\"The index of the Tee\"},\"returns\":{\"_0\":\"The Tee info\"}},\"tees(address)\":{\"params\":{\"teeAddress\":\"The address of the Tee\"},\"returns\":{\"_0\":\"The Tee info\"}},\"teesCount()\":{\"returns\":{\"_0\":\"The number of Tees\"}},\"updateComputeEngine(address)\":{\"params\":{\"computeEngineAddress\":\"The new ComputeEngine contract address\"}},\"updateMaxTimeout(uint80)\":{\"params\":{\"maxTimeout\":\"The new maximum timeout for a job\"}},\"version()\":{\"returns\":{\"_0\":\"The version of the contract\"}}},\"version\":1},\"userdoc\":{\"kind\":\"user\",\"methods\":{\"activeTeeList()\":{\"notice\":\"Returns the list of active Tee addresses\"},\"activeTeeListAt(uint256)\":{\"notice\":\"Returns the Tee info for the active Tee at the given index\"},\"activeTeesCount()\":{\"notice\":\"Returns the number of active Tees\"},\"addTee(address,bytes)\":{\"notice\":\"Adds a Tee to the pool\"},\"computeEngine()\":{\"notice\":\"Returns the ComputeEngine contract address\"},\"hardwareType()\":{\"notice\":\"Returns the hardware type of the Tee pool\"},\"initialize(address,address,uint8,uint8,uint80)\":{\"notice\":\"Initializes the contract\"},\"isTee(address)\":{\"notice\":\"Checks if the given address is a Tee\"},\"maxTimeout()\":{\"notice\":\"Returns the maximum timeout for a job\"},\"pause()\":{\"notice\":\"Pauses the contract\"},\"removeJob(uint256)\":{\"notice\":\"Removes a job in the pool\"},\"removeTee(address)\":{\"notice\":\"Removes a Tee from the pool\"},\"submitJob(bytes)\":{\"notice\":\"Submits a job to the pool\"},\"teeList()\":{\"notice\":\"Returns the list of Tee addresses\"},\"teeListAt(uint256)\":{\"notice\":\"Returns the Tee info for the Tee at the given index\"},\"tees(address)\":{\"notice\":\"Returns the Tee info for the given address\"},\"teesCount()\":{\"notice\":\"Returns the number of Tees\"},\"unpause()\":{\"notice\":\"Unpauses the contract\"},\"updateComputeEngine(address)\":{\"notice\":\"Updates the ComputeEngine contract address\"},\"updateMaxTimeout(uint80)\":{\"notice\":\"Updates the maximum timeout for a job\"},\"version()\":{\"notice\":\"Returns the version of the contract\"}},\"version\":1}},\"settings\":{\"compilationTarget\":{\"contracts/computeEngineTeePool/ComputeEngineTeePoolImplementation.sol\":\"ComputeEngineTeePoolImplementation\"},\"evmVersion\":\"paris\",\"libraries\":{},\"metadata\":{\"bytecodeHash\":\"ipfs\",\"useLiteralContent\":true},\"optimizer\":{\"enabled\":true,\"runs\":1},\"remappings\":[]},\"sources\":{\"@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol\":{\"content\":\"// SPDX-License-Identifier: MIT\\n// OpenZeppelin Contracts (last updated v5.0.0) (access/AccessControl.sol)\\n\\npragma solidity ^0.8.20;\\n\\nimport {IAccessControl} from \\\"@openzeppelin/contracts/access/IAccessControl.sol\\\";\\nimport {ContextUpgradeable} from \\\"../utils/ContextUpgradeable.sol\\\";\\nimport {ERC165Upgradeable} from \\\"../utils/introspection/ERC165Upgradeable.sol\\\";\\nimport {Initializable} from \\\"../proxy/utils/Initializable.sol\\\";\\n\\n/**\\n * @dev Contract module that allows children to implement role-based access\\n * control mechanisms. This is a lightweight version that doesn't allow enumerating role\\n * members except through off-chain means by accessing the contract event logs. Some\\n * applications may benefit from on-chain enumerability, for those cases see\\n * {AccessControlEnumerable}.\\n *\\n * Roles are referred to by their `bytes32` identifier. These should be exposed\\n * in the external API and be unique. The best way to achieve this is by\\n * using `public constant` hash digests:\\n *\\n * ```solidity\\n * bytes32 public constant MY_ROLE = keccak256(\\\"MY_ROLE\\\");\\n * ```\\n *\\n * Roles can be used to represent a set of permissions. To restrict access to a\\n * function call, use {hasRole}:\\n *\\n * ```solidity\\n * function foo() public {\\n *     require(hasRole(MY_ROLE, msg.sender));\\n *     ...\\n * }\\n * ```\\n *\\n * Roles can be granted and revoked dynamically via the {grantRole} and\\n * {revokeRole} functions. Each role has an associated admin role, and only\\n * accounts that have a role's admin role can call {grantRole} and {revokeRole}.\\n *\\n * By default, the admin role for all roles is `DEFAULT_ADMIN_ROLE`, which means\\n * that only accounts with this role will be able to grant or revoke other\\n * roles. More complex role relationships can be created by using\\n * {_setRoleAdmin}.\\n *\\n * WARNING: The `DEFAULT_ADMIN_ROLE` is also its own admin: it has permission to\\n * grant and revoke this role. Extra precautions should be taken to secure\\n * accounts that have been granted it. We recommend using {AccessControlDefaultAdminRules}\\n * to enforce additional security measures for this role.\\n */\\nabstract contract AccessControlUpgradeable is Initializable, ContextUpgradeable, IAccessControl, ERC165Upgradeable {\\n    struct RoleData {\\n        mapping(address account => bool) hasRole;\\n        bytes32 adminRole;\\n    }\\n\\n    bytes32 public constant DEFAULT_ADMIN_ROLE = 0x00;\\n\\n\\n    /// @custom:storage-location erc7201:openzeppelin.storage.AccessControl\\n    struct AccessControlStorage {\\n        mapping(bytes32 role => RoleData) _roles;\\n    }\\n\\n    // keccak256(abi.encode(uint256(keccak256(\\\"openzeppelin.storage.AccessControl\\\")) - 1)) & ~bytes32(uint256(0xff))\\n    bytes32 private constant AccessControlStorageLocation = 0x02dd7bc7dec4dceedda775e58dd541e08a116c6c53815c0bd028192f7b626800;\\n\\n    function _getAccessControlStorage() private pure returns (AccessControlStorage storage $) {\\n        assembly {\\n            $.slot := AccessControlStorageLocation\\n        }\\n    }\\n\\n    /**\\n     * @dev Modifier that checks that an account has a specific role. Reverts\\n     * with an {AccessControlUnauthorizedAccount} error including the required role.\\n     */\\n    modifier onlyRole(bytes32 role) {\\n        _checkRole(role);\\n        _;\\n    }\\n\\n    function __AccessControl_init() internal onlyInitializing {\\n    }\\n\\n    function __AccessControl_init_unchained() internal onlyInitializing {\\n    }\\n    /**\\n     * @dev See {IERC165-supportsInterface}.\\n     */\\n    function supportsInterface(bytes4 interfaceId) public view virtual override returns (bool) {\\n        return interfaceId == type(IAccessControl).interfaceId || super.supportsInterface(interfaceId);\\n    }\\n\\n    /**\\n     * @dev Returns `true` if `account` has been granted `role`.\\n     */\\n    function hasRole(bytes32 role, address account) public view virtual returns (bool) {\\n        AccessControlStorage storage $ = _getAccessControlStorage();\\n        return $._roles[role].hasRole[account];\\n    }\\n\\n    /**\\n     * @dev Reverts with an {AccessControlUnauthorizedAccount} error if `_msgSender()`\\n     * is missing `role`. Overriding this function changes the behavior of the {onlyRole} modifier.\\n     */\\n    function _checkRole(bytes32 role) internal view virtual {\\n        _checkRole(role, _msgSender());\\n    }\\n\\n    /**\\n     * @dev Reverts with an {AccessControlUnauthorizedAccount} error if `account`\\n     * is missing `role`.\\n     */\\n    function _checkRole(bytes32 role, address account) internal view virtual {\\n        if (!hasRole(role, account)) {\\n            revert AccessControlUnauthorizedAccount(account, role);\\n        }\\n    }\\n\\n    /**\\n     * @dev Returns the admin role that controls `role`. See {grantRole} and\\n     * {revokeRole}.\\n     *\\n     * To change a role's admin, use {_setRoleAdmin}.\\n     */\\n    function getRoleAdmin(bytes32 role) public view virtual returns (bytes32) {\\n        AccessControlStorage storage $ = _getAccessControlStorage();\\n        return $._roles[role].adminRole;\\n    }\\n\\n    /**\\n     * @dev Grants `role` to `account`.\\n     *\\n     * If `account` had not been already granted `role`, emits a {RoleGranted}\\n     * event.\\n     *\\n     * Requirements:\\n     *\\n     * - the caller must have ``role``'s admin role.\\n     *\\n     * May emit a {RoleGranted} event.\\n     */\\n    function grantRole(bytes32 role, address account) public virtual onlyRole(getRoleAdmin(role)) {\\n        _grantRole(role, account);\\n    }\\n\\n    /**\\n     * @dev Revokes `role` from `account`.\\n     *\\n     * If `account` had been granted `role`, emits a {RoleRevoked} event.\\n     *\\n     * Requirements:\\n     *\\n     * - the caller must have ``role``'s admin role.\\n     *\\n     * May emit a {RoleRevoked} event.\\n     */\\n    function revokeRole(bytes32 role, address account) public virtual onlyRole(getRoleAdmin(role)) {\\n        _revokeRole(role, account);\\n    }\\n\\n    /**\\n     * @dev Revokes `role` from the calling account.\\n     *\\n     * Roles are often managed via {grantRole} and {revokeRole}: this function's\\n     * purpose is to provide a mechanism for accounts to lose their privileges\\n     * if they are compromised (such as when a trusted device is misplaced).\\n     *\\n     * If the calling account had been revoked `role`, emits a {RoleRevoked}\\n     * event.\\n     *\\n     * Requirements:\\n     *\\n     * - the caller must be `callerConfirmation`.\\n     *\\n     * May emit a {RoleRevoked} event.\\n     */\\n    function renounceRole(bytes32 role, address callerConfirmation) public virtual {\\n        if (callerConfirmation != _msgSender()) {\\n            revert AccessControlBadConfirmation();\\n        }\\n\\n        _revokeRole(role, callerConfirmation);\\n    }\\n\\n    /**\\n     * @dev Sets `adminRole` as ``role``'s admin role.\\n     *\\n     * Emits a {RoleAdminChanged} event.\\n     */\\n    function _setRoleAdmin(bytes32 role, bytes32 adminRole) internal virtual {\\n        AccessControlStorage storage $ = _getAccessControlStorage();\\n        bytes32 previousAdminRole = getRoleAdmin(role);\\n        $._roles[role].adminRole = adminRole;\\n        emit RoleAdminChanged(role, previousAdminRole, adminRole);\\n    }\\n\\n    /**\\n     * @dev Attempts to grant `role` to `account` and returns a boolean indicating if `role` was granted.\\n     *\\n     * Internal function without access restriction.\\n     *\\n     * May emit a {RoleGranted} event.\\n     */\\n    function _grantRole(bytes32 role, address account) internal virtual returns (bool) {\\n        AccessControlStorage storage $ = _getAccessControlStorage();\\n        if (!hasRole(role, account)) {\\n            $._roles[role].hasRole[account] = true;\\n            emit RoleGranted(role, account, _msgSender());\\n            return true;\\n        } else {\\n            return false;\\n        }\\n    }\\n\\n    /**\\n     * @dev Attempts to revoke `role` to `account` and returns a boolean indicating if `role` was revoked.\\n     *\\n     * Internal function without access restriction.\\n     *\\n     * May emit a {RoleRevoked} event.\\n     */\\n    function _revokeRole(bytes32 role, address account) internal virtual returns (bool) {\\n        AccessControlStorage storage $ = _getAccessControlStorage();\\n        if (hasRole(role, account)) {\\n            $._roles[role].hasRole[account] = false;\\n            emit RoleRevoked(role, account, _msgSender());\\n            return true;\\n        } else {\\n            return false;\\n        }\\n    }\\n}\\n\",\"keccak256\":\"0x6662ec4e5cefca03eeadd073e9469df8d2944bb2ee8ec8f7622c2c46aab5f225\",\"license\":\"MIT\"},\"@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol\":{\"content\":\"// SPDX-License-Identifier: MIT\\n// OpenZeppelin Contracts (last updated v5.0.0) (proxy/utils/Initializable.sol)\\n\\npragma solidity ^0.8.20;\\n\\n/**\\n * @dev This is a base contract to aid in writing upgradeable contracts, or any kind of contract that will be deployed\\n * behind a proxy. Since proxied contracts do not make use of a constructor, it's common to move constructor logic to an\\n * external initializer function, usually called `initialize`. It then becomes necessary to protect this initializer\\n * function so it can only be called once. The {initializer} modifier provided by this contract will have this effect.\\n *\\n * The initialization functions use a version number. Once a version number is used, it is consumed and cannot be\\n * reused. This mechanism prevents re-execution of each \\\"step\\\" but allows the creation of new initialization steps in\\n * case an upgrade adds a module that needs to be initialized.\\n *\\n * For example:\\n *\\n * [.hljs-theme-light.nopadding]\\n * ```solidity\\n * contract MyToken is ERC20Upgradeable {\\n *     function initialize() initializer public {\\n *         __ERC20_init(\\\"MyToken\\\", \\\"MTK\\\");\\n *     }\\n * }\\n *\\n * contract MyTokenV2 is MyToken, ERC20PermitUpgradeable {\\n *     function initializeV2() reinitializer(2) public {\\n *         __ERC20Permit_init(\\\"MyToken\\\");\\n *     }\\n * }\\n * ```\\n *\\n * TIP: To avoid leaving the proxy in an uninitialized state, the initializer function should be called as early as\\n * possible by providing the encoded function call as the `_data` argument to {ERC1967Proxy-constructor}.\\n *\\n * CAUTION: When used with inheritance, manual care must be taken to not invoke a parent initializer twice, or to ensure\\n * that all initializers are idempotent. This is not verified automatically as constructors are by Solidity.\\n *\\n * [CAUTION]\\n * ====\\n * Avoid leaving a contract uninitialized.\\n *\\n * An uninitialized contract can be taken over by an attacker. This applies to both a proxy and its implementation\\n * contract, which may impact the proxy. To prevent the implementation contract from being used, you should invoke\\n * the {_disableInitializers} function in the constructor to automatically lock it when it is deployed:\\n *\\n * [.hljs-theme-light.nopadding]\\n * ```\\n * /// @custom:oz-upgrades-unsafe-allow constructor\\n * constructor() {\\n *     _disableInitializers();\\n * }\\n * ```\\n * ====\\n */\\nabstract contract Initializable {\\n    /**\\n     * @dev Storage of the initializable contract.\\n     *\\n     * It's implemented on a custom ERC-7201 namespace to reduce the risk of storage collisions\\n     * when using with upgradeable contracts.\\n     *\\n     * @custom:storage-location erc7201:openzeppelin.storage.Initializable\\n     */\\n    struct InitializableStorage {\\n        /**\\n         * @dev Indicates that the contract has been initialized.\\n         */\\n        uint64 _initialized;\\n        /**\\n         * @dev Indicates that the contract is in the process of being initialized.\\n         */\\n        bool _initializing;\\n    }\\n\\n    // keccak256(abi.encode(uint256(keccak256(\\\"openzeppelin.storage.Initializable\\\")) - 1)) & ~bytes32(uint256(0xff))\\n    bytes32 private constant INITIALIZABLE_STORAGE = 0xf0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00;\\n\\n    /**\\n     * @dev The contract is already initialized.\\n     */\\n    error InvalidInitialization();\\n\\n    /**\\n     * @dev The contract is not initializing.\\n     */\\n    error NotInitializing();\\n\\n    /**\\n     * @dev Triggered when the contract has been initialized or reinitialized.\\n     */\\n    event Initialized(uint64 version);\\n\\n    /**\\n     * @dev A modifier that defines a protected initializer function that can be invoked at most once. In its scope,\\n     * `onlyInitializing` functions can be used to initialize parent contracts.\\n     *\\n     * Similar to `reinitializer(1)`, except that in the context of a constructor an `initializer` may be invoked any\\n     * number of times. This behavior in the constructor can be useful during testing and is not expected to be used in\\n     * production.\\n     *\\n     * Emits an {Initialized} event.\\n     */\\n    modifier initializer() {\\n        // solhint-disable-next-line var-name-mixedcase\\n        InitializableStorage storage $ = _getInitializableStorage();\\n\\n        // Cache values to avoid duplicated sloads\\n        bool isTopLevelCall = !$._initializing;\\n        uint64 initialized = $._initialized;\\n\\n        // Allowed calls:\\n        // - initialSetup: the contract is not in the initializing state and no previous version was\\n        //                 initialized\\n        // - construction: the contract is initialized at version 1 (no reininitialization) and the\\n        //                 current contract is just being deployed\\n        bool initialSetup = initialized == 0 && isTopLevelCall;\\n        bool construction = initialized == 1 && address(this).code.length == 0;\\n\\n        if (!initialSetup && !construction) {\\n            revert InvalidInitialization();\\n        }\\n        $._initialized = 1;\\n        if (isTopLevelCall) {\\n            $._initializing = true;\\n        }\\n        _;\\n        if (isTopLevelCall) {\\n            $._initializing = false;\\n            emit Initialized(1);\\n        }\\n    }\\n\\n    /**\\n     * @dev A modifier that defines a protected reinitializer function that can be invoked at most once, and only if the\\n     * contract hasn't been initialized to a greater version before. In its scope, `onlyInitializing` functions can be\\n     * used to initialize parent contracts.\\n     *\\n     * A reinitializer may be used after the original initialization step. This is essential to configure modules that\\n     * are added through upgrades and that require initialization.\\n     *\\n     * When `version` is 1, this modifier is similar to `initializer`, except that functions marked with `reinitializer`\\n     * cannot be nested. If one is invoked in the context of another, execution will revert.\\n     *\\n     * Note that versions can jump in increments greater than 1; this implies that if multiple reinitializers coexist in\\n     * a contract, executing them in the right order is up to the developer or operator.\\n     *\\n     * WARNING: Setting the version to 2**64 - 1 will prevent any future reinitialization.\\n     *\\n     * Emits an {Initialized} event.\\n     */\\n    modifier reinitializer(uint64 version) {\\n        // solhint-disable-next-line var-name-mixedcase\\n        InitializableStorage storage $ = _getInitializableStorage();\\n\\n        if ($._initializing || $._initialized >= version) {\\n            revert InvalidInitialization();\\n        }\\n        $._initialized = version;\\n        $._initializing = true;\\n        _;\\n        $._initializing = false;\\n        emit Initialized(version);\\n    }\\n\\n    /**\\n     * @dev Modifier to protect an initialization function so that it can only be invoked by functions with the\\n     * {initializer} and {reinitializer} modifiers, directly or indirectly.\\n     */\\n    modifier onlyInitializing() {\\n        _checkInitializing();\\n        _;\\n    }\\n\\n    /**\\n     * @dev Reverts if the contract is not in an initializing state. See {onlyInitializing}.\\n     */\\n    function _checkInitializing() internal view virtual {\\n        if (!_isInitializing()) {\\n            revert NotInitializing();\\n        }\\n    }\\n\\n    /**\\n     * @dev Locks the contract, preventing any future reinitialization. This cannot be part of an initializer call.\\n     * Calling this in the constructor of a contract will prevent that contract from being initialized or reinitialized\\n     * to any version. It is recommended to use this to lock implementation contracts that are designed to be called\\n     * through proxies.\\n     *\\n     * Emits an {Initialized} event the first time it is successfully executed.\\n     */\\n    function _disableInitializers() internal virtual {\\n        // solhint-disable-next-line var-name-mixedcase\\n        InitializableStorage storage $ = _getInitializableStorage();\\n\\n        if ($._initializing) {\\n            revert InvalidInitialization();\\n        }\\n        if ($._initialized != type(uint64).max) {\\n            $._initialized = type(uint64).max;\\n            emit Initialized(type(uint64).max);\\n        }\\n    }\\n\\n    /**\\n     * @dev Returns the highest version that has been initialized. See {reinitializer}.\\n     */\\n    function _getInitializedVersion() internal view returns (uint64) {\\n        return _getInitializableStorage()._initialized;\\n    }\\n\\n    /**\\n     * @dev Returns `true` if the contract is currently initializing. See {onlyInitializing}.\\n     */\\n    function _isInitializing() internal view returns (bool) {\\n        return _getInitializableStorage()._initializing;\\n    }\\n\\n    /**\\n     * @dev Returns a pointer to the storage namespace.\\n     */\\n    // solhint-disable-next-line var-name-mixedcase\\n    function _getInitializableStorage() private pure returns (InitializableStorage storage $) {\\n        assembly {\\n            $.slot := INITIALIZABLE_STORAGE\\n        }\\n    }\\n}\\n\",\"keccak256\":\"0x631188737069917d2f909d29ce62c4d48611d326686ba6683e26b72a23bfac0b\",\"license\":\"MIT\"},\"@openzeppelin/contracts-upgradeable/utils/ContextUpgradeable.sol\":{\"content\":\"// SPDX-License-Identifier: MIT\\n// OpenZeppelin Contracts (last updated v5.0.1) (utils/Context.sol)\\n\\npragma solidity ^0.8.20;\\nimport {Initializable} from \\\"../proxy/utils/Initializable.sol\\\";\\n\\n/**\\n * @dev Provides information about the current execution context, including the\\n * sender of the transaction and its data. While these are generally available\\n * via msg.sender and msg.data, they should not be accessed in such a direct\\n * manner, since when dealing with meta-transactions the account sending and\\n * paying for execution may not be the actual sender (as far as an application\\n * is concerned).\\n *\\n * This contract is only required for intermediate, library-like contracts.\\n */\\nabstract contract ContextUpgradeable is Initializable {\\n    function __Context_init() internal onlyInitializing {\\n    }\\n\\n    function __Context_init_unchained() internal onlyInitializing {\\n    }\\n    function _msgSender() internal view virtual returns (address) {\\n        return msg.sender;\\n    }\\n\\n    function _msgData() internal view virtual returns (bytes calldata) {\\n        return msg.data;\\n    }\\n\\n    function _contextSuffixLength() internal view virtual returns (uint256) {\\n        return 0;\\n    }\\n}\\n\",\"keccak256\":\"0xdbef5f0c787055227243a7318ef74c8a5a1108ca3a07f2b3a00ef67769e1e397\",\"license\":\"MIT\"},\"@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol\":{\"content\":\"// SPDX-License-Identifier: MIT\\n// OpenZeppelin Contracts (last updated v5.0.0) (utils/Pausable.sol)\\n\\npragma solidity ^0.8.20;\\n\\nimport {ContextUpgradeable} from \\\"../utils/ContextUpgradeable.sol\\\";\\nimport {Initializable} from \\\"../proxy/utils/Initializable.sol\\\";\\n\\n/**\\n * @dev Contract module which allows children to implement an emergency stop\\n * mechanism that can be triggered by an authorized account.\\n *\\n * This module is used through inheritance. It will make available the\\n * modifiers `whenNotPaused` and `whenPaused`, which can be applied to\\n * the functions of your contract. Note that they will not be pausable by\\n * simply including this module, only once the modifiers are put in place.\\n */\\nabstract contract PausableUpgradeable is Initializable, ContextUpgradeable {\\n    /// @custom:storage-location erc7201:openzeppelin.storage.Pausable\\n    struct PausableStorage {\\n        bool _paused;\\n    }\\n\\n    // keccak256(abi.encode(uint256(keccak256(\\\"openzeppelin.storage.Pausable\\\")) - 1)) & ~bytes32(uint256(0xff))\\n    bytes32 private constant PausableStorageLocation = 0xcd5ed15c6e187e77e9aee88184c21f4f2182ab5827cb3b7e07fbedcd63f03300;\\n\\n    function _getPausableStorage() private pure returns (PausableStorage storage $) {\\n        assembly {\\n            $.slot := PausableStorageLocation\\n        }\\n    }\\n\\n    /**\\n     * @dev Emitted when the pause is triggered by `account`.\\n     */\\n    event Paused(address account);\\n\\n    /**\\n     * @dev Emitted when the pause is lifted by `account`.\\n     */\\n    event Unpaused(address account);\\n\\n    /**\\n     * @dev The operation failed because the contract is paused.\\n     */\\n    error EnforcedPause();\\n\\n    /**\\n     * @dev The operation failed because the contract is not paused.\\n     */\\n    error ExpectedPause();\\n\\n    /**\\n     * @dev Initializes the contract in unpaused state.\\n     */\\n    function __Pausable_init() internal onlyInitializing {\\n        __Pausable_init_unchained();\\n    }\\n\\n    function __Pausable_init_unchained() internal onlyInitializing {\\n        PausableStorage storage $ = _getPausableStorage();\\n        $._paused = false;\\n    }\\n\\n    /**\\n     * @dev Modifier to make a function callable only when the contract is not paused.\\n     *\\n     * Requirements:\\n     *\\n     * - The contract must not be paused.\\n     */\\n    modifier whenNotPaused() {\\n        _requireNotPaused();\\n        _;\\n    }\\n\\n    /**\\n     * @dev Modifier to make a function callable only when the contract is paused.\\n     *\\n     * Requirements:\\n     *\\n     * - The contract must be paused.\\n     */\\n    modifier whenPaused() {\\n        _requirePaused();\\n        _;\\n    }\\n\\n    /**\\n     * @dev Returns true if the contract is paused, and false otherwise.\\n     */\\n    function paused() public view virtual returns (bool) {\\n        PausableStorage storage $ = _getPausableStorage();\\n        return $._paused;\\n    }\\n\\n    /**\\n     * @dev Throws if the contract is paused.\\n     */\\n    function _requireNotPaused() internal view virtual {\\n        if (paused()) {\\n            revert EnforcedPause();\\n        }\\n    }\\n\\n    /**\\n     * @dev Throws if the contract is not paused.\\n     */\\n    function _requirePaused() internal view virtual {\\n        if (!paused()) {\\n            revert ExpectedPause();\\n        }\\n    }\\n\\n    /**\\n     * @dev Triggers stopped state.\\n     *\\n     * Requirements:\\n     *\\n     * - The contract must not be paused.\\n     */\\n    function _pause() internal virtual whenNotPaused {\\n        PausableStorage storage $ = _getPausableStorage();\\n        $._paused = true;\\n        emit Paused(_msgSender());\\n    }\\n\\n    /**\\n     * @dev Returns to normal state.\\n     *\\n     * Requirements:\\n     *\\n     * - The contract must be paused.\\n     */\\n    function _unpause() internal virtual whenPaused {\\n        PausableStorage storage $ = _getPausableStorage();\\n        $._paused = false;\\n        emit Unpaused(_msgSender());\\n    }\\n}\\n\",\"keccak256\":\"0x92915b7f7f642c6be3f65bfd1522feb5d5b6ef25f755f4dbb51df32c868f2f97\",\"license\":\"MIT\"},\"@openzeppelin/contracts-upgradeable/utils/introspection/ERC165Upgradeable.sol\":{\"content\":\"// SPDX-License-Identifier: MIT\\n// OpenZeppelin Contracts (last updated v5.0.0) (utils/introspection/ERC165.sol)\\n\\npragma solidity ^0.8.20;\\n\\nimport {IERC165} from \\\"@openzeppelin/contracts/utils/introspection/IERC165.sol\\\";\\nimport {Initializable} from \\\"../../proxy/utils/Initializable.sol\\\";\\n\\n/**\\n * @dev Implementation of the {IERC165} interface.\\n *\\n * Contracts that want to implement ERC165 should inherit from this contract and override {supportsInterface} to check\\n * for the additional interface id that will be supported. For example:\\n *\\n * ```solidity\\n * function supportsInterface(bytes4 interfaceId) public view virtual override returns (bool) {\\n *     return interfaceId == type(MyInterface).interfaceId || super.supportsInterface(interfaceId);\\n * }\\n * ```\\n */\\nabstract contract ERC165Upgradeable is Initializable, IERC165 {\\n    function __ERC165_init() internal onlyInitializing {\\n    }\\n\\n    function __ERC165_init_unchained() internal onlyInitializing {\\n    }\\n    /**\\n     * @dev See {IERC165-supportsInterface}.\\n     */\\n    function supportsInterface(bytes4 interfaceId) public view virtual returns (bool) {\\n        return interfaceId == type(IERC165).interfaceId;\\n    }\\n}\\n\",\"keccak256\":\"0xdaba3f7c42c55b2896353f32bd27d4d5f8bae741b3b05d4c53f67abc4dc47ce8\",\"license\":\"MIT\"},\"@openzeppelin/contracts/access/IAccessControl.sol\":{\"content\":\"// SPDX-License-Identifier: MIT\\n// OpenZeppelin Contracts (last updated v5.0.0) (access/IAccessControl.sol)\\n\\npragma solidity ^0.8.20;\\n\\n/**\\n * @dev External interface of AccessControl declared to support ERC165 detection.\\n */\\ninterface IAccessControl {\\n    /**\\n     * @dev The `account` is missing a role.\\n     */\\n    error AccessControlUnauthorizedAccount(address account, bytes32 neededRole);\\n\\n    /**\\n     * @dev The caller of a function is not the expected one.\\n     *\\n     * NOTE: Don't confuse with {AccessControlUnauthorizedAccount}.\\n     */\\n    error AccessControlBadConfirmation();\\n\\n    /**\\n     * @dev Emitted when `newAdminRole` is set as ``role``'s admin role, replacing `previousAdminRole`\\n     *\\n     * `DEFAULT_ADMIN_ROLE` is the starting admin for all roles, despite\\n     * {RoleAdminChanged} not being emitted signaling this.\\n     */\\n    event RoleAdminChanged(bytes32 indexed role, bytes32 indexed previousAdminRole, bytes32 indexed newAdminRole);\\n\\n    /**\\n     * @dev Emitted when `account` is granted `role`.\\n     *\\n     * `sender` is the account that originated the contract call, an admin role\\n     * bearer except when using {AccessControl-_setupRole}.\\n     */\\n    event RoleGranted(bytes32 indexed role, address indexed account, address indexed sender);\\n\\n    /**\\n     * @dev Emitted when `account` is revoked `role`.\\n     *\\n     * `sender` is the account that originated the contract call:\\n     *   - if using `revokeRole`, it is the admin role bearer\\n     *   - if using `renounceRole`, it is the role bearer (i.e. `account`)\\n     */\\n    event RoleRevoked(bytes32 indexed role, address indexed account, address indexed sender);\\n\\n    /**\\n     * @dev Returns `true` if `account` has been granted `role`.\\n     */\\n    function hasRole(bytes32 role, address account) external view returns (bool);\\n\\n    /**\\n     * @dev Returns the admin role that controls `role`. See {grantRole} and\\n     * {revokeRole}.\\n     *\\n     * To change a role's admin, use {AccessControl-_setRoleAdmin}.\\n     */\\n    function getRoleAdmin(bytes32 role) external view returns (bytes32);\\n\\n    /**\\n     * @dev Grants `role` to `account`.\\n     *\\n     * If `account` had not been already granted `role`, emits a {RoleGranted}\\n     * event.\\n     *\\n     * Requirements:\\n     *\\n     * - the caller must have ``role``'s admin role.\\n     */\\n    function grantRole(bytes32 role, address account) external;\\n\\n    /**\\n     * @dev Revokes `role` from `account`.\\n     *\\n     * If `account` had been granted `role`, emits a {RoleRevoked} event.\\n     *\\n     * Requirements:\\n     *\\n     * - the caller must have ``role``'s admin role.\\n     */\\n    function revokeRole(bytes32 role, address account) external;\\n\\n    /**\\n     * @dev Revokes `role` from the calling account.\\n     *\\n     * Roles are often managed via {grantRole} and {revokeRole}: this function's\\n     * purpose is to provide a mechanism for accounts to lose their privileges\\n     * if they are compromised (such as when a trusted device is misplaced).\\n     *\\n     * If the calling account had been granted `role`, emits a {RoleRevoked}\\n     * event.\\n     *\\n     * Requirements:\\n     *\\n     * - the caller must be `callerConfirmation`.\\n     */\\n    function renounceRole(bytes32 role, address callerConfirmation) external;\\n}\\n\",\"keccak256\":\"0xb6b36edd6a2999fd243ff226d6cbf84bd71af2432bbd0dfe19392996a1d9cb41\",\"license\":\"MIT\"},\"@openzeppelin/contracts/utils/introspection/IERC165.sol\":{\"content\":\"// SPDX-License-Identifier: MIT\\n// OpenZeppelin Contracts (last updated v5.0.0) (utils/introspection/IERC165.sol)\\n\\npragma solidity ^0.8.20;\\n\\n/**\\n * @dev Interface of the ERC165 standard, as defined in the\\n * https://eips.ethereum.org/EIPS/eip-165[EIP].\\n *\\n * Implementers can declare support of contract interfaces, which can then be\\n * queried by others ({ERC165Checker}).\\n *\\n * For an implementation, see {ERC165}.\\n */\\ninterface IERC165 {\\n    /**\\n     * @dev Returns true if this contract implements the interface defined by\\n     * `interfaceId`. See the corresponding\\n     * https://eips.ethereum.org/EIPS/eip-165#how-interfaces-are-identified[EIP section]\\n     * to learn more about how these ids are created.\\n     *\\n     * This function call must use less than 30 000 gas.\\n     */\\n    function supportsInterface(bytes4 interfaceId) external view returns (bool);\\n}\\n\",\"keccak256\":\"0x4296879f55019b23e135000eb36896057e7101fb7fb859c5ef690cf14643757b\",\"license\":\"MIT\"},\"@openzeppelin/contracts/utils/structs/EnumerableSet.sol\":{\"content\":\"// SPDX-License-Identifier: MIT\\n// OpenZeppelin Contracts (last updated v5.0.0) (utils/structs/EnumerableSet.sol)\\n// This file was procedurally generated from scripts/generate/templates/EnumerableSet.js.\\n\\npragma solidity ^0.8.20;\\n\\n/**\\n * @dev Library for managing\\n * https://en.wikipedia.org/wiki/Set_(abstract_data_type)[sets] of primitive\\n * types.\\n *\\n * Sets have the following properties:\\n *\\n * - Elements are added, removed, and checked for existence in constant time\\n * (O(1)).\\n * - Elements are enumerated in O(n). No guarantees are made on the ordering.\\n *\\n * ```solidity\\n * contract Example {\\n *     // Add the library methods\\n *     using EnumerableSet for EnumerableSet.AddressSet;\\n *\\n *     // Declare a set state variable\\n *     EnumerableSet.AddressSet private mySet;\\n * }\\n * ```\\n *\\n * As of v3.3.0, sets of type `bytes32` (`Bytes32Set`), `address` (`AddressSet`)\\n * and `uint256` (`UintSet`) are supported.\\n *\\n * [WARNING]\\n * ====\\n * Trying to delete such a structure from storage will likely result in data corruption, rendering the structure\\n * unusable.\\n * See https://github.com/ethereum/solidity/pull/11843[ethereum/solidity#11843] for more info.\\n *\\n * In order to clean an EnumerableSet, you can either remove all elements one by one or create a fresh instance using an\\n * array of EnumerableSet.\\n * ====\\n */\\nlibrary EnumerableSet {\\n    // To implement this library for multiple types with as little code\\n    // repetition as possible, we write it in terms of a generic Set type with\\n    // bytes32 values.\\n    // The Set implementation uses private functions, and user-facing\\n    // implementations (such as AddressSet) are just wrappers around the\\n    // underlying Set.\\n    // This means that we can only create new EnumerableSets for types that fit\\n    // in bytes32.\\n\\n    struct Set {\\n        // Storage of set values\\n        bytes32[] _values;\\n        // Position is the index of the value in the `values` array plus 1.\\n        // Position 0 is used to mean a value is not in the set.\\n        mapping(bytes32 value => uint256) _positions;\\n    }\\n\\n    /**\\n     * @dev Add a value to a set. O(1).\\n     *\\n     * Returns true if the value was added to the set, that is if it was not\\n     * already present.\\n     */\\n    function _add(Set storage set, bytes32 value) private returns (bool) {\\n        if (!_contains(set, value)) {\\n            set._values.push(value);\\n            // The value is stored at length-1, but we add 1 to all indexes\\n            // and use 0 as a sentinel value\\n            set._positions[value] = set._values.length;\\n            return true;\\n        } else {\\n            return false;\\n        }\\n    }\\n\\n    /**\\n     * @dev Removes a value from a set. O(1).\\n     *\\n     * Returns true if the value was removed from the set, that is if it was\\n     * present.\\n     */\\n    function _remove(Set storage set, bytes32 value) private returns (bool) {\\n        // We cache the value's position to prevent multiple reads from the same storage slot\\n        uint256 position = set._positions[value];\\n\\n        if (position != 0) {\\n            // Equivalent to contains(set, value)\\n            // To delete an element from the _values array in O(1), we swap the element to delete with the last one in\\n            // the array, and then remove the last element (sometimes called as 'swap and pop').\\n            // This modifies the order of the array, as noted in {at}.\\n\\n            uint256 valueIndex = position - 1;\\n            uint256 lastIndex = set._values.length - 1;\\n\\n            if (valueIndex != lastIndex) {\\n                bytes32 lastValue = set._values[lastIndex];\\n\\n                // Move the lastValue to the index where the value to delete is\\n                set._values[valueIndex] = lastValue;\\n                // Update the tracked position of the lastValue (that was just moved)\\n                set._positions[lastValue] = position;\\n            }\\n\\n            // Delete the slot where the moved value was stored\\n            set._values.pop();\\n\\n            // Delete the tracked position for the deleted slot\\n            delete set._positions[value];\\n\\n            return true;\\n        } else {\\n            return false;\\n        }\\n    }\\n\\n    /**\\n     * @dev Returns true if the value is in the set. O(1).\\n     */\\n    function _contains(Set storage set, bytes32 value) private view returns (bool) {\\n        return set._positions[value] != 0;\\n    }\\n\\n    /**\\n     * @dev Returns the number of values on the set. O(1).\\n     */\\n    function _length(Set storage set) private view returns (uint256) {\\n        return set._values.length;\\n    }\\n\\n    /**\\n     * @dev Returns the value stored at position `index` in the set. O(1).\\n     *\\n     * Note that there are no guarantees on the ordering of values inside the\\n     * array, and it may change when more values are added or removed.\\n     *\\n     * Requirements:\\n     *\\n     * - `index` must be strictly less than {length}.\\n     */\\n    function _at(Set storage set, uint256 index) private view returns (bytes32) {\\n        return set._values[index];\\n    }\\n\\n    /**\\n     * @dev Return the entire set in an array\\n     *\\n     * WARNING: This operation will copy the entire storage to memory, which can be quite expensive. This is designed\\n     * to mostly be used by view accessors that are queried without any gas fees. Developers should keep in mind that\\n     * this function has an unbounded cost, and using it as part of a state-changing function may render the function\\n     * uncallable if the set grows to a point where copying to memory consumes too much gas to fit in a block.\\n     */\\n    function _values(Set storage set) private view returns (bytes32[] memory) {\\n        return set._values;\\n    }\\n\\n    // Bytes32Set\\n\\n    struct Bytes32Set {\\n        Set _inner;\\n    }\\n\\n    /**\\n     * @dev Add a value to a set. O(1).\\n     *\\n     * Returns true if the value was added to the set, that is if it was not\\n     * already present.\\n     */\\n    function add(Bytes32Set storage set, bytes32 value) internal returns (bool) {\\n        return _add(set._inner, value);\\n    }\\n\\n    /**\\n     * @dev Removes a value from a set. O(1).\\n     *\\n     * Returns true if the value was removed from the set, that is if it was\\n     * present.\\n     */\\n    function remove(Bytes32Set storage set, bytes32 value) internal returns (bool) {\\n        return _remove(set._inner, value);\\n    }\\n\\n    /**\\n     * @dev Returns true if the value is in the set. O(1).\\n     */\\n    function contains(Bytes32Set storage set, bytes32 value) internal view returns (bool) {\\n        return _contains(set._inner, value);\\n    }\\n\\n    /**\\n     * @dev Returns the number of values in the set. O(1).\\n     */\\n    function length(Bytes32Set storage set) internal view returns (uint256) {\\n        return _length(set._inner);\\n    }\\n\\n    /**\\n     * @dev Returns the value stored at position `index` in the set. O(1).\\n     *\\n     * Note that there are no guarantees on the ordering of values inside the\\n     * array, and it may change when more values are added or removed.\\n     *\\n     * Requirements:\\n     *\\n     * - `index` must be strictly less than {length}.\\n     */\\n    function at(Bytes32Set storage set, uint256 index) internal view returns (bytes32) {\\n        return _at(set._inner, index);\\n    }\\n\\n    /**\\n     * @dev Return the entire set in an array\\n     *\\n     * WARNING: This operation will copy the entire storage to memory, which can be quite expensive. This is designed\\n     * to mostly be used by view accessors that are queried without any gas fees. Developers should keep in mind that\\n     * this function has an unbounded cost, and using it as part of a state-changing function may render the function\\n     * uncallable if the set grows to a point where copying to memory consumes too much gas to fit in a block.\\n     */\\n    function values(Bytes32Set storage set) internal view returns (bytes32[] memory) {\\n        bytes32[] memory store = _values(set._inner);\\n        bytes32[] memory result;\\n\\n        /// @solidity memory-safe-assembly\\n        assembly {\\n            result := store\\n        }\\n\\n        return result;\\n    }\\n\\n    // AddressSet\\n\\n    struct AddressSet {\\n        Set _inner;\\n    }\\n\\n    /**\\n     * @dev Add a value to a set. O(1).\\n     *\\n     * Returns true if the value was added to the set, that is if it was not\\n     * already present.\\n     */\\n    function add(AddressSet storage set, address value) internal returns (bool) {\\n        return _add(set._inner, bytes32(uint256(uint160(value))));\\n    }\\n\\n    /**\\n     * @dev Removes a value from a set. O(1).\\n     *\\n     * Returns true if the value was removed from the set, that is if it was\\n     * present.\\n     */\\n    function remove(AddressSet storage set, address value) internal returns (bool) {\\n        return _remove(set._inner, bytes32(uint256(uint160(value))));\\n    }\\n\\n    /**\\n     * @dev Returns true if the value is in the set. O(1).\\n     */\\n    function contains(AddressSet storage set, address value) internal view returns (bool) {\\n        return _contains(set._inner, bytes32(uint256(uint160(value))));\\n    }\\n\\n    /**\\n     * @dev Returns the number of values in the set. O(1).\\n     */\\n    function length(AddressSet storage set) internal view returns (uint256) {\\n        return _length(set._inner);\\n    }\\n\\n    /**\\n     * @dev Returns the value stored at position `index` in the set. O(1).\\n     *\\n     * Note that there are no guarantees on the ordering of values inside the\\n     * array, and it may change when more values are added or removed.\\n     *\\n     * Requirements:\\n     *\\n     * - `index` must be strictly less than {length}.\\n     */\\n    function at(AddressSet storage set, uint256 index) internal view returns (address) {\\n        return address(uint160(uint256(_at(set._inner, index))));\\n    }\\n\\n    /**\\n     * @dev Return the entire set in an array\\n     *\\n     * WARNING: This operation will copy the entire storage to memory, which can be quite expensive. This is designed\\n     * to mostly be used by view accessors that are queried without any gas fees. Developers should keep in mind that\\n     * this function has an unbounded cost, and using it as part of a state-changing function may render the function\\n     * uncallable if the set grows to a point where copying to memory consumes too much gas to fit in a block.\\n     */\\n    function values(AddressSet storage set) internal view returns (address[] memory) {\\n        bytes32[] memory store = _values(set._inner);\\n        address[] memory result;\\n\\n        /// @solidity memory-safe-assembly\\n        assembly {\\n            result := store\\n        }\\n\\n        return result;\\n    }\\n\\n    // UintSet\\n\\n    struct UintSet {\\n        Set _inner;\\n    }\\n\\n    /**\\n     * @dev Add a value to a set. O(1).\\n     *\\n     * Returns true if the value was added to the set, that is if it was not\\n     * already present.\\n     */\\n    function add(UintSet storage set, uint256 value) internal returns (bool) {\\n        return _add(set._inner, bytes32(value));\\n    }\\n\\n    /**\\n     * @dev Removes a value from a set. O(1).\\n     *\\n     * Returns true if the value was removed from the set, that is if it was\\n     * present.\\n     */\\n    function remove(UintSet storage set, uint256 value) internal returns (bool) {\\n        return _remove(set._inner, bytes32(value));\\n    }\\n\\n    /**\\n     * @dev Returns true if the value is in the set. O(1).\\n     */\\n    function contains(UintSet storage set, uint256 value) internal view returns (bool) {\\n        return _contains(set._inner, bytes32(value));\\n    }\\n\\n    /**\\n     * @dev Returns the number of values in the set. O(1).\\n     */\\n    function length(UintSet storage set) internal view returns (uint256) {\\n        return _length(set._inner);\\n    }\\n\\n    /**\\n     * @dev Returns the value stored at position `index` in the set. O(1).\\n     *\\n     * Note that there are no guarantees on the ordering of values inside the\\n     * array, and it may change when more values are added or removed.\\n     *\\n     * Requirements:\\n     *\\n     * - `index` must be strictly less than {length}.\\n     */\\n    function at(UintSet storage set, uint256 index) internal view returns (uint256) {\\n        return uint256(_at(set._inner, index));\\n    }\\n\\n    /**\\n     * @dev Return the entire set in an array\\n     *\\n     * WARNING: This operation will copy the entire storage to memory, which can be quite expensive. This is designed\\n     * to mostly be used by view accessors that are queried without any gas fees. Developers should keep in mind that\\n     * this function has an unbounded cost, and using it as part of a state-changing function may render the function\\n     * uncallable if the set grows to a point where copying to memory consumes too much gas to fit in a block.\\n     */\\n    function values(UintSet storage set) internal view returns (uint256[] memory) {\\n        bytes32[] memory store = _values(set._inner);\\n        uint256[] memory result;\\n\\n        /// @solidity memory-safe-assembly\\n        assembly {\\n            result := store\\n        }\\n\\n        return result;\\n    }\\n}\\n\",\"keccak256\":\"0x86c1470cbfd878491e5de030072b647352d36bd27122cffb928970b1945282aa\",\"license\":\"MIT\"},\"contracts/computeEngineTeePool/ComputeEngineTeePoolImplementation.sol\":{\"content\":\"// SPDX-License-Identifier: MIT\\npragma solidity 0.8.24;\\n\\nimport \\\"@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol\\\";\\nimport \\\"@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol\\\";\\nimport \\\"./interfaces/ComputeEngineTeePoolStorageV1.sol\\\";\\n\\ncontract ComputeEngineTeePoolImplementation is\\n    PausableUpgradeable,\\n    AccessControlUpgradeable,\\n    ComputeEngineTeePoolStorageV1\\n{\\n    using EnumerableSet for EnumerableSet.AddressSet;\\n    using EnumerableSet for EnumerableSet.UintSet;\\n\\n    event TeePoolTypeUpdated(TeePoolType newTeePoolType);\\n    event HardwareTypeUpdated(HardwareType newHardwareType);\\n    event TeeAdded(address indexed teeAddress, string url, string publicKey);\\n    event TeeRemoved(address indexed teeAddress);\\n    event JobSubmitted(uint256 indexed jobId, address teeAddress);\\n    event JobRemoved(uint256 indexed jobId);\\n\\n    error TeeAlreadyAdded();\\n    error TeeNotActive(address teeAddress);\\n    error NoActiveTee(address teePoolAddress);\\n    error NotComputeEngine();\\n    error NotTeePoolFactory();\\n    error HWRequirementNotMet();\\n    error MaxTimeoutExceeded();\\n\\n    bytes32 public constant MAINTAINER_ROLE = keccak256(\\\"MAINTAINER_ROLE\\\");\\n\\n    modifier onlyComputeEngine() {\\n        if (msg.sender != computeEngine) {\\n            revert NotComputeEngine();\\n        }\\n        _;\\n    }\\n\\n    modifier onlyTeePoolFactory() {\\n        if (msg.sender != teePoolFactory) {\\n            revert NotTeePoolFactory();\\n        }\\n        _;\\n    }\\n\\n    /// @custom:oz-upgrades-unsafe-allow constructor\\n    constructor() {\\n        _disableInitializers();\\n    }\\n\\n    /**\\n     * @notice Initializes the contract\\n     *\\n     * @param ownerAddress Address of the owner\\n     */\\n    function initialize(\\n        address ownerAddress,\\n        address initComputeEngine,\\n        TeePoolType initTeePoolType,\\n        HardwareType initHardwareType,\\n        uint80 initMaxTimeout\\n    ) external initializer {\\n        __Pausable_init();\\n        __AccessControl_init();\\n\\n        computeEngine = initComputeEngine;\\n        teePoolType = initTeePoolType;\\n        hardwareType = initHardwareType;\\n        maxTimeout = initMaxTimeout;\\n\\n        _setRoleAdmin(MAINTAINER_ROLE, DEFAULT_ADMIN_ROLE);\\n        _grantRole(DEFAULT_ADMIN_ROLE, ownerAddress);\\n        _grantRole(MAINTAINER_ROLE, ownerAddress);\\n    }\\n\\n    /// @inheritdoc IComputeEngineTeePool\\n    function updateComputeEngine(address newComputeEngine) external override onlyRole(MAINTAINER_ROLE) {\\n        computeEngine = newComputeEngine;\\n    }\\n\\n    function updateTeePoolFactory(address newTeePoolFactory) external override onlyRole(MAINTAINER_ROLE) {\\n        teePoolFactory = newTeePoolFactory;\\n    }\\n\\n    /// @inheritdoc ITeePool\\n    function version() external pure virtual override returns (uint256) {\\n        return 1;\\n    }\\n\\n    /// @inheritdoc ITeePool\\n    function pause() external override onlyRole(MAINTAINER_ROLE) {\\n        _pause();\\n    }\\n\\n    /// @inheritdoc ITeePool\\n    function unpause() external override onlyRole(MAINTAINER_ROLE) {\\n        _unpause();\\n    }\\n\\n    /// @inheritdoc IComputeEngineTeePool\\n    function updateMaxTimeout(uint80 newMaxTimeout) external override onlyTeePoolFactory {\\n        maxTimeout = newMaxTimeout;\\n    }\\n\\n    /// @inheritdoc ITeePool\\n    function teeList() external view override returns (address[] memory) {\\n        return _teeList.values();\\n    }\\n\\n    /// @inheritdoc ITeePool\\n    function activeTeeList() external view override returns (address[] memory) {\\n        return _activeTeeList.values();\\n    }\\n\\n    /// @inheritdoc ITeePool\\n    function teesCount() external view override returns (uint256) {\\n        return _teeList.length();\\n    }\\n\\n    /// @inheritdoc ITeePool\\n    function activeTeesCount() external view override returns (uint256) {\\n        return _activeTeeList.length();\\n    }\\n\\n    /// @inheritdoc ITeePool\\n    function isTee(address teeAddress) public view override returns (bool) {\\n        return _tees[teeAddress].status == TeeStatus.Active;\\n    }\\n\\n    /// @inheritdoc IComputeEngineTeePool\\n    function tees(address teeAddress) public view override returns (TeeInfo memory) {\\n        Tee storage tee = _tees[teeAddress];\\n        return\\n            TeeInfo({\\n                teeAddress: teeAddress,\\n                url: tee.url,\\n                status: tee.status,\\n                jobsCount: tee.jobIdsList.length(),\\n                publicKey: tee.publicKey\\n            });\\n    }\\n\\n    /// @inheritdoc IComputeEngineTeePool\\n    function teeListAt(uint256 index) external view override returns (TeeInfo memory) {\\n        return tees(_teeList.at(index));\\n    }\\n\\n    /// @inheritdoc IComputeEngineTeePool\\n    function activeTeeListAt(uint256 index) external view override returns (TeeInfo memory) {\\n        return tees(_activeTeeList.at(index));\\n    }\\n\\n    /// @inheritdoc ITeePool\\n    function addTee(address teeAddress, bytes calldata params) external override onlyRole(MAINTAINER_ROLE) {\\n        if (_activeTeeList.contains(teeAddress)) {\\n            revert TeeAlreadyAdded();\\n        }\\n\\n        _teeList.add(teeAddress);\\n        _activeTeeList.add(teeAddress);\\n\\n        (string memory url, string memory publicKey) = abi.decode(params, (string, string));\\n        Tee storage tee = _tees[teeAddress];\\n        tee.url = url;\\n        tee.status = TeeStatus.Active;\\n        tee.publicKey = publicKey;\\n        emit TeeAdded(teeAddress, url, publicKey);\\n    }\\n\\n    /// @inheritdoc ITeePool\\n    function removeTee(address teeAddress) external override onlyRole(MAINTAINER_ROLE) {\\n        if (!_activeTeeList.contains(teeAddress)) {\\n            revert TeeNotActive(teeAddress);\\n        }\\n\\n        _tees[teeAddress].status = TeeStatus.Removed;\\n        _activeTeeList.remove(teeAddress);\\n\\n        emit TeeRemoved(teeAddress);\\n    }\\n\\n    /// @inheritdoc ITeePool\\n    /// @dev Only the ComputeEngine contract can submit jobs to its TeePool.\\n    function submitJob(bytes calldata params) external override onlyComputeEngine whenNotPaused returns (address, bytes memory) {\\n        if (_activeTeeList.length() == 0) {\\n            return (address(0), abi.encodeWithSelector(NoActiveTee.selector, address(this)));\\n        }\\n\\n        /// @dev Decode the parameters\\n        (uint256 jobId, uint80 jobMaxTimeout, bool gpuRequired, address assignedTee) = abi.decode(\\n            params,\\n            (uint256, uint80, bool, address)\\n        );\\n\\n        if (gpuRequired && hardwareType != HardwareType.GPU) {\\n            return (address(0), abi.encodeWithSelector(HWRequirementNotMet.selector));\\n        }\\n\\n        if (jobMaxTimeout > maxTimeout) {\\n            return (address(0), abi.encodeWithSelector(MaxTimeoutExceeded.selector));\\n        }\\n\\n        address teeAddress;\\n        if (teePoolType != TeePoolType.Dedicated) {\\n            /// @dev The job is assigned to an active Tee in a round-robin fashion\\n            teeAddress = tees(_activeTeeList.at(_jobsCount % _activeTeeList.length())).teeAddress;\\n        } else {\\n            /// @dev If the Tee is not active, it won't accept new jobs\\n            if (!isTee(assignedTee)) {\\n                return (address(0), abi.encodeWithSelector(TeeNotActive.selector, assignedTee));\\n            }\\n            teeAddress = assignedTee;\\n        }\\n\\n        _tees[teeAddress].jobIdsList.add(jobId);\\n        _jobTee[jobId] = teeAddress;\\n\\n        /// @dev _jobsCount is an internal job counter of the pool\\n        /// JobId is assigned by the ComputeEngine contract, via\\n        /// a universal job counter, accross multiple TeePools.\\n        _jobsCount += 1;\\n\\n        emit JobSubmitted(jobId, teeAddress);\\n\\n        return (teeAddress, new bytes(0));\\n    }\\n\\n    /// @inheritdoc ITeePool\\n    /// @dev Only the ComputeEngine contract can remove jobs from their TeePool.\\n    function removeJob(uint256 jobId) external override onlyComputeEngine whenNotPaused {\\n        address teeAddress = _jobTee[jobId];\\n        if (teeAddress == address(0)) {\\n            return;\\n        }\\n        _jobTee[jobId] = address(0);\\n        _tees[teeAddress].jobIdsList.remove(jobId);\\n        emit JobRemoved(jobId);\\n    }\\n}\\n\",\"keccak256\":\"0xcdbd2e49c70ce77491b25ad252fcfde3b3d9cdc22846ce41037a0b6789cf6f10\",\"license\":\"MIT\"},\"contracts/computeEngineTeePool/interfaces/ComputeEngineTeePoolStorageV1.sol\":{\"content\":\"// SPDX-License-Identifier: MIT\\npragma solidity 0.8.24;\\n\\nimport \\\"./IComputeEngineTeePool.sol\\\";\\n\\n/**\\n * @title Storage for ComputeEngineTeePool\\n * @notice For future upgrades, do not change ComputeEngineTeePoolStorageV1.\\n * Create a new contract which implements ComputeEngineTeePoolStorageV1.\\n */\\nabstract contract ComputeEngineTeePoolStorageV1 is IComputeEngineTeePool {\\n    /// @dev Packed storage layout to save on storage slots\\n    TeePoolType public override teePoolType; // 1 byte\\n    HardwareType public override hardwareType; // 1 byte\\n    uint80 public override maxTimeout; // 10 bytes\\n    address public override computeEngine; // 20 bytes\\n\\n    EnumerableSet.AddressSet internal _teeList;\\n    EnumerableSet.AddressSet internal _activeTeeList;\\n    mapping(address teeAddress => Tee tee) internal _tees;\\n\\n    uint256 internal _jobsCount;\\n    /// @dev Jobs are managed by the ComputeEngine contract, which is the job registry.\\n    /// The TeePool contract only keeps track of the Tee assigned to each job.\\n    mapping(uint256 => address) internal _jobTee;\\n\\n    address public override teePoolFactory;\\n}\\n\",\"keccak256\":\"0x55020a243ff6343e406d4cf6b934d9680f1997ac8b8286b78eceed12736f0c93\",\"license\":\"MIT\"},\"contracts/computeEngineTeePool/interfaces/IComputeEngineTeePool.sol\":{\"content\":\"// SPDX-License-Identifier: MIT\\npragma solidity 0.8.24;\\n\\nimport \\\"@openzeppelin/contracts/utils/structs/EnumerableSet.sol\\\";\\nimport \\\"./ITeePool.sol\\\";\\n\\ninterface IComputeEngineTeePool is ITeePool {\\n    enum TeePoolType {\\n        None,\\n        Ephemeral,\\n        Persistent,\\n        Dedicated\\n    }\\n\\n    enum HardwareType {\\n        None,\\n        Standard, // CPU only\\n        GPU\\n    }\\n\\n    enum TeeStatus {\\n        None,\\n        Active,\\n        Removed\\n    }\\n\\n    struct Tee {\\n        string url;\\n        TeeStatus status;\\n        EnumerableSet.UintSet jobIdsList;\\n        string publicKey;\\n    }\\n\\n    struct TeeInfo {\\n        address teeAddress;\\n        string url;\\n        TeeStatus status;\\n        uint256 jobsCount;\\n        string publicKey;\\n    }\\n\\n    /// @notice Returns the type of the Tee pool\\n    function teePoolType() external view returns (TeePoolType);\\n\\n    // /// @notice Updates the type of the Tee pool\\n    // /// @param teePoolType The new type of the Tee pool\\n    // /// @dev Only callable by the TeePoolFactory contract to ensure consistency\\n    // function updateTeePoolType(TeePoolType teePoolType) external;\\n\\n    /// @notice Returns the hardware type of the Tee pool\\n    function hardwareType() external view returns (HardwareType);\\n\\n    // /// @notice Updates the hardware type of the Tee pool\\n    // /// @dev Only callable by the TeePoolFactory contract to ensure consistency\\n    // function updateHardwareType(HardwareType hardwareType) external;\\n\\n    /// @notice Returns the maximum timeout for a job\\n    function maxTimeout() external view returns (uint80);\\n\\n    /// @notice Updates the maximum timeout for a job\\n    /// @param maxTimeout The new maximum timeout for a job\\n    function updateMaxTimeout(uint80 maxTimeout) external;\\n\\n    /// @notice Returns the ComputeEngine contract address\\n    function computeEngine() external view returns (address);\\n\\n    /// @notice Updates the ComputeEngine contract address\\n    /// @param computeEngineAddress The new ComputeEngine contract address\\n    function updateComputeEngine(address computeEngineAddress) external;\\n\\n    function teePoolFactory() external view returns (address);\\n\\n    function updateTeePoolFactory(address teePoolFactoryAddress) external;\\n\\n    /// @notice Returns the Tee info for the given address\\n    /// @param teeAddress The address of the Tee\\n    /// @return The Tee info\\n    function tees(address teeAddress) external view returns (TeeInfo memory);\\n\\n    /// @notice Returns the Tee info for the Tee at the given index\\n    /// @param index The index of the Tee\\n    /// @return The Tee info\\n    function teeListAt(uint256 index) external view returns (TeeInfo memory);\\n\\n    /// @notice Returns the Tee info for the active Tee at the given index\\n    /// @param index The index of the active Tee\\n    /// @return The Tee info\\n    function activeTeeListAt(uint256 index) external view returns (TeeInfo memory);\\n}\\n\",\"keccak256\":\"0xe74941804b8846f7ed4178f25ec03d6f764c73ac4c2856780553e1958653db4a\",\"license\":\"MIT\"},\"contracts/computeEngineTeePool/interfaces/ITeePool.sol\":{\"content\":\"// SPDX-License-Identifier: MIT\\npragma solidity 0.8.24;\\n\\n/// @title A generic interface for a TeePool contract\\n/// @notice A contract or interface that inherits this interface should\\n/// define its own TeeInfo and Job structs.\\ninterface ITeePool {\\n    /// @notice Returns the version of the contract\\n    /// @return The version of the contract\\n    function version() external pure returns (uint256);\\n\\n    /// @notice Pauses the contract\\n    function pause() external;\\n\\n    /// @notice Unpauses the contract\\n    function unpause() external;\\n    \\n    /// @notice Returns the number of Tees\\n    /// @return The number of Tees\\n    function teesCount() external view returns (uint256);\\n    \\n    /// @notice Returns the list of Tee addresses\\n    /// @return The list of Tee addresses\\n    function teeList() external view returns (address[] memory);\\n    \\n    /// @notice Returns the number of active Tees\\n    /// @return The number of active Tees\\n    function activeTeesCount() external view returns (uint256);\\n    \\n    /// @notice Returns the list of active Tee addresses\\n    /// @return The list of active Tee addresses\\n    function activeTeeList() external view returns (address[] memory);\\n    \\n    /// @notice Checks if the given address is a Tee\\n    /// @param teeAddress The address to check\\n    /// @return True if the address is a Tee, false otherwise\\n    function isTee(address teeAddress) external view returns (bool);\\n\\n    /// @notice Adds a Tee to the pool\\n    /// @param teeAddress The address of the Tee\\n    /// @param params The parameters for the Tee\\n    function addTee(address teeAddress, bytes calldata params) external;\\n    \\n    /// @notice Removes a Tee from the pool\\n    /// @param teeAddress The address of the Tee\\n    function removeTee(address teeAddress) external;\\n\\n    /// @notice Submits a job to the pool\\n    /// @param params The parameters for the job\\n    /// @return The address of the Tee assigned to the job\\n    function submitJob(bytes calldata params) external returns (address, bytes memory);\\n\\n    /// @notice Removes a job in the pool\\n    /// @param jobId The ID of the job to remove\\n    function removeJob(uint256 jobId) external;\\n}\",\"keccak256\":\"0x5b99d68f3bdc7ed0342f173f08bc2d7e774f636f8780ec9dd2b4edb4bb825647\",\"license\":\"MIT\"}},\"version\":1}",
+  "bytecode": "0x608060405234801561001057600080fd5b5061001961001e565b6100d0565b7ff0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a00805468010000000000000000900460ff161561006e5760405163f92ee8a960e01b815260040160405180910390fd5b80546001600160401b03908116146100cd5780546001600160401b0319166001600160401b0390811782556040519081527fc7f505b2f371ae2175ee4913f4499e1f2633a7b5936321eed1cdaeb6115181d29060200160405180910390a15b50565b611d42806100df6000396000f3fe608060405234801561001057600080fd5b506004361061018b5760003560e01c806301ffc9a71461019057806310f3cd30146101b8578063248a9ca3146101cd578063288fffac146101ee5780632a830749146102035780632f2ff15d1461021657806336568abe146102295780633f4ba83a1461023c5780634007f7741461024457806354fd4d5014610263578063558128801461026a5780635b818d36146102915780635c975abb146102995780636608e9d2146102a157806368b85aa5146102c257806373c88396146102f35780638456cb5914610313578063897388941461031b5780638afb01ed1461033557806391d1485414610348578063961884aa1461035b5780639b489fb81461036e5780639cb29cbd14610381578063a217fddf14610394578063a7016f701461039c578063abe4a66c146103af578063ca45a288146103c2578063d402919f146103d5578063d547741f146103dd578063da541530146103f0578063e21e860314610403578063eb07b9c614610416578063f87422541461041e575b600080fd5b6101a361019e3660046115df565b610433565b60405190151581526020015b60405180910390f35b6101c061046a565b6040516101af9190611609565b6101e06101db366004611656565b61047b565b6040519081526020016101af565b6102016101fc366004611684565b61049b565b005b6102016102113660046116e2565b610550565b610201610224366004611736565b61064c565b610201610237366004611736565b61066e565b6102016106a6565b60005461025690610100900460ff1681565b6040516101af919061178c565b60016101e0565b60005461028490600160601b90046001600160a01b031681565b6040516101af919061179f565b6101c06106c9565b6101a36106d5565b6102b46102af3660046117b3565b6106ea565b6040516101af92919061183a565b6000546102db906201000090046001600160501b031681565b6040516001600160501b0390911681526020016101af565b610306610301366004611656565b6109de565b6040516101af9190611866565b6102016109f4565b6000546103289060ff1681565b6040516101af91906118d9565b610201610343366004611909565b610a14565b6101a3610356366004611736565b610a69565b610306610369366004611684565b610a9f565b61020161037c366004611684565b610c2e565b61020161038f366004611656565b610c69565b6101e0600081565b6101a36103aa366004611684565b610d33565b6102016103bd366004611924565b610d6e565b6103066103d0366004611656565b610f48565b6101e0610f5e565b6102016103eb366004611736565b610f6a565b6102016103fe366004611684565b610f86565b600854610284906001600160a01b031681565b6101e0610fc7565b6101e0600080516020611ced83398151915281565b60006001600160e01b03198216637965db0b60e01b148061046457506301ffc9a760e01b6001600160e01b03198316145b92915050565b60606104766003610fd3565b905090565b600080610486610fe7565b60009384526020525050604090206001015490565b600080516020611ced8339815191526104b38161100b565b6104be600383611015565b6104e6578160405163335abe6160e21b81526004016104dd919061179f565b60405180910390fd5b6001600160a01b0382166000908152600560205260409020600101805460ff1916600217905561051760038361102a565b506040516001600160a01b038316907f18a003b29a5d1b1d6f0603956003fdc00a42ea8db3825c24a6bf532d5bae0bdf90600090a25050565b600080516020611ced8339815191526105688161100b565b610573600385611015565b1561059157604051637668d56b60e01b815260040160405180910390fd5b61059c60018561103f565b506105a860038561103f565b506000806105b884860186611a3b565b6001600160a01b03881660009081526005602052604090209193509150806105e08482611b28565b506001818101805460ff19169091179055600481016105ff8382611b28565b50866001600160a01b03167f33b65b0a9a715aea3bbcf1e054d4012e3752f2a4a98447c61b14be6fa587df5d848460405161063b929190611be7565b60405180910390a250505050505050565b6106558261047b565b61065e8161100b565b6106688383611054565b50505050565b6001600160a01b03811633146106975760405163334bd91960e11b815260040160405180910390fd5b6106a182826110f5565b505050565b600080516020611ced8339815191526106be8161100b565b6106c661116d565b50565b60606104766001610fd3565b6000806106e06111c4565b5460ff1692915050565b60008054606090600160601b90046001600160a01b031633146107205760405163b7ebf4b360e01b815260040160405180910390fd5b6107286111e8565b6107326003611210565b60000361079057600063f255781760e01b30604051602401610754919061179f565b60408051601f198184030181529190526020810180516001600160e01b03166001600160e01b03199093169290921790915290925090506109d7565b60008080806107a187890189611c0c565b93509350935093508180156107d257506002600054610100900460ff1660028111156107cf576107cf611766565b14155b156108105750506040805160048152602481019091526020810180516001600160e01b03166320dfb0bf60e11b1790526000945092506109d7915050565b6000546001600160501b0362010000909104811690841611156108665750506040805160048152602481019091526020810180516001600160e01b0316631b1e414b60e01b1790526000945092506109d7915050565b6000600360005460ff16600381111561088157610881611766565b146108b3576108ab6103696108966003611210565b6006546108a39190611c62565b60039061121a565b51905061091f565b6108bc82610d33565b61091c57600063cd6af98460e01b836040516024016108db919061179f565b604051602081830303815290604052906001600160e01b0319166020820180516001600160e01b0383818316178352505050509650965050505050506109d7565b50805b6001600160a01b03811660009081526005602052604090206109449060020186611226565b50600085815260076020526040812080546001600160a01b0319166001600160a01b038416179055600680546001929061097f908490611c9a565b92505081905550847ff1d26b191b1bee9baaf9392419d2859b11482d15e585cb16aa6e73cdc83fba32826040516109b6919061179f565b60405180910390a26040805160008152602081019091529096509450505050505b9250929050565b6109e66115b0565b61046461036960018461121a565b600080516020611ced833981519152610a0c8161100b565b6106c6611232565b6008546001600160a01b03163314610a3f57604051636e10c66960e01b815260040160405180910390fd5b600080546001600160501b03909216620100000262010000600160601b0319909216919091179055565b600080610a74610fe7565b6000948552602090815260408086206001600160a01b03959095168652939052505090205460ff1690565b610aa76115b0565b6001600160a01b038216600081815260056020908152604091829020825160a081019093529282528254908201908390610ae090611a9e565b80601f0160208091040260200160405190810160405280929190818152602001828054610b0c90611a9e565b8015610b595780601f10610b2e57610100808354040283529160200191610b59565b820191906000526020600020905b815481529060010190602001808311610b3c57829003601f168201915b5050509183525050600183015460209091019060ff166002811115610b8057610b80611766565b8152602001610b9183600201611210565b8152602001826004018054610ba590611a9e565b80601f0160208091040260200160405190810160405280929190818152602001828054610bd190611a9e565b8015610c1e5780601f10610bf357610100808354040283529160200191610c1e565b820191906000526020600020905b815481529060010190602001808311610c0157829003601f168201915b5050505050815250915050919050565b600080516020611ced833981519152610c468161100b565b50600880546001600160a01b0319166001600160a01b0392909216919091179055565b600054600160601b90046001600160a01b03163314610c9b5760405163b7ebf4b360e01b815260040160405180910390fd5b610ca36111e8565b6000818152600760205260409020546001600160a01b031680610cc4575050565b600082815260076020908152604080832080546001600160a01b03191690556001600160a01b038416835260059091529020610d039060020183611279565b5060405182907f6daba074dba7f6e2f5fd289e20080bf7047e96329b083fc1dab326fbefd762bb90600090a25050565b600060016001600160a01b03831660009081526005602052604090206001015460ff166002811115610d6757610d67611766565b1492915050565b6000610d78611285565b805490915060ff600160401b82041615906001600160401b0316600081158015610d9f5750825b90506000826001600160401b03166001148015610dbb5750303b155b905081158015610dc9575080155b15610de75760405163f92ee8a960e01b815260040160405180910390fd5b84546001600160401b03191660011785558315610e1057845460ff60401b1916600160401b1785555b610e186112a9565b610e206112b9565b600080546001600160601b038116600160601b6001600160a01b038d160290811783558a9291610100600160601b031660ff19909116176001836003811115610e6b57610e6b611766565b02179055506000805488919061ff001916610100836002811115610e9157610e91611766565b02179055506000805462010000600160601b031916620100006001600160501b03891602178155610ed190600080516020611ced833981519152906112c1565b610edc60008b611054565b50610ef5600080516020611ced8339815191528b611054565b508315610f3c57845460ff60401b19168555604051600181527fc7f505b2f371ae2175ee4913f4499e1f2633a7b5936321eed1cdaeb6115181d29060200160405180910390a15b50505050505050505050565b610f506115b0565b61046461036960038461121a565b60006104766003611210565b610f738261047b565b610f7c8161100b565b61066883836110f5565b600080516020611ced833981519152610f9e8161100b565b50600080546001600160a01b03909216600160601b026001600160601b03909216919091179055565b60006104766001611210565b60606000610fe083611321565b9392505050565b7f02dd7bc7dec4dceedda775e58dd541e08a116c6c53815c0bd028192f7b62680090565b6106c6813361137d565b6000610fe0836001600160a01b0384166113ba565b6000610fe0836001600160a01b0384166113d2565b6000610fe0836001600160a01b0384166114bb565b60008061105f610fe7565b905061106b8484610a69565b6110eb576000848152602082815260408083206001600160a01b03871684529091529020805460ff191660011790556110a13390565b6001600160a01b0316836001600160a01b0316857f2f8788117e7eff1d82e926ec794901d17c78024a50270940304540a733656f0d60405160405180910390a46001915050610464565b6000915050610464565b600080611100610fe7565b905061110c8484610a69565b156110eb576000848152602082815260408083206001600160a01b0387168085529252808320805460ff1916905551339287917ff6391f5c32d9c69d2a47ea670b442974b53935d1edc7fd64eb21e047a839171b9190a46001915050610464565b611175611505565b600061117f6111c4565b805460ff1916815590507f5db9ee0a495bf2e6ff9c91a7834c1ba4fdd244a5e8aa4e537bd38aeae4b073aa335b6040516111b9919061179f565b60405180910390a150565b7fcd5ed15c6e187e77e9aee88184c21f4f2182ab5827cb3b7e07fbedcd63f0330090565b6111f06106d5565b1561120e5760405163d93c066560e01b815260040160405180910390fd5b565b6000610464825490565b6000610fe0838361152a565b6000610fe083836114bb565b61123a6111e8565b60006112446111c4565b805460ff1916600117815590507f62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a2586111ac3390565b6000610fe083836113d2565b7ff0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a0090565b6112b1611554565b61120e611579565b61120e611554565b60006112cb610fe7565b905060006112d88461047b565b600085815260208490526040808220600101869055519192508491839187917fbd79b86ffe0ab8e8776151514217cd7cacd52c909f66475c3af44e129f0b00ff9190a450505050565b60608160000180548060200260200160405190810160405280929190818152602001828054801561137157602002820191906000526020600020905b81548152602001906001019080831161135d575b50505050509050919050565b6113878282610a69565b6113b65760405163e2517d3f60e01b81526001600160a01b0382166004820152602481018390526044016104dd565b5050565b60009081526001919091016020526040902054151590565b600081815260018301602052604081205480156110eb5760006113f6600183611cad565b855490915060009061140a90600190611cad565b905080821461146f57600086600001828154811061142a5761142a611cc0565b906000526020600020015490508087600001848154811061144d5761144d611cc0565b6000918252602080832090910192909255918252600188019052604090208390555b855486908061148057611480611cd6565b600190038181906000526020600020016000905590558560010160008681526020019081526020016000206000905560019350505050610464565b60006114c783836113ba565b6114fd57508154600181810184556000848152602080822090930184905584548482528286019093526040902091909155610464565b506000610464565b61150d6106d5565b61120e57604051638dfc202b60e01b815260040160405180910390fd5b600082600001828154811061154157611541611cc0565b9060005260206000200154905092915050565b61155c611596565b61120e57604051631afcd79f60e31b815260040160405180910390fd5b611581611554565b600061158b6111c4565b805460ff1916905550565b60006115a0611285565b54600160401b900460ff16919050565b6040805160a0810182526000808252606060208301529091820190815260200160008152602001606081525090565b6000602082840312156115f157600080fd5b81356001600160e01b031981168114610fe057600080fd5b6020808252825182820181905260009190848201906040850190845b8181101561164a5783516001600160a01b031683529284019291840191600101611625565b50909695505050505050565b60006020828403121561166857600080fd5b5035919050565b6001600160a01b03811681146106c657600080fd5b60006020828403121561169657600080fd5b8135610fe08161166f565b60008083601f8401126116b357600080fd5b5081356001600160401b038111156116ca57600080fd5b6020830191508360208285010111156109d757600080fd5b6000806000604084860312156116f757600080fd5b83356117028161166f565b925060208401356001600160401b0381111561171d57600080fd5b611729868287016116a1565b9497909650939450505050565b6000806040838503121561174957600080fd5b82359150602083013561175b8161166f565b809150509250929050565b634e487b7160e01b600052602160045260246000fd5b600381106106c6576106c6611766565b602081016117998361177c565b91905290565b6001600160a01b0391909116815260200190565b600080602083850312156117c657600080fd5b82356001600160401b038111156117dc57600080fd5b6117e8858286016116a1565b90969095509350505050565b6000815180845260005b8181101561181a576020818501810151868301820152016117fe565b506000602082860101526020601f19601f83011685010191505092915050565b6001600160a01b038316815260406020820181905260009061185e908301846117f4565b949350505050565b602080825282516001600160a01b03168282015282015160a0604083015260009061189460c08401826117f4565b905060408401516118a48161177c565b80606085015250606084015160808401526080840151601f198483030160a08501526118d082826117f4565b95945050505050565b602081016004831061179957611799611766565b80356001600160501b038116811461190457600080fd5b919050565b60006020828403121561191b57600080fd5b610fe0826118ed565b600080600080600060a0868803121561193c57600080fd5b85356119478161166f565b945060208601356119578161166f565b935060408601356004811061196b57600080fd5b925060608601356003811061197f57600080fd5b915061198d608087016118ed565b90509295509295909350565b634e487b7160e01b600052604160045260246000fd5b600082601f8301126119c057600080fd5b81356001600160401b03808211156119da576119da611999565b604051601f8301601f19908116603f01168101908282118183101715611a0257611a02611999565b81604052838152866020858801011115611a1b57600080fd5b836020870160208301376000602085830101528094505050505092915050565b60008060408385031215611a4e57600080fd5b82356001600160401b0380821115611a6557600080fd5b611a71868387016119af565b93506020850135915080821115611a8757600080fd5b50611a94858286016119af565b9150509250929050565b600181811c90821680611ab257607f821691505b602082108103611ad257634e487b7160e01b600052602260045260246000fd5b50919050565b601f8211156106a1576000816000526020600020601f850160051c81016020861015611b015750805b601f850160051c820191505b81811015611b2057828155600101611b0d565b505050505050565b81516001600160401b03811115611b4157611b41611999565b611b5581611b4f8454611a9e565b84611ad8565b602080601f831160018114611b8a5760008415611b725750858301515b600019600386901b1c1916600185901b178555611b20565b600085815260208120601f198616915b82811015611bb957888601518255948401946001909101908401611b9a565b5085821015611bd75787850151600019600388901b60f8161c191681555b5050505050600190811b01905550565b604081526000611bfa60408301856117f4565b82810360208401526118d081856117f4565b60008060008060808587031215611c2257600080fd5b84359350611c32602086016118ed565b925060408501358015158114611c4757600080fd5b91506060850135611c578161166f565b939692955090935050565b600082611c7f57634e487b7160e01b600052601260045260246000fd5b500690565b634e487b7160e01b600052601160045260246000fd5b8082018082111561046457610464611c84565b8181038181111561046457610464611c84565b634e487b7160e01b600052603260045260246000fd5b634e487b7160e01b600052603160045260246000fdfe339759585899103d2ace64958e37e18ccb0504652c81d4a1b8aa80fe2126ab95a2646970667358221220dfc34ec4cd7269e3c480e25865f9dbdfa17ef4cda55737c8e66b5730b569929c64736f6c63430008180033",
+  "deployedBytecode": "0x608060405234801561001057600080fd5b506004361061018b5760003560e01c806301ffc9a71461019057806310f3cd30146101b8578063248a9ca3146101cd578063288fffac146101ee5780632a830749146102035780632f2ff15d1461021657806336568abe146102295780633f4ba83a1461023c5780634007f7741461024457806354fd4d5014610263578063558128801461026a5780635b818d36146102915780635c975abb146102995780636608e9d2146102a157806368b85aa5146102c257806373c88396146102f35780638456cb5914610313578063897388941461031b5780638afb01ed1461033557806391d1485414610348578063961884aa1461035b5780639b489fb81461036e5780639cb29cbd14610381578063a217fddf14610394578063a7016f701461039c578063abe4a66c146103af578063ca45a288146103c2578063d402919f146103d5578063d547741f146103dd578063da541530146103f0578063e21e860314610403578063eb07b9c614610416578063f87422541461041e575b600080fd5b6101a361019e3660046115df565b610433565b60405190151581526020015b60405180910390f35b6101c061046a565b6040516101af9190611609565b6101e06101db366004611656565b61047b565b6040519081526020016101af565b6102016101fc366004611684565b61049b565b005b6102016102113660046116e2565b610550565b610201610224366004611736565b61064c565b610201610237366004611736565b61066e565b6102016106a6565b60005461025690610100900460ff1681565b6040516101af919061178c565b60016101e0565b60005461028490600160601b90046001600160a01b031681565b6040516101af919061179f565b6101c06106c9565b6101a36106d5565b6102b46102af3660046117b3565b6106ea565b6040516101af92919061183a565b6000546102db906201000090046001600160501b031681565b6040516001600160501b0390911681526020016101af565b610306610301366004611656565b6109de565b6040516101af9190611866565b6102016109f4565b6000546103289060ff1681565b6040516101af91906118d9565b610201610343366004611909565b610a14565b6101a3610356366004611736565b610a69565b610306610369366004611684565b610a9f565b61020161037c366004611684565b610c2e565b61020161038f366004611656565b610c69565b6101e0600081565b6101a36103aa366004611684565b610d33565b6102016103bd366004611924565b610d6e565b6103066103d0366004611656565b610f48565b6101e0610f5e565b6102016103eb366004611736565b610f6a565b6102016103fe366004611684565b610f86565b600854610284906001600160a01b031681565b6101e0610fc7565b6101e0600080516020611ced83398151915281565b60006001600160e01b03198216637965db0b60e01b148061046457506301ffc9a760e01b6001600160e01b03198316145b92915050565b60606104766003610fd3565b905090565b600080610486610fe7565b60009384526020525050604090206001015490565b600080516020611ced8339815191526104b38161100b565b6104be600383611015565b6104e6578160405163335abe6160e21b81526004016104dd919061179f565b60405180910390fd5b6001600160a01b0382166000908152600560205260409020600101805460ff1916600217905561051760038361102a565b506040516001600160a01b038316907f18a003b29a5d1b1d6f0603956003fdc00a42ea8db3825c24a6bf532d5bae0bdf90600090a25050565b600080516020611ced8339815191526105688161100b565b610573600385611015565b1561059157604051637668d56b60e01b815260040160405180910390fd5b61059c60018561103f565b506105a860038561103f565b506000806105b884860186611a3b565b6001600160a01b03881660009081526005602052604090209193509150806105e08482611b28565b506001818101805460ff19169091179055600481016105ff8382611b28565b50866001600160a01b03167f33b65b0a9a715aea3bbcf1e054d4012e3752f2a4a98447c61b14be6fa587df5d848460405161063b929190611be7565b60405180910390a250505050505050565b6106558261047b565b61065e8161100b565b6106688383611054565b50505050565b6001600160a01b03811633146106975760405163334bd91960e11b815260040160405180910390fd5b6106a182826110f5565b505050565b600080516020611ced8339815191526106be8161100b565b6106c661116d565b50565b60606104766001610fd3565b6000806106e06111c4565b5460ff1692915050565b60008054606090600160601b90046001600160a01b031633146107205760405163b7ebf4b360e01b815260040160405180910390fd5b6107286111e8565b6107326003611210565b60000361079057600063f255781760e01b30604051602401610754919061179f565b60408051601f198184030181529190526020810180516001600160e01b03166001600160e01b03199093169290921790915290925090506109d7565b60008080806107a187890189611c0c565b93509350935093508180156107d257506002600054610100900460ff1660028111156107cf576107cf611766565b14155b156108105750506040805160048152602481019091526020810180516001600160e01b03166320dfb0bf60e11b1790526000945092506109d7915050565b6000546001600160501b0362010000909104811690841611156108665750506040805160048152602481019091526020810180516001600160e01b0316631b1e414b60e01b1790526000945092506109d7915050565b6000600360005460ff16600381111561088157610881611766565b146108b3576108ab6103696108966003611210565b6006546108a39190611c62565b60039061121a565b51905061091f565b6108bc82610d33565b61091c57600063cd6af98460e01b836040516024016108db919061179f565b604051602081830303815290604052906001600160e01b0319166020820180516001600160e01b0383818316178352505050509650965050505050506109d7565b50805b6001600160a01b03811660009081526005602052604090206109449060020186611226565b50600085815260076020526040812080546001600160a01b0319166001600160a01b038416179055600680546001929061097f908490611c9a565b92505081905550847ff1d26b191b1bee9baaf9392419d2859b11482d15e585cb16aa6e73cdc83fba32826040516109b6919061179f565b60405180910390a26040805160008152602081019091529096509450505050505b9250929050565b6109e66115b0565b61046461036960018461121a565b600080516020611ced833981519152610a0c8161100b565b6106c6611232565b6008546001600160a01b03163314610a3f57604051636e10c66960e01b815260040160405180910390fd5b600080546001600160501b03909216620100000262010000600160601b0319909216919091179055565b600080610a74610fe7565b6000948552602090815260408086206001600160a01b03959095168652939052505090205460ff1690565b610aa76115b0565b6001600160a01b038216600081815260056020908152604091829020825160a081019093529282528254908201908390610ae090611a9e565b80601f0160208091040260200160405190810160405280929190818152602001828054610b0c90611a9e565b8015610b595780601f10610b2e57610100808354040283529160200191610b59565b820191906000526020600020905b815481529060010190602001808311610b3c57829003601f168201915b5050509183525050600183015460209091019060ff166002811115610b8057610b80611766565b8152602001610b9183600201611210565b8152602001826004018054610ba590611a9e565b80601f0160208091040260200160405190810160405280929190818152602001828054610bd190611a9e565b8015610c1e5780601f10610bf357610100808354040283529160200191610c1e565b820191906000526020600020905b815481529060010190602001808311610c0157829003601f168201915b5050505050815250915050919050565b600080516020611ced833981519152610c468161100b565b50600880546001600160a01b0319166001600160a01b0392909216919091179055565b600054600160601b90046001600160a01b03163314610c9b5760405163b7ebf4b360e01b815260040160405180910390fd5b610ca36111e8565b6000818152600760205260409020546001600160a01b031680610cc4575050565b600082815260076020908152604080832080546001600160a01b03191690556001600160a01b038416835260059091529020610d039060020183611279565b5060405182907f6daba074dba7f6e2f5fd289e20080bf7047e96329b083fc1dab326fbefd762bb90600090a25050565b600060016001600160a01b03831660009081526005602052604090206001015460ff166002811115610d6757610d67611766565b1492915050565b6000610d78611285565b805490915060ff600160401b82041615906001600160401b0316600081158015610d9f5750825b90506000826001600160401b03166001148015610dbb5750303b155b905081158015610dc9575080155b15610de75760405163f92ee8a960e01b815260040160405180910390fd5b84546001600160401b03191660011785558315610e1057845460ff60401b1916600160401b1785555b610e186112a9565b610e206112b9565b600080546001600160601b038116600160601b6001600160a01b038d160290811783558a9291610100600160601b031660ff19909116176001836003811115610e6b57610e6b611766565b02179055506000805488919061ff001916610100836002811115610e9157610e91611766565b02179055506000805462010000600160601b031916620100006001600160501b03891602178155610ed190600080516020611ced833981519152906112c1565b610edc60008b611054565b50610ef5600080516020611ced8339815191528b611054565b508315610f3c57845460ff60401b19168555604051600181527fc7f505b2f371ae2175ee4913f4499e1f2633a7b5936321eed1cdaeb6115181d29060200160405180910390a15b50505050505050505050565b610f506115b0565b61046461036960038461121a565b60006104766003611210565b610f738261047b565b610f7c8161100b565b61066883836110f5565b600080516020611ced833981519152610f9e8161100b565b50600080546001600160a01b03909216600160601b026001600160601b03909216919091179055565b60006104766001611210565b60606000610fe083611321565b9392505050565b7f02dd7bc7dec4dceedda775e58dd541e08a116c6c53815c0bd028192f7b62680090565b6106c6813361137d565b6000610fe0836001600160a01b0384166113ba565b6000610fe0836001600160a01b0384166113d2565b6000610fe0836001600160a01b0384166114bb565b60008061105f610fe7565b905061106b8484610a69565b6110eb576000848152602082815260408083206001600160a01b03871684529091529020805460ff191660011790556110a13390565b6001600160a01b0316836001600160a01b0316857f2f8788117e7eff1d82e926ec794901d17c78024a50270940304540a733656f0d60405160405180910390a46001915050610464565b6000915050610464565b600080611100610fe7565b905061110c8484610a69565b156110eb576000848152602082815260408083206001600160a01b0387168085529252808320805460ff1916905551339287917ff6391f5c32d9c69d2a47ea670b442974b53935d1edc7fd64eb21e047a839171b9190a46001915050610464565b611175611505565b600061117f6111c4565b805460ff1916815590507f5db9ee0a495bf2e6ff9c91a7834c1ba4fdd244a5e8aa4e537bd38aeae4b073aa335b6040516111b9919061179f565b60405180910390a150565b7fcd5ed15c6e187e77e9aee88184c21f4f2182ab5827cb3b7e07fbedcd63f0330090565b6111f06106d5565b1561120e5760405163d93c066560e01b815260040160405180910390fd5b565b6000610464825490565b6000610fe0838361152a565b6000610fe083836114bb565b61123a6111e8565b60006112446111c4565b805460ff1916600117815590507f62e78cea01bee320cd4e420270b5ea74000d11b0c9f74754ebdbfc544b05a2586111ac3390565b6000610fe083836113d2565b7ff0c57e16840df040f15088dc2f81fe391c3923bec73e23a9662efc9c229c6a0090565b6112b1611554565b61120e611579565b61120e611554565b60006112cb610fe7565b905060006112d88461047b565b600085815260208490526040808220600101869055519192508491839187917fbd79b86ffe0ab8e8776151514217cd7cacd52c909f66475c3af44e129f0b00ff9190a450505050565b60608160000180548060200260200160405190810160405280929190818152602001828054801561137157602002820191906000526020600020905b81548152602001906001019080831161135d575b50505050509050919050565b6113878282610a69565b6113b65760405163e2517d3f60e01b81526001600160a01b0382166004820152602481018390526044016104dd565b5050565b60009081526001919091016020526040902054151590565b600081815260018301602052604081205480156110eb5760006113f6600183611cad565b855490915060009061140a90600190611cad565b905080821461146f57600086600001828154811061142a5761142a611cc0565b906000526020600020015490508087600001848154811061144d5761144d611cc0565b6000918252602080832090910192909255918252600188019052604090208390555b855486908061148057611480611cd6565b600190038181906000526020600020016000905590558560010160008681526020019081526020016000206000905560019350505050610464565b60006114c783836113ba565b6114fd57508154600181810184556000848152602080822090930184905584548482528286019093526040902091909155610464565b506000610464565b61150d6106d5565b61120e57604051638dfc202b60e01b815260040160405180910390fd5b600082600001828154811061154157611541611cc0565b9060005260206000200154905092915050565b61155c611596565b61120e57604051631afcd79f60e31b815260040160405180910390fd5b611581611554565b600061158b6111c4565b805460ff1916905550565b60006115a0611285565b54600160401b900460ff16919050565b6040805160a0810182526000808252606060208301529091820190815260200160008152602001606081525090565b6000602082840312156115f157600080fd5b81356001600160e01b031981168114610fe057600080fd5b6020808252825182820181905260009190848201906040850190845b8181101561164a5783516001600160a01b031683529284019291840191600101611625565b50909695505050505050565b60006020828403121561166857600080fd5b5035919050565b6001600160a01b03811681146106c657600080fd5b60006020828403121561169657600080fd5b8135610fe08161166f565b60008083601f8401126116b357600080fd5b5081356001600160401b038111156116ca57600080fd5b6020830191508360208285010111156109d757600080fd5b6000806000604084860312156116f757600080fd5b83356117028161166f565b925060208401356001600160401b0381111561171d57600080fd5b611729868287016116a1565b9497909650939450505050565b6000806040838503121561174957600080fd5b82359150602083013561175b8161166f565b809150509250929050565b634e487b7160e01b600052602160045260246000fd5b600381106106c6576106c6611766565b602081016117998361177c565b91905290565b6001600160a01b0391909116815260200190565b600080602083850312156117c657600080fd5b82356001600160401b038111156117dc57600080fd5b6117e8858286016116a1565b90969095509350505050565b6000815180845260005b8181101561181a576020818501810151868301820152016117fe565b506000602082860101526020601f19601f83011685010191505092915050565b6001600160a01b038316815260406020820181905260009061185e908301846117f4565b949350505050565b602080825282516001600160a01b03168282015282015160a0604083015260009061189460c08401826117f4565b905060408401516118a48161177c565b80606085015250606084015160808401526080840151601f198483030160a08501526118d082826117f4565b95945050505050565b602081016004831061179957611799611766565b80356001600160501b038116811461190457600080fd5b919050565b60006020828403121561191b57600080fd5b610fe0826118ed565b600080600080600060a0868803121561193c57600080fd5b85356119478161166f565b945060208601356119578161166f565b935060408601356004811061196b57600080fd5b925060608601356003811061197f57600080fd5b915061198d608087016118ed565b90509295509295909350565b634e487b7160e01b600052604160045260246000fd5b600082601f8301126119c057600080fd5b81356001600160401b03808211156119da576119da611999565b604051601f8301601f19908116603f01168101908282118183101715611a0257611a02611999565b81604052838152866020858801011115611a1b57600080fd5b836020870160208301376000602085830101528094505050505092915050565b60008060408385031215611a4e57600080fd5b82356001600160401b0380821115611a6557600080fd5b611a71868387016119af565b93506020850135915080821115611a8757600080fd5b50611a94858286016119af565b9150509250929050565b600181811c90821680611ab257607f821691505b602082108103611ad257634e487b7160e01b600052602260045260246000fd5b50919050565b601f8211156106a1576000816000526020600020601f850160051c81016020861015611b015750805b601f850160051c820191505b81811015611b2057828155600101611b0d565b505050505050565b81516001600160401b03811115611b4157611b41611999565b611b5581611b4f8454611a9e565b84611ad8565b602080601f831160018114611b8a5760008415611b725750858301515b600019600386901b1c1916600185901b178555611b20565b600085815260208120601f198616915b82811015611bb957888601518255948401946001909101908401611b9a565b5085821015611bd75787850151600019600388901b60f8161c191681555b5050505050600190811b01905550565b604081526000611bfa60408301856117f4565b82810360208401526118d081856117f4565b60008060008060808587031215611c2257600080fd5b84359350611c32602086016118ed565b925060408501358015158114611c4757600080fd5b91506060850135611c578161166f565b939692955090935050565b600082611c7f57634e487b7160e01b600052601260045260246000fd5b500690565b634e487b7160e01b600052601160045260246000fd5b8082018082111561046457610464611c84565b8181038181111561046457610464611c84565b634e487b7160e01b600052603260045260246000fd5b634e487b7160e01b600052603160045260246000fdfe339759585899103d2ace64958e37e18ccb0504652c81d4a1b8aa80fe2126ab95a2646970667358221220dfc34ec4cd7269e3c480e25865f9dbdfa17ef4cda55737c8e66b5730b569929c64736f6c63430008180033",
+  "devdoc": {
+    "errors": {
+      "AccessControlBadConfirmation()": [
+        {
+          "details": "The caller of a function is not the expected one. NOTE: Don't confuse with {AccessControlUnauthorizedAccount}."
+        }
+      ],
+      "AccessControlUnauthorizedAccount(address,bytes32)": [
+        {
+          "details": "The `account` is missing a role."
+        }
+      ],
+      "EnforcedPause()": [
+        {
+          "details": "The operation failed because the contract is paused."
+        }
+      ],
+      "ExpectedPause()": [
+        {
+          "details": "The operation failed because the contract is not paused."
+        }
+      ],
+      "InvalidInitialization()": [
+        {
+          "details": "The contract is already initialized."
+        }
+      ],
+      "NotInitializing()": [
+        {
+          "details": "The contract is not initializing."
+        }
+      ]
+    },
+    "events": {
+      "Initialized(uint64)": {
+        "details": "Triggered when the contract has been initialized or reinitialized."
+      },
+      "Paused(address)": {
+        "details": "Emitted when the pause is triggered by `account`."
+      },
+      "RoleAdminChanged(bytes32,bytes32,bytes32)": {
+        "details": "Emitted when `newAdminRole` is set as ``role``'s admin role, replacing `previousAdminRole` `DEFAULT_ADMIN_ROLE` is the starting admin for all roles, despite {RoleAdminChanged} not being emitted signaling this."
+      },
+      "RoleGranted(bytes32,address,address)": {
+        "details": "Emitted when `account` is granted `role`. `sender` is the account that originated the contract call, an admin role bearer except when using {AccessControl-_setupRole}."
+      },
+      "RoleRevoked(bytes32,address,address)": {
+        "details": "Emitted when `account` is revoked `role`. `sender` is the account that originated the contract call:   - if using `revokeRole`, it is the admin role bearer   - if using `renounceRole`, it is the role bearer (i.e. `account`)"
+      },
+      "Unpaused(address)": {
+        "details": "Emitted when the pause is lifted by `account`."
+      }
+    },
+    "kind": "dev",
+    "methods": {
+      "activeTeeList()": {
+        "returns": {
+          "_0": "The list of active Tee addresses"
+        }
+      },
+      "activeTeeListAt(uint256)": {
+        "params": {
+          "index": "The index of the active Tee"
+        },
+        "returns": {
+          "_0": "The Tee info"
+        }
+      },
+      "activeTeesCount()": {
+        "returns": {
+          "_0": "The number of active Tees"
+        }
+      },
+      "addTee(address,bytes)": {
+        "params": {
+          "params": "The parameters for the Tee",
+          "teeAddress": "The address of the Tee"
+        }
+      },
+      "constructor": {
+        "custom:oz-upgrades-unsafe-allow": "constructor"
+      },
+      "getRoleAdmin(bytes32)": {
+        "details": "Returns the admin role that controls `role`. See {grantRole} and {revokeRole}. To change a role's admin, use {_setRoleAdmin}."
+      },
+      "grantRole(bytes32,address)": {
+        "details": "Grants `role` to `account`. If `account` had not been already granted `role`, emits a {RoleGranted} event. Requirements: - the caller must have ``role``'s admin role. May emit a {RoleGranted} event."
+      },
+      "hasRole(bytes32,address)": {
+        "details": "Returns `true` if `account` has been granted `role`."
+      },
+      "initialize(address,address,uint8,uint8,uint80)": {
+        "params": {
+          "ownerAddress": "Address of the owner"
+        }
+      },
+      "isTee(address)": {
+        "params": {
+          "teeAddress": "The address to check"
+        },
+        "returns": {
+          "_0": "True if the address is a Tee, false otherwise"
+        }
+      },
+      "paused()": {
+        "details": "Returns true if the contract is paused, and false otherwise."
+      },
+      "removeJob(uint256)": {
+        "details": "Only the ComputeEngine contract can remove jobs from their TeePool.",
+        "params": {
+          "jobId": "The ID of the job to remove"
+        }
+      },
+      "removeTee(address)": {
+        "params": {
+          "teeAddress": "The address of the Tee"
+        }
+      },
+      "renounceRole(bytes32,address)": {
+        "details": "Revokes `role` from the calling account. Roles are often managed via {grantRole} and {revokeRole}: this function's purpose is to provide a mechanism for accounts to lose their privileges if they are compromised (such as when a trusted device is misplaced). If the calling account had been revoked `role`, emits a {RoleRevoked} event. Requirements: - the caller must be `callerConfirmation`. May emit a {RoleRevoked} event."
+      },
+      "revokeRole(bytes32,address)": {
+        "details": "Revokes `role` from `account`. If `account` had been granted `role`, emits a {RoleRevoked} event. Requirements: - the caller must have ``role``'s admin role. May emit a {RoleRevoked} event."
+      },
+      "submitJob(bytes)": {
+        "details": "Only the ComputeEngine contract can submit jobs to its TeePool.",
+        "params": {
+          "params": "The parameters for the job"
+        },
+        "returns": {
+          "_0": "The address of the Tee assigned to the job"
+        }
+      },
+      "supportsInterface(bytes4)": {
+        "details": "See {IERC165-supportsInterface}."
+      },
+      "teeList()": {
+        "returns": {
+          "_0": "The list of Tee addresses"
+        }
+      },
+      "teeListAt(uint256)": {
+        "params": {
+          "index": "The index of the Tee"
+        },
+        "returns": {
+          "_0": "The Tee info"
+        }
+      },
+      "tees(address)": {
+        "params": {
+          "teeAddress": "The address of the Tee"
+        },
+        "returns": {
+          "_0": "The Tee info"
+        }
+      },
+      "teesCount()": {
+        "returns": {
+          "_0": "The number of Tees"
+        }
+      },
+      "updateComputeEngine(address)": {
+        "params": {
+          "computeEngineAddress": "The new ComputeEngine contract address"
+        }
+      },
+      "updateMaxTimeout(uint80)": {
+        "params": {
+          "maxTimeout": "The new maximum timeout for a job"
+        }
+      },
+      "version()": {
+        "returns": {
+          "_0": "The version of the contract"
+        }
+      }
+    },
+    "version": 1
+  },
+  "userdoc": {
+    "kind": "user",
+    "methods": {
+      "activeTeeList()": {
+        "notice": "Returns the list of active Tee addresses"
+      },
+      "activeTeeListAt(uint256)": {
+        "notice": "Returns the Tee info for the active Tee at the given index"
+      },
+      "activeTeesCount()": {
+        "notice": "Returns the number of active Tees"
+      },
+      "addTee(address,bytes)": {
+        "notice": "Adds a Tee to the pool"
+      },
+      "computeEngine()": {
+        "notice": "Returns the ComputeEngine contract address"
+      },
+      "hardwareType()": {
+        "notice": "Returns the hardware type of the Tee pool"
+      },
+      "initialize(address,address,uint8,uint8,uint80)": {
+        "notice": "Initializes the contract"
+      },
+      "isTee(address)": {
+        "notice": "Checks if the given address is a Tee"
+      },
+      "maxTimeout()": {
+        "notice": "Returns the maximum timeout for a job"
+      },
+      "pause()": {
+        "notice": "Pauses the contract"
+      },
+      "removeJob(uint256)": {
+        "notice": "Removes a job in the pool"
+      },
+      "removeTee(address)": {
+        "notice": "Removes a Tee from the pool"
+      },
+      "submitJob(bytes)": {
+        "notice": "Submits a job to the pool"
+      },
+      "teeList()": {
+        "notice": "Returns the list of Tee addresses"
+      },
+      "teeListAt(uint256)": {
+        "notice": "Returns the Tee info for the Tee at the given index"
+      },
+      "tees(address)": {
+        "notice": "Returns the Tee info for the given address"
+      },
+      "teesCount()": {
+        "notice": "Returns the number of Tees"
+      },
+      "unpause()": {
+        "notice": "Unpauses the contract"
+      },
+      "updateComputeEngine(address)": {
+        "notice": "Updates the ComputeEngine contract address"
+      },
+      "updateMaxTimeout(uint80)": {
+        "notice": "Updates the maximum timeout for a job"
+      },
+      "version()": {
+        "notice": "Returns the version of the contract"
+      }
+    },
+    "version": 1
+  },
+  "storageLayout": {
+    "storage": [
+      {
+        "astId": 8778,
+        "contract": "contracts/computeEngineTeePool/ComputeEngineTeePoolImplementation.sol:ComputeEngineTeePoolImplementation",
+        "label": "teePoolType",
+        "offset": 0,
+        "slot": "0",
+        "type": "t_enum(TeePoolType)8821"
+      },
+      {
+        "astId": 8782,
+        "contract": "contracts/computeEngineTeePool/ComputeEngineTeePoolImplementation.sol:ComputeEngineTeePoolImplementation",
+        "label": "hardwareType",
+        "offset": 1,
+        "slot": "0",
+        "type": "t_enum(HardwareType)8825"
+      },
+      {
+        "astId": 8785,
+        "contract": "contracts/computeEngineTeePool/ComputeEngineTeePoolImplementation.sol:ComputeEngineTeePoolImplementation",
+        "label": "maxTimeout",
+        "offset": 2,
+        "slot": "0",
+        "type": "t_uint80"
+      },
+      {
+        "astId": 8788,
+        "contract": "contracts/computeEngineTeePool/ComputeEngineTeePoolImplementation.sol:ComputeEngineTeePoolImplementation",
+        "label": "computeEngine",
+        "offset": 12,
+        "slot": "0",
+        "type": "t_address"
+      },
+      {
+        "astId": 8791,
+        "contract": "contracts/computeEngineTeePool/ComputeEngineTeePoolImplementation.sol:ComputeEngineTeePoolImplementation",
+        "label": "_teeList",
+        "offset": 0,
+        "slot": "1",
+        "type": "t_struct(AddressSet)5936_storage"
+      },
+      {
+        "astId": 8794,
+        "contract": "contracts/computeEngineTeePool/ComputeEngineTeePoolImplementation.sol:ComputeEngineTeePoolImplementation",
+        "label": "_activeTeeList",
+        "offset": 0,
+        "slot": "3",
+        "type": "t_struct(AddressSet)5936_storage"
+      },
+      {
+        "astId": 8799,
+        "contract": "contracts/computeEngineTeePool/ComputeEngineTeePoolImplementation.sol:ComputeEngineTeePoolImplementation",
+        "label": "_tees",
+        "offset": 0,
+        "slot": "5",
+        "type": "t_mapping(t_address,t_struct(Tee)8840_storage)"
+      },
+      {
+        "astId": 8801,
+        "contract": "contracts/computeEngineTeePool/ComputeEngineTeePoolImplementation.sol:ComputeEngineTeePoolImplementation",
+        "label": "_jobsCount",
+        "offset": 0,
+        "slot": "6",
+        "type": "t_uint256"
+      },
+      {
+        "astId": 8806,
+        "contract": "contracts/computeEngineTeePool/ComputeEngineTeePoolImplementation.sol:ComputeEngineTeePoolImplementation",
+        "label": "_jobTee",
+        "offset": 0,
+        "slot": "7",
+        "type": "t_mapping(t_uint256,t_address)"
+      },
+      {
+        "astId": 8809,
+        "contract": "contracts/computeEngineTeePool/ComputeEngineTeePoolImplementation.sol:ComputeEngineTeePoolImplementation",
+        "label": "teePoolFactory",
+        "offset": 0,
+        "slot": "8",
+        "type": "t_address"
+      }
+    ],
+    "types": {
+      "t_address": {
+        "encoding": "inplace",
+        "label": "address",
+        "numberOfBytes": "20"
+      },
+      "t_array(t_bytes32)dyn_storage": {
+        "base": "t_bytes32",
+        "encoding": "dynamic_array",
+        "label": "bytes32[]",
+        "numberOfBytes": "32"
+      },
+      "t_bytes32": {
+        "encoding": "inplace",
+        "label": "bytes32",
+        "numberOfBytes": "32"
+      },
+      "t_enum(HardwareType)8825": {
+        "encoding": "inplace",
+        "label": "enum IComputeEngineTeePool.HardwareType",
+        "numberOfBytes": "1"
+      },
+      "t_enum(TeePoolType)8821": {
+        "encoding": "inplace",
+        "label": "enum IComputeEngineTeePool.TeePoolType",
+        "numberOfBytes": "1"
+      },
+      "t_enum(TeeStatus)8829": {
+        "encoding": "inplace",
+        "label": "enum IComputeEngineTeePool.TeeStatus",
+        "numberOfBytes": "1"
+      },
+      "t_mapping(t_address,t_struct(Tee)8840_storage)": {
+        "encoding": "mapping",
+        "key": "t_address",
+        "label": "mapping(address => struct IComputeEngineTeePool.Tee)",
+        "numberOfBytes": "32",
+        "value": "t_struct(Tee)8840_storage"
+      },
+      "t_mapping(t_bytes32,t_uint256)": {
+        "encoding": "mapping",
+        "key": "t_bytes32",
+        "label": "mapping(bytes32 => uint256)",
+        "numberOfBytes": "32",
+        "value": "t_uint256"
+      },
+      "t_mapping(t_uint256,t_address)": {
+        "encoding": "mapping",
+        "key": "t_uint256",
+        "label": "mapping(uint256 => address)",
+        "numberOfBytes": "32",
+        "value": "t_address"
+      },
+      "t_string_storage": {
+        "encoding": "bytes",
+        "label": "string",
+        "numberOfBytes": "32"
+      },
+      "t_struct(AddressSet)5936_storage": {
+        "encoding": "inplace",
+        "label": "struct EnumerableSet.AddressSet",
+        "members": [
+          {
+            "astId": 5935,
+            "contract": "contracts/computeEngineTeePool/ComputeEngineTeePoolImplementation.sol:ComputeEngineTeePoolImplementation",
+            "label": "_inner",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_struct(Set)5621_storage"
+          }
+        ],
+        "numberOfBytes": "64"
+      },
+      "t_struct(Set)5621_storage": {
+        "encoding": "inplace",
+        "label": "struct EnumerableSet.Set",
+        "members": [
+          {
+            "astId": 5616,
+            "contract": "contracts/computeEngineTeePool/ComputeEngineTeePoolImplementation.sol:ComputeEngineTeePoolImplementation",
+            "label": "_values",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_array(t_bytes32)dyn_storage"
+          },
+          {
+            "astId": 5620,
+            "contract": "contracts/computeEngineTeePool/ComputeEngineTeePoolImplementation.sol:ComputeEngineTeePoolImplementation",
+            "label": "_positions",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_mapping(t_bytes32,t_uint256)"
+          }
+        ],
+        "numberOfBytes": "64"
+      },
+      "t_struct(Tee)8840_storage": {
+        "encoding": "inplace",
+        "label": "struct IComputeEngineTeePool.Tee",
+        "members": [
+          {
+            "astId": 8831,
+            "contract": "contracts/computeEngineTeePool/ComputeEngineTeePoolImplementation.sol:ComputeEngineTeePoolImplementation",
+            "label": "url",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_string_storage"
+          },
+          {
+            "astId": 8834,
+            "contract": "contracts/computeEngineTeePool/ComputeEngineTeePoolImplementation.sol:ComputeEngineTeePoolImplementation",
+            "label": "status",
+            "offset": 0,
+            "slot": "1",
+            "type": "t_enum(TeeStatus)8829"
+          },
+          {
+            "astId": 8837,
+            "contract": "contracts/computeEngineTeePool/ComputeEngineTeePoolImplementation.sol:ComputeEngineTeePoolImplementation",
+            "label": "jobIdsList",
+            "offset": 0,
+            "slot": "2",
+            "type": "t_struct(UintSet)6093_storage"
+          },
+          {
+            "astId": 8839,
+            "contract": "contracts/computeEngineTeePool/ComputeEngineTeePoolImplementation.sol:ComputeEngineTeePoolImplementation",
+            "label": "publicKey",
+            "offset": 0,
+            "slot": "4",
+            "type": "t_string_storage"
+          }
+        ],
+        "numberOfBytes": "160"
+      },
+      "t_struct(UintSet)6093_storage": {
+        "encoding": "inplace",
+        "label": "struct EnumerableSet.UintSet",
+        "members": [
+          {
+            "astId": 6092,
+            "contract": "contracts/computeEngineTeePool/ComputeEngineTeePoolImplementation.sol:ComputeEngineTeePoolImplementation",
+            "label": "_inner",
+            "offset": 0,
+            "slot": "0",
+            "type": "t_struct(Set)5621_storage"
+          }
+        ],
+        "numberOfBytes": "64"
+      },
+      "t_uint256": {
+        "encoding": "inplace",
+        "label": "uint256",
+        "numberOfBytes": "32"
+      },
+      "t_uint80": {
+        "encoding": "inplace",
+        "label": "uint80",
+        "numberOfBytes": "10"
+      }
+    }
+  }
+}
