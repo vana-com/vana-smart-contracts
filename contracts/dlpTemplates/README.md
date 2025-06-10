@@ -1,0 +1,419 @@
+# DLP Templates Contracts
+
+This folder contains the essential smart contract templates that DataDAO creators must deploy to launch their own Data Liquidity Pools (DLPs) within the Vana ecosystem. These templates provide the foundational implementations for creating DataDAOs - collectively governed datasets that aggregate, verify, and monetize individual user data while maintaining user ownership and control through cryptographic mechanisms.
+
+## Quick Start: Launch a DataDAO in 30 Minutes
+
+This guide walks you through the minimum steps needed to spin up a working DataDAO on the **Moksha Testnet**. For the complete guide, see [Create a DataDAO](https://docs.vana.org/docs/quick-start-create-a-datadao). For support and questions, join the [Vana Builders Discord](https://discord.gg/vana) to connect with other developers.
+
+### What You'll Build
+
+| Component | Purpose |
+|-----------|---------|
+| VRC-20 Token Contract | Represents dataset value for trading and rewards |
+| DataDAO Contract | Manages data uploads and interactions onchain |
+| Proof-of-Contribution (PoC) | Validates data authenticity using the Satya network |
+| Refiner + Schema | Structures data for querying, ensuring VRC-15 compliance |
+| Contributor UI | A React app for contributing the data |
+
+### Prerequisites
+
+Install and configure these tools. Use [Moksha Faucet](https://faucet.vana.org) to cover gas fees.
+
+| Tool | Version | Install Instructions |
+|------|---------|---------------------|
+| Node.js | 20+ | `brew install node` or [Node.js](https://nodejs.org) |
+| Docker | Latest | [Docker Desktop](https://docker.com) |
+| Python | 3+ | `brew install python` or [Python](https://python.org) |
+| Poetry | Latest | `pip install poetry` or [Poetry](https://python-poetry.org) |
+| GitHub Account | - | [Sign up →](https://github.com) |
+| Pinata Account | - | [Sign up →](https://pinata.cloud) |
+
+### Add Vana Testnet to Your Wallet
+
+To use the Vana testnet (Moksha) from the browser, add it to your wallet (MetaMask, Rabby, etc.):
+
+```
+Network Name:  Vana Moksha
+RPC URL:       https://rpc.moksha.vana.org
+Chain ID:      14800
+Currency:      VANA
+Explorer:      https://moksha.vanascan.io
+```
+
+### Create a Vana Wallet
+
+For this guide, you'll need a wallet with access to the `address`, `private_key`, and `public_key` to manage your DataDAO. We recommend creating a fresh wallet to keep things clean and secure.
+
+**Quick Wallet Setup (Testnet Only):**
+1. Go to https://privatekeys.pw/keys/ethereum/random
+2. Pick any random key from the list
+3. Copy the:
+    - **Private key** (62-64 characters)
+    - **Address** (40-42 characters with 0x prefix)
+    - **Uncompressed public key** (128-132 characters, from "Public Keys" tab)
+
+**⚠️ Security Note:** This method is for testing only. For production, use a securely generated wallet from Vana CLI, hardware wallet, or trusted EVM-compatible tool.
+
+**Import into MetaMask:**
+1. Click your account name → **Add Account** → **Private Key**
+2. Paste the private key
+
+**Import into Rabby:**
+1. Click your address → **Add New Address** → **Import Private Key**
+2. Paste the same private key
+
+### Fund Your Wallet with Testnet $VANA
+
+1. Go to the [Vana Faucet](https://faucet.vana.org)
+2. Paste your `address` into the input field
+3. Click **"Follow us on X"** to unlock the faucet
+4. Pass the CAPTCHA and click **"Get 10 $VANA"**
+
+**Confirm your balance:**
+1. Visit [moksha.vanascan.io](https://moksha.vanascan.io)
+2. Paste your address into the search bar
+3. Within ~1-2 minutes, you should see your balance update
+4. Open the **"Internal Transactions"** tab to view the faucet transfer
+
+💡 **Tip:** The faucet may take up to five minutes to send $VANA to your wallet.
+
+### 1. Deploy Smart Contracts
+
+Set up and deploy your DataDAO's smart contracts on the Moksha Testnet. For the complete deployment guide, see [Deploy Smart Contracts](https://docs.vana.org/docs/2-register-datadao).
+
+**Clone and Install:**
+```bash
+git clone https://github.com/vana-com/vana-smart-contracts.git
+cd vana-smart-contracts
+git fetch origin develop
+git checkout develop
+npm install
+cp .env.example .env
+```
+
+📘 **Tip:** The `develop` branch contains the first implementation of VRC-20 standard. It's currently undergoing audit and will be merged into the main branch soon.
+
+**Configure `.env`:**
+
+Edit `.env` with these **required** fields:
+
+```bash
+DEPLOYER_PRIVATE_KEY=...           # Your private_key from the previous step, 62-64 letters  
+OWNER_ADDRESS=0x...                # Your wallet address from the previous step, 40-42 letters
+DLP_NAME=QuickstartDAO             # Name of your DataDAO
+DLP_PUBLIC_KEY=045...              # Your wallet public_key from the previous step, 128-132 letters 
+DLP_TOKEN_NAME=QuickToken          # Token name
+DLP_TOKEN_SYMBOL=QTKN              # Token symbol 
+```
+
+🚧 **Security Note:** `.env` files contain sensitive keys. Do **not** commit this file to Git or share it — anyone with access to your `DEPLOYER_PRIVATE_KEY` can take control of your contracts.
+
+**Example Values (Format Reference Only):**
+```bash
+DEPLOYER_PRIVATE_KEY=48fe86dc5053bf2c6004a24c0965bd2142fe921a074ffe93b440f0ada662d16d
+OWNER_ADDRESS=0x18781A2B6B843E0BBe4F491B28139abb6942d785
+DLP_PUBLIC_KEY=04920ff366433d60fcebfa9d072d860e6fd7a482e4c055621ef986025076c9fb6418c15712a22bff61a3add75b645345c7c338f19a8ab0d1a3ac6be1be331eac45
+```
+
+You can leave other fields (e.g., `DLP_PROOF_INSTRUCTION`, `DLP_FILE_REWARD_FACTOR`) as defaults for testing.
+
+**Deploy to Moksha Testnet:**
+
+The repository contains many smart contracts used across the Vana ecosystem. The `DLPDeploy` tag deploys only the contracts required to launch your DataDAO:
+
+```bash
+npx hardhat deploy --network moksha --tags DLPDeploy
+```
+
+After deployment, **save these critical addresses** from the output logs:
+- `Token Address` - Your VRC-20 token contract
+- `DataLiquidityPoolProxy` - Your main DLP contract
+- `Vesting Wallet Address` - Team token vesting contract
+
+You may see error logs related to contract verification. **You can safely ignore those messages** - all contracts will be verified onchain.
+
+**View Your Contracts on Vanascan:**
+
+Visit [moksha.vanascan.io](https://moksha.vanascan.io) and search for each contract address:
+- Your **token contract** shows metadata, total supply, and recent token transfers
+- Your **DataLiquidityPoolProxy** contract has methods viewable in the **Contract** tab
+- Your **VestingWallet** contains the vesting schedule and logic for team token allocation
+
+### 2. Register DataDAO
+
+Now that you've deployed your smart contracts, register your DataDAO onchain in the global DLP registry. For the complete registration guide, see [Register DataDAO](https://docs.vana.org/docs/2-register-datadao).
+
+**Register via DLPRegistryProxy:**
+
+1. Navigate to the `registerDlp` method in DLPRegistryProxy on [Vanascan](https://moksha.vanascan.io)
+2. Fill in the `registrationInfo` fields:
+    - `dlpAddress`: The `DataLiquidityPoolProxy` address you saved from deployment
+    - `ownerAddress`: Your wallet address
+    - `treasuryAddress`: A separate wallet for DLP treasury (can be same as `ownerAddress` for testing)
+    - `name`: The `DLP_NAME` you chose (e.g., "QuickstartDAO") - **must be unique**
+    - `iconUrl`: Optional logo URL (e.g., `https://example.com/icon.png`)
+    - `website`: Optional project link (e.g., `https://example.com`)
+    - `metadata`: Optional JSON (e.g., `{"description": "Test DLP"}`)
+
+3. Fill in `Send native VANA (uint256)`:
+    - Click the `×10^18` button to set 1 VANA (in wei) - **required deposit**
+
+4. Connect your wallet (`OWNER_ADDRESS`) to Vanascan and submit the transaction
+
+5. **Retrieve your `dlpId`:**
+    - Go to the `dlpIds` method in the DLPRegistryProxy contract
+    - Use your `dlpAddress` to query your dlpId from the blockchain
+
+🚧 **Tip:** You can update your registration info later using the `updateDlp` function. All metadata is editable.
+
+## System Architecture
+
+### What is a DataDAO?
+
+DataDAOs are collectively governed datasets that aggregate and verify individual user data, transforming it from isolated information into valuable, liquid assets. They address fundamental challenges in the data economy:
+
+**The Aggregation Challenge:** Individual user data isn't useful on its own - it must be pooled to be valuable for AI training and other applications. While centralized platforms can aggregate user data, DataDAOs enable users to export their data and pool it collectively while maintaining ownership through cryptographic mechanisms.
+
+**Core Problems Solved:**
+- **Sybil Resistance**: Proof-of-contribution prevents users from creating fake identities to manipulate datasets
+- **Data Valuation**: Dataset-specific validation logic verifies authenticity and assigns value scores to map heterogeneous data contributions to standardized tokens
+
+### Core Components
+
+**Data Liquidity Pool (DLP)** - Smart contracts containing:
+- Proof-of-contribution validators that verify data authenticity and assign value scores
+- Refinement structures that process raw data into queryable formats
+- Access control contracts that enforce data token-gated permissions
+
+**VRC-20 Token Economics** - Dataset-specific tokens earned for validated contributions and burned for access, with ERC-20 compatibility enabling programmable economic logic
+
+**Governance Layer** - Token-weighted decisions on validation criteria, economic parameters, and access policies
+
+### Technical Flow
+
+1. **Data Contribution**: User contributes data → DLP validates and refines → user earns VRC-20 tokens
+2. **Data Access**: AI builder burns VANA + VRC-20 tokens → access granted to TEE environment
+3. **Secure Computation**: TEE runtime enforces DataDAO permissions during computation (only approved code runs)
+4. **Value Distribution**: Value flows to token holders based on ownership stake and actual data usage
+
+### Key Properties
+
+- **Programmable Validation**: Executable proof-of-contribution scripts ensure data quality
+- **Cryptographic Attribution**: Tokens are cryptographically linked to wallet contributions
+- **Granular Access Control**: TEE-level enforcement of DataDAO-defined permissions
+- **Democratic Governance**: Token-weighted governance proportional to contribution volume
+
+## Contract Templates
+
+### dat/ - DAT Token Implementation
+
+Contains the VRC-20 compliant token contract that represents ownership and governance rights within a DataDAO:
+
+**Core Features:**
+- **ERC-20 Compatibility**: Standard token functionality with additional governance features
+- **Governance Rights**: ERC20Votes integration for on-chain voting capabilities
+- **Permit Support**: ERC20Permit for gasless approvals and improved UX
+- **Minting Control**: Customizable minting permissions and supply management
+- **Access Controls**: Admin roles and address blocking capabilities
+
+**Token Economics:**
+- Earned by data contributors for validated submissions
+- Burned by data consumers for access rights
+- Used for governance voting on DataDAO parameters
+- Represents proportional ownership in the dataset's value
+
+**Customization Options:**
+- Token name, symbol, and initial supply
+- Minting rules and supply caps
+- Vesting schedules for team allocations
+- Transfer fees and trading restrictions
+
+### dlp/ - Data Liquidity Pool Implementation
+
+Contains the core DLP contract that manages data validation, contributor rewards, and access control:
+
+**Validator Management:**
+- **Registration System**: Secure validator onboarding with staking requirements
+- **Approval Process**: DataDAO owner controls which validators can participate
+- **Performance Tracking**: Nagoya consensus mechanism for validator scoring
+- **Reward Distribution**: Automated reward allocation based on validation quality
+
+**Data Processing Pipeline:**
+- **Proof-of-Contribution**: Customizable validation logic for different data types
+- **Quality Scoring**: Algorithmic assessment of data value and authenticity
+- **Refinement Processing**: Transformation of raw data into structured, queryable formats
+- **Access Control**: Token-gated permissions for data consumption
+
+**Economic Mechanisms:**
+- **Contributor Rewards**: Flexible reward structures based on data quality and usage
+- **Validator Incentives**: Performance-based compensation for validation services
+- **Fee Management**: Configurable fees for data access and validation services
+- **Treasury Operations**: Automated fund management and distribution
+
+**Governance Integration:**
+- **Parameter Control**: Community governance over validation criteria and rewards
+- **Upgrade Mechanisms**: Safe contract upgrades with proper governance oversight
+- **Emergency Controls**: Pause functionality for security incidents
+- **Transparency Tools**: Comprehensive event logging and reporting
+
+## Integration Requirements
+
+### VRC Compliance
+
+All DataDAOs must comply with Vana Request for Comments (VRC) standards:
+
+**VRC-14 (Rewards Model):**
+- Performance tracking and reward distribution mechanisms
+- Integration with Vana's epoch-based reward system
+- Compliance with performance metrics for reward eligibility
+
+**VRC-15 (Data Access):**
+- Encrypted data storage with secure access controls
+- TEE-compatible data refinement and processing
+- Verified query permissions and access logging
+
+**VRC-20 (Token Standards):**
+- ERC-20 compatibility with governance extensions
+- Supply caps, vesting requirements, and transfer restrictions
+- 48-hour timelocks for major contract changes
+
+### Core Contract Integration
+
+**DataRegistry Integration:**
+- File registration and metadata management
+- Proof storage and attestation handling
+- Cross-reference with validator assessments
+
+**TEE Pool Integration:**
+- Secure data validation through trusted execution environments
+- Privacy-preserving computation and analysis
+- Cryptographic proof generation and verification
+
+**Root Network Integration:**
+- DataDAO registration and reward eligibility
+- Performance metrics submission and tracking
+- Reward distribution and treasury management
+
+## Economic Model
+
+### Revenue Streams
+
+**Data Access Fees:**
+- Primary revenue from AI companies and researchers
+- Tiered pricing based on data quality and exclusivity
+- Subscription models for ongoing data access
+
+**Token Appreciation:**
+- Market-driven token value based on dataset utility
+- Deflationary mechanisms through token burning
+- Liquidity provision rewards and trading fees
+
+### Reward Distribution
+
+**Contributors:**
+- Proportional rewards based on data quality scores
+- Governance tokens for ecosystem participation
+- Long-term value appreciation through token holdings
+
+**Validators:**
+- Performance-based compensation through Nagoya consensus
+- Staking rewards for maintaining network security
+- Fee sharing from successful data validations
+
+**DataDAO Treasury:**
+- Operational funding for continued development
+- Marketing and user acquisition budgets
+- Reserve funds for ecosystem stability
+
+## Security Considerations
+
+### Smart Contract Security
+
+**Access Controls:**
+- Role-based permissions for critical functions
+- Multi-signature requirements for treasury operations
+- Time-locked upgrades for major changes
+
+**Economic Security:**
+- Slashing conditions for malicious validators
+- Sybil resistance through proof-of-contribution
+- Market manipulation protections
+
+### Data Security
+
+**Privacy Protection:**
+- End-to-end encryption for sensitive data
+- TEE-based computation without data exposure
+- User-controlled access permissions
+
+**Validation Security:**
+- Cryptographic proofs for data authenticity
+- Consensus mechanisms for validator agreement
+- Audit trails for all data operations
+
+## Governance Framework
+
+### Decision-Making Process
+
+**Proposal Submission:**
+- Token holders can propose parameter changes
+- Minimum token threshold for proposal creation
+- Community discussion and feedback periods
+
+**Voting Mechanisms:**
+- Token-weighted voting on governance proposals
+- Quorum requirements for proposal validity
+- Time-locked implementation of approved changes
+
+**Parameter Governance:**
+- Validation criteria and quality thresholds
+- Reward distribution percentages and mechanisms
+- Access fees and pricing structures
+
+### Community Management
+
+**Stakeholder Coordination:**
+- Regular community calls and updates
+- Transparent reporting on DataDAO performance
+- Conflict resolution mechanisms
+
+**Ecosystem Alignment:**
+- Coordination with other DataDAOs
+- Integration with Vana ecosystem developments
+- Compliance with evolving VRC standards
+
+## Future Enhancements
+
+### Planned Features
+
+**Advanced Validation:**
+- AI-powered data quality assessment
+- Cross-DataDAO validation and verification
+- Automated anomaly detection and reporting
+
+**Enhanced Economics:**
+- Dynamic pricing based on market demand
+- Yield farming and liquidity mining programs
+- Cross-chain token bridges and integrations
+
+**Governance Evolution:**
+- Delegation mechanisms for token holders
+- Specialized working groups for technical decisions
+- Integration with broader Vana DAO governance
+
+### Ecosystem Integration
+
+**DeFi Integration:**
+- Use of DataDAO tokens as collateral
+- Yield-bearing strategies for idle tokens
+- Integration with lending and borrowing protocols
+
+**AI Marketplace:**
+- Direct integration with AI training platforms
+- Automated licensing and usage tracking
+- Revenue sharing with AI model creators
+
+---
+
+For detailed technical documentation, deployment guides, and community support, refer to the [Vana Developer Documentation](https://docs.vana.org) or join the [Vana Builders Discord](https://discord.gg/vana) for assistance with DataDAO creation and management.
