@@ -10,12 +10,13 @@ import IUniswapV3Pool from '@uniswap/v3-core/artifacts/contracts/interfaces/IUni
 import IWVANA from '@uniswap/v3-periphery/artifacts/contracts/interfaces/external/IWETH9.sol/IWETH9.json';
 import ERC20 from '@openzeppelin/contracts/build/contracts/ERC20.json';
 
-import { SwapHelperImplementation } from "../../typechain-types";
+import { SwapHelperImplementation, DLPRegistryImplementation } from "../../typechain-types";
 
 import { sendTransaction } from '../utils/sendTransaction';
 
 import * as dotenv from "dotenv";
 import * as path from 'path';
+import { dlp } from "../../typechain-types/contracts/dlpTemplates";
 dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 const MINTABLE_ERC20_ABI = [
@@ -111,6 +112,12 @@ async function main() {
             process.env.SWAP_HELPER_ADDRESS!,
         );
 
+        const dlpRegistry: DLPRegistryImplementation = await ethers.getContractAt(
+            "DLPRegistryImplementation",
+            process.env.DLP_REGISTRY_ADDRESS!,
+        );
+        console.log("ℹ️ DLP Registry Address:", dlpRegistry.target);
+
         console.log("⏳ Swap for DLP token...");
         const quote = await swapHelper.quoteExactInputSingle.staticCall({
             tokenIn: WVANA.target,
@@ -166,7 +173,7 @@ async function main() {
         //         deadline: Math.floor(Date.now() / 1000) + 60 * 10,
         //     });
         console.log("⏳ Minting position...");
-        await sendTransaction(
+        const txReceipt = await sendTransaction(
             positionManager,
             "mint",
             [
@@ -186,6 +193,39 @@ async function main() {
             ],
             signer,
         );
+
+        // Parse IncreaseLiquidity event from receipt
+        const iface = new ethers.Interface(INonfungiblePositionManager.abi);
+        const increaseLiquidityEvents = txReceipt.logs
+            .map(log => {
+                try {
+                    return iface.parseLog(log);
+                } catch {
+                    return null;
+                }
+            })
+            .filter(event => event && event.name === "IncreaseLiquidity");
+
+        if (increaseLiquidityEvents.length > 0) {
+            const event = increaseLiquidityEvents[0]!;
+            const tokenId = event.args.tokenId;
+            console.log("✅ IncreaseLiquidity event:", event.args);
+            console.log("ℹ️ Minted tokenId:", tokenId.toString());
+            
+            const dlpId = process.env.DLP_ID!;
+            console.log("ℹ️ DLP ID:", dlpId);
+
+            await dlpRegistry.connect(signer).updateDlpTokenAndVerification(
+                dlpId,
+                dlpTokenAddress,
+                tokenId,
+                true, // isVerified
+            );
+            console.log("✅ DLP token and verification updated in registry.");
+        } else {
+            console.log("No IncreaseLiquidity event found.");
+        }
+
     } catch (error) {
         console.error("Error in main function:", error);
         return;

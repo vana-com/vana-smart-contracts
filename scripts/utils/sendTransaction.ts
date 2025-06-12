@@ -19,7 +19,7 @@ export async function sendTransaction(
     args: any[],
     signer: any,
     value?: any,
-) {
+): Promise<EthersNamespace.ContractTransactionReceipt> {
     // Fetch the current fee data for EIP-1559 transactions
     const feeData = await ethers.provider.getFeeData();
 
@@ -32,7 +32,7 @@ export async function sendTransaction(
         maxFeePerGas: maxFeePerGas,
         maxPriorityFeePerGas: maxPriorityFeePerGas,
     });
-    await waitForTransaction(tx);
+    return waitForTransaction(tx);
 }
 
 /**
