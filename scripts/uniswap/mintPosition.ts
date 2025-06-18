@@ -187,7 +187,7 @@ async function main() {
                     amount1Desired: token1Amount,
                     amount0Min: 0,
                     amount1Min: 0,
-                    recipient: process.env.RECIPIENT_ADDRESS || signer.address,
+                    recipient: process.env.POSITION_RECIPIENT_ADDRESS || signer.address,
                     deadline: Math.floor(Date.now() / 1000) + 60 * 10,
                 },
             ],
