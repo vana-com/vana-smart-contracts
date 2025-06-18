@@ -344,7 +344,7 @@ contract QueryEngineImplementation is
         _requestPayment(VANA, amount, metadata);
     }
 
-    function requestPayment(
+    function requestPaymentInToken(
         address token,
         uint256 amount,
         uint256 jobId,
