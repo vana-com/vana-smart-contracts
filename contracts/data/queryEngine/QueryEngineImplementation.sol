@@ -39,6 +39,7 @@ contract QueryEngineImplementation is
         uint256 indexed refinerId,
         string tableName,
         string columnName,
+        address tokenAddress,
         uint256 price
     );
 
@@ -184,9 +185,10 @@ contract QueryEngineImplementation is
         uint256 refinerId,
         string calldata tableName,
         string calldata columnName,
+        address tokenAddress,
         uint256 price
     ) external override returns (uint256 permissionId) {
-        return _addPermission(grantee, refinerId, tableName, columnName, price);
+        return _addPermission(grantee, refinerId, tableName, columnName, tokenAddress, price);
     }
 
     /// @inheritdoc IQueryEngine
@@ -194,9 +196,10 @@ contract QueryEngineImplementation is
         uint256 refinerId,
         string calldata tableName,
         string calldata columnName,
+        address tokenAddress,
         uint256 price
     ) external override returns (uint256 permissionId) {
-        return _addPermission(address(0), refinerId, tableName, columnName, price);
+        return _addPermission(address(0), refinerId, tableName, columnName, tokenAddress, price);
     }
 
     /// @notice Adds a permission to the contract
@@ -204,6 +207,7 @@ contract QueryEngineImplementation is
     /// @param refinerId The id of the refiner
     /// @param tableName The name of the table
     /// @param columnName The name of the column
+    /// @param tokenAddress The address of the token used for payment. If the address is 0, VANA is used
     /// @param price The price of data access under the permission
     /// @return permissionId The id of the permission
     function _addPermission(
@@ -211,6 +215,7 @@ contract QueryEngineImplementation is
         uint256 refinerId,
         string calldata tableName,
         string calldata columnName,
+        address tokenAddress,
         uint256 price
     ) internal onlyRefinerOwner(refinerId) whenNotPaused returns (uint256 permissionId) {
         if (bytes(tableName).length == 0 && bytes(columnName).length > 0) {
@@ -225,11 +230,12 @@ contract QueryEngineImplementation is
         permission.tableName = tableName;
         permission.columnName = columnName;
         permission.approved = true;
+        permission.tokenAddress = tokenAddress;
         permission.price = price;
 
         _approvedPermissions[refinerId][grantee].add(permissionId);
 
-        emit PermissionAdded(permissionId, grantee, refinerId, tableName, columnName, price);
+        emit PermissionAdded(permissionId, grantee, refinerId, tableName, columnName, tokenAddress, price);
     }
 
     /// @inheritdoc IQueryEngine
@@ -293,6 +299,7 @@ contract QueryEngineImplementation is
                 refinerId: permission.refinerId,
                 tableName: permission.tableName,
                 columnName: permission.columnName,
+                tokenAddress: permission.tokenAddress,
                 price: permission.price
             });
             unchecked {
@@ -312,6 +319,7 @@ contract QueryEngineImplementation is
                 refinerId: permission.refinerId,
                 tableName: permission.tableName,
                 columnName: permission.columnName,
+                tokenAddress: permission.tokenAddress,
                 price: permission.price
             });
             unchecked {
@@ -334,6 +342,16 @@ contract QueryEngineImplementation is
     ) external nonReentrant onlyRole(QUERY_ENGINE_ROLE) {
         bytes memory metadata = abi.encode(jobId, refinerId);
         _requestPayment(VANA, amount, metadata);
+    }
+
+    function requestPayment(
+        address token,
+        uint256 amount,
+        uint256 jobId,
+        uint256 refinerId
+    ) external nonReentrant onlyRole(QUERY_ENGINE_ROLE) {
+        bytes memory metadata = abi.encode(jobId, refinerId);
+        _requestPayment(token, amount, metadata);
     }
 
     function requestPayment(
