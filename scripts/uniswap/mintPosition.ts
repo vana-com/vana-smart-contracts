@@ -16,7 +16,7 @@ import { sendTransaction } from '../utils/sendTransaction';
 
 import * as dotenv from "dotenv";
 import * as path from 'path';
-import { dlp } from "../../typechain-types/contracts/dlpTemplates";
+
 dotenv.config({ path: path.resolve(__dirname, '.env') });
 
 const MINTABLE_ERC20_ABI = [
