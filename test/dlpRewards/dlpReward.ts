@@ -450,8 +450,8 @@ describe("DLP System Tests", () => {
         .connect(maintainer)
         .updateDlpToken(2, token2.address, 2);
 
-      await dlpRegistry.connect(maintainer).updateDlpVerification(1, true);
-      await dlpRegistry.connect(maintainer).updateDlpVerification(2, true);
+      await dlpRegistry.connect(maintainer).updateDlpVerification(1, 1);
+      await dlpRegistry.connect(maintainer).updateDlpVerification(2, 1);
 
       // Create epoch
       await vanaEpoch.connect(user1).createEpochs();
@@ -718,8 +718,8 @@ describe("DLP System Tests", () => {
       await dlpRegistry
         .connect(maintainer)
         .updateDlpToken(2, token2.address, 2);
-      await dlpRegistry.connect(maintainer).updateDlpVerification(1, true);
-      await dlpRegistry.connect(maintainer).updateDlpVerification(2, true);
+      await dlpRegistry.connect(maintainer).updateDlpVerification(1, 1);
+      await dlpRegistry.connect(maintainer).updateDlpVerification(2, 1);
     });
 
     it("should handle full epoch and performance flow", async function () {
@@ -886,7 +886,7 @@ describe("DLP System Tests", () => {
       dlp1.website.should.eq(dlp1Info.website);
       dlp1.metadata.should.eq(dlp1Info.metadata);
       dlp1.status.should.eq(DlpStatus.Registered);
-      dlp1.isVerified.should.eq(false);
+      dlp1.verificationBlockNumber.should.eq(0);
       dlp1.registrationBlockNumber.should.eq(blockNumber + 1);
 
       (await dlpRegistry.dlpsByAddress(dlp1Info.dlpAddress)).should.deep.eq(
@@ -1071,14 +1071,14 @@ describe("DLP System Tests", () => {
       // Verify DLP
       await dlpRegistry
         .connect(maintainer)
-        .updateDlpVerification(1, true)
-        .should.emit(dlpRegistry, "DlpVerificationUpdated")
-        .withArgs(1, true)
+        .updateDlpVerification(1, 123)
+        .should.emit(dlpRegistry, "DlpVerificationBlockUpdated")
+        .withArgs(1, 123)
         .and.emit(dlpRegistry, "DlpStatusUpdated")
         .withArgs(1, DlpStatus.Eligible);
 
       let dlp1 = await dlpRegistry.dlps(1);
-      dlp1.isVerified.should.eq(true);
+      dlp1.verificationBlockNumber.should.eq(123);
       dlp1.status.should.eq(DlpStatus.Eligible);
 
       // Should be in eligible list
@@ -1089,14 +1089,14 @@ describe("DLP System Tests", () => {
       // Remove verification
       await dlpRegistry
         .connect(maintainer)
-        .updateDlpVerification(1, false)
-        .should.emit(dlpRegistry, "DlpVerificationUpdated")
-        .withArgs(1, false)
+        .updateDlpVerification(1, 0)
+        .should.emit(dlpRegistry, "DlpVerificationBlockUpdated")
+        .withArgs(1, 0)
         .and.emit(dlpRegistry, "DlpStatusUpdated")
         .withArgs(1, DlpStatus.Registered);
 
       dlp1 = await dlpRegistry.dlps(1);
-      dlp1.isVerified.should.eq(false);
+      dlp1.verificationBlockNumber.should.eq(0);
       dlp1.status.should.eq(DlpStatus.Registered);
 
       // Should not be in eligible list
@@ -1261,8 +1261,8 @@ describe("DLP System Tests", () => {
       await dlpRegistry
         .connect(maintainer)
         .updateDlpToken(2, token2.address, 2);
-      await dlpRegistry.connect(maintainer).updateDlpVerification(1, true);
-      await dlpRegistry.connect(maintainer).updateDlpVerification(2, true);
+      await dlpRegistry.connect(maintainer).updateDlpVerification(1, 1);
+      await dlpRegistry.connect(maintainer).updateDlpVerification(2, 1);
 
       // 3. Create first epoch
       await vanaEpoch.connect(user1).createEpochs();
@@ -1334,8 +1334,8 @@ describe("DLP System Tests", () => {
       await dlpRegistry
         .connect(maintainer)
         .updateDlpToken(2, token2.address, 2);
-      await dlpRegistry.connect(maintainer).updateDlpVerification(1, true);
-      await dlpRegistry.connect(maintainer).updateDlpVerification(2, true);
+      await dlpRegistry.connect(maintainer).updateDlpVerification(1, 1);
+      await dlpRegistry.connect(maintainer).updateDlpVerification(2, 1);
 
       // 3. Create first epoch
       await vanaEpoch.connect(user1).createEpochs();
@@ -1428,8 +1428,8 @@ describe("DLP System Tests", () => {
         .connect(maintainer)
         .updateDlpToken(2, token2.address, 2);
 
-      await dlpRegistry.connect(maintainer).updateDlpVerification(1, true);
-      await dlpRegistry.connect(maintainer).updateDlpVerification(2, true);
+      await dlpRegistry.connect(maintainer).updateDlpVerification(1, 1);
+      await dlpRegistry.connect(maintainer).updateDlpVerification(2, 1);
     });
 
     it("should updateTreasury when maintainer", async function () {

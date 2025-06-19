@@ -6,9 +6,8 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "./interfaces/DLPRegistryStorageV1.sol";
-import {IDLPRootCore} from "./interfaces/IDLPRootCore.sol";
 
-contract DLPRegistryImplementation is
+contract DLPRegistryImplementationOld is
     UUPSUpgradeable,
     PausableUpgradeable,
     AccessControlUpgradeable,
@@ -45,7 +44,7 @@ contract DLPRegistryImplementation is
     );
 
     event DlpStatusUpdated(uint256 indexed dlpId, DlpStatus newStatus);
-    event DlpVerificationBlockUpdated(uint256 indexed dlpId, uint256 verificationBlockNumber);
+    event DlpVerificationUpdated(uint256 indexed dlpId, bool verified);
     event DlpRegistrationDepositAmountUpdated(uint256 newDlpRegistrationDepositAmount);
     event DlpTokenUpdated(uint256 indexed dlpId, address tokenAddress);
     event DlpLpTokenIdUpdated(uint256 indexed dlpId, uint256 lpTokenId);
@@ -110,7 +109,7 @@ contract DLPRegistryImplementation is
                 registrationBlockNumber: dlp.registrationBlockNumber,
                 depositAmount: dlp.depositAmount,
                 lpTokenId: dlp.lpTokenId,
-                verificationBlockNumber: dlp.verificationBlockNumber
+                isVerified: dlp.isVerified
             });
     }
 
@@ -164,14 +163,11 @@ contract DLPRegistryImplementation is
         _registerDlp(registrationInfo);
     }
 
-    function updateDlpVerification(
-        uint256 dlpId,
-        uint256 verificationBlockNumber
-    ) external override onlyRole(MAINTAINER_ROLE) {
+    function updateDlpVerification(uint256 dlpId, bool isVerify) external override onlyRole(MAINTAINER_ROLE) {
         Dlp storage dlp = _dlps[dlpId];
 
-        dlp.verificationBlockNumber = verificationBlockNumber;
-        emit DlpVerificationBlockUpdated(dlpId, verificationBlockNumber);
+        dlp.isVerified = isVerify;
+        emit DlpVerificationUpdated(dlpId, isVerify);
 
         _setDlpEligibility(dlp);
     }
@@ -196,17 +192,17 @@ contract DLPRegistryImplementation is
         uint256 dlpId,
         address tokenAddress,
         uint256 lpTokenId,
-        uint256 verificationBlockNumber
+        bool isVerify
     ) external override onlyRole(MAINTAINER_ROLE) {
         Dlp storage dlp = _dlps[dlpId];
 
         dlp.tokenAddress = tokenAddress;
         dlp.lpTokenId = lpTokenId;
-        dlp.verificationBlockNumber = verificationBlockNumber;
+        dlp.isVerified = isVerify;
 
         emit DlpTokenUpdated(dlpId, tokenAddress);
         emit DlpLpTokenIdUpdated(dlpId, lpTokenId);
-        emit DlpVerificationBlockUpdated(dlpId, verificationBlockNumber);
+        emit DlpVerificationUpdated(dlpId, isVerify);
 
         _setDlpEligibility(dlp);
     }
@@ -355,55 +351,6 @@ contract DLPRegistryImplementation is
         return count > 3;
     }
 
-    function migrateDlpData(
-        address dlpRootCoreAddress,
-        uint256 startDlpId,
-        uint256 endDlpId
-    ) external onlyRole(MAINTAINER_ROLE) {
-        IDLPRootCore dlpRootCore = IDLPRootCore(dlpRootCoreAddress);
-
-        for (uint256 dlpId = startDlpId; dlpId <= endDlpId; ) {
-            IDLPRootCore.DlpInfo memory dlpInfo = dlpRootCore.dlps(dlpId);
-            Dlp storage dlp = _dlps[dlpId];
-
-            dlp.id = dlpInfo.id;
-            dlp.dlpAddress = dlpInfo.dlpAddress;
-            dlp.ownerAddress = dlpInfo.ownerAddress;
-            dlp.treasuryAddress = payable(dlpInfo.treasuryAddress);
-            dlp.name = dlpInfo.name;
-            dlp.iconUrl = dlpInfo.iconUrl;
-            dlp.website = dlpInfo.website;
-            dlp.metadata = dlpInfo.metadata;
-            dlp.status = DlpStatus.Registered;
-            dlp.registrationBlockNumber = dlpInfo.registrationBlockNumber;
-            //            dlp.isVerified = dlpInfo.isVerified;
-
-            dlpIds[dlpInfo.dlpAddress] = dlpId;
-            dlpNameToId[dlpInfo.name] = dlpId;
-
-            //            if (DlpStatus(uint256(dlpInfo.status)) == DlpStatus.Eligible) {
-            //                _eligibleDlpsList.add(dlpId);
-            //            }
-
-            emit DlpRegistered(
-                dlpId,
-                dlpInfo.dlpAddress,
-                dlpInfo.ownerAddress,
-                dlpInfo.treasuryAddress,
-                dlpInfo.name,
-                dlpInfo.iconUrl,
-                dlpInfo.website,
-                dlpInfo.metadata
-            );
-
-            ++dlpsCount;
-
-            unchecked {
-                ++dlpId;
-            }
-        }
-    }
-
     function _setDlpEligibility(Dlp storage dlp) internal {
         vanaEpoch.createEpochs();
 
@@ -419,7 +366,7 @@ contract DLPRegistryImplementation is
             currentStatus == DlpStatus.Registered &&
             dlp.lpTokenId != 0 &&
             dlp.tokenAddress != address(0) &&
-            dlp.verificationBlockNumber > 0
+            dlp.isVerified
         ) {
             newStatus = DlpStatus.Eligible;
             _eligibleDlpsList.add(dlp.id);
