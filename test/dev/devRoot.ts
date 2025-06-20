@@ -322,11 +322,11 @@ describe("DLPRoot", () => {
       .connect(dlp5Owner)
       .registerDlp(dlpInfo[5], { value: dlpEligibilityThreshold });
 
-    await root.connect(maintainer).updateDlpVerificationBlock(1, true);
-    await root.connect(maintainer).updateDlpVerificationBlock(2, true);
-    await root.connect(maintainer).updateDlpVerificationBlock(3, true);
-    await root.connect(maintainer).updateDlpVerificationBlock(4, true);
-    await root.connect(maintainer).updateDlpVerificationBlock(5, true);
+    await root.connect(maintainer).updateDlpVerification(1, true);
+    await root.connect(maintainer).updateDlpVerification(2, true);
+    await root.connect(maintainer).updateDlpVerification(3, true);
+    await root.connect(maintainer).updateDlpVerification(4, true);
+    await root.connect(maintainer).updateDlpVerification(5, true);
   }
 
   async function registerNDlps(stakes: bigint[], verify: boolean = true) {
@@ -349,7 +349,7 @@ describe("DLPRoot", () => {
       if (verify)
         await root
           .connect(maintainer)
-          .updateDlpVerificationBlock(lastDlpId + i, true);
+          .updateDlpVerification(lastDlpId + i, true);
     }
   }
 

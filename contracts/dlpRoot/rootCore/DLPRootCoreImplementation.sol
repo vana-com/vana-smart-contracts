@@ -279,7 +279,7 @@ contract DLPRootCoreImplementation is
         _registerDlp(registrationInfo);
     }
 
-    function updateDlpVerificationBlock(uint256 dlpId, bool isVerified) external override onlyRole(MAINTAINER_ROLE) {
+    function updateDlpVerification(uint256 dlpId, bool isVerified) external override onlyRole(MAINTAINER_ROLE) {
         Dlp storage dlp = _dlps[dlpId];
         dlp.isVerified = isVerified;
 

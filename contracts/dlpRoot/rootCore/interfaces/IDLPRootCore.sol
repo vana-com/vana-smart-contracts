@@ -121,7 +121,7 @@ interface IDLPRootCore is IDLPRootCoreReadOnly {
     // DLP lifecycle management
     function registerDlp(DlpRegistration calldata registrationInfo) external payable;
 
-    function updateDlpVerificationBlock(uint256 dlpId, bool isVerified) external;
+    function updateDlpVerification(uint256 dlpId, bool isVerified) external;
 
     function updateDlp(uint256 dlpId, DlpRegistration calldata dlpUpdateInfo) external;
 
