@@ -598,90 +598,90 @@ describe("QueryEngine", () => {
       // refinerId 1 is registered by dlp1Owner
       await queryEngine
         .connect(dlp1Owner)
-        .addPermission(user1.address, 1, "table1a", "column1a", parseEther(1))
+        .addPermission(user1.address, 1, "table1a", "column1a", VanaToken, parseEther(1))
         .should.emit(queryEngine, "PermissionAdded")
-        .withArgs(1, user1.address, 1, "table1a", "column1a", parseEther(1));
+        .withArgs(1, user1.address, 1, "table1a", "column1a", VanaToken, parseEther(1));
 
       await queryEngine
         .connect(dlp1Owner)
-        .addGenericPermission(1, "table1b", "", parseEther(10))
+        .addGenericPermission(1, "table1b", "", VanaToken, parseEther(10))
         .should.emit(queryEngine, "PermissionAdded")
-        .withArgs(2, ethers.ZeroAddress, 1, "table1b", "", parseEther(10));
+        .withArgs(2, ethers.ZeroAddress, 1, "table1b", "", VanaToken, parseEther(10));
 
       await queryEngine
         .connect(dlp1Owner)
-        .addPermission(user2.address, 1, "", "", parseEther(1))
+        .addPermission(user2.address, 1, "", "", VanaToken, parseEther(1))
         .should.emit(queryEngine, "PermissionAdded")
-        .withArgs(3, user2.address, 1, "", "", parseEther(1));
+        .withArgs(3, user2.address, 1, "", "", VanaToken, parseEther(1));
 
       await queryEngine
         .connect(dlp1Owner)
-        .addPermission(user1.address, 3, "table1c", "column1c", parseEther(1))
+        .addPermission(user1.address, 3, "table1c", "column1c", VanaToken, parseEther(1))
         .should.be.rejectedWith("NotRefinerOwner()");
 
       await queryEngine
         .connect(dlp2Owner)
-        .addPermission(user1.address, 1, "table1b", "column1b", parseEther(1))
+        .addPermission(user1.address, 1, "table1b", "column1b", VanaToken, parseEther(1))
         .should.be.rejectedWith("NotRefinerOwner()");
 
       await queryEngine
         .connect(dlp2Owner)
-        .addPermission(user1.address, 2, "table2a", "", parseEther(2))
+        .addPermission(user1.address, 2, "table2a", "", VanaToken, parseEther(2))
         .should.emit(queryEngine, "PermissionAdded")
-        .withArgs(4, user1.address, 2, "table2a", "", parseEther(2));
+        .withArgs(4, user1.address, 2, "table2a", "", VanaToken, parseEther(2));
 
       (await queryEngine.getPermissions(1, user1.address)).should.deep.eq([
-        [2, ethers.ZeroAddress, true, 1, "table1b", "", parseEther(10)],
-        [1, user1.address, true, 1, "table1a", "column1a", parseEther(1)],
+        [2, ethers.ZeroAddress, true, 1, "table1b", "", parseEther(10), VanaToken],
+        [1, user1.address, true, 1, "table1a", "column1a", parseEther(1), VanaToken],
       ]);
 
       (await queryEngine.getPermissions(1, user2.address)).should.deep.eq([
-        [2, ethers.ZeroAddress, true, 1, "table1b", "", parseEther(10)],
-        [3, user2.address, true, 1, "", "", parseEther(1)],
+        [2, ethers.ZeroAddress, true, 1, "table1b", "", parseEther(10), VanaToken],
+        [3, user2.address, true, 1, "", "", parseEther(1), VanaToken],
       ]);
 
       (await queryEngine.getPermissions(2, user1.address)).should.deep.eq([
-        [4, user1.address, true, 2, "table2a", "", parseEther(2)],
+        [4, user1.address, true, 2, "table2a", "", parseEther(2), VanaToken],
       ]);
     });
 
     it("should updatePermissionApproval only when DLP owner", async function () {
       await queryEngine
         .connect(dlp1Owner)
-        .addPermission(user1.address, 1, "table1a", "column1a", parseEther(1))
+        .addPermission(user1.address, 1, "table1a", "column1a", VanaToken, parseEther(1))
         .should.emit(queryEngine, "PermissionAdded")
-        .withArgs(1, user1.address, 1, "table1a", "column1a", parseEther(1));
+        .withArgs(1, user1.address, 1, "table1a", "column1a", VanaToken, parseEther(1));
 
       await queryEngine
         .connect(dlp1Owner)
-        .addGenericPermission(1, "table1b", "", parseEther(10))
+        .addGenericPermission(1, "table1b", "", VanaToken, parseEther(10))
         .should.emit(queryEngine, "PermissionAdded")
-        .withArgs(2, ethers.ZeroAddress, 1, "table1b", "", parseEther(10));
+        .withArgs(2, ethers.ZeroAddress, 1, "table1b", "", VanaToken, parseEther(10));
 
       await queryEngine
         .connect(dlp1Owner)
-        .addPermission(user2.address, 1, "", "", parseEther(1))
+        .addPermission(user2.address, 1, "", "", VanaToken, parseEther(1))
         .should.emit(queryEngine, "PermissionAdded")
-        .withArgs(3, user2.address, 1, "", "", parseEther(1));
+        .withArgs(3, user2.address, 1, "", "", VanaToken, parseEther(1));
 
       await queryEngine
         .connect(dlp2Owner)
-        .addPermission(user1.address, 2, "table2a", "", parseEther(2))
+        .addPermission(user1.address, 2, "table2a", "", VanaToken, parseEther(2))
         .should.emit(queryEngine, "PermissionAdded")
-        .withArgs(4, user1.address, 2, "table2a", "", parseEther(2));
+        .withArgs(4, user1.address, 2, "table2a", "", VanaToken, parseEther(2));
 
       (await queryEngine.getPermissions(1, user1.address)).should.deep.eq([
-        [2, ethers.ZeroAddress, true, 1, "table1b", "", parseEther(10)],
-        [1, user1.address, true, 1, "table1a", "column1a", parseEther(1)],
+        [2, ethers.ZeroAddress, true, 1, "table1b", "", parseEther(10), VanaToken],
+        [1, user1.address, true, 1, "table1a", "column1a", parseEther(1), VanaToken],
       ]);
 
       (await queryEngine.getPermissions(1, user2.address)).should.deep.eq([
-        [2, ethers.ZeroAddress, true, 1, "table1b", "", parseEther(10)],
-        [3, user2.address, true, 1, "", "", parseEther(1)],
+        [2, ethers.ZeroAddress, true, 1, "table1b", "", parseEther(10), VanaToken],
+        [3, user2.address, true, 1, "", "", parseEther(1), VanaToken],
       ]);
 
       (await queryEngine.getPermissions(2, user1.address)).should.deep.eq([
-        [4, user1.address, true, 2, "table2a", "", parseEther(2)],
+        [4, user1.address, true, 2, "table2a", "", parseEther(2), VanaToken],
       ]);
 
       await queryEngine
@@ -691,17 +691,17 @@ describe("QueryEngine", () => {
         .withArgs(1, false);
 
       (await queryEngine.getPermissions(1, user1.address)).should.deep.eq([
-        [2, ethers.ZeroAddress, true, 1, "table1b", "", parseEther(10)],
+        [2, ethers.ZeroAddress, true, 1, "table1b", "", parseEther(10), VanaToken],
         // [1, user1.address, true, 1, "table1a", "column1a", parseEther(1)],
       ]);
 
       (await queryEngine.getPermissions(1, user2.address)).should.deep.eq([
-        [2, ethers.ZeroAddress, true, 1, "table1b", "", parseEther(10)],
-        [3, user2.address, true, 1, "", "", parseEther(1)],
+        [2, ethers.ZeroAddress, true, 1, "table1b", "", parseEther(10), VanaToken],
+        [3, user2.address, true, 1, "", "", parseEther(1), VanaToken],
       ]);
 
       (await queryEngine.getPermissions(2, user1.address)).should.deep.eq([
-        [4, user1.address, true, 2, "table2a", "", parseEther(2)],
+        [4, user1.address, true, 2, "table2a", "", parseEther(2), VanaToken],
       ]);
 
       await queryEngine
@@ -717,11 +717,11 @@ describe("QueryEngine", () => {
 
       (await queryEngine.getPermissions(1, user2.address)).should.deep.eq([
         // [2, ethers.ZeroAddress, true, 1, "table1b", "", parseEther(10)],
-        [3, user2.address, true, 1, "", "", parseEther(1)],
+        [3, user2.address, true, 1, "", "", parseEther(1), VanaToken],
       ]);
 
       (await queryEngine.getPermissions(2, user1.address)).should.deep.eq([
-        [4, user1.address, true, 2, "table2a", "", parseEther(2)],
+        [4, user1.address, true, 2, "table2a", "", parseEther(2), VanaToken],
       ]);
 
       await queryEngine
@@ -742,7 +742,7 @@ describe("QueryEngine", () => {
 
       (await queryEngine.getPermissions(1, user2.address)).should.deep.eq([
         // [2, ethers.ZeroAddress, true, 1, "table1b", "", parseEther(10)],
-        [3, user2.address, true, 1, "", "", parseEther(1)],
+        [3, user2.address, true, 1, "", "", parseEther(1), VanaToken],
       ]);
 
       (await queryEngine.getPermissions(2, user1.address)).should.deep.eq([
@@ -756,13 +756,13 @@ describe("QueryEngine", () => {
         .withArgs(2, true);
 
       (await queryEngine.getPermissions(1, user1.address)).should.deep.eq([
-        [2, ethers.ZeroAddress, true, 1, "table1b", "", parseEther(10)],
+        [2, ethers.ZeroAddress, true, 1, "table1b", "", parseEther(10), VanaToken],
         // [1, user1.address, true, 1, "table1a", "column1a", parseEther(1)],
       ]);
 
       (await queryEngine.getPermissions(1, user2.address)).should.deep.eq([
-        [2, ethers.ZeroAddress, true, 1, "table1b", "", parseEther(10)],
-        [3, user2.address, true, 1, "", "", parseEther(1)],
+        [2, ethers.ZeroAddress, true, 1, "table1b", "", parseEther(10), VanaToken],
+        [3, user2.address, true, 1, "", "", parseEther(1), VanaToken],
       ]);
 
       (await queryEngine.getPermissions(2, user1.address)).should.deep.eq([
@@ -773,13 +773,13 @@ describe("QueryEngine", () => {
         .should.be.fulfilled;
 
       (await queryEngine.getPermissions(1, user1.address)).should.deep.eq([
-        [2, ethers.ZeroAddress, true, 1, "table1b", "", parseEther(10)],
+        [2, ethers.ZeroAddress, true, 1, "table1b", "", parseEther(10), VanaToken],
         // [1, user1.address, true, 1, "table1a", "column1a", parseEther(1)],
       ]);
 
       (await queryEngine.getPermissions(1, user2.address)).should.deep.eq([
-        [2, ethers.ZeroAddress, true, 1, "table1b", "", parseEther(10)],
-        [3, user2.address, true, 1, "", "", parseEther(1)],
+        [2, ethers.ZeroAddress, true, 1, "table1b", "", parseEther(10), VanaToken],
+        [3, user2.address, true, 1, "", "", parseEther(1), VanaToken],
       ]);
 
       (await queryEngine.getPermissions(2, user1.address)).should.deep.eq([
@@ -802,7 +802,7 @@ describe("QueryEngine", () => {
     it("should not allow non-empty columnName when tableName is empty", async function () {
       await queryEngine
         .connect(dlp1Owner)
-        .addPermission(user1.address, 1, "", "column1a", parseEther(1))
+        .addPermission(user1.address, 1, "", "column1a", VanaToken, parseEther(1))
         .should.be.rejectedWith("ColumnNameUnexpected()");
     });
   });

@@ -14,6 +14,7 @@ interface IQueryEngine is IPaymentRequestor {
     /// @param columnName The name of the column
     /// @param approved Whether the permission has been approved
     /// @param price The price of data access under the permission
+    /// @param tokenAddress The address of the token used for payment
     struct Permission {
         address grantee;
         bool approved;
@@ -21,6 +22,7 @@ interface IQueryEngine is IPaymentRequestor {
         string tableName;
         string columnName;
         uint256 price;
+        address tokenAddress;
     }
 
     struct PermissionInfo {
@@ -31,6 +33,7 @@ interface IQueryEngine is IPaymentRequestor {
         string tableName;
         string columnName;
         uint256 price;
+        address tokenAddress;
     }
 
     /// @notice Pauses the contract
@@ -86,6 +89,7 @@ interface IQueryEngine is IPaymentRequestor {
     /// @param refinerId The id of the refiner
     /// @param tableName The name of the table
     /// @param columnName The name of the column
+    /// @param tokenAddress The address of the token used for payment
     /// @param price The price of data access under the permission
     /// @return permissionId The id of the permission
     function addPermission(
@@ -93,6 +97,7 @@ interface IQueryEngine is IPaymentRequestor {
         uint256 refinerId,
         string calldata tableName,
         string calldata columnName,
+        address tokenAddress,
         uint256 price
     ) external returns (uint256 permissionId);
 
@@ -100,12 +105,14 @@ interface IQueryEngine is IPaymentRequestor {
     /// @param refinerId The id of the refiner
     /// @param tableName The name of the table
     /// @param columnName The name of the column
+    /// @param tokenAddress The address of the token used for payment
     /// @param price The price of data access under the permission
     /// @return permissionId The id of the permission
     function addGenericPermission(
         uint256 refinerId,
         string calldata tableName,
         string calldata columnName,
+        address tokenAddress,
         uint256 price
     ) external returns (uint256 permissionId);
 
