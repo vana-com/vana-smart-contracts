@@ -427,11 +427,11 @@ xdescribe("DLPRoot", () => {
       .connect(dlp5Owner)
       .registerDlp(dlpInfo[5], { value: dlpEligibilityThreshold });
 
-    await rootCore.connect(maintainer).updateDlpVerification(1, true);
-    await rootCore.connect(maintainer).updateDlpVerification(2, true);
-    await rootCore.connect(maintainer).updateDlpVerification(3, true);
-    await rootCore.connect(maintainer).updateDlpVerification(4, true);
-    await rootCore.connect(maintainer).updateDlpVerification(5, true);
+    await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
+    await rootCore.connect(maintainer).updateDlpVerificationBlock(2, true);
+    await rootCore.connect(maintainer).updateDlpVerificationBlock(3, true);
+    await rootCore.connect(maintainer).updateDlpVerificationBlock(4, true);
+    await rootCore.connect(maintainer).updateDlpVerificationBlock(5, true);
   }
 
   async function registerNDlps(stakes: bigint[], verify: boolean = true) {
@@ -454,7 +454,7 @@ xdescribe("DLPRoot", () => {
       if (verify)
         await rootCore
           .connect(maintainer)
-          .updateDlpVerification(lastDlpId + i, true);
+          .updateDlpVerificationBlock(lastDlpId + i, true);
     }
   }
 
@@ -482,7 +482,7 @@ xdescribe("DLPRoot", () => {
       if (verify)
         await rootCore
           .connect(maintainer)
-          .updateDlpVerification(lastDlpId + i, true);
+          .updateDlpVerificationBlock(lastDlpId + i, true);
     }
   }
 
@@ -1098,7 +1098,7 @@ xdescribe("DLPRoot", () => {
 
       const receipt = await getReceipt(tx);
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       receipt.should
         .emit(rootStaking, "DlpRegistered")
@@ -1212,7 +1212,7 @@ xdescribe("DLPRoot", () => {
 
       (await rootCore.dlpsByAddress(dlp1)).should.deep.eq(dlp1Info);
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       (await ethers.provider.getBalance(user1)).should.eq(
         dlp1OwnerInitialBalance - registrationAmount - receipt.fee,
@@ -1265,7 +1265,7 @@ xdescribe("DLPRoot", () => {
 
       const receipt = await getReceipt(tx);
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       receipt.should
         .emit(rootStaking, "DlpRegistered")
@@ -1378,7 +1378,7 @@ xdescribe("DLPRoot", () => {
 
       (await rootCore.dlpsByAddress(dlp1)).should.deep.eq(dlp1Info);
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       (await ethers.provider.getBalance(user1)).should.eq(
         dlp1OwnerInitialBalance - registrationAmount - receipt.fee,
@@ -1927,7 +1927,7 @@ xdescribe("DLPRoot", () => {
         );
       (await rootCore.dlpsCount()).should.eq(1);
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       const dlp1Info = await rootCore.dlps(1);
 
@@ -2269,13 +2269,13 @@ xdescribe("DLPRoot", () => {
         .should.be.rejectedWith("InvalidStakersPercentage()");
     });
 
-    it("should updateDlpVerification when maintainer #true, #registered", async function () {
+    it("should updateDlpVerificationBlock when maintainer #true, #registered", async function () {
       await registerNDlps([minDlpRegistrationStake], false);
 
       const dlpBefore = await rootCore.dlps(1);
       dlpBefore.isVerified.should.eq(false);
       dlpBefore.status.should.eq(DlpStatus.Registered);
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
       const dlpAfter = await rootCore.dlps(1);
       dlpAfter.isVerified.should.eq(true);
       dlpAfter.status.should.eq(DlpStatus.Registered);
@@ -2283,13 +2283,13 @@ xdescribe("DLPRoot", () => {
       (await rootCore.eligibleDlpsListValues()).should.deep.eq([]);
     });
 
-    it("should updateDlpVerification when maintainer #true, #subEligible", async function () {
+    it("should updateDlpVerificationBlock when maintainer #true, #subEligible", async function () {
       await registerNDlps([dlpEligibilityThreshold - 1n], false);
 
       const dlpBefore = await rootCore.dlps(1);
       dlpBefore.isVerified.should.eq(false);
       dlpBefore.status.should.eq(DlpStatus.Registered);
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
       const dlpAfter = await rootCore.dlps(1);
       dlpAfter.isVerified.should.eq(true);
       dlpAfter.status.should.eq(DlpStatus.Registered);
@@ -2297,13 +2297,13 @@ xdescribe("DLPRoot", () => {
       (await rootCore.eligibleDlpsListValues()).should.deep.eq([]);
     });
 
-    it("should updateDlpVerification when maintainer #true, #eligible", async function () {
+    it("should updateDlpVerificationBlock when maintainer #true, #eligible", async function () {
       await registerNDlps([dlpEligibilityThreshold], false);
 
       const dlpBefore = await rootCore.dlps(1);
       dlpBefore.isVerified.should.eq(false);
       dlpBefore.status.should.eq(DlpStatus.Registered);
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
       const dlpAfter = await rootCore.dlps(1);
       dlpAfter.isVerified.should.eq(true);
       dlpAfter.status.should.eq(DlpStatus.Eligible);
@@ -2311,14 +2311,14 @@ xdescribe("DLPRoot", () => {
       (await rootCore.eligibleDlpsListValues()).should.deep.eq([1n]);
     });
 
-    it("should updateDlpVerification when maintainer #false, #registered", async function () {
+    it("should updateDlpVerificationBlock when maintainer #false, #registered", async function () {
       await registerNDlps([minDlpRegistrationStake], false);
 
       const dlpBefore = await rootCore.dlps(1);
       dlpBefore.isVerified.should.eq(false);
       dlpBefore.status.should.eq(DlpStatus.Registered);
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
-      await rootCore.connect(maintainer).updateDlpVerification(1, false);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, false);
       const dlpAfter = await rootCore.dlps(1);
       dlpAfter.isVerified.should.eq(false);
       dlpAfter.status.should.eq(DlpStatus.Registered);
@@ -2326,14 +2326,14 @@ xdescribe("DLPRoot", () => {
       (await rootCore.eligibleDlpsListValues()).should.deep.eq([]);
     });
 
-    it("should updateDlpVerification when maintainer #false, #subEligible", async function () {
+    it("should updateDlpVerificationBlock when maintainer #false, #subEligible", async function () {
       await registerNDlps([dlpEligibilityThreshold - 1n], false);
 
       const dlpBefore = await rootCore.dlps(1);
       dlpBefore.isVerified.should.eq(false);
       dlpBefore.status.should.eq(DlpStatus.Registered);
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
-      await rootCore.connect(maintainer).updateDlpVerification(1, false);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, false);
       const dlpAfter = await rootCore.dlps(1);
       dlpAfter.isVerified.should.eq(false);
       dlpAfter.status.should.eq(DlpStatus.Registered);
@@ -2341,29 +2341,29 @@ xdescribe("DLPRoot", () => {
       (await rootCore.eligibleDlpsListValues()).should.deep.eq([]);
     });
 
-    it("should updateDlpVerification when maintainer #false, #eligible", async function () {
+    it("should updateDlpVerificationBlock when maintainer #false, #eligible", async function () {
       await registerNDlps([dlpEligibilityThreshold], false);
 
       const dlpBefore = await rootCore.dlps(1);
       dlpBefore.isVerified.should.eq(false);
       dlpBefore.status.should.eq(DlpStatus.Registered);
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
       const dlpAfter1 = await rootCore.dlps(1);
       dlpAfter1.isVerified.should.eq(true);
       dlpAfter1.status.should.eq(DlpStatus.Eligible);
       (await rootCore.eligibleDlpsListValues()).should.deep.eq([1n]);
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, false);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, false);
       const dlpAfter2 = await rootCore.dlps(1);
       dlpAfter2.isVerified.should.eq(false);
       dlpAfter2.status.should.eq(DlpStatus.Registered);
       (await rootCore.eligibleDlpsListValues()).should.deep.eq([]);
     });
 
-    it("should reject updateDlpVerification when non-maintainer", async function () {
+    it("should reject updateDlpVerificationBlock when non-maintainer", async function () {
       await rootCore
         .connect(manager)
-        .updateDlpVerification(1, true)
+        .updateDlpVerificationBlock(1, true)
         .should.be.rejectedWith(
           `AccessControlUnauthorizedAccount("${manager.address}", "${MAINTAINER_ROLE}")`,
         );
@@ -2683,7 +2683,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       await advanceToEpochN(2);
 
@@ -2747,7 +2747,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       await rootCore.connect(dlp1Owner).updateDlp(1, {
         ...dlpInfo[1],
@@ -3262,7 +3262,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       const stakeAmount = parseEther(10);
 
@@ -3359,7 +3359,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       const stakeAmount = parseEther(10);
 
@@ -3405,7 +3405,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       await rootCore.connect(dlp1Owner).deregisterDlp(1);
 
@@ -3420,7 +3420,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       await rootStaking
         .connect(user1)
@@ -3435,7 +3435,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       const stakeAmount1 = parseEther(10);
       const stakeAmount2 = parseEther(15);
@@ -3557,12 +3557,12 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
       await rootCore
         .connect(dlp2Owner)
         .registerDlp(dlpInfo[2], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(2, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(2, true);
 
       const stakeAmount1 = parseEther(10);
       const stakeAmount2 = parseEther(15);
@@ -3745,7 +3745,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       await advanceToEpochN(5);
 
@@ -3758,7 +3758,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp2Owner)
         .registerDlp(dlpInfo[2], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(2, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(2, true);
 
       const stakeAmount1 = parseEther(10);
       const stakeAmount2 = parseEther(15);
@@ -3854,7 +3854,7 @@ xdescribe("DLPRoot", () => {
       dlp1Before.status.should.eq(DlpStatus.Registered);
       (await rootCore.eligibleDlpsListValues()).should.deep.eq([]);
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       const dlp1After = await rootCore.dlps(1);
       dlp1After.isVerified.should.eq(true);
@@ -3867,7 +3867,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: minDlpRegistrationStake });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       await rootStaking
         .connect(user1)
@@ -3891,7 +3891,7 @@ xdescribe("DLPRoot", () => {
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
       const stake1Adjustment = parseEther(0); //before epoch 3
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       await advanceToEpochN(3);
       await rootStaking
@@ -3951,7 +3951,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       const stakeAmount = parseEther(10);
       const currentBlockNumber = await getCurrentBlockNumber();
@@ -4010,7 +4010,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       const stakeAmount1 = parseEther(10);
       const stakeAmount2 = parseEther(15);
@@ -4099,7 +4099,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       const stakeAmount1 = parseEther(10);
       const stakeAmount2 = parseEther(15);
@@ -4190,7 +4190,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       const stakeAmount = parseEther(10);
 
@@ -4242,7 +4242,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       const stakeAmount = parseEther(10);
 
@@ -4259,7 +4259,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       const stakeAmount = parseEther(10);
 
@@ -4286,7 +4286,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: minDlpRegistrationStake });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       await rootStaking
         .connect(user1)
@@ -4324,7 +4324,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       await rootStaking
         .connect(user1)
@@ -4362,7 +4362,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: minDlpRegistrationStake });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       await rootStaking
         .connect(user1)
@@ -4418,7 +4418,7 @@ xdescribe("DLPRoot", () => {
         value: dlpEligibilityThreshold,
       });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       const currentBlockNumber = await getCurrentBlockNumber();
 
@@ -4452,7 +4452,7 @@ xdescribe("DLPRoot", () => {
         value: dlpEligibilityThreshold - parseEther(1) - parseEther(2),
       });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       const currentBlockNumber = await getCurrentBlockNumber();
 
@@ -4512,7 +4512,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
     });
 
     it("should withdrawStake after delay period", async function () {
@@ -5114,7 +5114,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       await advanceToEpochN(1);
       await rootEpoch.connect(owner).createEpochs();
@@ -5145,7 +5145,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       await advanceToEpochN(1);
       await rootEpoch.connect(owner).createEpochs();
@@ -5190,7 +5190,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       await advanceToEpochN(1);
       await rootEpoch.connect(owner).createEpochs();
@@ -5214,7 +5214,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       await advanceToEpochN(1);
       await rootEpoch.connect(owner).createEpochs();
@@ -5251,13 +5251,13 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       await rootCore
         .connect(dlp2Owner)
         .registerDlp(dlpInfo[2], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       await advanceToEpochN(2);
       await rootEpoch.connect(owner).createEpochs();
@@ -5308,7 +5308,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       await advanceToEpochN(1);
       await rootEpoch.connect(owner).createEpochs();
@@ -5341,7 +5341,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       await advanceToEpochN(1);
       await rootEpoch.connect(owner).createEpochs();
@@ -5373,7 +5373,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       await advanceToEpochN(1);
       await rootEpoch.connect(owner).createEpochs();
@@ -5402,7 +5402,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       await advanceToEpochN(1);
       await rootEpoch.connect(owner).createEpochs();
@@ -5443,7 +5443,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       await advanceToEpochN(1);
       await rootEpoch.connect(owner).createEpochs();
@@ -5465,7 +5465,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       await advanceToEpochN(1);
       await rootEpoch.connect(owner).createEpochs();
@@ -5502,7 +5502,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       await advanceToEpochN(1);
       await rootEpoch.connect(owner).createEpochs();
@@ -5539,7 +5539,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       await advanceToEpochN(1);
       await rootEpoch.connect(owner).createEpochs();
@@ -5574,7 +5574,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       await advanceToEpochN(1);
       await rootEpoch.connect(owner).createEpochs();
@@ -5815,7 +5815,7 @@ xdescribe("DLPRoot", () => {
           { value: dlpEligibilityThreshold },
         );
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
       // Create stake
       const stakeAmount = dlpEligibilityThreshold * 2n;
       await rootStaking.connect(user1).createStake(1, { value: stakeAmount });
@@ -5893,7 +5893,7 @@ xdescribe("DLPRoot", () => {
         .connect(dlp1Owner)
         .registerDlp(dlpInfo[1], { value: dlpEligibilityThreshold });
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
 
       await rootStaking
         .connect(user1)
@@ -6992,7 +6992,7 @@ xdescribe("DLPRoot", () => {
           { value: dlpEligibilityThreshold },
         );
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
       // Create stake
       const stakeAmount = dlpEligibilityThreshold * 2n;
       await rootStaking.connect(user1).createStake(1, { value: stakeAmount });
@@ -7079,7 +7079,7 @@ xdescribe("DLPRoot", () => {
           { value: dlpEligibilityThreshold },
         );
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
       // Create stake
       const stakeAmount = dlpEligibilityThreshold * 2n;
       await rootStaking.connect(user1).createStake(1, { value: stakeAmount });
@@ -7215,7 +7215,7 @@ xdescribe("DLPRoot", () => {
           { value: dlpEligibilityThreshold },
         );
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
       // Create stake
       const stakeAmount = dlpEligibilityThreshold * 2n;
       await rootStaking.connect(user1).createStake(1, { value: stakeAmount });
@@ -7304,7 +7304,7 @@ xdescribe("DLPRoot", () => {
           { value: dlpEligibilityThreshold },
         );
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
       // Create stake
       const stakeAmount = dlpEligibilityThreshold * 2n;
       await rootStaking.connect(user1).createStake(1, { value: stakeAmount });
@@ -7396,7 +7396,7 @@ xdescribe("DLPRoot", () => {
           { value: dlpEligibilityThreshold },
         );
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
       // Create stake
       const stakeAmount = dlpEligibilityThreshold * 2n;
       await rootStaking.connect(user1).createStake(1, { value: stakeAmount });
@@ -7491,7 +7491,7 @@ xdescribe("DLPRoot", () => {
           { value: dlpEligibilityThreshold },
         );
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
       // Create stake
       const stakeAmount = dlpEligibilityThreshold * 2n;
       await rootStaking.connect(user1).createStake(1, { value: stakeAmount });
@@ -7567,7 +7567,7 @@ xdescribe("DLPRoot", () => {
           { value: dlpEligibilityThreshold },
         );
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
       // Create stake
       const stakeAmount = dlpEligibilityThreshold * 2n;
       await rootStaking.connect(user1).createStake(1, { value: stakeAmount });
@@ -7644,7 +7644,7 @@ xdescribe("DLPRoot", () => {
           { value: dlpEligibilityThreshold },
         );
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
       // Create stake
       const stakeAmount = dlpEligibilityThreshold * 2n;
       await rootStaking.connect(user1).createStake(1, { value: stakeAmount });
@@ -7737,7 +7737,7 @@ xdescribe("DLPRoot", () => {
           { value: dlpEligibilityThreshold },
         );
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
       // Create stake
       const stakeAmount = dlpEligibilityThreshold * 2n;
       await rootStaking.connect(user1).createStake(1, { value: stakeAmount });
@@ -7834,7 +7834,7 @@ xdescribe("DLPRoot", () => {
           { value: dlpEligibilityThreshold },
         );
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
       // Create stake
       const stakeAmount = dlpEligibilityThreshold * 2n;
       await rootStaking.connect(user1).createStake(1, { value: stakeAmount });
@@ -7931,7 +7931,7 @@ xdescribe("DLPRoot", () => {
           { value: dlpEligibilityThreshold },
         );
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
       // Create stake
       const stakeAmount = dlpEligibilityThreshold * 2n;
       await rootStaking.connect(user1).createStake(1, { value: stakeAmount });
@@ -8026,7 +8026,7 @@ xdescribe("DLPRoot", () => {
           { value: dlpEligibilityThreshold },
         );
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
       // Create stake
       const stakeAmount = dlpEligibilityThreshold * 2n;
       await rootStaking.connect(user1).createStake(1, { value: stakeAmount });
@@ -8110,7 +8110,7 @@ xdescribe("DLPRoot", () => {
           { value: dlpEligibilityThreshold },
         );
 
-      await rootCore.connect(maintainer).updateDlpVerification(1, true);
+      await rootCore.connect(maintainer).updateDlpVerificationBlock(1, true);
       // Create stake
       const stakeAmount = dlpEligibilityThreshold * 2n;
       await rootStaking.connect(user1).createStake(1, { value: stakeAmount });

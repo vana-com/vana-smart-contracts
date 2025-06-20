@@ -450,8 +450,8 @@ describe("DLP System Tests", () => {
         .connect(maintainer)
         .updateDlpToken(2, token2.address, 2);
 
-      await dlpRegistry.connect(maintainer).updateDlpVerification(1, 1);
-      await dlpRegistry.connect(maintainer).updateDlpVerification(2, 1);
+      await dlpRegistry.connect(maintainer).updateDlpVerificationBlock(1, 1);
+      await dlpRegistry.connect(maintainer).updateDlpVerificationBlock(2, 1);
 
       // Create epoch
       await vanaEpoch.connect(user1).createEpochs();
@@ -718,8 +718,8 @@ describe("DLP System Tests", () => {
       await dlpRegistry
         .connect(maintainer)
         .updateDlpToken(2, token2.address, 2);
-      await dlpRegistry.connect(maintainer).updateDlpVerification(1, 1);
-      await dlpRegistry.connect(maintainer).updateDlpVerification(2, 1);
+      await dlpRegistry.connect(maintainer).updateDlpVerificationBlock(1, 1);
+      await dlpRegistry.connect(maintainer).updateDlpVerificationBlock(2, 1);
     });
 
     it("should handle full epoch and performance flow", async function () {
@@ -1058,7 +1058,7 @@ describe("DLP System Tests", () => {
       dlp1.tokenAddress.should.eq(token1);
     });
 
-    it("should updateDlpVerification and change eligibility", async function () {
+    it("should updateDlpVerificationBlock and change eligibility", async function () {
       await dlpRegistry
         .connect(dlp1Owner)
         .registerDlp(dlp1Info, { value: DLP_REGISTRATION_DEPOSIT });
@@ -1071,7 +1071,7 @@ describe("DLP System Tests", () => {
       // Verify DLP
       await dlpRegistry
         .connect(maintainer)
-        .updateDlpVerification(1, 123)
+        .updateDlpVerificationBlock(1, 123)
         .should.emit(dlpRegistry, "DlpVerificationBlockUpdated")
         .withArgs(1, 123)
         .and.emit(dlpRegistry, "DlpStatusUpdated")
@@ -1089,7 +1089,7 @@ describe("DLP System Tests", () => {
       // Remove verification
       await dlpRegistry
         .connect(maintainer)
-        .updateDlpVerification(1, 0)
+        .updateDlpVerificationBlock(1, 0)
         .should.emit(dlpRegistry, "DlpVerificationBlockUpdated")
         .withArgs(1, 0)
         .and.emit(dlpRegistry, "DlpStatusUpdated")
@@ -1261,8 +1261,8 @@ describe("DLP System Tests", () => {
       await dlpRegistry
         .connect(maintainer)
         .updateDlpToken(2, token2.address, 2);
-      await dlpRegistry.connect(maintainer).updateDlpVerification(1, 1);
-      await dlpRegistry.connect(maintainer).updateDlpVerification(2, 1);
+      await dlpRegistry.connect(maintainer).updateDlpVerificationBlock(1, 1);
+      await dlpRegistry.connect(maintainer).updateDlpVerificationBlock(2, 1);
 
       // 3. Create first epoch
       await vanaEpoch.connect(user1).createEpochs();
@@ -1334,8 +1334,8 @@ describe("DLP System Tests", () => {
       await dlpRegistry
         .connect(maintainer)
         .updateDlpToken(2, token2.address, 2);
-      await dlpRegistry.connect(maintainer).updateDlpVerification(1, 1);
-      await dlpRegistry.connect(maintainer).updateDlpVerification(2, 1);
+      await dlpRegistry.connect(maintainer).updateDlpVerificationBlock(1, 1);
+      await dlpRegistry.connect(maintainer).updateDlpVerificationBlock(2, 1);
 
       // 3. Create first epoch
       await vanaEpoch.connect(user1).createEpochs();
@@ -1428,8 +1428,8 @@ describe("DLP System Tests", () => {
         .connect(maintainer)
         .updateDlpToken(2, token2.address, 2);
 
-      await dlpRegistry.connect(maintainer).updateDlpVerification(1, 1);
-      await dlpRegistry.connect(maintainer).updateDlpVerification(2, 1);
+      await dlpRegistry.connect(maintainer).updateDlpVerificationBlock(1, 1);
+      await dlpRegistry.connect(maintainer).updateDlpVerificationBlock(2, 1);
     });
 
     it("should updateTreasury when maintainer", async function () {

@@ -28,7 +28,7 @@ interface IDLPRegistry {
         uint256 depositAmount;
         DlpStatus status;
         uint256 lpTokenId;
-        uint256 verificationBlockNumber;
+        uint256 verificationBlockNumber; //if 0 it means not verified
     }
 
     // View functions for contract state and configuration
@@ -56,7 +56,7 @@ interface IDLPRegistry {
         uint256 depositAmount;
         DlpStatus status;
         uint256 lpTokenId;
-        uint256 verificationBlockNumber;
+        uint256 verificationBlockNumber; //if 0 it means not verified
     }
     function dlps(uint256 dlpId) external view returns (DlpInfo memory);
     function dlpsByAddress(address dlpAddress) external view returns (DlpInfo memory);
@@ -83,7 +83,8 @@ interface IDLPRegistry {
 
     // DLP lifecycle management
     function registerDlp(DlpRegistration calldata registrationInfo) external payable;
-    function updateDlpVerification(uint256 dlpId, uint256 verificationBlockNumber) external;
+    function updateDlpVerificationBlock(uint256 dlpId, uint256 verificationBlockNumber) external;
+    function unverifyDlp(uint256 dlpId) external;
     function updateDlp(uint256 dlpId, DlpRegistration calldata dlpUpdateInfo) external;
     function deregisterDlp(uint256 dlpId) external;
     function updateDlpToken(uint256 dlpId, address tokenAddress, uint256 lpTokenId) external;

@@ -83,7 +83,7 @@ interface IDLPRegistry {
 
     // DLP lifecycle management
     function registerDlp(DlpRegistration calldata registrationInfo) external payable;
-    function updateDlpVerification(uint256 dlpId, bool isVerified) external;
+    function updateDlpVerificationBlock(uint256 dlpId, bool isVerified) external;
     function updateDlp(uint256 dlpId, DlpRegistration calldata dlpUpdateInfo) external;
     function deregisterDlp(uint256 dlpId) external;
     function updateDlpToken(uint256 dlpId, address tokenAddress, uint256 lpTokenId) external;

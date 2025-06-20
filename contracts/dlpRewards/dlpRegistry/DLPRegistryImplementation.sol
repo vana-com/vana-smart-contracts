@@ -45,6 +45,7 @@ contract DLPRegistryImplementation is
     );
 
     event DlpStatusUpdated(uint256 indexed dlpId, DlpStatus newStatus);
+    event DlpVerificationUpdated(uint256 indexed dlpId, bool verified);
     event DlpVerificationBlockUpdated(uint256 indexed dlpId, uint256 verificationBlockNumber);
     event DlpRegistrationDepositAmountUpdated(uint256 newDlpRegistrationDepositAmount);
     event DlpTokenUpdated(uint256 indexed dlpId, address tokenAddress);
@@ -164,7 +165,7 @@ contract DLPRegistryImplementation is
         _registerDlp(registrationInfo);
     }
 
-    function updateDlpVerification(
+    function updateDlpVerificationBlock(
         uint256 dlpId,
         uint256 verificationBlockNumber
     ) external override onlyRole(MAINTAINER_ROLE) {
@@ -172,6 +173,15 @@ contract DLPRegistryImplementation is
 
         dlp.verificationBlockNumber = verificationBlockNumber;
         emit DlpVerificationBlockUpdated(dlpId, verificationBlockNumber);
+
+        _setDlpEligibility(dlp);
+    }
+
+    function unverifyDlp(uint256 dlpId) external override onlyRole(MAINTAINER_ROLE) {
+        Dlp storage dlp = _dlps[dlpId];
+
+        dlp.verificationBlockNumber = 0;
+        emit DlpVerificationBlockUpdated(dlpId, 0);
 
         _setDlpEligibility(dlp);
     }
@@ -416,16 +426,14 @@ contract DLPRegistryImplementation is
         DlpStatus newStatus = currentStatus;
 
         if (
-            currentStatus == DlpStatus.Registered &&
+            (currentStatus == DlpStatus.Registered || currentStatus == DlpStatus.Eligible) &&
             dlp.lpTokenId != 0 &&
             dlp.tokenAddress != address(0) &&
             dlp.verificationBlockNumber > 0
         ) {
             newStatus = DlpStatus.Eligible;
-            _eligibleDlpsList.add(dlp.id);
         } else {
             newStatus = DlpStatus.Registered;
-            _eligibleDlpsList.remove(dlp.id);
         }
 
         if (newStatus != currentStatus) {
@@ -435,6 +443,12 @@ contract DLPRegistryImplementation is
             }
 
             dlp.status = newStatus;
+
+            if (newStatus == DlpStatus.Eligible) {
+                _eligibleDlpsList.add(dlp.id);
+            } else {
+                _eligibleDlpsList.remove(dlp.id);
+            }
             emit DlpStatusUpdated(dlp.id, newStatus);
         }
     }
