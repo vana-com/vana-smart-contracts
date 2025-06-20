@@ -12,7 +12,7 @@ import ERC20 from '@openzeppelin/contracts/build/contracts/ERC20.json';
 
 import { SwapHelperImplementation, DLPRegistryImplementation } from "../../typechain-types";
 
-import { sendTransaction } from '../utils/sendTransaction';
+import { sendTransaction, waitForTransaction } from '../utils/sendTransaction';
 
 import * as dotenv from "dotenv";
 import * as path from 'path';
@@ -127,7 +127,7 @@ async function main() {
         });
         console.log("ℹ️ Quote:", ethers.formatEther(quote));
 
-        await swapHelper.connect(signer).exactInputSingle({
+        const tx = await swapHelper.connect(signer).exactInputSingle({
             tokenIn: ethers.ZeroAddress,
             tokenOut: dlpToken.target,
             fee: FeeAmount.MEDIUM,
@@ -135,6 +135,7 @@ async function main() {
             amountIn: 2n * VANA_AMOUNT,
             amountOutMinimum: 1n,
         }, { value: 2n * VANA_AMOUNT });
+        await waitForTransaction(tx);
         console.log("✅ Swap completed.");
 
         const dlpTokenAmount = zeroForOne
@@ -219,7 +220,7 @@ async function main() {
                 dlpId,
                 dlpTokenAddress,
                 tokenId,
-                true, // isVerified
+                await ethers.provider.getBlockNumber()
             );
             console.log("✅ DLP token and verification updated in registry.");
         } else {
