@@ -23,7 +23,7 @@ interface IDLPRegistry {
         uint256 depositAmount;
         DlpStatus status;
         uint256 lpTokenId;
-        bool isVerified;
+        uint256 verificationBlockNumber;
     }
 
     function dlps(uint256 dlpId) external view returns (DlpInfo memory);
