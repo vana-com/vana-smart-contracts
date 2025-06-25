@@ -404,6 +404,13 @@ contract QueryEngineImplementation is
         _dlpPayments[dlpId][token] += dlpPaymentAmount;
     }
 
+    function dlpPaymentAmount(
+        uint256 dlpId,
+        address token
+    ) external view returns (uint256) {
+        return _dlpPayments[dlpId][token];
+    }
+
     function claimDlpPayment(uint256 dlpId, address token) external nonReentrant whenNotPaused {
         IDLPRegistry.DlpInfo memory dlp = refinerRegistry.dlpRegistry().dlps(dlpId);
         if (dlp.ownerAddress != msg.sender) {
