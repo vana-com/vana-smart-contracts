@@ -3,8 +3,8 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { DeployFunction } from "hardhat-deploy/types";
 import { verifyContract, verifyProxy } from "./helpers";
 
-const implementationContractName = "ComputeInstructionRegistryImplementation";
-const proxyContractName = "ComputeInstructionRegistryProxy";
+const implementationContractName = "DataRefinerRegistryImplementation";
+const proxyContractName = "DataRefinerRegistryProxy";
 
 const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const [deployer] = await ethers.getSigners();
@@ -43,4 +43,4 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 };
 
 export default func;
-func.tags = ["ComputeInstructionRegistryUpgrade"];
+func.tags = ["DataRefinerRegistryUpgrade"];

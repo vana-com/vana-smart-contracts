@@ -40,6 +40,9 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const proxyAddress = (await deployments.get(proxyContractName)).address;
   const proxy = await ethers.getContractAt(implementationContractName, proxyAddress);
 
+  console.log("Upgrading to new implementation...");
+  console.log(`Proxy address: ${proxyAddress}`);
+
   const tx = await proxy.upgradeToAndCall(implementationDeploy.address, "0x", { from: deployer.address });
   const receipt = await tx.wait();
   if (!receipt || receipt.status !== 1) {
