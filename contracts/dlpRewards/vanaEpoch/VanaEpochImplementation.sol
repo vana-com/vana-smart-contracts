@@ -33,7 +33,7 @@ contract VanaEpochImplementation is
     error EpochNotEnded();
     error EpochAlreadyFinalized();
     error InvalidEpoch();
-    error EpochRewardExceeded();
+    error EpochRewardExceeded(uint256 totalRewardAmount, uint256 epochRewardAmount);
     error EpochRewardNotDistributed();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -156,19 +156,25 @@ contract VanaEpochImplementation is
             revert EpochAlreadyFinalized();
         }
 
+        // Get all current DLP IDs before processing
+        uint256[] memory currentDlpIds = epoch.dlpIds.values();
+        
+        // Clear all existing DLPs
+        for (uint256 i = 0; i < currentDlpIds.length; i++) {
+            epoch.dlpIds.remove(currentDlpIds[i]);
+            delete epoch.dlps[currentDlpIds[i]];
+        }
+        
+        // Add only the DLPs from the incoming rewards array
         for (uint256 i = 0; i < dlpRewards.length; i++) {
             uint256 dlpId = dlpRewards[i].dlpId;
             uint256 rewardAmount = dlpRewards[i].rewardAmount;
 
             if (rewardAmount > 0) {
                 epoch.dlpIds.add(dlpId);
-            } else {
-                epoch.dlpIds.remove(dlpId);
+                epoch.dlps[dlpId].rewardAmount = rewardAmount;
+                emit EpochDlpRewardAdded(epochId, dlpId, rewardAmount);
             }
-
-            epoch.dlps[dlpId].rewardAmount = rewardAmount;
-
-            emit EpochDlpRewardAdded(epochId, dlpId, rewardAmount);
         }
 
         uint256 totalRewardAmount;
@@ -176,7 +182,7 @@ contract VanaEpochImplementation is
             totalRewardAmount += epoch.dlps[epoch.dlpIds.at(i)].rewardAmount;
 
             if (totalRewardAmount > epoch.rewardAmount) {
-                revert EpochRewardExceeded();
+                revert EpochRewardExceeded(totalRewardAmount, epoch.rewardAmount);
             }
         }
 
