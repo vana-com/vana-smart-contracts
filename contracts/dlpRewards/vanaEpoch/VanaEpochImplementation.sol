@@ -137,6 +137,8 @@ contract VanaEpochImplementation is
         _createEpochsUntilBlockNumber(block.number);
     }
 
+    error Test(uint256 a, uint256 b);
+
     /**
      * @notice Creates epochs up to specified block
      */
@@ -147,7 +149,7 @@ contract VanaEpochImplementation is
     function saveEpochDlpRewards(
         uint256 epochId,
         Rewards[] calldata dlpRewards
-    ) external override nonReentrant whenNotPaused onlyRole(DLP_PERFORMANCE_ROLE) {
+    ) external override whenNotPaused onlyRole(DLP_PERFORMANCE_ROLE) {
         if (epochId > epochsCount) {
             revert InvalidEpoch();
         } else if (epochId == epochsCount) {
@@ -206,7 +208,7 @@ contract VanaEpochImplementation is
         uint256 dlpId,
         uint256 rewardAmount,
         uint256 penaltyAmount
-    ) external override nonReentrant whenNotPaused onlyRole(DLP_PERFORMANCE_ROLE) {
+    ) external override whenNotPaused onlyRole(DLP_PERFORMANCE_ROLE) {
         if (epochId > epochsCount) {
             revert InvalidEpoch();
         } else if (epochId == epochsCount) {
@@ -215,7 +217,7 @@ contract VanaEpochImplementation is
 
         Epoch storage epoch = _epochs[epochId];
 
-        if (epoch.isFinalized) {
+        if (!epoch.isFinalized) {
             revert EpochAlreadyFinalized();
         }
 

@@ -4,12 +4,14 @@ pragma solidity 0.8.28;
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "./interfaces/DLPRewardDeployerStorageV1.sol";
 
 contract DLPRewardDeployerImplementation is
     UUPSUpgradeable,
     PausableUpgradeable,
     AccessControlUpgradeable,
+    ReentrancyGuardUpgradeable,
     DLPRewardDeployerStorageV1
 {
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
@@ -138,7 +140,7 @@ contract DLPRewardDeployerImplementation is
     function distributeRewards(
         uint256 epochId,
         uint256[] calldata dlpIds
-    ) external override onlyRole(REWARD_DEPLOYER_ROLE) whenNotPaused {
+    ) external override nonReentrant onlyRole(REWARD_DEPLOYER_ROLE) whenNotPaused {
         if (!vanaEpoch.epochs(epochId).isFinalized) {
             revert EpochNotFinalized();
         }
@@ -202,7 +204,7 @@ contract DLPRewardDeployerImplementation is
         uint256 epochId,
         uint256 dlpId,
         address recipientAddress
-    ) external override onlyRole(MAINTAINER_ROLE) whenNotPaused {
+    ) external override nonReentrant onlyRole(MAINTAINER_ROLE) whenNotPaused {
         IVanaEpoch.EpochDlpInfo memory epochDlp = vanaEpoch.epochDlps(epochId, dlpId);
 
         EpochDlpReward storage epochDlpReward = _epochRewards[epochId].epochDlpRewards[dlpId];

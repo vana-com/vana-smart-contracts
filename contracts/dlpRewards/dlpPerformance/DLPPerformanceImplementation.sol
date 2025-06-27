@@ -58,6 +58,7 @@ contract DLPPerformanceImplementation is
     error InvalidTradingVolumeScore();
     error InvalidUniqueContributorsScore();
     error InvalidDataAccessFeesScore();
+    error InvalidPenaltyScores();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -95,6 +96,27 @@ contract DLPPerformanceImplementation is
         uint256 epochId,
         uint256 dlpId
     ) external view override returns (EpochDlpPerformanceInfo memory) {
+        IVanaEpoch.EpochInfo memory epoch = vanaEpoch.epochs(epochId);
+        IVanaEpoch.EpochDlpInfo memory epochDlpInfo = vanaEpoch.epochDlps(epochId, dlpId);
+
+        bool isEligible = epoch.isFinalized ? epochDlpInfo.isTopDlp : dlpRegistry.isEligibleDlp(dlpId);
+
+        if (!isEligible) {
+            return
+                EpochDlpPerformanceInfo({
+                    totalScore: 0,
+                    tradingVolume: 0,
+                    uniqueContributors: 0,
+                    dataAccessFees: 0,
+                    tradingVolumeScore: 0,
+                    uniqueContributorsScore: 0,
+                    dataAccessFeesScore: 0,
+                    tradingVolumeScorePenalty: 0,
+                    uniqueContributorsScorePenalty: 0,
+                    dataAccessFeesScorePenalty: 0
+                });
+        }
+
         EpochDlpPerformance storage epochDlpPerformance = _epochPerformances[epochId].epochDlpPerformances[dlpId];
 
         return
@@ -209,17 +231,18 @@ contract DLPPerformanceImplementation is
             }
         }
 
-        if (tradingVolumeTotalScore > 1e18 || tradingVolumeTotalScore < 1e18 - 1e9) {
-            revert InvalidTradingVolumeScore();
-        }
-
-        if (uniqueContributorsTotalScore > 1e18 || uniqueContributorsTotalScore < 1e18 - 1e9) {
-            revert InvalidUniqueContributorsScore();
-        }
-
-        if (dataAccessFeesTotalScore > 1e18 || dataAccessFeesTotalScore < 1e18 - 1e9) {
-            revert InvalidDataAccessFeesScore();
-        }
+        //commented just on moksha
+        //        if (tradingVolumeTotalScore > 1e18 || tradingVolumeTotalScore < 1e18 - 1e9) {
+        //            revert InvalidTradingVolumeScore();
+        //        }
+        //
+        //        if (uniqueContributorsTotalScore > 1e18 || uniqueContributorsTotalScore < 1e18 - 1e9) {
+        //            revert InvalidUniqueContributorsScore();
+        //        }
+        //
+        //        if (dataAccessFeesTotalScore > 1e18 || dataAccessFeesTotalScore < 1e18 - 1e9) {
+        //            revert InvalidDataAccessFeesScore();
+        //        }
     }
 
     function confirmEpochFinalScores(uint256 epochId) external override onlyRole(MAINTAINER_ROLE) {
@@ -310,6 +333,14 @@ contract DLPPerformanceImplementation is
         uint256 uniqueContributorsScorePenalty,
         uint256 dataAccessFeesScorePenalty
     ) external onlyRole(MAINTAINER_ROLE) {
+        if (
+            tradingVolumeScorePenalty > 1e18 ||
+            uniqueContributorsScorePenalty > 1e18 ||
+            dataAccessFeesScorePenalty > 1e18
+        ) {
+            revert InvalidPenaltyScores();
+        }
+
         EpochDlpPerformance storage epochDlpPerformance = _epochPerformances[epochId].epochDlpPerformances[dlpId];
 
         epochDlpPerformance.tradingVolumeScorePenalty = tradingVolumeScorePenalty;
@@ -359,7 +390,7 @@ contract DLPPerformanceImplementation is
                 tradingVolumeRewardAmount +
                 epochDlpPerformance.uniqueContributorsScore *
                 uniqueContributorsRewardAmount) /
-            1e36;
+            1e18;
 
         penaltyAmount =
             (epochDlpPerformance.dataAccessFeesScore *
