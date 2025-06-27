@@ -532,7 +532,6 @@ contract DLPRewardSwapImplementation is
         address dlpToken = token0 == address(WVANA) ? token1 : token0;
 
         uint256 rewardAmount = (amountIn * params.rewardPercentage) / ONE_HUNDRED_PERCENT;
-        require(rewardAmount > 0, DLPRewardSwap__ZeroAmount());
 
         uint256 lpAmount = amountIn - rewardAmount;
 
@@ -561,18 +560,22 @@ contract DLPRewardSwapImplementation is
 
         /// @dev Swap VANA reward to dlpToken
         uint256 usedVanaAmountForReward;
-        (usedVanaAmountForReward, tokenRewardAmount) = swapHelper.slippageExactInputSingle{value: rewardAmount}(
-            ISwapHelper.SlippageSwapParams({
-                tokenIn: VANA,
-                tokenOut: dlpToken,
-                fee: fee,
-                recipient: params.rewardRecipient,
-                amountIn: rewardAmount,
-                maximumSlippagePercentage: params.maximumSlippagePercentage
-            })
-        );
-        uint256 unusedVanaAmountForReward = rewardAmount - usedVanaAmountForReward;
-        if (unusedVanaAmountForReward > 0) payable(msg.sender).sendValue(unusedVanaAmountForReward);
+        uint256 unusedVanaAmountForReward;
+
+        if (rewardAmount > 0) {
+            (usedVanaAmountForReward, tokenRewardAmount) = swapHelper.slippageExactInputSingle{value: rewardAmount}(
+                ISwapHelper.SlippageSwapParams({
+                    tokenIn: VANA,
+                    tokenOut: dlpToken,
+                    fee: fee,
+                    recipient: params.rewardRecipient,
+                    amountIn: rewardAmount,
+                    maximumSlippagePercentage: params.maximumSlippagePercentage
+                })
+            );
+            unusedVanaAmountForReward = rewardAmount - usedVanaAmountForReward;
+            if (unusedVanaAmountForReward > 0) payable(msg.sender).sendValue(unusedVanaAmountForReward);
+        }
 
         usedVanaAmount = usedVanaAmountForLp + usedVanaAmountForReward;
         require(
@@ -614,8 +617,8 @@ contract DLPRewardSwapImplementation is
         require(token0 == address(WVANA) || token1 == address(WVANA), DLPRewardSwap__InvalidLpTokenId());
         address dlpToken = token0 == address(WVANA) ? token1 : token0;
 
+        /// @dev We allow zero reward percentage to calculate the swap amounts
         uint256 rewardAmount = (params.amountIn * params.rewardPercentage) / ONE_HUNDRED_PERCENT;
-        require(rewardAmount > 0, DLPRewardSwap__ZeroAmount());
 
         uint256 lpAmount = params.amountIn - rewardAmount;
 
@@ -633,6 +636,15 @@ contract DLPRewardSwapImplementation is
         );
 
         /// @dev Swap VANA reward to dlpToken
+        if (rewardAmount == 0) {
+            // If rewardAmount is zero, we do not need to swap
+            tokenRewardAmount = 0;
+            spareToken = lpSwapQuote.spareOut;
+            spareVana = lpSwapQuote.spareIn;
+            usedVanaAmount = lpAmount - lpSwapQuote.spareIn;
+            return (tokenRewardAmount, spareToken, spareVana, usedVanaAmount);
+        }
+
         IUniswapV3Pool pool = swapHelper.getPool(VANA, dlpToken, fee);
         ISwapHelper.Quote memory rewardSwapQuote = swapHelper.quoteSlippageExactInputSingle(
             ISwapHelper.QuoteSlippageExactInputSingleParams({
