@@ -4,10 +4,12 @@ pragma solidity 0.8.28;
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import {IDLPRegistry} from "../../dlpRegistry/interfaces/IDLPRegistry.sol";
 import {IDLPPerformance} from "../../dlpPerformance/interfaces/IDLPPerformance.sol";
+import {IDLPRewardDeployer} from "../../dlpRewardDeployer/interfaces/IDLPRewardDeployer.sol";
 
 interface IVanaEpoch {
     struct EpochDlp {
         uint256 rewardAmount;
+        uint256 penaltyAmount;
     }
 
     struct Epoch {
@@ -23,6 +25,7 @@ interface IVanaEpoch {
     function version() external pure returns (uint256);
     function dlpRegistry() external view returns (IDLPRegistry);
     function dlpPerformance() external view returns (IDLPPerformance);
+    function dlpRewardDeployer() external view returns (IDLPRewardDeployer);
     function epochSize() external view returns (uint256);
     function daySize() external view returns (uint256);
     function epochsCount() external view returns (uint256);
@@ -41,6 +44,8 @@ interface IVanaEpoch {
     struct EpochDlpInfo {
         bool isTopDlp;
         uint256 rewardAmount;
+        uint256 penaltyAmount;
+        uint256 distributedAmount;
     }
     function epochDlps(uint256 epochId, uint256 dlpId) external view returns (EpochDlpInfo memory);
 
@@ -53,6 +58,7 @@ interface IVanaEpoch {
 
     function updateDlpRegistry(address dlpRegistryAddress) external;
     function updateDlpPerformance(address dlpPerformanceAddress) external;
+    function updateDlpRewardDeployer(address dlpRewardDeployerAddress) external;
 
     function createEpochs() external;
     function createEpochsUntilBlockNumber(uint256 blockNumber) external;
@@ -60,9 +66,16 @@ interface IVanaEpoch {
     struct Rewards {
         uint256 dlpId;
         uint256 rewardAmount;
+        uint256 penaltyAmount;
     }
 
-    function saveEpochDlpRewards(uint256 epochId, Rewards[] calldata dlpRewards, bool finalScores) external;
+    function saveEpochDlpRewards(uint256 epochId, Rewards[] calldata dlpRewards) external;
+    function overrideEpochDlpReward(
+        uint256 epochId,
+        uint256 dlpId,
+        uint256 rewardAmount,
+        uint256 penaltyAmount
+    ) external;
     function forceFinalizedEpoch(uint256 epochId) external;
 
     function updateEpoch(

@@ -26,13 +26,23 @@ contract DLPRewardDeployerImplementation is
         uint256 usedVanaAmount
     );
 
+    event EpochDlpPenaltyDistributed(
+        uint256 indexed epochId,
+        uint256 indexed dlpId,
+        uint256 distributedAmount,
+        uint256 totalPenaltyAmount
+    );
+
     error EpochNotFinalized();
     error NothingToDistribute(uint256 dlpId);
+    error NothingToWithdraw();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
     }
+
+    receive() external payable {}
 
     function initialize(
         address ownerAddress,
@@ -86,7 +96,9 @@ contract DLPRewardDeployerImplementation is
         rewardPercentage = newRewardPercentage;
     }
 
-    function updateMaximumSlippagePercentage(uint256 newMaximumSlippagePercentage) external override onlyRole(MAINTAINER_ROLE) {
+    function updateMaximumSlippagePercentage(
+        uint256 newMaximumSlippagePercentage
+    ) external override onlyRole(MAINTAINER_ROLE) {
         maximumSlippagePercentage = newMaximumSlippagePercentage;
     }
 
@@ -101,29 +113,33 @@ contract DLPRewardDeployerImplementation is
     function epochDlpRewards(uint256 epochId, uint256 dlpId) external view returns (EpochDlpRewardInfo memory) {
         EpochDlpReward storage epochDlpReward = _epochRewards[epochId].epochDlpRewards[dlpId];
 
-        return EpochDlpRewardInfo({
-            totalDistributedAmount: epochDlpReward.totalDistributedAmount,
-            tranchesCount: epochDlpReward.tranchesCount
-        });
+        return
+            EpochDlpRewardInfo({
+                totalDistributedAmount: epochDlpReward.totalDistributedAmount,
+                tranchesCount: epochDlpReward.tranchesCount
+            });
     }
 
-    function epochDlpDistributedRewards(uint256 epochId, uint256 dlpId) external view returns (DistributedReward[]  memory) {
+    function epochDlpDistributedRewards(
+        uint256 epochId,
+        uint256 dlpId
+    ) external view returns (DistributedReward[] memory) {
         EpochDlpReward storage epochDlpReward = _epochRewards[epochId].epochDlpRewards[dlpId];
 
         DistributedReward[] memory distributedRewards = new DistributedReward[](epochDlpReward.tranchesCount);
 
         for (uint256 i = 0; i < epochDlpReward.tranchesCount; i++) {
-            distributedRewards[i] = epochDlpReward.distributedRewards[i + 1];  //tranches are 1-indexed
+            distributedRewards[i] = epochDlpReward.distributedRewards[i + 1]; //tranches are 1-indexed
         }
 
         return distributedRewards;
     }
 
-
-    function distributeRewards(uint256 epochId, uint256[] calldata dlpIds) external override onlyRole(REWARD_DEPLOYER_ROLE) whenNotPaused {
-        IVanaEpoch.EpochInfo memory epoch = vanaEpoch.epochs(epochId);
-
-        if (!epoch.isFinalized) {
+    function distributeRewards(
+        uint256 epochId,
+        uint256[] calldata dlpIds
+    ) external override onlyRole(REWARD_DEPLOYER_ROLE) whenNotPaused {
+        if (!vanaEpoch.epochs(epochId).isFinalized) {
             revert EpochNotFinalized();
         }
 
@@ -131,26 +147,25 @@ contract DLPRewardDeployerImplementation is
             IDLPRegistry.DlpInfo memory dlp = dlpRegistry.dlps(dlpIds[i]);
             IVanaEpoch.EpochDlpInfo memory epochDlp = vanaEpoch.epochDlps(epochId, dlpIds[i]);
 
+            uint256 totalRewardToDistribute = epochDlp.penaltyAmount < epochDlp.rewardAmount
+                ? epochDlp.rewardAmount - epochDlp.penaltyAmount
+                : 0;
+
             EpochDlpReward storage epochDlpReward = _epochRewards[epochId].epochDlpRewards[dlpIds[i]];
 
-            if (epochDlpReward.totalDistributedAmount >= epochDlp.rewardAmount) {
+            if (epochDlpReward.totalDistributedAmount >= totalRewardToDistribute) {
                 revert NothingToDistribute(dlpIds[i]);
             }
 
-            uint256 trancheAmount = (epochDlp.rewardAmount - epochDlpReward.totalDistributedAmount)  /
+            uint256 trancheAmount = (totalRewardToDistribute - epochDlpReward.totalDistributedAmount) /
                 (numberOfTranches - epochDlpReward.tranchesCount);
 
             ++epochDlpReward.tranchesCount;
 
-
             treasury.transfer(address(this), address(0), trancheAmount);
 
-            (
-                uint256 tokenRewardAmount,
-                uint256 spareToken,
-                uint256 spareVana,
-                uint256 usedVanaAmount
-            ) = dlpRewardSwap.splitRewardSwap{value: trancheAmount}(
+            (uint256 tokenRewardAmount, uint256 spareToken, uint256 spareVana, uint256 usedVanaAmount) = dlpRewardSwap
+                .splitRewardSwap{value: trancheAmount}(
                 IDLPRewardSwap.SplitRewardSwapParams({
                     lpTokenId: dlp.lpTokenId,
                     rewardPercentage: rewardPercentage,
@@ -174,7 +189,7 @@ contract DLPRewardDeployerImplementation is
                 epochId,
                 dlpIds[i],
                 epochDlpReward.tranchesCount,
-            trancheAmount,
+                trancheAmount,
                 tokenRewardAmount,
                 spareToken,
                 spareVana,
@@ -183,5 +198,26 @@ contract DLPRewardDeployerImplementation is
         }
     }
 
-    receive() external payable {}
+    function withdrawEpochDlpPenaltyAmount(
+        uint256 epochId,
+        uint256 dlpId,
+        address recipientAddress
+    ) external override onlyRole(MAINTAINER_ROLE) whenNotPaused {
+        IVanaEpoch.EpochDlpInfo memory epochDlp = vanaEpoch.epochDlps(epochId, dlpId);
+
+        EpochDlpReward storage epochDlpReward = _epochRewards[epochId].epochDlpRewards[dlpId];
+        uint256 distributedPenaltyAmount = epochDlpReward.distributedPenaltyAmount;
+
+        if (epochDlp.penaltyAmount <= distributedPenaltyAmount) {
+            revert NothingToWithdraw();
+        }
+
+        epochDlpReward.distributedPenaltyAmount = epochDlp.penaltyAmount;
+
+        uint256 toWithdrawAmount = epochDlp.penaltyAmount - distributedPenaltyAmount;
+
+        treasury.transfer(recipientAddress, address(0), toWithdrawAmount);
+
+        emit EpochDlpPenaltyDistributed(epochId, dlpId, toWithdrawAmount, epochDlp.penaltyAmount);
+    }
 }

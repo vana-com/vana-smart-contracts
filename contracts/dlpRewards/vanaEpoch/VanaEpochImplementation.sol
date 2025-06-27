@@ -27,7 +27,8 @@ contract VanaEpochImplementation is
     event EpochSizeUpdated(uint256 newEpochSize);
     event EpochDayUpdated(uint256 newDaySize);
     event EpochRewardAmountUpdated(uint256 newEpochRewardAmount);
-    event EpochDlpRewardAdded(uint256 epochId, uint256 dlpId, uint256 rewardAmount);
+    event EpochDlpRewardAdded(uint256 epochId, uint256 dlpId, uint256 rewardAmount, uint256 penaltyAmount);
+    event EpochDlpRewardOverridden(uint256 epochId, uint256 dlpId, uint256 rewardAmount, uint256 penaltyAmount);
     event EpochFinalized(uint256 epochId);
 
     error EpochNotEnded();
@@ -49,15 +50,13 @@ contract VanaEpochImplementation is
         uint256 epochRewardAmount;
     }
 
-    function initialize(
-        InitializeParams memory params
-    ) external initializer {
+    function initialize(InitializeParams memory params) external initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
         __ReentrancyGuard_init();
         __Pausable_init();
 
-        dlpRegistry = IDLPRegistry     (params.dlpRegistryAddress);
+        dlpRegistry = IDLPRegistry(params.dlpRegistryAddress);
         daySize = params.daySize;
         epochSize = params.epochSize;
         epochRewardAmount = params.epochRewardAmount;
@@ -93,7 +92,9 @@ contract VanaEpochImplementation is
         return
             EpochDlpInfo({
                 isTopDlp: epoch.dlpIds.contains(dlpId),
-                rewardAmount: epochDlp.rewardAmount
+                rewardAmount: epochDlp.rewardAmount,
+                penaltyAmount: epochDlp.penaltyAmount,
+                distributedAmount: dlpRewardDeployer.epochDlpRewards(epochId, dlpId).totalDistributedAmount
             });
     }
 
@@ -125,6 +126,10 @@ contract VanaEpochImplementation is
         _grantRole(DLP_PERFORMANCE_ROLE, address(dlpPerformance));
     }
 
+    function updateDlpRewardDeployer(address dlpRewardDeployerAddress) external override onlyRole(MAINTAINER_ROLE) {
+        dlpRewardDeployer = IDLPRewardDeployer(dlpRewardDeployerAddress);
+    }
+
     /**
      * @notice Creates epochs up to current block
      */
@@ -141,12 +146,11 @@ contract VanaEpochImplementation is
 
     function saveEpochDlpRewards(
         uint256 epochId,
-        Rewards[] calldata dlpRewards,
-        bool finalScores
+        Rewards[] calldata dlpRewards
     ) external override nonReentrant whenNotPaused onlyRole(DLP_PERFORMANCE_ROLE) {
         if (epochId > epochsCount) {
             revert InvalidEpoch();
-        } else if (epochId == epochsCount && finalScores) {
+        } else if (epochId == epochsCount) {
             revert EpochNotEnded();
         }
 
@@ -158,17 +162,16 @@ contract VanaEpochImplementation is
 
         for (uint256 i = 0; i < dlpRewards.length; i++) {
             uint256 dlpId = dlpRewards[i].dlpId;
-            uint256 rewardAmount = dlpRewards[i].rewardAmount;
-
-            if (rewardAmount > 0) {
+            if (dlpRewards[i].rewardAmount > 0) {
                 epoch.dlpIds.add(dlpId);
             } else {
                 epoch.dlpIds.remove(dlpId);
             }
 
-            epoch.dlps[dlpId].rewardAmount = rewardAmount;
+            epoch.dlps[dlpId].rewardAmount = dlpRewards[i].rewardAmount;
+            epoch.dlps[dlpId].penaltyAmount = dlpRewards[i].penaltyAmount;
 
-            emit EpochDlpRewardAdded(epochId, dlpId, rewardAmount);
+            emit EpochDlpRewardAdded(epochId, dlpId, dlpRewards[i].rewardAmount, dlpRewards[i].penaltyAmount);
         }
 
         uint256 totalRewardAmount;
@@ -180,17 +183,42 @@ contract VanaEpochImplementation is
             }
         }
 
-        if (finalScores) {
-            if (totalRewardAmount < epoch.rewardAmount - 1e9) { //1e9 represents calculation error tolerance
-                revert EpochRewardNotDistributed();
-            }
-            epoch.isFinalized = true;
-
-            emit EpochFinalized(epochId);
+        if (totalRewardAmount < epoch.rewardAmount - 1e9) {
+            //1e9 represents calculation error tolerance
+            revert EpochRewardNotDistributed();
         }
+        epoch.isFinalized = true;
+
+        emit EpochFinalized(epochId);
     }
 
-    function forceFinalizedEpoch(uint256 epochId) external override nonReentrant whenNotPaused onlyRole(MAINTAINER_ROLE) {
+    function overrideEpochDlpReward(
+        uint256 epochId,
+        uint256 dlpId,
+        uint256 rewardAmount,
+        uint256 penaltyAmount
+    ) external override nonReentrant whenNotPaused onlyRole(DLP_PERFORMANCE_ROLE) {
+        if (epochId > epochsCount) {
+            revert InvalidEpoch();
+        } else if (epochId == epochsCount) {
+            revert EpochNotEnded();
+        }
+
+        Epoch storage epoch = _epochs[epochId];
+
+        if (epoch.isFinalized) {
+            revert EpochAlreadyFinalized();
+        }
+
+        epoch.dlps[dlpId].rewardAmount = rewardAmount;
+        epoch.dlps[dlpId].penaltyAmount = penaltyAmount;
+
+        emit EpochDlpRewardOverridden(epochId, dlpId, rewardAmount, penaltyAmount);
+    }
+
+    function forceFinalizedEpoch(
+        uint256 epochId
+    ) external override nonReentrant whenNotPaused onlyRole(MAINTAINER_ROLE) {
         _createEpochsUntilBlockNumber(block.number);
 
         if (epochId >= epochsCount) {
@@ -207,7 +235,6 @@ contract VanaEpochImplementation is
     function updateEpochsCount(uint256 newEpochsCount) external onlyRole(MAINTAINER_ROLE) {
         epochsCount = newEpochsCount;
     }
-
 
     function updateEpoch(
         uint256 epochId,

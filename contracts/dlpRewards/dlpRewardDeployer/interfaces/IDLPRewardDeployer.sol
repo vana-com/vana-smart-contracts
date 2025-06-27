@@ -20,6 +20,7 @@ interface IDLPRewardDeployer {
         uint256 totalDistributedAmount;
         uint256 tranchesCount;
         mapping(uint256 trancheId => DistributedReward distributedReward) distributedRewards;
+        uint256 distributedPenaltyAmount;
     }
 
     struct EpochReward {
@@ -55,4 +56,6 @@ interface IDLPRewardDeployer {
     function updateMaximumSlippagePercentage(uint256 newMaximumSlippagePercentage) external;
 
     function distributeRewards(uint256 epochId, uint256[] calldata dlpIds) external;
+
+    function withdrawEpochDlpPenaltyAmount(uint256 epochId, uint256 dlpId, address recipientAddress) external;
 }
