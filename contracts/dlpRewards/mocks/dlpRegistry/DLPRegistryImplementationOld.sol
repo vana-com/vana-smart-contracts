@@ -6,6 +6,7 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "./interfaces/DLPRegistryStorageV1.sol";
+import {IDLPRootCore} from "./interfaces/IDLPRootCore.sol";
 
 contract DLPRegistryImplementationOld is
     UUPSUpgradeable,
@@ -45,6 +46,7 @@ contract DLPRegistryImplementationOld is
 
     event DlpStatusUpdated(uint256 indexed dlpId, DlpStatus newStatus);
     event DlpVerificationUpdated(uint256 indexed dlpId, bool verified);
+    event DlpVerificationBlockUpdated(uint256 indexed dlpId, uint256 verificationBlockNumber);
     event DlpRegistrationDepositAmountUpdated(uint256 newDlpRegistrationDepositAmount);
     event DlpTokenUpdated(uint256 indexed dlpId, address tokenAddress);
     event DlpLpTokenIdUpdated(uint256 indexed dlpId, uint256 lpTokenId);
@@ -109,7 +111,7 @@ contract DLPRegistryImplementationOld is
                 registrationBlockNumber: dlp.registrationBlockNumber,
                 depositAmount: dlp.depositAmount,
                 lpTokenId: dlp.lpTokenId,
-                isVerified: dlp.isVerified
+                verificationBlockNumber: dlp.verificationBlockNumber
             });
     }
 
@@ -163,11 +165,23 @@ contract DLPRegistryImplementationOld is
         _registerDlp(registrationInfo);
     }
 
-    function updateDlpVerificationBlock(uint256 dlpId, bool isVerify) external override onlyRole(MAINTAINER_ROLE) {
+    function updateDlpVerificationBlock(
+        uint256 dlpId,
+        uint256 verificationBlockNumber
+    ) external override onlyRole(MAINTAINER_ROLE) {
         Dlp storage dlp = _dlps[dlpId];
 
-        dlp.isVerified = isVerify;
-        emit DlpVerificationUpdated(dlpId, isVerify);
+        dlp.verificationBlockNumber = verificationBlockNumber;
+        emit DlpVerificationBlockUpdated(dlpId, verificationBlockNumber);
+
+        _setDlpEligibility(dlp);
+    }
+
+    function unverifyDlp(uint256 dlpId) external override onlyRole(MAINTAINER_ROLE) {
+        Dlp storage dlp = _dlps[dlpId];
+
+        dlp.verificationBlockNumber = 0;
+        emit DlpVerificationBlockUpdated(dlpId, 0);
 
         _setDlpEligibility(dlp);
     }
@@ -192,17 +206,17 @@ contract DLPRegistryImplementationOld is
         uint256 dlpId,
         address tokenAddress,
         uint256 lpTokenId,
-        bool isVerify
+        uint256 verificationBlockNumber
     ) external override onlyRole(MAINTAINER_ROLE) {
         Dlp storage dlp = _dlps[dlpId];
 
         dlp.tokenAddress = tokenAddress;
         dlp.lpTokenId = lpTokenId;
-        dlp.isVerified = isVerify;
+        dlp.verificationBlockNumber = verificationBlockNumber;
 
         emit DlpTokenUpdated(dlpId, tokenAddress);
         emit DlpLpTokenIdUpdated(dlpId, lpTokenId);
-        emit DlpVerificationUpdated(dlpId, isVerify);
+        emit DlpVerificationBlockUpdated(dlpId, verificationBlockNumber);
 
         _setDlpEligibility(dlp);
     }
@@ -351,6 +365,55 @@ contract DLPRegistryImplementationOld is
         return count > 3;
     }
 
+    function migrateDlpData(
+        address dlpRootCoreAddress,
+        uint256 startDlpId,
+        uint256 endDlpId
+    ) external onlyRole(MAINTAINER_ROLE) {
+        IDLPRootCore dlpRootCore = IDLPRootCore(dlpRootCoreAddress);
+
+        for (uint256 dlpId = startDlpId; dlpId <= endDlpId; ) {
+            IDLPRootCore.DlpInfo memory dlpInfo = dlpRootCore.dlps(dlpId);
+            Dlp storage dlp = _dlps[dlpId];
+
+            dlp.id = dlpInfo.id;
+            dlp.dlpAddress = dlpInfo.dlpAddress;
+            dlp.ownerAddress = dlpInfo.ownerAddress;
+            dlp.treasuryAddress = payable(dlpInfo.treasuryAddress);
+            dlp.name = dlpInfo.name;
+            dlp.iconUrl = dlpInfo.iconUrl;
+            dlp.website = dlpInfo.website;
+            dlp.metadata = dlpInfo.metadata;
+            dlp.status = DlpStatus.Registered;
+            dlp.registrationBlockNumber = dlpInfo.registrationBlockNumber;
+            //            dlp.isVerified = dlpInfo.isVerified;
+
+            dlpIds[dlpInfo.dlpAddress] = dlpId;
+            dlpNameToId[dlpInfo.name] = dlpId;
+
+            //            if (DlpStatus(uint256(dlpInfo.status)) == DlpStatus.Eligible) {
+            //                _eligibleDlpsList.add(dlpId);
+            //            }
+
+            emit DlpRegistered(
+                dlpId,
+                dlpInfo.dlpAddress,
+                dlpInfo.ownerAddress,
+                dlpInfo.treasuryAddress,
+                dlpInfo.name,
+                dlpInfo.iconUrl,
+                dlpInfo.website,
+                dlpInfo.metadata
+            );
+
+            ++dlpsCount;
+
+            unchecked {
+                ++dlpId;
+            }
+        }
+    }
+
     function _setDlpEligibility(Dlp storage dlp) internal {
         vanaEpoch.createEpochs();
 
@@ -363,16 +426,14 @@ contract DLPRegistryImplementationOld is
         DlpStatus newStatus = currentStatus;
 
         if (
-            currentStatus == DlpStatus.Registered &&
+            (currentStatus == DlpStatus.Registered || currentStatus == DlpStatus.Eligible) &&
             dlp.lpTokenId != 0 &&
             dlp.tokenAddress != address(0) &&
-            dlp.isVerified
+            dlp.verificationBlockNumber > 0
         ) {
             newStatus = DlpStatus.Eligible;
-            _eligibleDlpsList.add(dlp.id);
         } else {
             newStatus = DlpStatus.Registered;
-            _eligibleDlpsList.remove(dlp.id);
         }
 
         if (newStatus != currentStatus) {
@@ -382,6 +443,12 @@ contract DLPRegistryImplementationOld is
             }
 
             dlp.status = newStatus;
+
+            if (newStatus == DlpStatus.Eligible) {
+                _eligibleDlpsList.add(dlp.id);
+            } else {
+                _eligibleDlpsList.remove(dlp.id);
+            }
             emit DlpStatusUpdated(dlp.id, newStatus);
         }
     }

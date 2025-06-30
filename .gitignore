@@ -21,3 +21,5 @@ node_modules
 artifacts/
 
 deployments/
+
+test/dlpRewards/dlpReward2.ts

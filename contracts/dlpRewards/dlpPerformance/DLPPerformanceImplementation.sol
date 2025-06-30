@@ -59,6 +59,12 @@ contract DLPPerformanceImplementation is
     error InvalidUniqueContributorsScore();
     error InvalidDataAccessFeesScore();
     error InvalidPenaltyScores();
+    error PenaltyAmountLessThanPenaltyDistributed(
+        uint256 epochId,
+        uint256 dlpId,
+        uint256 penaltyAmount,
+        uint256 distributedPenaltyAmount
+    );
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -366,6 +372,11 @@ contract DLPPerformanceImplementation is
         }
 
         (uint256 rewardAmount, uint256 penaltyAmount) = calculateEpochDlpRewards(epochId, dlpId);
+
+        uint256 distributedPenaltyAmount = vanaEpoch.epochDlps(epochId, dlpId).distributedPenaltyAmount;
+        if (penaltyAmount < distributedPenaltyAmount) {
+            revert PenaltyAmountLessThanPenaltyDistributed(epochId, dlpId, penaltyAmount, distributedPenaltyAmount);
+        }
 
         vanaEpoch.overrideEpochDlpReward(epochId, dlpId, rewardAmount, penaltyAmount);
     }

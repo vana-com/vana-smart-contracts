@@ -9,7 +9,7 @@ import "./interfaces/VanaEpochStorageV1.sol";
 
 import "hardhat/console.sol";
 
-contract VanaEpochImplementation is
+contract VanaEpochImplementationOld is
     UUPSUpgradeable,
     PausableUpgradeable,
     AccessControlUpgradeable,
@@ -27,9 +27,8 @@ contract VanaEpochImplementation is
     event EpochSizeUpdated(uint256 newEpochSize);
     event EpochDayUpdated(uint256 newDaySize);
     event EpochRewardAmountUpdated(uint256 newEpochRewardAmount);
-    event EpochDlpRewardAdded(uint256 epochId, uint256 dlpId, uint256 rewardAmount, uint256 penaltyAmount);
+    event EpochDlpRewardAdded(uint256 epochId, uint256 dlpId, uint256 rewardAmount);
     event EpochFinalized(uint256 epochId);
-    event EpochDlpRewardOverridden(uint256 epochId, uint256 dlpId, uint256 rewardAmount, uint256 penaltyAmount);
 
     error EpochNotEnded();
     error EpochAlreadyFinalized();
@@ -89,14 +88,7 @@ contract VanaEpochImplementation is
         Epoch storage epoch = _epochs[epochId];
         EpochDlp memory epochDlp = epoch.dlps[dlpId];
 
-        return
-            EpochDlpInfo({
-                isTopDlp: epoch.dlpIds.contains(dlpId),
-                rewardAmount: epochDlp.rewardAmount,
-                penaltyAmount: epochDlp.penaltyAmount,
-                distributedAmount: dlpRewardDeployer.epochDlpRewards(epochId, dlpId).totalDistributedAmount,
-                distributedPenaltyAmount: dlpRewardDeployer.epochDlpRewards(epochId, dlpId).distributedPenaltyAmount
-            });
+        return EpochDlpInfo({isTopDlp: epoch.dlpIds.contains(dlpId), rewardAmount: epochDlp.rewardAmount});
     }
 
     function pause() external override onlyRole(MAINTAINER_ROLE) {
@@ -127,18 +119,12 @@ contract VanaEpochImplementation is
         _grantRole(DLP_PERFORMANCE_ROLE, address(dlpPerformance));
     }
 
-    function updateDlpRewardDeployer(address dlpRewardDeployerAddress) external override onlyRole(MAINTAINER_ROLE) {
-        dlpRewardDeployer = IDLPRewardDeployer(dlpRewardDeployerAddress);
-    }
-
     /**
      * @notice Creates epochs up to current block
      */
     function createEpochs() external override nonReentrant whenNotPaused {
         _createEpochsUntilBlockNumber(block.number);
     }
-
-    error Test(uint256 a, uint256 b);
 
     /**
      * @notice Creates epochs up to specified block
@@ -149,11 +135,12 @@ contract VanaEpochImplementation is
 
     function saveEpochDlpRewards(
         uint256 epochId,
-        Rewards[] calldata dlpRewards
-    ) external override whenNotPaused onlyRole(DLP_PERFORMANCE_ROLE) {
+        Rewards[] calldata dlpRewards,
+        bool finalScores
+    ) external override nonReentrant whenNotPaused onlyRole(DLP_PERFORMANCE_ROLE) {
         if (epochId > epochsCount) {
             revert InvalidEpoch();
-        } else if (epochId == epochsCount) {
+        } else if (epochId == epochsCount && finalScores) {
             revert EpochNotEnded();
         }
 
@@ -180,9 +167,7 @@ contract VanaEpochImplementation is
             if (rewardAmount > 0) {
                 epoch.dlpIds.add(dlpId);
                 epoch.dlps[dlpId].rewardAmount = rewardAmount;
-                epoch.dlps[dlpId].penaltyAmount = dlpRewards[i].penaltyAmount;
-
-                emit EpochDlpRewardAdded(epochId, dlpId, rewardAmount, epoch.dlps[dlpId].penaltyAmount);
+                emit EpochDlpRewardAdded(epochId, dlpId, rewardAmount);
             }
         }
 
@@ -195,37 +180,15 @@ contract VanaEpochImplementation is
             }
         }
 
-        if (totalRewardAmount < epoch.rewardAmount - 1e9) {
-            //1e9 represents calculation error tolerance
-            revert EpochRewardNotDistributed();
+        if (finalScores) {
+            if (totalRewardAmount < epoch.rewardAmount - 1e9) {
+                //1e9 represents calculation error tolerance
+                revert EpochRewardNotDistributed();
+            }
+            epoch.isFinalized = true;
+
+            emit EpochFinalized(epochId);
         }
-        epoch.isFinalized = true;
-
-        emit EpochFinalized(epochId);
-    }
-
-    function overrideEpochDlpReward(
-        uint256 epochId,
-        uint256 dlpId,
-        uint256 rewardAmount,
-        uint256 penaltyAmount
-    ) external override whenNotPaused onlyRole(DLP_PERFORMANCE_ROLE) {
-        if (epochId > epochsCount) {
-            revert InvalidEpoch();
-        } else if (epochId == epochsCount) {
-            revert EpochNotEnded();
-        }
-
-        Epoch storage epoch = _epochs[epochId];
-
-        if (!epoch.isFinalized) {
-            revert EpochAlreadyFinalized();
-        }
-
-        epoch.dlps[dlpId].rewardAmount = rewardAmount;
-        epoch.dlps[dlpId].penaltyAmount = penaltyAmount;
-
-        emit EpochDlpRewardOverridden(epochId, dlpId, rewardAmount, penaltyAmount);
     }
 
     function forceFinalizedEpoch(

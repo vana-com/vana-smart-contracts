@@ -4,14 +4,12 @@ pragma solidity 0.8.28;
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "./interfaces/DLPRewardDeployerStorageV1.sol";
 
-contract DLPRewardDeployerImplementation is
+contract DLPRewardDeployerImplementationOld is
     UUPSUpgradeable,
     PausableUpgradeable,
     AccessControlUpgradeable,
-    ReentrancyGuardUpgradeable,
     DLPRewardDeployerStorageV1
 {
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
@@ -28,23 +26,13 @@ contract DLPRewardDeployerImplementation is
         uint256 usedVanaAmount
     );
 
-    event EpochDlpPenaltyDistributed(
-        uint256 indexed epochId,
-        uint256 indexed dlpId,
-        uint256 distributedAmount,
-        uint256 totalPenaltyAmount
-    );
-
     error EpochNotFinalized();
     error NothingToDistribute(uint256 dlpId);
-    error NothingToWithdraw();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
     }
-
-    receive() external payable {}
 
     function initialize(
         address ownerAddress,
@@ -118,7 +106,6 @@ contract DLPRewardDeployerImplementation is
         return
             EpochDlpRewardInfo({
                 totalDistributedAmount: epochDlpReward.totalDistributedAmount,
-                distributedPenaltyAmount: epochDlpReward.distributedPenaltyAmount,
                 tranchesCount: epochDlpReward.tranchesCount
             });
     }
@@ -141,8 +128,10 @@ contract DLPRewardDeployerImplementation is
     function distributeRewards(
         uint256 epochId,
         uint256[] calldata dlpIds
-    ) external override nonReentrant onlyRole(REWARD_DEPLOYER_ROLE) whenNotPaused {
-        if (!vanaEpoch.epochs(epochId).isFinalized) {
+    ) external override onlyRole(REWARD_DEPLOYER_ROLE) whenNotPaused {
+        IVanaEpoch.EpochInfo memory epoch = vanaEpoch.epochs(epochId);
+
+        if (!epoch.isFinalized) {
             revert EpochNotFinalized();
         }
 
@@ -150,17 +139,13 @@ contract DLPRewardDeployerImplementation is
             IDLPRegistry.DlpInfo memory dlp = dlpRegistry.dlps(dlpIds[i]);
             IVanaEpoch.EpochDlpInfo memory epochDlp = vanaEpoch.epochDlps(epochId, dlpIds[i]);
 
-            uint256 totalRewardToDistribute = epochDlp.penaltyAmount < epochDlp.rewardAmount
-                ? epochDlp.rewardAmount - epochDlp.penaltyAmount
-                : 0;
-
             EpochDlpReward storage epochDlpReward = _epochRewards[epochId].epochDlpRewards[dlpIds[i]];
 
-            if (epochDlpReward.totalDistributedAmount >= totalRewardToDistribute) {
+            if (epochDlpReward.totalDistributedAmount >= epochDlp.rewardAmount) {
                 revert NothingToDistribute(dlpIds[i]);
             }
 
-            uint256 trancheAmount = (totalRewardToDistribute - epochDlpReward.totalDistributedAmount) /
+            uint256 trancheAmount = (epochDlp.rewardAmount - epochDlpReward.totalDistributedAmount) /
                 (numberOfTranches - epochDlpReward.tranchesCount);
 
             ++epochDlpReward.tranchesCount;
@@ -201,26 +186,5 @@ contract DLPRewardDeployerImplementation is
         }
     }
 
-    function withdrawEpochDlpPenaltyAmount(
-        uint256 epochId,
-        uint256 dlpId,
-        address recipientAddress
-    ) external override nonReentrant onlyRole(MAINTAINER_ROLE) whenNotPaused {
-        IVanaEpoch.EpochDlpInfo memory epochDlp = vanaEpoch.epochDlps(epochId, dlpId);
-
-        EpochDlpReward storage epochDlpReward = _epochRewards[epochId].epochDlpRewards[dlpId];
-        uint256 distributedPenaltyAmount = epochDlpReward.distributedPenaltyAmount;
-
-        if (epochDlp.penaltyAmount <= distributedPenaltyAmount) {
-            revert NothingToWithdraw();
-        }
-
-        epochDlpReward.distributedPenaltyAmount = epochDlp.penaltyAmount;
-
-        uint256 toWithdrawAmount = epochDlp.penaltyAmount - distributedPenaltyAmount;
-
-        treasury.transfer(recipientAddress, address(0), toWithdrawAmount);
-
-        emit EpochDlpPenaltyDistributed(epochId, dlpId, toWithdrawAmount, epochDlp.penaltyAmount);
-    }
+    receive() external payable {}
 }

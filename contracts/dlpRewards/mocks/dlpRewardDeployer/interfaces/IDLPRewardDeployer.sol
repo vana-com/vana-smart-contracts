@@ -3,8 +3,8 @@ pragma solidity 0.8.28;
 
 import {IDLPRegistry} from "../../dlpRegistry/interfaces/IDLPRegistry.sol";
 import {IVanaEpoch} from "../../vanaEpoch/interfaces/IVanaEpoch.sol";
-import {IDLPRewardSwap} from "../../dlpRewardSwap/interfaces/IDLPRewardSwap.sol";
-import {ITreasury} from "../../../utils/treasury/interfaces/ITreasury.sol";
+import {IDLPRewardSwap} from "../../../dlpRewardSwap/interfaces/IDLPRewardSwap.sol";
+import {ITreasury} from "../../../../utils/treasury/interfaces/ITreasury.sol";
 
 interface IDLPRewardDeployer {
     struct DistributedReward {
@@ -20,7 +20,6 @@ interface IDLPRewardDeployer {
         uint256 totalDistributedAmount;
         uint256 tranchesCount;
         mapping(uint256 trancheId => DistributedReward distributedReward) distributedRewards;
-        uint256 distributedPenaltyAmount;
     }
 
     struct EpochReward {
@@ -38,7 +37,6 @@ interface IDLPRewardDeployer {
 
     struct EpochDlpRewardInfo {
         uint256 totalDistributedAmount;
-        uint256 distributedPenaltyAmount;
         uint256 tranchesCount;
     }
     function epochDlpRewards(uint256 epochId, uint256 dlpId) external view returns (EpochDlpRewardInfo memory);
@@ -57,6 +55,4 @@ interface IDLPRewardDeployer {
     function updateMaximumSlippagePercentage(uint256 newMaximumSlippagePercentage) external;
 
     function distributeRewards(uint256 epochId, uint256[] calldata dlpIds) external;
-
-    function withdrawEpochDlpPenaltyAmount(uint256 epochId, uint256 dlpId, address recipientAddress) external;
 }
