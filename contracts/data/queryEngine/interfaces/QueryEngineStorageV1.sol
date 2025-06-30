@@ -32,4 +32,6 @@ abstract contract QueryEngineStorageV1 is IQueryEngine {
         internal _approvedPermissions;
 
     mapping(uint256 dlpId => string pubKey) public override dlpPubKeys;
+
+    EnumerableSet.AddressSet internal _whitelistedPaymentTokens;
 }
