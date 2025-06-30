@@ -21,10 +21,10 @@ chai.use(chaiAsPromised);
 should();
 
 describe("DLP fork tests", () => {
-  const vanaEpochAddress = "0xe924Bd6170192a97ca37C91069A7f43C55ebe7df";
-  const treasuryAddress = "0x05aa58a6B51446A27a02aA5725c602AEc0E4500d";
-  const dlpRegistryAddress = "0xA6dFc0ef21D91F166Ca51c731D1a115a5b715a3F";
-  const dlpPerformanceAddress = "0x4FEa7823D2E727F6D1F83422A7FD619070B06832";
+  const vanaEpochAddress = "0x2063cFF0609D59bCCc196E20Eb58A8696a6b15A0";
+  const treasuryAddress = "0xb12ce1d27bEeFe39b6F0110b1AB77C21Aa0c9F9a";
+  const dlpRegistryAddress = "0x4D59880a924526d1dD33260552Ff4328b1E18a43";
+  const dlpPerformanceAddress = "0x847715C7DB37cF286611182Be0bD333cbfa29cc1";
   const adminAddress = "0x2AC93684679a5bdA03C6160def908CdB8D46792f";
 
   enum DlpStatus {
@@ -128,6 +128,24 @@ describe("DLP fork tests", () => {
       await dlpPerformance
         .connect(admin)
         .saveEpochPerformances(1, epoch1Performances, false);
+    });
+
+    it.only("should confirm", async function () {
+      await vanaEpoch
+        .connect(admin)
+        .upgradeToAndCall(
+          await ethers.deployContract("VanaEpochImplementation"),
+          "0x",
+        );
+
+      await dlpPerformance
+        .connect(admin)
+        .upgradeToAndCall(
+          await ethers.deployContract("DLPPerformanceImplementation"),
+          "0x",
+        );
+
+      await dlpPerformance.connect(admin).confirmEpochFinalScores(13);
     });
   });
 });

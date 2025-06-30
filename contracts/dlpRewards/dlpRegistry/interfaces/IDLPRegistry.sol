@@ -38,6 +38,7 @@ interface IDLPRegistry {
     function eligibleDlpsListValues() external view returns (uint256[] memory);
     function eligibleDlpsListCount() external view returns (uint256);
     function eligibleDlpsListAt(uint256 index) external view returns (uint256);
+    function isEligibleDlp(uint256 dlpId) external view returns (bool);
 
     function dlpRegistrationDepositAmount() external view returns (uint256);
     function dlpsCount() external view returns (uint256);

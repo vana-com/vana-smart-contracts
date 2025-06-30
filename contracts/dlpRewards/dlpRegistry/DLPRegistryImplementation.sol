@@ -135,6 +135,10 @@ contract DLPRegistryImplementation is
         return _eligibleDlpsList.at(index);
     }
 
+    function isEligibleDlp(uint256 dlpId) external view override returns (bool) {
+        return _eligibleDlpsList.contains(dlpId);
+    }
+
     function pause() external override onlyRole(MAINTAINER_ROLE) {
         _pause();
     }

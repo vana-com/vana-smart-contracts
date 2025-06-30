@@ -3,7 +3,7 @@ pragma solidity 0.8.28;
 
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "@openzeppelin/contracts/utils/structs/Checkpoints.sol";
-import {IVanaEpoch} from "../../../vanaEpoch/interfaces/IVanaEpoch.sol";
+import {IVanaEpoch} from "../../vanaEpoch/interfaces/IVanaEpoch.sol";
 import {ITreasury} from "../../../../utils/treasury/interfaces/ITreasury.sol";
 
 interface IDLPRegistry {
@@ -28,7 +28,7 @@ interface IDLPRegistry {
         uint256 depositAmount;
         DlpStatus status;
         uint256 lpTokenId;
-        bool isVerified;
+        uint256 verificationBlockNumber; //if 0 it means not verified
     }
 
     // View functions for contract state and configuration
@@ -56,7 +56,7 @@ interface IDLPRegistry {
         uint256 depositAmount;
         DlpStatus status;
         uint256 lpTokenId;
-        bool isVerified;
+        uint256 verificationBlockNumber; //if 0 it means not verified
     }
     function dlps(uint256 dlpId) external view returns (DlpInfo memory);
     function dlpsByAddress(address dlpAddress) external view returns (DlpInfo memory);
@@ -83,7 +83,8 @@ interface IDLPRegistry {
 
     // DLP lifecycle management
     function registerDlp(DlpRegistration calldata registrationInfo) external payable;
-    function updateDlpVerificationBlock(uint256 dlpId, bool isVerified) external;
+    function updateDlpVerificationBlock(uint256 dlpId, uint256 verificationBlockNumber) external;
+    function unverifyDlp(uint256 dlpId) external;
     function updateDlp(uint256 dlpId, DlpRegistration calldata dlpUpdateInfo) external;
     function deregisterDlp(uint256 dlpId) external;
     function updateDlpToken(uint256 dlpId, address tokenAddress, uint256 lpTokenId) external;
@@ -91,6 +92,6 @@ interface IDLPRegistry {
         uint256 dlpId,
         address tokenAddress,
         uint256 lpTokenId,
-        bool isVerify
+        uint256 verificationBlockNumber
     ) external;
 }

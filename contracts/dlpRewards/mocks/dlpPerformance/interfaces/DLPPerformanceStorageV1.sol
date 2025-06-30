@@ -8,6 +8,4 @@ abstract contract DLPPerformanceStorageV1 is IDLPPerformance {
     IVanaEpoch public override vanaEpoch;
 
     mapping(uint256 epochId => EpochPerformance) internal _epochPerformances;
-
-    MetricWeights internal _metricWeights;
 }
