@@ -6,6 +6,7 @@ import {
   VanaEpochImplementation,
   TreasuryImplementation,
   DLPPerformanceImplementation,
+  DLPRewardDeployerImplementation,
 } from "../../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import {
@@ -25,7 +26,9 @@ describe("DLP fork tests", () => {
   const treasuryAddress = "0xb12ce1d27bEeFe39b6F0110b1AB77C21Aa0c9F9a";
   const dlpRegistryAddress = "0x4D59880a924526d1dD33260552Ff4328b1E18a43";
   const dlpPerformanceAddress = "0x847715C7DB37cF286611182Be0bD333cbfa29cc1";
+  const dlpRewardDeployerAddress = "0xEFD0F9Ba9De70586b7c4189971cF754adC923B04";
   const adminAddress = "0x2AC93684679a5bdA03C6160def908CdB8D46792f";
+  const wvanaAddress = "0x00eddd9621fb08436d0331c149d1690909a5906d";
 
   enum DlpStatus {
     None,
@@ -42,6 +45,7 @@ describe("DLP fork tests", () => {
   let vanaEpoch: VanaEpochImplementation;
   let treasury: TreasuryImplementation;
   let dlpPerformance: DLPPerformanceImplementation;
+  let dlpRewardDeployer: DLPRewardDeployerImplementation;
 
   const DEFAULT_ADMIN_ROLE =
     "0x0000000000000000000000000000000000000000000000000000000000000000";
@@ -97,6 +101,11 @@ describe("DLP fork tests", () => {
       dlpPerformanceAddress,
     );
 
+    dlpRewardDeployer = await ethers.getContractAt(
+      "DLPRewardDeployerImplementation",
+      dlpRewardDeployerAddress,
+    );
+
     await setBalance(adminAddress, parseEther(100));
   };
 
@@ -128,24 +137,6 @@ describe("DLP fork tests", () => {
       await dlpPerformance
         .connect(admin)
         .saveEpochPerformances(1, epoch1Performances, false);
-    });
-
-    it.only("should confirm", async function () {
-      await vanaEpoch
-        .connect(admin)
-        .upgradeToAndCall(
-          await ethers.deployContract("VanaEpochImplementation"),
-          "0x",
-        );
-
-      await dlpPerformance
-        .connect(admin)
-        .upgradeToAndCall(
-          await ethers.deployContract("DLPPerformanceImplementation"),
-          "0x",
-        );
-
-      await dlpPerformance.connect(admin).confirmEpochFinalScores(13);
     });
   });
 });
