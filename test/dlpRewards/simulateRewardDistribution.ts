@@ -555,6 +555,74 @@ describe("DLP fork tests", () => {
       );
 
       // Build DLP map
+      const dlpMap = await buildDlpMapForRewardDistribution(eligibleDlps);
+
+      // ============================================================================
+      // TRACK DLP REWARD DEPLOYER TREASURY VANA BALANCE
+      // ============================================================================
+
+      const dlpRewardDeployerTreasuryBalanceBefore =
+        await getDlpRewardDeployerTreasuryBalance();
+
+      // ============================================================================
+      // PRE-DISTRIBUTION DATA COLLECTION
+      // ============================================================================
+
+      const preDistributionData = await collectLPData(dlpMap, "pre");
+
+      // ============================================================================
+      // REWARD DISTRIBUTION
+      // ============================================================================
+
+      const distributionResults = await executeRewardDistribution(
+        epochId,
+        dlpMap,
+      );
+
+      // ============================================================================
+      // POST-DISTRIBUTION DATA COLLECTION
+      // ============================================================================
+
+      const postDistributionData = await collectLPData(
+        dlpMap,
+        "post",
+        preDistributionData,
+      );
+
+      // ============================================================================
+      // REWARD DISTRIBUTION SUMMARY
+      // ============================================================================
+
+      await logRewardDistributionSummary(
+        epochId,
+        distributionResults,
+        dlpMap,
+        preDistributionData,
+        postDistributionData,
+      );
+
+      // ============================================================================
+      // DLP REWARD DEPLOYER TREASURY BALANCE SUMMARY
+      // ============================================================================
+
+      await logDlpRewardDeployerTreasurySummary(
+        dlpRewardDeployerTreasuryBalanceBefore,
+        distributionResults,
+      );
+
+      console.log("✅ REWARD DISTRIBUTION SIMULATION COMPLETED");
+    });
+
+    // ============================================================================
+    // EXTRACTED HELPER METHODS
+    // ============================================================================
+
+    /**
+     * Build DLP map for reward distribution
+     */
+    async function buildDlpMapForRewardDistribution(
+      eligibleDlps: readonly bigint[],
+    ): Promise<Record<number, DlpInfo>> {
       const dlpMap: Record<number, DlpInfo> = {};
       for (const dlpId of eligibleDlps) {
         const dlp = await dlpRegistry.dlps(dlpId);
@@ -567,300 +635,54 @@ describe("DLP fork tests", () => {
           lpTokenId: dlp.lpTokenId,
         };
       }
+      return dlpMap;
+    }
 
-      // ============================================================================
-      // UNISWAP V3 INTERFACES (for LP and price data)
-      // ============================================================================
+    /**
+     * Get DLP Reward Deployer treasury balance
+     */
+    async function getDlpRewardDeployerTreasuryBalance(): Promise<bigint> {
+      return await ethers.provider.getBalance(dlpRewardDeployerTreasuryAddress);
+    }
 
-      const UniswapV3PoolABI = [
-        "function token0() external view returns (address)",
-        "function token1() external view returns (address)",
-        "function liquidity() external view returns (uint128)",
-        "function slot0() external view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)",
-        "function fee() external view returns (uint24)",
-      ];
+    /**
+     * Collect LP data for all DLPs
+     */
+    async function collectLPData(
+      dlpMap: Record<number, DlpInfo>,
+      phase: "pre" | "post",
+      preDistributionData?: Record<number, LPData>,
+    ): Promise<Record<number, LPData>> {
+      const lpData: Record<number, LPData> = {};
 
-      const UniswapV3PositionManagerABI = [
-        "function positions(uint256 tokenId) external view returns (uint96 nonce, address operator, address token0, address token1, uint24 fee, int24 tickLower, int24 tickUpper, uint128 liquidity, uint256 feeGrowthInside0LastX128, uint256 feeGrowthInside1LastX128, uint128 tokensOwed0, uint128 tokensOwed1)",
-        "function collect(tuple(uint256 tokenId, address recipient, uint128 amount0Max, uint128 amount1Max)) external returns (uint256 amount0, uint256 amount1)",
-      ];
-
-      const ERC20ABI = [
-        "function symbol() external view returns (string)",
-        "function decimals() external view returns (uint8)",
-        "function balanceOf(address) external view returns (uint256)",
-      ];
-
-      const positionManager = await ethers.getContractAt(
-        UniswapV3PositionManagerABI,
-        uniswapPositionManagerAddress,
-      );
-
-      // ============================================================================
-      // HELPER FUNCTIONS
-      // ============================================================================
-
-      interface LPData {
-        token0: string;
-        token1: string;
-        token0Symbol: string;
-        token1Symbol: string;
-        token0Decimals: number;
-        token1Decimals: number;
-        fee: number;
-        poolAddress: string;
-        liquidity: bigint;
-        sqrtPriceX96: bigint;
-        tick: number;
-        positionLiquidity: bigint;
-        isWVanaToken0: boolean;
-        price: string; // WVANA price in terms of the other token
-        tokenPriceInVana: string; // Other token price in VANA terms
-        positionToken0Amount: bigint;
-        positionToken1Amount: bigint;
-      }
-
-      /**
-       * Calculate token amounts from liquidity and price
-       */
-      function calculateTokenAmounts(
-        liquidity: bigint,
-        sqrtPriceX96: bigint,
-        tickLower: number,
-        tickUpper: number,
-      ): { amount0: bigint; amount1: bigint } {
-        try {
-          // This is a simplified calculation - in practice you'd need more complex math
-          // For now, we'll use the tokensOwed from the position which represents fees owed
-          // The actual position value calculation requires complex Uniswap V3 math
-          return { amount0: 0n, amount1: 0n };
-        } catch (error) {
-          return { amount0: 0n, amount1: 0n };
-        }
-      }
-
-      function calculatePrice(
-        sqrtPriceX96: bigint,
-        isWVanaToken0: boolean,
-      ): { vanaPrice: string; tokenPriceInVana: string } {
-        try {
-          // Convert sqrtPriceX96 to price
-          // price = (sqrtPriceX96 / 2^96)^2
-          const Q96 = BigInt(2) ** BigInt(96);
-
-          // Convert to string first, then to number to avoid BigInt conversion error
-          const sqrtPriceNum =
-            parseFloat(sqrtPriceX96.toString()) / parseFloat(Q96.toString());
-          let price = sqrtPriceNum * sqrtPriceNum;
-
-          if (isWVanaToken0) {
-            // VANA is token0, price is token1/token0 (how many token1 per VANA)
-            return {
-              vanaPrice: price.toFixed(8),
-              tokenPriceInVana: (1 / price).toFixed(8),
-            };
-          } else {
-            // VANA is token1, price is token0/token1 (how many token0 per VANA)
-            return {
-              vanaPrice: (1 / price).toFixed(8),
-              tokenPriceInVana: price.toFixed(8),
-            };
-          }
-        } catch (error) {
-          return {
-            vanaPrice: "0.00000000",
-            tokenPriceInVana: "0.00000000",
-          };
-        }
-      }
-
-      /**
-       * Get LP and price data for a DLP
-       */
-      async function getLPData(
-        dlpId: number,
-        dlpInfo: DlpInfo,
-      ): Promise<LPData | null> {
-        try {
-          // Get position info from Uniswap V3 Position Manager
-          const position = await positionManager.positions(dlpInfo.lpTokenId);
-
-          // Check if position exists
-          if (
-            !position ||
-            !position.token0 ||
-            position.token0 === "0x0000000000000000000000000000000000000000"
-          ) {
-            console.log(
-              `    ⚠️ LP position ${dlpInfo.lpTokenId} does not exist or is closed`,
-            );
-            return null;
-          }
-
-          const token0 = position.token0;
-          const token1 = position.token1;
-          const fee = position.fee;
-          const positionLiquidity = position.liquidity;
-
-          // Get token details
-          const token0Contract = await ethers.getContractAt(ERC20ABI, token0);
-          const token1Contract = await ethers.getContractAt(ERC20ABI, token1);
-          const token0Symbol = await token0Contract.symbol();
-          const token1Symbol = await token1Contract.symbol();
-          const token0Decimals = await token0Contract.decimals();
-          const token1Decimals = await token1Contract.decimals();
-
-          // Get pool address - try different factory addresses
-          let poolAddress = "0x0000000000000000000000000000000000000000";
-
-          try {
-            const UniswapV3Factory = await ethers.getContractAt(
-              [
-                "function getPool(address tokenA, address tokenB, uint24 fee) external view returns (address pool)",
-              ],
-              uniswapFactoryAddress,
-            );
-            poolAddress = await UniswapV3Factory.getPool(token0, token1, fee);
-          } catch (factoryError) {
-            console.log(
-              `    ⚠️ Could not access factory at ${uniswapFactoryAddress}: ${factoryError.message}`,
-            );
-            return null;
-          }
-
-          if (poolAddress === "0x0000000000000000000000000000000000000000") {
-            console.log(
-              `    ⚠️ Pool does not exist for ${token0Symbol}/${token1Symbol} with fee ${fee}`,
-            );
-            return null;
-          }
-
-          const pool = await ethers.getContractAt(
-            UniswapV3PoolABI,
-            poolAddress,
-          );
-
-          // Get pool data
-          const poolLiquidity = await pool.liquidity();
-          const slot0 = await pool.slot0();
-          const sqrtPriceX96 = slot0.sqrtPriceX96;
-          const tick = slot0.tick;
-
-          // Determine if WVANA is token0 or token1
-          const isWVanaToken0 =
-            token0.toLowerCase() === wvanaAddress.toLowerCase();
-
-          // Calculate prices
-          const { vanaPrice, tokenPriceInVana } = calculatePrice(
-            sqrtPriceX96,
-            isWVanaToken0,
-          );
-
-          let positionToken0Amount = 0n;
-          let positionToken1Amount = 0n;
-
-          const tickLower = Number(position.tickLower);
-          const tickUpper = Number(position.tickUpper);
-
-          if (
-            tickLower < -887272 ||
-            tickLower > 887272 ||
-            tickUpper < -887272 ||
-            tickUpper > 887272
-          ) {
-            console.log(`⚠️ Invalid tick range: [${tickLower}, ${tickUpper}]`);
-          }
-
-          const sqrtRatioAX96 = BigInt(
-            UniswapTickMath.getSqrtRatioAtTick(tickLower).toString(),
-          );
-          const sqrtRatioBX96 = BigInt(
-            UniswapTickMath.getSqrtRatioAtTick(tickUpper).toString(),
-          );
-
-          if (positionLiquidity > 0n) {
-            if (sqrtPriceX96 <= sqrtRatioAX96) {
-              // Current price is below the position range - all liquidity is in token0
-              positionToken0Amount = LiquidityAmounts.getAmount0ForLiquidity(
-                sqrtRatioAX96,
-                sqrtRatioBX96,
-                positionLiquidity,
-              );
-            } else if (sqrtPriceX96 >= sqrtRatioBX96) {
-              // Current price is above the position range - all liquidity is in token1
-              positionToken1Amount = LiquidityAmounts.getAmount1ForLiquidity(
-                sqrtRatioAX96,
-                sqrtRatioBX96,
-                positionLiquidity,
-              );
-            } else {
-              // Current price is within the position range - liquidity is split
-              positionToken0Amount = LiquidityAmounts.getAmount0ForLiquidity(
-                sqrtPriceX96,
-                sqrtRatioBX96,
-                positionLiquidity,
-              );
-              positionToken1Amount = LiquidityAmounts.getAmount1ForLiquidity(
-                sqrtRatioAX96,
-                sqrtPriceX96,
-                positionLiquidity,
-              );
-            }
-          }
-          return {
-            token0,
-            token1,
-            token0Symbol,
-            token1Symbol,
-            token0Decimals,
-            token1Decimals,
-            fee,
-            poolAddress,
-            liquidity: poolLiquidity,
-            sqrtPriceX96,
-            tick,
-            positionLiquidity,
-            isWVanaToken0,
-            price: vanaPrice,
-            tokenPriceInVana,
-            positionToken0Amount,
-            positionToken1Amount,
-          };
-        } catch (error) {
-          console.log(
-            `    ⚠️ Could not get LP data for DLP #${dlpId}: ${error.message}`,
-          );
-          return null;
-        }
-      }
-
-      // ============================================================================
-      // TRACK DLP REWARD DEPLOYER TREASURY VANA BALANCE
-      // ============================================================================
-
-      // Get DLP Reward Deployer treasury balance before distributions (silent)
-      const dlpRewardDeployerTreasuryBalanceBefore =
-        await ethers.provider.getBalance(dlpRewardDeployerTreasuryAddress);
-
-      // ============================================================================
-      // PRE-DISTRIBUTION DATA COLLECTION
-      // ============================================================================
-
-      const preDistributionData: Record<number, LPData> = {};
-
-      // Silently collect pre-distribution data
       for (const [dlpIdStr, dlpInfo] of Object.entries(dlpMap)) {
         const dlpId = Number(dlpIdStr);
-        const lpData = await getLPData(dlpId, dlpInfo);
-        if (lpData) {
-          preDistributionData[dlpId] = lpData;
+
+        // For post-distribution, only collect data if we have pre-distribution data
+        if (
+          phase === "post" &&
+          preDistributionData &&
+          !preDistributionData[dlpId]
+        ) {
+          continue;
+        }
+
+        const data = await getLPData(dlpId, dlpInfo);
+        if (data) {
+          lpData[dlpId] = data;
         }
       }
 
-      // ============================================================================
-      // REWARD DISTRIBUTION
-      // ============================================================================
+      return lpData;
+    }
 
+    /**
+     * Execute reward distribution for all DLPs
+     */
+    async function executeRewardDistribution(
+      epochId: number,
+      dlpMap: Record<number, DlpInfo>,
+    ): Promise<Record<number, any>> {
       const distributionResults: Record<number, any> = {};
 
       for (const [dlpIdStr, dlpInfo] of Object.entries(dlpMap)) {
@@ -915,28 +737,19 @@ describe("DLP fork tests", () => {
         }
       }
 
-      // ============================================================================
-      // POST-DISTRIBUTION DATA COLLECTION
-      // ============================================================================
+      return distributionResults;
+    }
 
-      const postDistributionData: Record<number, LPData> = {};
-
-      // Silently collect post-distribution data
-      for (const [dlpIdStr, dlpInfo] of Object.entries(dlpMap)) {
-        const dlpId = Number(dlpIdStr);
-
-        if (!preDistributionData[dlpId]) continue;
-
-        const lpData = await getLPData(dlpId, dlpInfo);
-        if (lpData) {
-          postDistributionData[dlpId] = lpData;
-        }
-      }
-
-      // ============================================================================
-      // REWARD DISTRIBUTION SUMMARY
-      // ============================================================================
-
+    /**
+     * Log reward distribution summary
+     */
+    async function logRewardDistributionSummary(
+      epochId: number,
+      distributionResults: Record<number, any>,
+      dlpMap: Record<number, DlpInfo>,
+      preDistributionData: Record<number, LPData>,
+      postDistributionData: Record<number, LPData>,
+    ): Promise<void> {
       console.log("\n🎯 REWARD DISTRIBUTION SUMMARY");
       console.log("═".repeat(70));
 
@@ -959,14 +772,20 @@ describe("DLP fork tests", () => {
         totalUsedVana += result.usedVanaAmount;
 
         console.log(`\n🏢 ${dlpInfo.name} (DLP #${dlpId}):`);
+
+        // ============================================================================
+        // NEW: ADDITIONAL DLP INFORMATION (BEFORE DISTRIBUTION)
+        // ============================================================================
+        await logAdditionalDlpInfo(epochId, dlpId);
+
         console.log(
-          `  💰 Tranche Distributed: ${formatEther(result.trancheAmount)} VANA`,
+          `  💰 Tranche amount: ${formatEther(result.trancheAmount)} VANA`,
         );
+        // console.log(
+        //   `  🪙 Token Rewards: ${formatEther(result.tokenRewardAmount)} tokens`,
+        // );
         console.log(
-          `  🪙 Token Rewards: ${formatEther(result.tokenRewardAmount)} tokens`,
-        );
-        console.log(
-          `  🔄 VANA Used for Swap: ${formatEther(result.usedVanaAmount)} VANA`,
+          `  🔄 VANA Used for Increasing Liquidity: ${formatEther(result.usedVanaAmount)} VANA`,
         );
         console.log(
           `  💎 Spare Tokens: ${formatEther(result.spareToken)} tokens`,
@@ -974,124 +793,25 @@ describe("DLP fork tests", () => {
         console.log(`  💰 Spare VANA: ${formatEther(result.spareVana)} VANA`);
 
         // Token price information
-        const preData = preDistributionData[dlpId];
-        const postData = postDistributionData[dlpId];
-
-        if (preData && postData) {
-          const otherTokenSymbol = preData.isWVanaToken0
-            ? preData.token1Symbol
-            : preData.token0Symbol;
-
-          // Calculate price changes
-          const vanaPriceChange =
-            parseFloat(postData.price) - parseFloat(preData.price);
-          const vanaPriceChangePercent =
-            parseFloat(preData.price) > 0
-              ? (vanaPriceChange / parseFloat(preData.price)) * 100
-              : 0;
-
-          const tokenPriceChange =
-            parseFloat(postData.tokenPriceInVana) -
-            parseFloat(preData.tokenPriceInVana);
-          const tokenPriceChangePercent =
-            parseFloat(preData.tokenPriceInVana) > 0
-              ? (tokenPriceChange / parseFloat(preData.tokenPriceInVana)) * 100
-              : 0;
-
-          // Calculate token balance changes
-          const token0Change =
-            postData.positionToken0Amount - preData.positionToken0Amount;
-          const token1Change =
-            postData.positionToken1Amount - preData.positionToken1Amount;
-
-          const token0ChangeFormatted = ethers.formatUnits(
-            token0Change,
-            preData.token0Decimals,
-          );
-          const token1ChangeFormatted = ethers.formatUnits(
-            token1Change,
-            preData.token1Decimals,
-          );
-
-          const preToken0AmountFormatted = ethers.formatUnits(
-            preData.positionToken0Amount,
-            preData.token0Decimals,
-          );
-          const preToken1AmountFormatted = ethers.formatUnits(
-            preData.positionToken1Amount,
-            preData.token1Decimals,
-          );
-          const postToken0AmountFormatted = ethers.formatUnits(
-            postData.positionToken0Amount,
-            postData.token0Decimals,
-          );
-          const postToken1AmountFormatted = ethers.formatUnits(
-            postData.positionToken1Amount,
-            postData.token1Decimals,
-          );
-
-          console.log(`  📊 Price Changes:`);
-          console.log(
-            `    • Before: 1 VANA = ${preData.price} ${otherTokenSymbol} | 1 ${otherTokenSymbol} = ${preData.tokenPriceInVana} VANA`,
-          );
-          console.log(
-            `    • After:  1 VANA = ${postData.price} ${otherTokenSymbol} | 1 ${otherTokenSymbol} = ${postData.tokenPriceInVana} VANA`,
-          );
-          console.log(
-            `    • VANA Price Impact: ${vanaPriceChangePercent > 0 ? "+" : ""}${vanaPriceChangePercent.toFixed(4)}%`,
-          );
-          console.log(
-            `    • ${otherTokenSymbol} Price Impact: ${tokenPriceChangePercent > 0 ? "+" : ""}${tokenPriceChangePercent.toFixed(4)}%`,
-          );
-
-          console.log(
-            `  💰 LP Position Token Changes (LP ID: ${dlpInfo.lpTokenId}):`,
-          );
-          console.log(
-            `    • ${preData.token0Symbol}: ${preToken0AmountFormatted} → ${postToken0AmountFormatted} (${token0Change > 0 ? "+" : ""}${token0ChangeFormatted})`,
-          );
-          console.log(
-            `    • ${preData.token1Symbol}: ${preToken1AmountFormatted} → ${postToken1AmountFormatted} (${token1Change > 0 ? "+" : ""}${token1ChangeFormatted})`,
-          );
-        } else if (preData) {
-          const otherTokenSymbol = preData.isWVanaToken0
-            ? preData.token1Symbol
-            : preData.token0Symbol;
-          const preToken0AmountFormatted = ethers.formatUnits(
-            preData.positionToken0Amount,
-            preData.token0Decimals,
-          );
-          const preToken1AmountFormatted = ethers.formatUnits(
-            preData.positionToken1Amount,
-            preData.token1Decimals,
-          );
-
-          console.log(`  📊 Price Info:`);
-          console.log(
-            `    • Before: 1 VANA = ${preData.price} ${otherTokenSymbol} | 1 ${otherTokenSymbol} = ${preData.tokenPriceInVana} VANA`,
-          );
-          console.log(`    • After:  Unable to get post-distribution price`);
-          console.log(
-            `  💰 LP Position Tokens (LP ID: ${dlpInfo.lpTokenId}, before): ${preToken0AmountFormatted} ${preData.token0Symbol} | ${preToken1AmountFormatted} ${preData.token1Symbol}`,
-          );
-        } else {
-          console.log(`  📊 Price Info: Unable to get price data`);
-        }
+        await logPriceAndLiquidityChanges(
+          dlpId,
+          dlpInfo,
+          preDistributionData,
+          postDistributionData,
+        );
       }
 
       console.log(`\n🌟 TOTALS:`);
       console.log(
         `  • Total VANA Distributed: ${formatEther(totalDistributed)} VANA`,
       );
-      console.log(
-        `  • Total Token Rewards: ${formatEther(totalTokenRewards)} tokens`,
-      );
-      console.log(
-        `  • Total VANA Used for Swaps: ${formatEther(totalUsedVana)} VANA`,
-      );
-      console.log(
-        `  • Total Spare Tokens: ${formatEther(totalSpareTokens)} tokens`,
-      );
+      // console.log(
+      //   `  • Total Token Rewards: ${formatEther(totalTokenRewards)} tokens`,
+      // );
+      console.log(`  • Total VANA Used: ${formatEther(totalUsedVana)} VANA`);
+      // console.log(
+      //   `  • Total Spare Tokens: ${formatEther(totalSpareTokens)} tokens`,
+      // );
       console.log(`  • Total Spare VANA: ${formatEther(totalSpareVana)} VANA`);
 
       const overallSwapEfficiency =
@@ -1103,19 +823,185 @@ describe("DLP fork tests", () => {
             ).toFixed(2)
           : "0.00";
       console.log(`  • Overall Swap Efficiency: ${overallSwapEfficiency}%`);
+    }
 
-      // ============================================================================
-      // DLP REWARD DEPLOYER TREASURY BALANCE SUMMARY
-      // ============================================================================
+    /**
+     * Log additional DLP information (new requirement) - BEFORE distribution
+     */
+    async function logAdditionalDlpInfo(
+      epochId: number,
+      dlpId: number,
+    ): Promise<void> {
+      try {
+        // Get epoch DLP info
+        const epochDlp = await vanaEpoch.epochDlps(epochId, dlpId);
 
+        // Get reward deployer info (before distribution)
+        const epochDlpRewards = await dlpRewardDeployer.epochDlpRewards(
+          epochId,
+          dlpId,
+        );
+
+        // Get number of tranches from the contract
+        const numberOfTranches = await dlpRewardDeployer.numberOfTranches();
+
+        console.log(`  📊 DLP Status (After Distribution):`);
+        console.log(
+          `    • Distributed Tranches: ${epochDlpRewards.tranchesCount}/${numberOfTranches}`,
+        );
+        console.log(
+          `    • Epoch DLP Reward Amount: ${formatEther(epochDlp.rewardAmount)} VANA`,
+        );
+        console.log(
+          `    • Epoch DLP Penalty Amount: ${formatEther(epochDlp.penaltyAmount)} VANA`,
+        );
+        console.log(
+          `    • Total Distributed Amount: ${formatEther(epochDlpRewards.totalDistributedAmount)} VANA`,
+        );
+      } catch (error) {
+        console.log(
+          `    ⚠️ Could not get additional DLP info: ${error.message}`,
+        );
+      }
+    }
+
+    /**
+     * Log price and liquidity changes
+     */
+    async function logPriceAndLiquidityChanges(
+      dlpId: number,
+      dlpInfo: DlpInfo,
+      preDistributionData: Record<number, LPData>,
+      postDistributionData: Record<number, LPData>,
+    ): Promise<void> {
+      const preData = preDistributionData[dlpId];
+      const postData = postDistributionData[dlpId];
+
+      if (preData && postData) {
+        const otherTokenSymbol = preData.isWVanaToken0
+          ? preData.token1Symbol
+          : preData.token0Symbol;
+
+        // Calculate price changes
+        const vanaPriceChange =
+          parseFloat(postData.price) - parseFloat(preData.price);
+        const vanaPriceChangePercent =
+          parseFloat(preData.price) > 0
+            ? (vanaPriceChange / parseFloat(preData.price)) * 100
+            : 0;
+
+        const tokenPriceChange =
+          parseFloat(postData.tokenPriceInVana) -
+          parseFloat(preData.tokenPriceInVana);
+        const tokenPriceChangePercent =
+          parseFloat(preData.tokenPriceInVana) > 0
+            ? (tokenPriceChange / parseFloat(preData.tokenPriceInVana)) * 100
+            : 0;
+
+        // Calculate token balance changes
+        const token0Change =
+          postData.positionToken0Amount - preData.positionToken0Amount;
+        const token1Change =
+          postData.positionToken1Amount - preData.positionToken1Amount;
+
+        const token0ChangeFormatted = ethers.formatUnits(
+          token0Change,
+          preData.token0Decimals,
+        );
+        const token1ChangeFormatted = ethers.formatUnits(
+          token1Change,
+          preData.token1Decimals,
+        );
+
+        const preToken0AmountFormatted = ethers.formatUnits(
+          preData.positionToken0Amount,
+          preData.token0Decimals,
+        );
+        const preToken1AmountFormatted = ethers.formatUnits(
+          preData.positionToken1Amount,
+          preData.token1Decimals,
+        );
+        const postToken0AmountFormatted = ethers.formatUnits(
+          postData.positionToken0Amount,
+          postData.token0Decimals,
+        );
+        const postToken1AmountFormatted = ethers.formatUnits(
+          postData.positionToken1Amount,
+          postData.token1Decimals,
+        );
+
+        console.log(`  📊 Price Changes:`);
+        console.log(
+          `    • Before: 1 VANA = ${preData.price} ${otherTokenSymbol} | 1 ${otherTokenSymbol} = ${preData.tokenPriceInVana} VANA`,
+        );
+        console.log(
+          `    • After:  1 VANA = ${postData.price} ${otherTokenSymbol} | 1 ${otherTokenSymbol} = ${postData.tokenPriceInVana} VANA`,
+        );
+        console.log(
+          `    • VANA Price Impact: ${vanaPriceChangePercent > 0 ? "+" : ""}${vanaPriceChangePercent.toFixed(4)}%`,
+        );
+        console.log(
+          `    • ${otherTokenSymbol} Price Impact: ${tokenPriceChangePercent > 0 ? "+" : ""}${tokenPriceChangePercent.toFixed(4)}%`,
+        );
+
+        console.log(
+          `  💰 LP Position Token Changes (LP ID: ${dlpInfo.lpTokenId}):`,
+        );
+        console.log(
+          `    • ${preData.token0Symbol}: ${preToken0AmountFormatted} → ${postToken0AmountFormatted} (${token0Change > 0 ? "+" : ""}${token0ChangeFormatted})`,
+        );
+        console.log(
+          `    • ${preData.token1Symbol}: ${preToken1AmountFormatted} → ${postToken1AmountFormatted} (${token1Change > 0 ? "+" : ""}${token1ChangeFormatted})`,
+        );
+      } else if (preData) {
+        const otherTokenSymbol = preData.isWVanaToken0
+          ? preData.token1Symbol
+          : preData.token0Symbol;
+        const preToken0AmountFormatted = ethers.formatUnits(
+          preData.positionToken0Amount,
+          preData.token0Decimals,
+        );
+        const preToken1AmountFormatted = ethers.formatUnits(
+          preData.positionToken1Amount,
+          preData.token1Decimals,
+        );
+
+        console.log(`  📊 Price Info:`);
+        console.log(
+          `    • Before: 1 VANA = ${preData.price} ${otherTokenSymbol} | 1 ${otherTokenSymbol} = ${preData.tokenPriceInVana} VANA`,
+        );
+        console.log(`    • After:  Unable to get post-distribution price`);
+        console.log(
+          `  💰 LP Position Tokens (LP ID: ${dlpInfo.lpTokenId}, before): ${preToken0AmountFormatted} ${preData.token0Symbol} | ${preToken1AmountFormatted} ${preData.token1Symbol}`,
+        );
+      } else {
+        console.log(`  📊 Price Info: Unable to get price data`);
+      }
+    }
+
+    /**
+     * Log DLP Reward Deployer treasury summary
+     */
+    async function logDlpRewardDeployerTreasurySummary(
+      dlpRewardDeployerTreasuryBalanceBefore: bigint,
+      distributionResults: Record<number, any>,
+    ): Promise<void> {
       console.log(`\n💼 DLP REWARD DEPLOYER TREASURY SUMMARY:`);
       console.log("━".repeat(50));
 
       const dlpRewardDeployerTreasuryBalanceAfter =
-        await ethers.provider.getBalance(dlpRewardDeployerTreasuryAddress);
+        await getDlpRewardDeployerTreasuryBalance();
       const dlpRewardDeployerBalanceChange =
         dlpRewardDeployerTreasuryBalanceAfter -
         dlpRewardDeployerTreasuryBalanceBefore;
+
+      // Calculate total used VANA from results
+      let totalUsedVana = 0n;
+      for (const result of Object.values(distributionResults)) {
+        if (result && result.usedVanaAmount) {
+          totalUsedVana += result.usedVanaAmount;
+        }
+      }
 
       console.log(
         `  • Balance Before: ${formatEther(dlpRewardDeployerTreasuryBalanceBefore)} VANA`,
@@ -1133,9 +1019,269 @@ describe("DLP fork tests", () => {
       // Calculate the difference - should be close to zero if accounting is correct
       const accountingDifference =
         dlpRewardDeployerBalanceChange + totalUsedVana;
+      console.log(
+        `  • Accounting Difference: ${formatEther(accountingDifference)} VANA`,
+      );
+    }
 
-      console.log("✅ REWARD DISTRIBUTION SIMULATION COMPLETED");
-    });
+    /**
+     * Get LP and price data for a DLP
+     */
+    async function getLPData(
+      dlpId: number,
+      dlpInfo: DlpInfo,
+    ): Promise<LPData | null> {
+      try {
+        // ============================================================================
+        // UNISWAP V3 INTERFACES (for LP and price data)
+        // ============================================================================
+
+        const UniswapV3PoolABI = [
+          "function token0() external view returns (address)",
+          "function token1() external view returns (address)",
+          "function liquidity() external view returns (uint128)",
+          "function slot0() external view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)",
+          "function fee() external view returns (uint24)",
+        ];
+
+        const UniswapV3PositionManagerABI = [
+          "function positions(uint256 tokenId) external view returns (uint96 nonce, address operator, address token0, address token1, uint24 fee, int24 tickLower, int24 tickUpper, uint128 liquidity, uint256 feeGrowthInside0LastX128, uint256 feeGrowthInside1LastX128, uint128 tokensOwed0, uint128 tokensOwed1)",
+          "function collect(tuple(uint256 tokenId, address recipient, uint128 amount0Max, uint128 amount1Max)) external returns (uint256 amount0, uint256 amount1)",
+        ];
+
+        const ERC20ABI = [
+          "function symbol() external view returns (string)",
+          "function decimals() external view returns (uint8)",
+          "function balanceOf(address) external view returns (uint256)",
+        ];
+
+        const positionManager = await ethers.getContractAt(
+          UniswapV3PositionManagerABI,
+          uniswapPositionManagerAddress,
+        );
+
+        // Get position info from Uniswap V3 Position Manager
+        const position = await positionManager.positions(dlpInfo.lpTokenId);
+
+        // Check if position exists
+        if (
+          !position ||
+          !position.token0 ||
+          position.token0 === "0x0000000000000000000000000000000000000000"
+        ) {
+          console.log(
+            `    ⚠️ LP position ${dlpInfo.lpTokenId} does not exist or is closed`,
+          );
+          return null;
+        }
+
+        const token0 = position.token0;
+        const token1 = position.token1;
+        const fee = position.fee;
+        const positionLiquidity = position.liquidity;
+
+        // Get token details
+        const token0Contract = await ethers.getContractAt(ERC20ABI, token0);
+        const token1Contract = await ethers.getContractAt(ERC20ABI, token1);
+        const token0Symbol = await token0Contract.symbol();
+        const token1Symbol = await token1Contract.symbol();
+        const token0Decimals = await token0Contract.decimals();
+        const token1Decimals = await token1Contract.decimals();
+
+        // Get pool address - try different factory addresses
+        let poolAddress = "0x0000000000000000000000000000000000000000";
+
+        try {
+          const UniswapV3Factory = await ethers.getContractAt(
+            [
+              "function getPool(address tokenA, address tokenB, uint24 fee) external view returns (address pool)",
+            ],
+            uniswapFactoryAddress,
+          );
+          poolAddress = await UniswapV3Factory.getPool(token0, token1, fee);
+        } catch (factoryError) {
+          console.log(
+            `    ⚠️ Could not access factory at ${uniswapFactoryAddress}: ${factoryError.message}`,
+          );
+          return null;
+        }
+
+        if (poolAddress === "0x0000000000000000000000000000000000000000") {
+          console.log(
+            `    ⚠️ Pool does not exist for ${token0Symbol}/${token1Symbol} with fee ${fee}`,
+          );
+          return null;
+        }
+
+        const pool = await ethers.getContractAt(UniswapV3PoolABI, poolAddress);
+
+        // Get pool data
+        const poolLiquidity = await pool.liquidity();
+        const slot0 = await pool.slot0();
+        const sqrtPriceX96 = slot0.sqrtPriceX96;
+        const tick = slot0.tick;
+
+        // Determine if WVANA is token0 or token1
+        const isWVanaToken0 =
+          token0.toLowerCase() === wvanaAddress.toLowerCase();
+
+        // Calculate prices
+        const { vanaPrice, tokenPriceInVana } = calculatePrice(
+          sqrtPriceX96,
+          isWVanaToken0,
+        );
+
+        let positionToken0Amount = 0n;
+        let positionToken1Amount = 0n;
+
+        const tickLower = Number(position.tickLower);
+        const tickUpper = Number(position.tickUpper);
+
+        if (
+          tickLower < -887272 ||
+          tickLower > 887272 ||
+          tickUpper < -887272 ||
+          tickUpper > 887272
+        ) {
+          console.log(`⚠️ Invalid tick range: [${tickLower}, ${tickUpper}]`);
+        }
+
+        const sqrtRatioAX96 = BigInt(
+          UniswapTickMath.getSqrtRatioAtTick(tickLower).toString(),
+        );
+        const sqrtRatioBX96 = BigInt(
+          UniswapTickMath.getSqrtRatioAtTick(tickUpper).toString(),
+        );
+
+        if (positionLiquidity > 0n) {
+          if (sqrtPriceX96 <= sqrtRatioAX96) {
+            // Current price is below the position range - all liquidity is in token0
+            positionToken0Amount = LiquidityAmounts.getAmount0ForLiquidity(
+              sqrtRatioAX96,
+              sqrtRatioBX96,
+              positionLiquidity,
+            );
+          } else if (sqrtPriceX96 >= sqrtRatioBX96) {
+            // Current price is above the position range - all liquidity is in token1
+            positionToken1Amount = LiquidityAmounts.getAmount1ForLiquidity(
+              sqrtRatioAX96,
+              sqrtRatioBX96,
+              positionLiquidity,
+            );
+          } else {
+            // Current price is within the position range - liquidity is split
+            positionToken0Amount = LiquidityAmounts.getAmount0ForLiquidity(
+              sqrtPriceX96,
+              sqrtRatioBX96,
+              positionLiquidity,
+            );
+            positionToken1Amount = LiquidityAmounts.getAmount1ForLiquidity(
+              sqrtRatioAX96,
+              sqrtPriceX96,
+              positionLiquidity,
+            );
+          }
+        }
+        return {
+          token0,
+          token1,
+          token0Symbol,
+          token1Symbol,
+          token0Decimals,
+          token1Decimals,
+          fee,
+          poolAddress,
+          liquidity: poolLiquidity,
+          sqrtPriceX96,
+          tick,
+          positionLiquidity,
+          isWVanaToken0,
+          price: vanaPrice,
+          tokenPriceInVana,
+          positionToken0Amount,
+          positionToken1Amount,
+        };
+      } catch (error) {
+        console.log(
+          `    ⚠️ Could not get LP data for DLP #${dlpId}: ${error.message}`,
+        );
+        return null;
+      }
+    }
+
+    /**
+     * Calculate token amounts from liquidity and price
+     */
+    function calculateTokenAmounts(
+      liquidity: bigint,
+      sqrtPriceX96: bigint,
+      tickLower: number,
+      tickUpper: number,
+    ): { amount0: bigint; amount1: bigint } {
+      try {
+        // This is a simplified calculation - in practice you'd need more complex math
+        // For now, we'll use the tokensOwed from the position which represents fees owed
+        // The actual position value calculation requires complex Uniswap V3 math
+        return { amount0: 0n, amount1: 0n };
+      } catch (error) {
+        return { amount0: 0n, amount1: 0n };
+      }
+    }
+
+    function calculatePrice(
+      sqrtPriceX96: bigint,
+      isWVanaToken0: boolean,
+    ): { vanaPrice: string; tokenPriceInVana: string } {
+      try {
+        // Convert sqrtPriceX96 to price
+        // price = (sqrtPriceX96 / 2^96)^2
+        const Q96 = BigInt(2) ** BigInt(96);
+
+        // Convert to string first, then to number to avoid BigInt conversion error
+        const sqrtPriceNum =
+          parseFloat(sqrtPriceX96.toString()) / parseFloat(Q96.toString());
+        let price = sqrtPriceNum * sqrtPriceNum;
+
+        if (isWVanaToken0) {
+          // VANA is token0, price is token1/token0 (how many token1 per VANA)
+          return {
+            vanaPrice: price.toFixed(8),
+            tokenPriceInVana: (1 / price).toFixed(8),
+          };
+        } else {
+          // VANA is token1, price is token0/token1 (how many token0 per VANA)
+          return {
+            vanaPrice: (1 / price).toFixed(8),
+            tokenPriceInVana: price.toFixed(8),
+          };
+        }
+      } catch (error) {
+        return {
+          vanaPrice: "0.00000000",
+          tokenPriceInVana: "0.00000000",
+        };
+      }
+    }
+
+    interface LPData {
+      token0: string;
+      token1: string;
+      token0Symbol: string;
+      token1Symbol: string;
+      token0Decimals: number;
+      token1Decimals: number;
+      fee: number;
+      poolAddress: string;
+      liquidity: bigint;
+      sqrtPriceX96: bigint;
+      tick: number;
+      positionLiquidity: bigint;
+      isWVanaToken0: boolean;
+      price: string; // WVANA price in terms of the other token
+      tokenPriceInVana: string; // Other token price in VANA terms
+      positionToken0Amount: bigint;
+      positionToken1Amount: bigint;
+    }
 
     const LiquidityAmounts = {
       getAmount0ForLiquidity: (
