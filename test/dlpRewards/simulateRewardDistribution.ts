@@ -528,14 +528,35 @@ describe("DLP fork tests", () => {
       // CONTRACT UPGRADES
       // ============================================================================
 
-      await upgradeContracts();
+      // await upgradeContracts();
+      //
+      // await dlpRewardDeployer
+      //   .connect(admin)
+      //   .initializeEpochRewards(6n, (3600 * 24) / 6, 89, (3600 * 48) / 6);
+      // await dlpRewardDeployer
+      //   .connect(admin)
+      //   .updateNumberOfBlocksBetweenTranches((3600 * 2) / 6);
+      //
+      // const currentBlockNumber = await getCurrentBlockNumber();
+      // console.log(currentBlockNumber);
+      // const epoch1 = await vanaEpoch.epochs(6n);
+      // console.log(epoch1.endBlock);
+      // console.log(Number(epoch1.endBlock) + (3600 * 48) / 6);
+      // if (currentBlockNumber >= Number(epoch1.endBlock) + (3600 * 48) / 6) {
+      //   console.log(
+      //     "Current block number is greater than or equal to epoch end block + 48 hours",
+      //   );
+      // } else {
+      //   console.log(
+      //     "Current block number is less than epoch end block + 48 hours",
+      //   );
+      // }
 
       // ============================================================================
       // EPOCH PREPARATION
       // ============================================================================
 
       const epochId = 6; //await vanaEpoch.epochsCount();
-      const currentBlock = await getCurrentBlockNumber();
       const epoch = await vanaEpoch.epochs(epochId);
 
       console.log("📅 REWARD DISTRIBUTION SIMULATION");
@@ -688,52 +709,44 @@ describe("DLP fork tests", () => {
       for (const [dlpIdStr, dlpInfo] of Object.entries(dlpMap)) {
         const dlpId = Number(dlpIdStr);
 
-        try {
-          // Check current distribution status
-          const currentRewardInfo = await dlpRewardDeployer.epochDlpRewards(
-            epochId,
-            dlpId,
-          );
-          const tranchesToDistribute =
-            10 - Number(currentRewardInfo.tranchesCount);
+        // Check current distribution status
+        const currentRewardInfo = await dlpRewardDeployer.epochDlpRewards(
+          epochId,
+          dlpId,
+        );
 
-          if (tranchesToDistribute > 0) {
-            const tx = await dlpRewardDeployer
-              .connect(admin)
-              .distributeRewards(epochId, [dlpId]);
+        const tx = await dlpRewardDeployer
+          .connect(admin)
+          .distributeRewards(epochId, [dlpId]);
 
-            const receipt = await getReceipt(tx);
+        const receipt = await getReceipt(tx);
 
-            // Parse events from the transaction
-            const distributedEvents = receipt.logs
-              .map((log) => {
-                try {
-                  return dlpRewardDeployer.interface.parseLog(log);
-                } catch {
-                  return null;
-                }
-              })
-              .filter(
-                (event) => event && event.name === "EpochDlpRewardDistributed",
-              );
-
-            // Log detailed event information
-            for (const event of distributedEvents) {
-              // @ts-ignore
-              const args = event.args;
-
-              distributionResults[dlpId] = {
-                trancheId: args.trancheId.toString(),
-                trancheAmount: args.trancheAmount,
-                tokenRewardAmount: args.tokenRewardAmount,
-                spareToken: args.spareToken,
-                spareVana: args.spareVana,
-                usedVanaAmount: args.usedVanaAmount,
-              };
+        // Parse events from the transaction
+        const distributedEvents = receipt.logs
+          .map((log) => {
+            try {
+              return dlpRewardDeployer.interface.parseLog(log);
+            } catch {
+              return null;
             }
-          }
-        } catch (error) {
-          // Silent error handling
+          })
+          .filter(
+            (event) => event && event.name === "EpochDlpRewardDistributed",
+          );
+
+        // Log detailed event information
+        for (const event of distributedEvents) {
+          // @ts-ignore
+          const args = event.args;
+
+          distributionResults[dlpId] = {
+            trancheId: args.trancheId.toString(),
+            trancheAmount: args.trancheAmount,
+            tokenRewardAmount: args.tokenRewardAmount,
+            spareToken: args.spareToken,
+            spareVana: args.spareVana,
+            usedVanaAmount: args.usedVanaAmount,
+          };
         }
       }
 

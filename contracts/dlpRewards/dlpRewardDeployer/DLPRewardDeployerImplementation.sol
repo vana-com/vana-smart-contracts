@@ -34,10 +34,14 @@ contract DLPRewardDeployerImplementation is
         uint256 distributedAmount,
         uint256 totalPenaltyAmount
     );
+    event EpochRewardsInitialized(uint256 indexed epochId, uint256 numberOfTranches, uint256 remediationWindow);
 
     error EpochNotFinalized();
     error NothingToDistribute(uint256 dlpId);
     error NothingToWithdraw();
+    error EpochRewardsNotInitialized();
+    error TrancheIntervalNotStarted(uint256 dlpId, uint256 trancheCount, uint256 trancheMinBlock);
+    error NumberOfBlocksBetweenTranchesNotPassed(uint256 dlpId, uint256 trancheCount, uint256 nextTrancheMinBlock);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -51,7 +55,7 @@ contract DLPRewardDeployerImplementation is
         address dlpRegistryAddress,
         address vanaEpochAddress,
         address dlpRewardSwapAddress,
-        uint256 newNumberOfTranches,
+        uint256 newNumberOfBlocksBetweenTranches,
         uint256 newRewardPercentage,
         uint256 newMaximumSlippagePercentage
     ) external initializer {
@@ -63,7 +67,7 @@ contract DLPRewardDeployerImplementation is
         vanaEpoch = IVanaEpoch(vanaEpochAddress);
         dlpRewardSwap = IDLPRewardSwap(dlpRewardSwapAddress);
 
-        numberOfTranches = newNumberOfTranches;
+        numberOfBlocksBetweenTranches = newNumberOfBlocksBetweenTranches;
         rewardPercentage = newRewardPercentage;
         maximumSlippagePercentage = newMaximumSlippagePercentage;
 
@@ -94,8 +98,15 @@ contract DLPRewardDeployerImplementation is
     function updateDlpRewardSwap(address dlpRewardSwapAddress) external override onlyRole(MAINTAINER_ROLE) {
         dlpRewardSwap = IDLPRewardSwap(dlpRewardSwapAddress);
     }
+
     function updateRewardPercentage(uint256 newRewardPercentage) external override onlyRole(MAINTAINER_ROLE) {
         rewardPercentage = newRewardPercentage;
+    }
+
+    function updateNumberOfBlocksBetweenTranches(
+        uint256 newNumberOfBlocksBetweenTranches
+    ) external override onlyRole(MAINTAINER_ROLE) {
+        numberOfBlocksBetweenTranches = newNumberOfBlocksBetweenTranches;
     }
 
     function updateMaximumSlippagePercentage(
@@ -110,6 +121,17 @@ contract DLPRewardDeployerImplementation is
 
     function unpause() external override onlyRole(MAINTAINER_ROLE) {
         _unpause();
+    }
+
+    function epochRewards(uint256 epochId) external view returns (EpochRewardInfo memory) {
+        EpochReward storage epochReward = _epochRewards[epochId];
+
+        return
+            EpochRewardInfo({
+                distributionInterval: epochReward.distributionInterval,
+                numberOfTranches: epochReward.numberOfTranches,
+                remediationWindow: epochReward.remediationWindow
+            });
     }
 
     function epochDlpRewards(uint256 epochId, uint256 dlpId) external view returns (EpochDlpRewardInfo memory) {
@@ -138,66 +160,38 @@ contract DLPRewardDeployerImplementation is
         return distributedRewards;
     }
 
+    function initializeEpochRewards(
+        uint256 epochId,
+        uint256 distributionInterval,
+        uint256 numberOfTranches,
+        uint256 remediationWindow
+    ) external override onlyRole(MAINTAINER_ROLE) whenNotPaused {
+        _epochRewards[epochId].distributionInterval = distributionInterval;
+        _epochRewards[epochId].numberOfTranches = numberOfTranches;
+        _epochRewards[epochId].remediationWindow = remediationWindow;
+
+        emit EpochRewardsInitialized(epochId, numberOfTranches, remediationWindow);
+    }
+
     function distributeRewards(
         uint256 epochId,
         uint256[] calldata dlpIds
     ) external override nonReentrant onlyRole(REWARD_DEPLOYER_ROLE) whenNotPaused {
-        if (!vanaEpoch.epochs(epochId).isFinalized) {
+        IVanaEpoch.EpochInfo memory epoch = vanaEpoch.epochs(epochId);
+
+        if (!epoch.isFinalized) {
             revert EpochNotFinalized();
         }
 
+        EpochReward storage epochReward = _epochRewards[epochId];
+
+        if (epochReward.numberOfTranches == 0 || epochReward.remediationWindow == 0) {
+            revert EpochRewardsNotInitialized();
+        }
+
         for (uint256 i = 0; i < dlpIds.length; i++) {
-            IDLPRegistry.DlpInfo memory dlp = dlpRegistry.dlps(dlpIds[i]);
-            IVanaEpoch.EpochDlpInfo memory epochDlp = vanaEpoch.epochDlps(epochId, dlpIds[i]);
-
-            uint256 totalRewardToDistribute = epochDlp.penaltyAmount < epochDlp.rewardAmount
-                ? epochDlp.rewardAmount - epochDlp.penaltyAmount
-                : 0;
-
-            EpochDlpReward storage epochDlpReward = _epochRewards[epochId].epochDlpRewards[dlpIds[i]];
-
-            if (epochDlpReward.totalDistributedAmount >= totalRewardToDistribute) {
-                revert NothingToDistribute(dlpIds[i]);
-            }
-
-            uint256 trancheAmount = (totalRewardToDistribute - epochDlpReward.totalDistributedAmount) /
-                (numberOfTranches - epochDlpReward.tranchesCount);
-
-            ++epochDlpReward.tranchesCount;
-
-            treasury.transfer(address(this), address(0), trancheAmount);
-
-            (uint256 tokenRewardAmount, uint256 spareToken, uint256 spareVana, uint256 usedVanaAmount) = dlpRewardSwap
-                .splitRewardSwap{value: trancheAmount}(
-                IDLPRewardSwap.SplitRewardSwapParams({
-                    lpTokenId: dlp.lpTokenId,
-                    rewardPercentage: rewardPercentage,
-                    maximumSlippagePercentage: maximumSlippagePercentage,
-                    rewardRecipient: dlp.treasuryAddress,
-                    spareRecipient: address(treasury)
-                })
-            );
-
-            epochDlpReward.totalDistributedAmount += trancheAmount;
-            epochDlpReward.distributedRewards[epochDlpReward.tranchesCount] = DistributedReward({
-                amount: trancheAmount,
-                blockNumber: block.number,
-                tokenRewardAmount: tokenRewardAmount,
-                spareToken: spareToken,
-                spareVana: spareVana,
-                usedVanaAmount: usedVanaAmount
-            });
-
-            emit EpochDlpRewardDistributed(
-                epochId,
-                dlpIds[i],
-                epochDlpReward.tranchesCount,
-                trancheAmount,
-                tokenRewardAmount,
-                spareToken,
-                spareVana,
-                usedVanaAmount
-            );
+            _checkTrancheStartBlock(epochId, dlpIds[i], epoch, epochReward);
+            _distributeDlpNextTranche(epochId, dlpIds[i], epochReward);
         }
     }
 
@@ -222,5 +216,85 @@ contract DLPRewardDeployerImplementation is
         treasury.transfer(recipientAddress, address(0), toWithdrawAmount);
 
         emit EpochDlpPenaltyDistributed(epochId, dlpId, toWithdrawAmount, epochDlp.penaltyAmount);
+    }
+
+    function _checkTrancheStartBlock(
+        uint256 epochId,
+        uint256 dlpId,
+        IVanaEpoch.EpochInfo memory epoch,
+        EpochReward storage epochReward
+    ) internal view {
+        EpochDlpReward storage epochDlpReward = epochReward.epochDlpRewards[epochId];
+
+        uint256 currentTrancheNumber = epochDlpReward.tranchesCount;
+        uint256 trancheMinBlock = epoch.endBlock +
+            epochReward.remediationWindow +
+            epochReward.distributionInterval *
+            currentTrancheNumber;
+
+        if (trancheMinBlock > block.number) {
+            revert TrancheIntervalNotStarted(dlpId, currentTrancheNumber, trancheMinBlock);
+        }
+
+        uint256 nextTrancheMinBlock = epochDlpReward.distributedRewards[currentTrancheNumber].blockNumber +
+            numberOfBlocksBetweenTranches;
+        if (nextTrancheMinBlock > block.number) {
+            revert NumberOfBlocksBetweenTranchesNotPassed(dlpId, currentTrancheNumber, nextTrancheMinBlock);
+        }
+    }
+
+    function _distributeDlpNextTranche(uint256 epochId, uint256 dlpId, EpochReward storage epochReward) internal {
+        IDLPRegistry.DlpInfo memory dlp = dlpRegistry.dlps(dlpId);
+
+        IVanaEpoch.EpochDlpInfo memory epochDlp = vanaEpoch.epochDlps(epochId, dlpId);
+
+        uint256 totalRewardToDistribute = epochDlp.penaltyAmount < epochDlp.rewardAmount
+            ? epochDlp.rewardAmount - epochDlp.penaltyAmount
+            : 0;
+
+        EpochDlpReward storage epochDlpReward = epochReward.epochDlpRewards[dlpId];
+
+        if (epochDlpReward.totalDistributedAmount >= totalRewardToDistribute) {
+            revert NothingToDistribute(dlpId);
+        }
+
+        uint256 trancheAmount = (totalRewardToDistribute - epochDlpReward.totalDistributedAmount) /
+            (epochReward.numberOfTranches - epochDlpReward.tranchesCount);
+
+        ++epochDlpReward.tranchesCount;
+
+        treasury.transfer(address(this), address(0), trancheAmount);
+
+        (uint256 tokenRewardAmount, uint256 spareToken, uint256 spareVana, uint256 usedVanaAmount) = dlpRewardSwap
+            .splitRewardSwap{value: trancheAmount}(
+            IDLPRewardSwap.SplitRewardSwapParams({
+                lpTokenId: dlp.lpTokenId,
+                rewardPercentage: rewardPercentage,
+                maximumSlippagePercentage: maximumSlippagePercentage,
+                rewardRecipient: dlp.treasuryAddress,
+                spareRecipient: address(treasury)
+            })
+        );
+
+        epochDlpReward.totalDistributedAmount += trancheAmount;
+        epochDlpReward.distributedRewards[epochDlpReward.tranchesCount] = DistributedReward({
+            amount: trancheAmount,
+            blockNumber: block.number,
+            tokenRewardAmount: tokenRewardAmount,
+            spareToken: spareToken,
+            spareVana: spareVana,
+            usedVanaAmount: usedVanaAmount
+        });
+
+        emit EpochDlpRewardDistributed(
+            epochId,
+            dlpId,
+            epochDlpReward.tranchesCount,
+            trancheAmount,
+            tokenRewardAmount,
+            spareToken,
+            spareVana,
+            usedVanaAmount
+        );
     }
 }
