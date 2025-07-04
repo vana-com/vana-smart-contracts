@@ -15,9 +15,6 @@ describe("DataPermission", () => {
   let user1: HardhatEthersSigner;
   let user2: HardhatEthersSigner;
   let user3: HardhatEthersSigner;
-  let application1: HardhatEthersSigner;
-  let application2: HardhatEthersSigner;
-  let application3: HardhatEthersSigner;
   let sponsor: HardhatEthersSigner;
 
   let dataPermission: DataPermissionImplementation;
@@ -26,9 +23,6 @@ describe("DataPermission", () => {
     "0x0000000000000000000000000000000000000000000000000000000000000000";
   const MAINTAINER_ROLE = ethers.keccak256(
     ethers.toUtf8Bytes("MAINTAINER_ROLE"),
-  );
-  const REFINEMENT_SERVICE_ROLE = ethers.keccak256(
-    ethers.toUtf8Bytes("REFINEMENT_SERVICE_ROLE"),
   );
 
   const deploy = async () => {
@@ -41,9 +35,6 @@ describe("DataPermission", () => {
       user1,
       user2,
       user3,
-      application1,
-      application2,
-      application3,
     ] = await ethers.getSigners();
 
     const dataPermissionDeploy = await upgrades.deployProxy(
@@ -105,22 +96,14 @@ describe("DataPermission", () => {
   });
 
   describe("AddPermission", () => {
-    let sponsor: HardhatEthersSigner;
-
     beforeEach(async () => {
       await deploy();
-      // Get sponsor from the existing signers or create a new one
-      sponsor = deployer; // Using deployer as sponsor, or you can assign any other signer
     });
 
     const createPermissionSignature = async (
       permission: {
-        application: string;
-        files: bigint[];
-        operation: string;
-        grant: string;
-        parameters: string;
         nonce: bigint;
+        grant: string;
       },
       signer: HardhatEthersSigner,
     ) => {
@@ -133,35 +116,23 @@ describe("DataPermission", () => {
 
       const types = {
         Permission: [
-          { name: "application", type: "address" },
-          { name: "files", type: "uint256[]" },
-          { name: "operation", type: "string" },
-          { name: "grant", type: "string" },
-          { name: "parameters", type: "string" },
           { name: "nonce", type: "uint256" },
+          { name: "grant", type: "string" },
         ],
       };
 
       const value = {
-        application: permission.application,
-        files: permission.files,
-        operation: permission.operation,
-        grant: permission.grant,
-        parameters: permission.parameters,
         nonce: permission.nonce,
+        grant: permission.grant,
       };
 
       return await signer.signTypedData(domain, types, value);
     };
 
-    it("should add a valid permission with correct nonce and emit event", async function () {
+    it("should add a valid permission and emit event", async function () {
       const permission = {
-        application: application1.address,
-        files: [1n, 2n, 3n],
-        operation: "ipfs://operation1",
-        grant: "ipfs://grant1",
-        parameters: "ipfs://parameters1",
         nonce: 0n,
+        grant: "ipfs://grant1",
       };
 
       // User1 should start with nonce 0
@@ -176,12 +147,8 @@ describe("DataPermission", () => {
       // Verify event was emitted
       await expect(tx).to.emit(dataPermission, "PermissionAdded").withArgs(
         1, // permissionId
-        user1.address, // signer
-        permission.application,
-        permission.files,
-        permission.operation,
+        user1.address, // user
         permission.grant,
-        permission.parameters,
       );
 
       // Verify permissions count increased
@@ -192,23 +159,12 @@ describe("DataPermission", () => {
 
       // Verify permission was stored
       const storedPermission = await dataPermission.permissions(1);
-      storedPermission.application.should.eq(permission.application);
-      storedPermission.files.should.deep.eq(permission.files);
-      storedPermission.operation.should.eq(permission.operation);
+      storedPermission.user.should.eq(user1.address);
+      storedPermission.nonce.should.eq(0);
       storedPermission.grant.should.eq(permission.grant);
-      storedPermission.parameters.should.eq(permission.parameters);
+      storedPermission.signature.should.eq(signature);
 
-      // Verify it's indexed by application
-      (
-        await dataPermission.applicationPermissionIdsLength(
-          application1.address,
-        )
-      ).should.eq(1);
-      (
-        await dataPermission.applicationPermissionIdsAt(application1.address, 0)
-      ).should.eq(1n);
-
-      // Verify it's indexed by user (signer)
+      // Verify it's indexed by user
       (await dataPermission.userPermissionIdsLength(user1.address)).should.eq(
         1,
       );
@@ -216,93 +172,88 @@ describe("DataPermission", () => {
         1n,
       );
 
-      // Test the new userPermissionIdsValues function
+      // Test the userPermissionIdsValues function
       const userPermissionIds = await dataPermission.userPermissionIdsValues(
         user1.address,
       );
       userPermissionIds.should.deep.eq([1n]);
 
-      // Test the new applicationPermissionIdsValues function
-      const appPermissionIds =
-        await dataPermission.applicationPermissionIdsValues(
-          application1.address,
-        );
-      appPermissionIds.should.deep.eq([1n]);
+      // Verify grant hash mapping
+      (await dataPermission.permissionIdByGrant(permission.grant)).should.eq(1);
     });
 
     it("should reject permission with incorrect nonce", async function () {
       const permission = {
-        application: application1.address,
-        files: [1n, 2n, 3n],
-        operation: "ipfs://operation1",
+        nonce: 1n, // Wrong nonce - should be 0
         grant: "ipfs://grant1",
-        parameters: "ipfs://parameters1",
-        nonce: 1n, // Wrong nonce
       };
 
-      // User should start with nonce 0, but we sign with nonce 1
       const signature = await createPermissionSignature(permission, user1);
 
-      await dataPermission.connect(sponsor).addPermission(permission, signature)
-        .should.be.rejected;
+      await expect(
+        dataPermission.connect(sponsor).addPermission(permission, signature),
+      )
+        .to.be.revertedWithCustomError(dataPermission, "InvalidNonce")
+        .withArgs(0, 1); // expected, provided
 
       // Nonce should remain unchanged
       (await dataPermission.userNonce(user1.address)).should.eq(0);
     });
 
-    it("should reject permission with already used nonce", async function () {
-      const permission1 = {
-        application: application1.address,
-        files: [1n, 2n],
-        operation: "ipfs://operation1",
-        grant: "ipfs://grant1",
-        parameters: "ipfs://parameters1",
+    it("should reject permission with empty grant", async function () {
+      const permission = {
         nonce: 0n,
+        grant: "", // Empty grant
+      };
+
+      const signature = await createPermissionSignature(permission, user1);
+
+      await expect(
+        dataPermission.connect(sponsor).addPermission(permission, signature),
+      ).to.be.revertedWithCustomError(dataPermission, "EmptyGrant");
+
+      // Nonce should remain unchanged
+      (await dataPermission.userNonce(user1.address)).should.eq(0);
+    });
+
+    it("should reject permission with already used grant", async function () {
+      const permission1 = {
+        nonce: 0n,
+        grant: "ipfs://grant1",
       };
 
       const permission2 = {
-        application: application2.address,
-        files: [3n, 4n],
-        operation: "ipfs://operation2",
-        grant: "ipfs://grant2",
-        parameters: "ipfs://parameters2",
-        nonce: 0n, // Reusing nonce 0
+        nonce: 1n,
+        grant: "ipfs://grant1", // Same grant
       };
 
-      // Add first permission with nonce 0
       const signature1 = await createPermissionSignature(permission1, user1);
+      const signature2 = await createPermissionSignature(permission2, user1);
+
+      // Add first permission
       await dataPermission
         .connect(sponsor)
         .addPermission(permission1, signature1);
 
-      // Try to reuse nonce 0 - should fail
-      const signature2 = await createPermissionSignature(permission2, user1);
-      await dataPermission
-        .connect(sponsor)
-        .addPermission(permission2, signature2).should.be.rejected;
+      // Try to reuse same grant - should fail
+      await expect(
+        dataPermission.connect(sponsor).addPermission(permission2, signature2),
+      ).to.be.revertedWithCustomError(dataPermission, "GrantAlreadyUsed");
 
       // Verify only one permission was added
       (await dataPermission.permissionsCount()).should.eq(1);
       (await dataPermission.userNonce(user1.address)).should.eq(1);
     });
 
-    it("should add multiple permissions for the same user with sequential nonces and emit events", async function () {
+    it("should add multiple permissions for the same user with sequential nonces", async function () {
       const permission1 = {
-        application: application1.address,
-        files: [1n, 2n],
-        operation: "ipfs://operation1",
-        grant: "ipfs://grant1",
-        parameters: "ipfs://parameters1",
         nonce: 0n,
+        grant: "ipfs://grant1",
       };
 
       const permission2 = {
-        application: application2.address,
-        files: [3n, 4n],
-        operation: "ipfs://operation2",
-        grant: "ipfs://grant2",
-        parameters: "ipfs://parameters2",
         nonce: 1n,
+        grant: "ipfs://grant2",
       };
 
       const signature1 = await createPermissionSignature(permission1, user1);
@@ -318,27 +269,11 @@ describe("DataPermission", () => {
       // Verify events were emitted
       await expect(tx1)
         .to.emit(dataPermission, "PermissionAdded")
-        .withArgs(
-          1,
-          user1.address,
-          permission1.application,
-          permission1.files,
-          permission1.operation,
-          permission1.grant,
-          permission1.parameters,
-        );
+        .withArgs(1, user1.address, permission1.grant);
 
       await expect(tx2)
         .to.emit(dataPermission, "PermissionAdded")
-        .withArgs(
-          2,
-          user1.address,
-          permission2.application,
-          permission2.files,
-          permission2.operation,
-          permission2.grant,
-          permission2.parameters,
-        );
+        .withArgs(2, user1.address, permission2.grant);
 
       // Verify permissions count increased
       (await dataPermission.permissionsCount()).should.eq(2);
@@ -363,46 +298,26 @@ describe("DataPermission", () => {
       );
       userPermissionIds.should.deep.eq([1n, 2n]);
 
-      // Verify they're indexed by their respective applications
-      (
-        await dataPermission.applicationPermissionIdsLength(
-          application1.address,
-        )
-      ).should.eq(1);
-      (
-        await dataPermission.applicationPermissionIdsAt(application1.address, 0)
-      ).should.eq(1n);
-
-      (
-        await dataPermission.applicationPermissionIdsLength(
-          application2.address,
-        )
-      ).should.eq(1);
-      (
-        await dataPermission.applicationPermissionIdsAt(application2.address, 0)
-      ).should.eq(2n);
+      // Verify grant hash mappings
+      (await dataPermission.permissionIdByGrant(permission1.grant)).should.eq(
+        1,
+      );
+      (await dataPermission.permissionIdByGrant(permission2.grant)).should.eq(
+        2,
+      );
     });
 
-    it("should add multiple permissions for the same application from different users", async function () {
+    it("should add permissions for different users independently", async function () {
       const permission1 = {
-        application: application1.address,
-        files: [1n, 2n],
-        operation: "ipfs://operation1",
-        grant: "ipfs://grant1",
-        parameters: "ipfs://parameters1",
         nonce: 0n,
+        grant: "ipfs://grant1",
       };
 
       const permission2 = {
-        application: application1.address,
-        files: [3n, 4n],
-        operation: "ipfs://operation2",
+        nonce: 0n, // Each user starts with nonce 0
         grant: "ipfs://grant2",
-        parameters: "ipfs://parameters2",
-        nonce: 0n,
       };
 
-      // Each user uses their own nonce (starting from 0)
       const signature1 = await createPermissionSignature(permission1, user1);
       const signature2 = await createPermissionSignature(permission2, user2);
 
@@ -413,183 +328,39 @@ describe("DataPermission", () => {
         .connect(sponsor)
         .addPermission(permission2, signature2);
 
-      // Verify both permissions are indexed by the same application
-      (
-        await dataPermission.applicationPermissionIdsLength(
-          application1.address,
-        )
-      ).should.eq(2);
-      (
-        await dataPermission.applicationPermissionIdsAt(application1.address, 0)
-      ).should.eq(1n);
-      (
-        await dataPermission.applicationPermissionIdsAt(application1.address, 1)
-      ).should.eq(2n);
-
-      // Test applicationPermissionIdsValues
-      const appPermissionIds =
-        await dataPermission.applicationPermissionIdsValues(
-          application1.address,
-        );
-      appPermissionIds.should.deep.eq([1n, 2n]);
-
       // Verify each user has their nonce incremented independently
       (await dataPermission.userNonce(user1.address)).should.eq(1);
       (await dataPermission.userNonce(user2.address)).should.eq(1);
-    });
 
-    it("should handle permissions with empty file arrays and correct nonce", async function () {
-      const permission = {
-        application: application1.address,
-        files: [],
-        operation: "ipfs://operation1",
-        grant: "ipfs://grant1",
-        parameters: "ipfs://parameters1",
-        nonce: 0n,
-      };
-
-      const signature = await createPermissionSignature(permission, user1);
-
-      const tx = await dataPermission
-        .connect(sponsor)
-        .addPermission(permission, signature);
-
-      // Verify event was emitted
-      await expect(tx)
-        .to.emit(dataPermission, "PermissionAdded")
-        .withArgs(
-          1,
-          user1.address,
-          permission.application,
-          permission.files,
-          permission.operation,
-          permission.grant,
-          permission.parameters,
-        );
-
-      const storedPermission = await dataPermission.permissions(1);
-      storedPermission.files.should.have.length(0);
-      storedPermission.grant.should.eq(permission.grant);
-
-      // Verify nonce was incremented
-      (await dataPermission.userNonce(user1.address)).should.eq(1);
-    });
-
-    it("should handle permissions with empty strings and correct nonce", async function () {
-      const permission = {
-        application: application1.address,
-        files: [1n],
-        operation: "",
-        grant: "",
-        parameters: "",
-        nonce: 0n,
-      };
-
-      const signature = await createPermissionSignature(permission, user1);
-
-      await dataPermission.connect(sponsor).addPermission(permission, signature)
-        .should.be.fulfilled;
-
-      const storedPermission = await dataPermission.permissions(1);
-      storedPermission.operation.should.eq("");
-      storedPermission.grant.should.eq("");
-      storedPermission.parameters.should.eq("");
-
-      // Verify nonce was incremented
-      (await dataPermission.userNonce(user1.address)).should.eq(1);
-    });
-
-    it("should handle large file arrays with correct nonce", async function () {
-      const largeFileArray = Array.from({ length: 100 }, (_, i) =>
-        BigInt(i + 1),
-      );
-
-      const permission = {
-        application: application1.address,
-        files: largeFileArray,
-        operation: "ipfs://operation1",
-        grant: "ipfs://grant1",
-        parameters: "ipfs://parameters1",
-        nonce: 0n,
-      };
-
-      const signature = await createPermissionSignature(permission, user1);
-
-      await dataPermission.connect(sponsor).addPermission(permission, signature)
-        .should.be.fulfilled;
-
-      const storedPermission = await dataPermission.permissions(1);
-      storedPermission.files.should.have.length(100);
-      storedPermission.files.should.deep.eq(largeFileArray);
-      storedPermission.grant.should.eq(permission.grant);
-
-      // Verify nonce was incremented
-      (await dataPermission.userNonce(user1.address)).should.eq(1);
-    });
-
-    it("should work when called by sponsor wallet regardless of signer", async function () {
-      const permission = {
-        application: application1.address,
-        files: [1n, 2n, 3n],
-        operation: "ipfs://operation1",
-        grant: "ipfs://grant1",
-        parameters: "ipfs://parameters1",
-        nonce: 0n,
-      };
-
-      const signature = await createPermissionSignature(permission, user1);
-
-      // sponsor calls the function but permission is signed by user1
-      await dataPermission.connect(sponsor).addPermission(permission, signature)
-        .should.be.fulfilled;
-
-      // Verify it's indexed by the signer (user1), not the caller (sponsor)
+      // Verify each user has one permission
       (await dataPermission.userPermissionIdsLength(user1.address)).should.eq(
         1,
       );
-      (await dataPermission.userPermissionIdsAt(user1.address, 0)).should.eq(
-        1n,
+      (await dataPermission.userPermissionIdsLength(user2.address)).should.eq(
+        1,
       );
 
-      (await dataPermission.userPermissionIdsLength(sponsor.address)).should.eq(
-        0,
-      );
+      // Verify stored permissions have correct user fields
+      const storedPermission1 = await dataPermission.permissions(1);
+      const storedPermission2 = await dataPermission.permissions(2);
+      storedPermission1.user.should.eq(user1.address);
+      storedPermission2.user.should.eq(user2.address);
     });
 
     it("should assign sequential IDs to permissions", async function () {
       const permissions = [
-        {
-          application: application1.address,
-          files: [1n],
-          operation: "ipfs://operation1",
-          grant: "ipfs://grant1",
-          parameters: "ipfs://parameters1",
-          nonce: 0n,
-        },
-        {
-          application: application2.address,
-          files: [2n],
-          operation: "ipfs://operation2",
-          grant: "ipfs://grant2",
-          parameters: "ipfs://parameters2",
-          nonce: 0n,
-        },
-        {
-          application: application3.address,
-          files: [3n],
-          operation: "ipfs://operation3",
-          grant: "ipfs://grant3",
-          parameters: "ipfs://parameters3",
-          nonce: 0n,
-        },
+        { nonce: 0n, grant: "ipfs://grant1" },
+        { nonce: 0n, grant: "ipfs://grant2" },
+        { nonce: 0n, grant: "ipfs://grant3" },
       ];
+
+      const users = [user1, user2, user3];
 
       for (let i = 0; i < permissions.length; i++) {
         const signature = await createPermissionSignature(
           permissions[i],
-          i === 0 ? user1 : i === 1 ? user2 : user3,
+          users[i],
         );
-
         await dataPermission
           .connect(sponsor)
           .addPermission(permissions[i], signature);
@@ -601,179 +372,29 @@ describe("DataPermission", () => {
       // Verify all permissions are stored with correct IDs (starting from 1)
       for (let i = 0; i < permissions.length; i++) {
         const storedPermission = await dataPermission.permissions(i + 1);
-        storedPermission.application.should.eq(permissions[i].application);
-        storedPermission.operation.should.eq(permissions[i].operation);
+        storedPermission.user.should.eq(users[i].address);
         storedPermission.grant.should.eq(permissions[i].grant);
       }
     });
 
-    it("should validate IPFS URI format in operation, grant and parameters fields", async function () {
-      const validPermission = {
-        application: application1.address,
-        files: [1n],
-        operation: "ipfs://operation1",
-        grant: "ipfs://grant1",
-        parameters: "ipfs://parameters1",
-        nonce: 0n,
-      };
-
-      const signature = await createPermissionSignature(validPermission, user1);
-
-      await dataPermission
-        .connect(sponsor)
-        .addPermission(validPermission, signature).should.be.fulfilled;
-
-      const storedPermission = await dataPermission.permissions(1);
-      storedPermission.operation.should.eq(validPermission.operation);
-      storedPermission.grant.should.eq(validPermission.grant);
-    });
-
     it("should return empty permission for non-existent ID", async function () {
       const permission = await dataPermission.permissions(999);
-      permission.application.should.eq(ethers.ZeroAddress);
-      permission.files.should.have.length(0);
-      permission.operation.should.eq("");
+      permission.user.should.eq(ethers.ZeroAddress);
+      permission.nonce.should.eq(0);
       permission.grant.should.eq("");
-      permission.parameters.should.eq("");
+      permission.signature.should.eq("0x");
     });
 
-    it("should handle different signers for same application", async function () {
-      const permission1 = {
-        application: application1.address,
-        files: [1n],
-        operation: "ipfs://operation1",
-        grant: "ipfs://grant1",
-        parameters: "ipfs://parameters1",
-        nonce: 0n,
-      };
-
-      const permission2 = {
-        application: application1.address,
-        files: [2n],
-        operation: "ipfs://operation2",
-        grant: "ipfs://grant2",
-        parameters: "ipfs://parameters2",
-        nonce: 0n,
-      };
-
-      const signature1 = await createPermissionSignature(permission1, user1);
-      const signature2 = await createPermissionSignature(permission2, user2);
-
-      await dataPermission
-        .connect(sponsor)
-        .addPermission(permission1, signature1);
-      await dataPermission
-        .connect(sponsor)
-        .addPermission(permission2, signature2);
-
-      // Verify both permissions are indexed by application
-      (
-        await dataPermission.applicationPermissionIdsLength(
-          application1.address,
-        )
-      ).should.eq(2);
-
-      // Verify each user has their own permission
-      (await dataPermission.userPermissionIdsLength(user1.address)).should.eq(
-        1,
-      );
-      (await dataPermission.userPermissionIdsLength(user2.address)).should.eq(
-        1,
-      );
-    });
-
-    it("should handle accessing permission IDs by index", async function () {
-      const permissions = [
-        {
-          application: application1.address,
-          files: [1n],
-          operation: "ipfs://operation1",
-          grant: "ipfs://grant1",
-          parameters: "ipfs://parameters1",
-          nonce: 0n,
-        },
-        {
-          application: application1.address,
-          files: [2n],
-          operation: "ipfs://operation2",
-          grant: "ipfs://grant2",
-          parameters: "ipfs://parameters2",
-          nonce: 1n,
-        },
-        {
-          application: application2.address,
-          files: [3n],
-          operation: "ipfs://operation3",
-          grant: "ipfs://grant3",
-          parameters: "ipfs://parameters3",
-          nonce: 0n,
-        },
-      ];
-
-      // Add permissions from different users with their respective nonces
-      const signature1 = await createPermissionSignature(permissions[0], user1);
-      const signature2 = await createPermissionSignature(permissions[1], user1);
-      const signature3 = await createPermissionSignature(permissions[2], user2);
-
-      await dataPermission
-        .connect(sponsor)
-        .addPermission(permissions[0], signature1);
-      await dataPermission
-        .connect(sponsor)
-        .addPermission(permissions[1], signature2);
-      await dataPermission
-        .connect(sponsor)
-        .addPermission(permissions[2], signature3);
-
-      // Test user permission access by index
-      (await dataPermission.userPermissionIdsLength(user1.address)).should.eq(
-        2,
-      );
-      (await dataPermission.userPermissionIdsAt(user1.address, 0)).should.eq(
-        1n,
-      );
-      (await dataPermission.userPermissionIdsAt(user1.address, 1)).should.eq(
-        2n,
-      );
-
-      (await dataPermission.userPermissionIdsLength(user2.address)).should.eq(
-        1,
-      );
-      (await dataPermission.userPermissionIdsAt(user2.address, 0)).should.eq(
-        3n,
-      );
-
-      // Test application permission access by index
-      (
-        await dataPermission.applicationPermissionIdsLength(
-          application1.address,
-        )
-      ).should.eq(2);
-      (
-        await dataPermission.applicationPermissionIdsAt(application1.address, 0)
-      ).should.eq(1n);
-      (
-        await dataPermission.applicationPermissionIdsAt(application1.address, 1)
-      ).should.eq(2n);
-
-      (
-        await dataPermission.applicationPermissionIdsLength(
-          application2.address,
-        )
-      ).should.eq(1);
-      (
-        await dataPermission.applicationPermissionIdsAt(application2.address, 0)
-      ).should.eq(3n);
+    it("should return 0 for non-existent grant", async function () {
+      const permissionId =
+        await dataPermission.permissionIdByGrant("ipfs://nonexistent");
+      permissionId.should.eq(0);
     });
 
     it("should revert when accessing out of bounds permission indices", async function () {
       const permission = {
-        application: application1.address,
-        files: [1n],
-        operation: "ipfs://operation1",
-        grant: "ipfs://grant1",
-        parameters: "ipfs://parameters1",
         nonce: 0n,
+        grant: "ipfs://grant1",
       };
 
       const signature = await createPermissionSignature(permission, user1);
@@ -782,42 +403,29 @@ describe("DataPermission", () => {
         .addPermission(permission, signature);
 
       // Should revert when accessing index 1 (only index 0 exists)
-      await dataPermission.userPermissionIdsAt(user1.address, 1).should.be
+      await expect(dataPermission.userPermissionIdsAt(user1.address, 1)).to.be
         .rejected;
-      await dataPermission.applicationPermissionIdsAt(application1.address, 1)
-        .should.be.rejected;
 
-      // Should revert for non-existent user/application
-      await dataPermission.userPermissionIdsAt(user2.address, 0).should.be
+      // Should revert for non-existent user
+      await expect(dataPermission.userPermissionIdsAt(user2.address, 0)).to.be
         .rejected;
-      await dataPermission.applicationPermissionIdsAt(application2.address, 0)
-        .should.be.rejected;
     });
 
     it("should track nonces correctly across multiple users", async function () {
       const permission1 = {
-        application: application1.address,
-        files: [1n],
-        operation: "ipfs://operation1",
-        grant: "ipfs://grant1",
-        parameters: "ipfs://parameters1",
         nonce: 0n,
+        grant: "ipfs://grant1",
       };
 
       const permission2 = {
-        application: application2.address,
-        files: [2n],
-        operation: "ipfs://operation2",
-        grant: "ipfs://grant2",
-        parameters: "ipfs://parameters2",
         nonce: 0n,
+        grant: "ipfs://grant2",
       };
 
       // Both users start with nonce 0
       (await dataPermission.userNonce(user1.address)).should.eq(0);
       (await dataPermission.userNonce(user2.address)).should.eq(0);
 
-      // Add permissions for both users
       const signature1 = await createPermissionSignature(permission1, user1);
       const signature2 = await createPermissionSignature(permission2, user2);
 
@@ -834,12 +442,8 @@ describe("DataPermission", () => {
 
       // Add another permission for user1
       const permission3 = {
-        application: application3.address,
-        files: [3n],
-        operation: "ipfs://operation3",
-        grant: "ipfs://grant3",
-        parameters: "ipfs://parameters3",
         nonce: 1n,
+        grant: "ipfs://grant3",
       };
 
       const signature3 = await createPermissionSignature(permission3, user1);
@@ -852,88 +456,29 @@ describe("DataPermission", () => {
       (await dataPermission.userNonce(user2.address)).should.eq(1);
     });
 
-    it("should emit events with correct parameters for multiple permissions", async function () {
-      const permission1 = {
-        application: application1.address,
-        files: [1n, 2n],
-        operation: "ipfs://operation1",
-        grant: "ipfs://grant1",
-        parameters: "ipfs://parameters1",
+    it("should handle grants with special characters", async function () {
+      const permission = {
         nonce: 0n,
+        grant: "ipfs://grant-with-special-chars_123!@#$%^&*()",
       };
 
-      const permission2 = {
-        application: application2.address,
-        files: [3n, 4n, 5n],
-        operation: "ipfs://operation2",
-        grant: "ipfs://grant2",
-        parameters: "ipfs://parameters2",
-        nonce: 0n,
-      };
+      const signature = await createPermissionSignature(permission, user1);
 
-      const signature1 = await createPermissionSignature(permission1, user1);
-      const signature2 = await createPermissionSignature(permission2, user2);
+      await dataPermission.connect(sponsor).addPermission(permission, signature)
+        .should.be.fulfilled;
 
-      const tx1 = await dataPermission
-        .connect(sponsor)
-        .addPermission(permission1, signature1);
-      const tx2 = await dataPermission
-        .connect(sponsor)
-        .addPermission(permission2, signature2);
+      const storedPermission = await dataPermission.permissions(1);
+      storedPermission.grant.should.eq(permission.grant);
 
-      // Verify first event
-      await expect(tx1)
-        .to.emit(dataPermission, "PermissionAdded")
-        .withArgs(
-          1,
-          user1.address,
-          permission1.application,
-          permission1.files,
-          permission1.operation,
-          permission1.grant,
-          permission1.parameters,
-        );
-
-      // Verify second event
-      await expect(tx2)
-        .to.emit(dataPermission, "PermissionAdded")
-        .withArgs(
-          2,
-          user2.address,
-          permission2.application,
-          permission2.files,
-          permission2.operation,
-          permission2.grant,
-          permission2.parameters,
-        );
+      // Verify grant hash mapping works with special characters
+      (await dataPermission.permissionIdByGrant(permission.grant)).should.eq(1);
     });
 
-    it("should test userPermissionIdsValues and applicationPermissionIdsValues functions", async function () {
+    it("should test userPermissionIdsValues function with multiple permissions", async function () {
       const permissions = [
-        {
-          application: application1.address,
-          files: [1n],
-          operation: "ipfs://operation1",
-          grant: "ipfs://grant1",
-          parameters: "ipfs://parameters1",
-          nonce: 0n,
-        },
-        {
-          application: application1.address,
-          files: [2n],
-          operation: "ipfs://operation2",
-          grant: "ipfs://grant2",
-          parameters: "ipfs://parameters2",
-          nonce: 1n,
-        },
-        {
-          application: application2.address,
-          files: [3n],
-          operation: "ipfs://operation3",
-          grant: "ipfs://grant3",
-          parameters: "ipfs://parameters3",
-          nonce: 2n,
-        },
+        { nonce: 0n, grant: "ipfs://grant1" },
+        { nonce: 1n, grant: "ipfs://grant2" },
+        { nonce: 2n, grant: "ipfs://grant3" },
       ];
 
       // Add all permissions for user1
@@ -953,67 +498,275 @@ describe("DataPermission", () => {
       );
       userPermissionIds.should.deep.eq([1n, 2n, 3n]);
 
-      // Test applicationPermissionIdsValues for application1 (should have 2 permissions)
-      const app1PermissionIds =
-        await dataPermission.applicationPermissionIdsValues(
-          application1.address,
-        );
-      app1PermissionIds.should.deep.eq([1n, 2n]);
-
-      // Test applicationPermissionIdsValues for application2 (should have 1 permission)
-      const app2PermissionIds =
-        await dataPermission.applicationPermissionIdsValues(
-          application2.address,
-        );
-      app2PermissionIds.should.deep.eq([3n]);
-
       // Test for user with no permissions
       const emptyUserPermissionIds =
         await dataPermission.userPermissionIdsValues(user2.address);
       emptyUserPermissionIds.should.deep.eq([]);
-
-      // Test for application with no permissions
-      const emptyAppPermissionIds =
-        await dataPermission.applicationPermissionIdsValues(
-          application3.address,
-        );
-      emptyAppPermissionIds.should.deep.eq([]);
     });
 
-    it("should handle grant field with special characters and empty strings", async function () {
+    it("should emit events with correct parameters for multiple permissions", async function () {
       const permission1 = {
-        application: application1.address,
-        files: [1n],
-        operation: "ipfs://operation1",
-        grant: "ipfs://grant-with-special-chars_123!@#",
-        parameters: "ipfs://parameters1",
         nonce: 0n,
+        grant: "ipfs://grant1",
       };
 
       const permission2 = {
-        application: application1.address,
-        files: [2n],
-        operation: "ipfs://operation2",
-        grant: "", // Empty grant
-        parameters: "ipfs://parameters2",
-        nonce: 1n,
+        nonce: 0n,
+        grant: "ipfs://grant2",
       };
 
       const signature1 = await createPermissionSignature(permission1, user1);
-      const signature2 = await createPermissionSignature(permission2, user1);
+      const signature2 = await createPermissionSignature(permission2, user2);
+
+      const tx1 = await dataPermission
+        .connect(sponsor)
+        .addPermission(permission1, signature1);
+      const tx2 = await dataPermission
+        .connect(sponsor)
+        .addPermission(permission2, signature2);
+
+      // Verify first event
+      await expect(tx1)
+        .to.emit(dataPermission, "PermissionAdded")
+        .withArgs(1, user1.address, permission1.grant);
+
+      // Verify second event
+      await expect(tx2)
+        .to.emit(dataPermission, "PermissionAdded")
+        .withArgs(2, user2.address, permission2.grant);
+    });
+
+    it("should work when called by sponsor wallet but signed by actual user", async function () {
+      const permission = {
+        nonce: 0n,
+        grant: "ipfs://grant1",
+      };
+
+      const signature = await createPermissionSignature(permission, user1);
+
+      // sponsor calls the function but permission is signed by user1
+      await dataPermission.connect(sponsor).addPermission(permission, signature)
+        .should.be.fulfilled;
+
+      // Verify it's indexed by the signer (user1), not the caller (sponsor)
+      (await dataPermission.userPermissionIdsLength(user1.address)).should.eq(
+        1,
+      );
+      (await dataPermission.userPermissionIdsAt(user1.address, 0)).should.eq(
+        1n,
+      );
+
+      (await dataPermission.userPermissionIdsLength(sponsor.address)).should.eq(
+        0,
+      );
+
+      // Verify stored permission has correct user field
+      const storedPermission = await dataPermission.permissions(1);
+      storedPermission.user.should.eq(user1.address);
+    });
+
+    it("should validate IPFS URI format in grant field", async function () {
+      const validPermission = {
+        nonce: 0n,
+        grant: "ipfs://grant1",
+      };
+
+      const signature = await createPermissionSignature(validPermission, user1);
 
       await dataPermission
         .connect(sponsor)
-        .addPermission(permission1, signature1).should.be.fulfilled;
+        .addPermission(validPermission, signature).should.be.fulfilled;
+
+      const storedPermission = await dataPermission.permissions(1);
+      storedPermission.grant.should.eq(validPermission.grant);
+    });
+
+    it("should handle grant field with very long strings", async function () {
+      const longGrant = "ipfs://" + "a".repeat(1000); // Very long grant
+      const permission = {
+        nonce: 0n,
+        grant: longGrant,
+      };
+
+      const signature = await createPermissionSignature(permission, user1);
+
+      await dataPermission.connect(sponsor).addPermission(permission, signature)
+        .should.be.fulfilled;
+
+      const storedPermission = await dataPermission.permissions(1);
+      storedPermission.grant.should.eq(longGrant);
+    });
+
+    it("should handle unicode characters in grant", async function () {
+      const permission = {
+        nonce: 0n,
+        grant: "ipfs://grant-with-unicode-🚀-💎-🌟",
+      };
+
+      const signature = await createPermissionSignature(permission, user1);
+
+      await dataPermission.connect(sponsor).addPermission(permission, signature)
+        .should.be.fulfilled;
+
+      const storedPermission = await dataPermission.permissions(1);
+      storedPermission.grant.should.eq(permission.grant);
+
+      // Verify grant hash mapping works with unicode
+      (await dataPermission.permissionIdByGrant(permission.grant)).should.eq(1);
+    });
+
+    it("should store exact signature bytes", async function () {
+      const permission = {
+        nonce: 0n,
+        grant: "ipfs://grant1",
+      };
+
+      const signature = await createPermissionSignature(permission, user1);
+
       await dataPermission
         .connect(sponsor)
-        .addPermission(permission2, signature2).should.be.fulfilled;
+        .addPermission(permission, signature);
 
-      const storedPermission1 = await dataPermission.permissions(1);
-      const storedPermission2 = await dataPermission.permissions(2);
+      const storedPermission = await dataPermission.permissions(1);
+      storedPermission.signature.should.eq(signature);
 
-      storedPermission1.grant.should.eq(permission1.grant);
-      storedPermission2.grant.should.eq("");
+      // Verify signature length (should be 65 bytes for ECDSA)
+      ethers.getBytes(storedPermission.signature).length.should.eq(65);
+    });
+
+    it("should handle max nonce values", async function () {
+      const permission = {
+        nonce: 0n,
+        grant: "ipfs://grant1",
+      };
+
+      // Add first permission to increment nonce
+      let signature = await createPermissionSignature(permission, user1);
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission, signature);
+
+      // Try with very large nonce (but wrong)
+      const largeNoncePermission = {
+        nonce: 999999n,
+        grant: "ipfs://grant2",
+      };
+
+      signature = await createPermissionSignature(largeNoncePermission, user1);
+
+      await expect(
+        dataPermission
+          .connect(sponsor)
+          .addPermission(largeNoncePermission, signature),
+      )
+        .to.be.revertedWithCustomError(dataPermission, "InvalidNonce")
+        .withArgs(1, 999999); // expected 1, provided 999999
+    });
+  });
+
+  describe("Access Control", () => {
+    beforeEach(async () => {
+      await deploy();
+    });
+
+    it("should only allow admin to authorize upgrades", async function () {
+      // This would be tested in a real upgrade scenario
+      // For now, just verify the role is set correctly
+      (await dataPermission.hasRole(DEFAULT_ADMIN_ROLE, owner)).should.eq(true);
+      (await dataPermission.hasRole(DEFAULT_ADMIN_ROLE, user1)).should.eq(
+        false,
+      );
+    });
+
+    it("should allow admin to update trusted forwarder", async function () {
+      const newForwarder = user3.address;
+
+      await dataPermission.connect(owner).updateTrustedForwarder(newForwarder);
+      (await dataPermission.trustedForwarder()).should.eq(newForwarder);
+    });
+  });
+
+  describe("Edge Cases", () => {
+    beforeEach(async () => {
+      await deploy();
+    });
+
+    const createPermissionSignature = async (
+      permission: {
+        nonce: bigint;
+        grant: string;
+      },
+      signer: HardhatEthersSigner,
+    ) => {
+      const domain = {
+        name: "VanaDataWallet",
+        version: "1",
+        chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
+        verifyingContract: await dataPermission.getAddress(),
+      };
+
+      const types = {
+        Permission: [
+          { name: "nonce", type: "uint256" },
+          { name: "grant", type: "string" },
+        ],
+      };
+
+      const value = {
+        nonce: permission.nonce,
+        grant: permission.grant,
+      };
+
+      return await signer.signTypedData(domain, types, value);
+    };
+
+    it("should handle multiple users with same grant (should fail)", async function () {
+      const permission = {
+        nonce: 0n,
+        grant: "ipfs://same-grant",
+      };
+
+      const signature1 = await createPermissionSignature(permission, user1);
+      const signature2 = await createPermissionSignature(permission, user2);
+
+      // First user should succeed
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission, signature1);
+
+      // Second user should fail (same grant)
+      await expect(
+        dataPermission.connect(sponsor).addPermission(permission, signature2),
+      ).to.be.revertedWithCustomError(dataPermission, "GrantAlreadyUsed");
+    });
+
+    it("should handle rapid succession of permissions", async function () {
+      const permissions = [];
+      const signatures = [];
+
+      // Create 10 permissions rapidly
+      for (let i = 0; i < 10; i++) {
+        const permission = {
+          nonce: BigInt(i),
+          grant: `ipfs://grant${i}`,
+        };
+        permissions.push(permission);
+        signatures.push(await createPermissionSignature(permission, user1));
+      }
+
+      // Add them all
+      for (let i = 0; i < 10; i++) {
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permissions[i], signatures[i]);
+      }
+
+      // Verify all were added
+      (await dataPermission.permissionsCount()).should.eq(10);
+      (await dataPermission.userNonce(user1.address)).should.eq(10);
+      (await dataPermission.userPermissionIdsLength(user1.address)).should.eq(
+        10,
+      );
     });
   });
 });

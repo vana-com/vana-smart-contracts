@@ -6,9 +6,10 @@ import "./IDataPermission.sol";
 abstract contract DataPermissionStorageV1 is IDataPermission {
     address internal _trustedForwarder;
 
-    mapping(address applicationAddress => Application) internal _applications;
     mapping(address userAddress => User) internal _users;
 
     uint256 public permissionsCount;
     mapping(uint256 permissionId => Permission) internal _permissions;
+
+    mapping(bytes32 grantHash => uint256 permissionId) internal _grantHashToPermissionId;
 }

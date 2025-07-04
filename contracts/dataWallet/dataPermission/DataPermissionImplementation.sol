@@ -8,7 +8,6 @@ import "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import "@openzeppelin/contracts/utils/Strings.sol";
 import "./interfaces/DataPermissionStorageV1.sol";
 
 contract DataPermissionImplementation is
@@ -28,21 +27,21 @@ contract DataPermissionImplementation is
     string private constant SIGNING_DOMAIN = "VanaDataWallet";
     string private constant SIGNATURE_VERSION = "1";
 
-    bytes32 private constant PERMISSION_TYPEHASH =
-        keccak256(
-            "Permission(address application,uint256[] files,string operation,string grant,string parameters,uint256 nonce)"
-        );
-    event PermissionAdded(
-        uint256 indexed permissionId,
-        address indexed signer,
-        address indexed application,
-        uint256[] files,
-        string operation,
-        string grant,
-        string parameters
-    );
+    bytes32 private constant PERMISSION_TYPEHASH = keccak256("Permission(uint256 nonce,string grant)");
 
-    error InvalidNonce(uint256 nonce);
+    /**
+     * @notice Triggered when a permission has been added
+     *
+     * @param permissionId                      id of the permission
+     * @param user                              address of the user
+     * @param grant                             grant of the permission
+     */
+    event PermissionAdded(uint256 indexed permissionId, address indexed user, string grant);
+
+    error InvalidNonce(uint256 expectedNonce, uint256 providedNonce);
+    error GrantAlreadyUsed();
+    error InvalidSignature();
+    error EmptyGrant();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() ERC2771ContextUpgradeable(address(0)) {
@@ -52,6 +51,7 @@ contract DataPermissionImplementation is
     /**
      * @notice Initialize the contract
      *
+     * @param trustedForwarderAddress           address of the trusted forwarder
      * @param ownerAddress                      address of the owner
      */
     function initialize(address trustedForwarderAddress, address ownerAddress) external initializer {
@@ -135,92 +135,158 @@ contract DataPermissionImplementation is
         _unpause();
     }
 
+    /**
+     * @notice Returns all permission IDs for a user
+     *
+     * @param user                              address of the user
+     * @return uint256[]                        array of permission IDs
+     */
     function userPermissionIdsValues(address user) external view returns (uint256[] memory) {
         return _users[user].permissionIds.values();
     }
 
+    /**
+     * @notice Returns a permission ID at a specific index for a user
+     *
+     * @param user                              address of the user
+     * @param permissionIndex                   index of the permission
+     * @return uint256                          permission ID
+     */
     function userPermissionIdsAt(address user, uint256 permissionIndex) external view returns (uint256) {
         return _users[user].permissionIds.at(permissionIndex);
     }
 
+    /**
+     * @notice Returns the number of permissions for a user
+     *
+     * @param user                              address of the user
+     * @return uint256                          number of permissions
+     */
     function userPermissionIdsLength(address user) external view returns (uint256) {
         return _users[user].permissionIds.length();
     }
 
-    function applicationPermissionIdsValues(address application) external view returns (uint256[] memory) {
-        return _applications[application].permissionIds.values();
+    /**
+     * @notice Returns information about a permission
+     *
+     * @param permissionId                      id of the permission
+     * @return Permission                       permission information
+     */
+    function permissions(uint256 permissionId) external view returns (Permission memory) {
+        return _permissions[permissionId];
     }
 
-    function applicationPermissionIdsAt(address application, uint256 permissionIndex) external view returns (uint256) {
-        return _applications[application].permissionIds.at(permissionIndex);
-    }
-
-    function applicationPermissionIdsLength(address application) external view returns (uint256) {
-        return _applications[application].permissionIds.length();
-    }
-
-    function permissions(uint256 id) external view returns (Permission memory) {
-        return _permissions[id];
-    }
-
+    /**
+     * @notice Returns the current nonce for a user
+     *
+     * @param user                              address of the user
+     * @return uint256                          current nonce
+     */
     function userNonce(address user) external view returns (uint256) {
         return _users[user].nonce;
     }
 
-    function addPermission(PermissionInput calldata permission, bytes calldata signature) external {
-        address signer = _extractSignatureSigner(permission, signature);
-
-        if (permission.nonce != _users[signer].nonce) {
-            revert InvalidNonce(_users[signer].nonce);
-        }
-
-        ++_users[signer].nonce;
-
-        // Store permission
-        uint256 permissionId = ++permissionsCount;
-        _permissions[permissionId] = Permission({
-            user: signer,
-            application: permission.application,
-            files: permission.files,
-            operation: permission.operation,
-            grant: permission.grant,
-            parameters: permission.parameters
-        });
-
-        _applications[permission.application].permissionIds.add(permissionId);
-        _users[signer].permissionIds.add(permissionId);
-
-        emit PermissionAdded(
-            permissionId,
-            signer,
-            permission.application,
-            permission.files,
-            permission.operation,
-            permission.grant,
-            permission.parameters
-        );
+    /**
+     * @notice Get permission ID by grant hash
+     *
+     * @param grant                             the grant to look up
+     * @return permissionId                     the ID of the permission (0 if not found)
+     */
+    function permissionIdByGrant(string memory grant) external view returns (uint256) {
+        return _grantHashToPermissionId[keccak256(abi.encodePacked(grant))];
     }
 
+    /**
+     * @notice Adds a permission with the provided signature
+     *
+     * @param permission                        permission input data
+     * @param signature                         signature for the permission
+     * @return uint256                          id of the created permission
+     */
+    function addPermission(
+        PermissionInput calldata permission,
+        bytes calldata signature
+    ) external whenNotPaused returns (uint256) {
+        address signer = _extractSignatureSigner(permission, signature);
+        return _addPermission(permission, signature, signer);
+    }
+
+    /**
+     * @notice Extract the signer from the permission and signature using EIP-712
+     *
+     * @param permission                        permission input data
+     * @param signature                         signature for the permission
+     * @return address                          address of the signer
+     */
     function _extractSignatureSigner(
         PermissionInput calldata permission,
         bytes calldata signature
     ) internal view returns (address) {
-        // Hash array separately
-        bytes32 filesHash = keccak256(abi.encodePacked(permission.files));
-
         // Build struct hash
         bytes32 structHash = keccak256(
-            abi.encode(
-                PERMISSION_TYPEHASH,
-                permission.application,
-                filesHash,
-                keccak256(bytes(permission.operation)),
-                keccak256(bytes(permission.grant)),
-                keccak256(bytes(permission.parameters)),
-                permission.nonce
-            )
+            abi.encode(PERMISSION_TYPEHASH, permission.nonce, keccak256(bytes(permission.grant)))
         );
 
-        return _hashTypedDataV4(structHash).recover(signature);
+        bytes32 digest = _hashTypedDataV4(structHash);
+        return digest.recover(signature);
+    }
+
+    /**
+     * @notice Internal function to add a permission
+     *
+     * @param permission                        permission input data
+     * @param signature                         signature for the permission
+     * @param user                              address of the user
+     * @return uint256                          id of the created permission
+     */
+    function _addPermission(
+        PermissionInput calldata permission,
+        bytes calldata signature,
+        address user
+    ) internal returns (uint256) {
+        // Validate grant is not empty
+        if (bytes(permission.grant).length == 0) {
+            revert EmptyGrant();
+        }
+
+        // Check if grant is already used
+        bytes32 grantHash = keccak256(abi.encodePacked(permission.grant));
+        if (_grantHashToPermissionId[grantHash] != 0) {
+            revert GrantAlreadyUsed();
+        }
+
+        // Validate nonce
+        if (permission.nonce != _users[user].nonce) {
+            revert InvalidNonce(_users[user].nonce, permission.nonce);
+        }
+
+        // Validate signature by attempting to extract signer
+        address extractedSigner = _extractSignatureSigner(permission, signature);
+        if (extractedSigner != user) {
+            revert InvalidSignature();
+        }
+
+        // Increment user nonce
+        ++_users[user].nonce;
+
+        // Create permission
+        uint256 permissionId = ++permissionsCount;
+
+        _permissions[permissionId] = Permission({
+            user: user,
+            nonce: permission.nonce,
+            grant: permission.grant,
+            signature: signature
+        });
+
+        // Index by grant hash
+        _grantHashToPermissionId[grantHash] = permissionId;
+
+        // Add to user's permission set
+        _users[user].permissionIds.add(permissionId);
+
+        emit PermissionAdded(permissionId, user, permission.grant);
+
+        return permissionId;
     }
 }
