@@ -15,20 +15,14 @@ interface IDataPermission {
 
     struct Permission {
         address user;
-        address application;
-        uint256[] files;
-        string operation;
+        uint256 nonce;
         string grant;
-        string parameters;
+        bytes signature;
     }
 
     struct PermissionInput {
-        address application;
-        uint256[] files;
-        string operation;
-        string grant;
-        string parameters;
         uint256 nonce;
+        string grant;
     }
 
     function version() external pure returns (uint256);
