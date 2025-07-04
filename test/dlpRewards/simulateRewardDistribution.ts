@@ -528,29 +528,14 @@ describe("DLP fork tests", () => {
       // CONTRACT UPGRADES
       // ============================================================================
 
-      // await upgradeContracts();
-      //
-      // await dlpRewardDeployer
-      //   .connect(admin)
-      //   .initializeEpochRewards(6n, (3600 * 24) / 6, 89, (3600 * 48) / 6);
-      // await dlpRewardDeployer
-      //   .connect(admin)
-      //   .updateNumberOfBlocksBetweenTranches((3600 * 2) / 6);
-      //
-      // const currentBlockNumber = await getCurrentBlockNumber();
-      // console.log(currentBlockNumber);
-      // const epoch1 = await vanaEpoch.epochs(6n);
-      // console.log(epoch1.endBlock);
-      // console.log(Number(epoch1.endBlock) + (3600 * 48) / 6);
-      // if (currentBlockNumber >= Number(epoch1.endBlock) + (3600 * 48) / 6) {
-      //   console.log(
-      //     "Current block number is greater than or equal to epoch end block + 48 hours",
-      //   );
-      // } else {
-      //   console.log(
-      //     "Current block number is less than epoch end block + 48 hours",
-      //   );
-      // }
+      await upgradeContracts();
+
+      await dlpRewardDeployer
+        .connect(admin)
+        .initializeEpochRewards(6n, (3600 * 24) / 6, 90, (3600 * 24) / 6);
+      await dlpRewardDeployer
+        .connect(admin)
+        .updateNumberOfBlocksBetweenTranches((3600 * 2) / 60);
 
       // ============================================================================
       // EPOCH PREPARATION
@@ -856,7 +841,8 @@ describe("DLP fork tests", () => {
         );
 
         // Get number of tranches from the contract
-        const numberOfTranches = await dlpRewardDeployer.numberOfTranches();
+        const numberOfTranches = (await dlpRewardDeployer.epochRewards(epochId))
+          .numberOfTranches;
 
         console.log(`  📊 DLP Status (After Distribution):`);
         console.log(

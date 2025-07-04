@@ -224,7 +224,7 @@ contract DLPRewardDeployerImplementation is
         IVanaEpoch.EpochInfo memory epoch,
         EpochReward storage epochReward
     ) internal view {
-        EpochDlpReward storage epochDlpReward = epochReward.epochDlpRewards[epochId];
+        EpochDlpReward storage epochDlpReward = epochReward.epochDlpRewards[dlpId];
 
         uint256 currentTrancheNumber = epochDlpReward.tranchesCount;
         uint256 trancheMinBlock = epoch.endBlock +
