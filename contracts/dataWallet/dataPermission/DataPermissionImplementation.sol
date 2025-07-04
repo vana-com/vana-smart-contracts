@@ -179,6 +179,7 @@ contract DataPermissionImplementation is
         // Store permission
         uint256 permissionId = ++permissionsCount;
         _permissions[permissionId] = Permission({
+            user: signer,
             application: permission.application,
             files: permission.files,
             operation: permission.operation,

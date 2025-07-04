@@ -14,6 +14,7 @@ interface IDataPermission {
     }
 
     struct Permission {
+        address user;
         address application;
         uint256[] files;
         string operation;
