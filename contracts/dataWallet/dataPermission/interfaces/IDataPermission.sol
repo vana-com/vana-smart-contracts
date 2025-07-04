@@ -17,14 +17,16 @@ interface IDataPermission {
         address application;
         uint256[] files;
         string operation;
-        string prompt;
+        string grant;
+        string parameters;
     }
 
     struct PermissionInput {
         address application;
         uint256[] files;
         string operation;
-        string prompt;
+        string grant;
+        string parameters;
         uint256 nonce;
     }
 

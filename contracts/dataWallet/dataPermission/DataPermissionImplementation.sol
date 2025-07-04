@@ -29,15 +29,17 @@ contract DataPermissionImplementation is
     string private constant SIGNATURE_VERSION = "1";
 
     bytes32 private constant PERMISSION_TYPEHASH =
-        keccak256("Permission(address application,uint256[] files,string operation,string prompt,uint256 nonce)");
-
+        keccak256(
+            "Permission(address application,uint256[] files,string operation,string grant,string parameters,uint256 nonce)"
+        );
     event PermissionAdded(
         uint256 indexed permissionId,
         address indexed signer,
         address indexed application,
         uint256[] files,
         string operation,
-        string prompt
+        string grant,
+        string parameters
     );
 
     error InvalidNonce(uint256 nonce);
@@ -125,132 +127,28 @@ contract DataPermissionImplementation is
         _trustedForwarder = trustedForwarderAddress;
     }
 
-    /**
-     * @dev Pauses the contract
-     */
     function pause() external override onlyRole(MAINTAINER_ROLE) {
         _pause();
     }
 
-    /**
-     * @dev Unpauses the contract
-     */
     function unpause() external override onlyRole(MAINTAINER_ROLE) {
         _unpause();
     }
 
-    function addPermission(PermissionInput calldata permission, bytes calldata signature) external {
-        // Hash array separately
-        bytes32 filesHash = keccak256(abi.encodePacked(permission.files));
-
-        // Build struct hash
-        bytes32 structHash = keccak256(
-            abi.encode(
-                PERMISSION_TYPEHASH,
-                permission.application,
-                filesHash,
-                keccak256(bytes(permission.operation)),
-                keccak256(bytes(permission.prompt)),
-                permission.nonce
-            )
-        );
-
-        bytes32 digest = _hashTypedDataV4(structHash);
-        address signer = digest.recover(signature);
-
-        if (permission.nonce != _users[signer].nonce) {
-            revert InvalidNonce(_users[signer].nonce);
-        }
-
-        ++_users[signer].nonce;
-
-        // Store permission
-        uint256 permissionId = ++permissionsCount;
-        _permissions[permissionId] = Permission({
-            application: permission.application,
-            files: permission.files,
-            operation: permission.operation,
-            prompt: permission.prompt
-        });
-
-        _applications[permission.application].permissionIds.add(permissionId);
-        _users[signer].permissionIds.add(permissionId);
-
-        emit PermissionAdded(
-            permissionId,
-            signer,
-            permission.application,
-            permission.files,
-            permission.operation,
-            permission.prompt
-        );
+    function userPermissionIdsValues(address user) external view returns (uint256[] memory) {
+        return _users[user].permissionIds.values();
     }
-
-    bytes32 private constant PERMISSION_MESSAGE_TYPEHASH = keccak256("PermissionMessage(string message)");
-
-    function addPermission2(PermissionInput calldata permission, bytes calldata signature) external {
-        // Construct the expected message
-        string memory filesString = "";
-        for (uint i = 0; i < permission.files.length; i++) {
-            if (i > 0) filesString = string(abi.encodePacked(filesString, ","));
-            filesString = string(abi.encodePacked(filesString, Strings.toString(permission.files[i])));
-        }
-
-        string memory expectedMessage = string(
-            abi.encodePacked(
-                "You are signing a message for application ",
-                Strings.toHexString(uint160(permission.application), 20),
-                " to access files ",
-                filesString,
-                " for operation ",
-                permission.operation,
-                " using prompt ",
-                permission.prompt,
-                ". Nonce: ",
-                Strings.toString(permission.nonce)
-            )
-        );
-
-        // Build EIP-712 struct hash
-        bytes32 structHash = keccak256(abi.encode(PERMISSION_MESSAGE_TYPEHASH, keccak256(bytes(expectedMessage))));
-
-        address signer = _hashTypedDataV4(structHash).recover(signature);
-
-        if (permission.nonce != _users[signer].nonce) {
-            revert InvalidNonce(_users[signer].nonce);
-        }
-
-        ++_users[signer].nonce;
-
-        // Store permission
-        uint256 permissionId = ++permissionsCount;
-        _permissions[permissionId] = Permission({
-            application: permission.application,
-            files: permission.files,
-            operation: permission.operation,
-            prompt: permission.prompt
-        });
-
-        _applications[permission.application].permissionIds.add(permissionId);
-        _users[signer].permissionIds.add(permissionId);
-
-        emit PermissionAdded(
-            permissionId,
-            signer,
-            permission.application,
-            permission.files,
-            permission.operation,
-            permission.prompt
-        );
-    }
-
-    // Read methods
 
     function userPermissionIdsAt(address user, uint256 permissionIndex) external view returns (uint256) {
         return _users[user].permissionIds.at(permissionIndex);
     }
+
     function userPermissionIdsLength(address user) external view returns (uint256) {
         return _users[user].permissionIds.length();
+    }
+
+    function applicationPermissionIdsValues(address application) external view returns (uint256[] memory) {
+        return _applications[application].permissionIds.values();
     }
 
     function applicationPermissionIdsAt(address application, uint256 permissionIndex) external view returns (uint256) {
@@ -267,5 +165,61 @@ contract DataPermissionImplementation is
 
     function userNonce(address user) external view returns (uint256) {
         return _users[user].nonce;
+    }
+
+    function addPermission(PermissionInput calldata permission, bytes calldata signature) external {
+        address signer = _extractSignatureSigner(permission, signature);
+
+        if (permission.nonce != _users[signer].nonce) {
+            revert InvalidNonce(_users[signer].nonce);
+        }
+
+        ++_users[signer].nonce;
+
+        // Store permission
+        uint256 permissionId = ++permissionsCount;
+        _permissions[permissionId] = Permission({
+            application: permission.application,
+            files: permission.files,
+            operation: permission.operation,
+            grant: permission.grant,
+            parameters: permission.parameters
+        });
+
+        _applications[permission.application].permissionIds.add(permissionId);
+        _users[signer].permissionIds.add(permissionId);
+
+        emit PermissionAdded(
+            permissionId,
+            signer,
+            permission.application,
+            permission.files,
+            permission.operation,
+            permission.grant,
+            permission.parameters
+        );
+    }
+
+    function _extractSignatureSigner(
+        PermissionInput calldata permission,
+        bytes calldata signature
+    ) internal view returns (address) {
+        // Hash array separately
+        bytes32 filesHash = keccak256(abi.encodePacked(permission.files));
+
+        // Build struct hash
+        bytes32 structHash = keccak256(
+            abi.encode(
+                PERMISSION_TYPEHASH,
+                permission.application,
+                filesHash,
+                keccak256(bytes(permission.operation)),
+                keccak256(bytes(permission.grant)),
+                keccak256(bytes(permission.parameters)),
+                permission.nonce
+            )
+        );
+
+        return _hashTypedDataV4(structHash).recover(signature);
     }
 }
