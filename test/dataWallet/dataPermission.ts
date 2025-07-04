@@ -118,7 +118,8 @@ describe("DataPermission", () => {
         application: string;
         files: bigint[];
         operation: string;
-        prompt: string;
+        grant: string;
+        parameters: string;
         nonce: bigint;
       },
       signer: HardhatEthersSigner,
@@ -135,7 +136,8 @@ describe("DataPermission", () => {
           { name: "application", type: "address" },
           { name: "files", type: "uint256[]" },
           { name: "operation", type: "string" },
-          { name: "prompt", type: "string" },
+          { name: "grant", type: "string" },
+          { name: "parameters", type: "string" },
           { name: "nonce", type: "uint256" },
         ],
       };
@@ -144,7 +146,8 @@ describe("DataPermission", () => {
         application: permission.application,
         files: permission.files,
         operation: permission.operation,
-        prompt: permission.prompt,
+        grant: permission.grant,
+        parameters: permission.parameters,
         nonce: permission.nonce,
       };
 
@@ -156,7 +159,8 @@ describe("DataPermission", () => {
         application: application1.address,
         files: [1n, 2n, 3n],
         operation: "ipfs://operation1",
-        prompt: "ipfs://prompt1",
+        grant: "ipfs://grant1",
+        parameters: "ipfs://parameters1",
         nonce: 0n,
       };
 
@@ -176,7 +180,8 @@ describe("DataPermission", () => {
         permission.application,
         permission.files,
         permission.operation,
-        permission.prompt,
+        permission.grant,
+        permission.parameters,
       );
 
       // Verify permissions count increased
@@ -190,7 +195,8 @@ describe("DataPermission", () => {
       storedPermission.application.should.eq(permission.application);
       storedPermission.files.should.deep.eq(permission.files);
       storedPermission.operation.should.eq(permission.operation);
-      storedPermission.prompt.should.eq(permission.prompt);
+      storedPermission.grant.should.eq(permission.grant);
+      storedPermission.parameters.should.eq(permission.parameters);
 
       // Verify it's indexed by application
       (
@@ -209,6 +215,19 @@ describe("DataPermission", () => {
       (await dataPermission.userPermissionIdsAt(user1.address, 0)).should.eq(
         1n,
       );
+
+      // Test the new userPermissionIdsValues function
+      const userPermissionIds = await dataPermission.userPermissionIdsValues(
+        user1.address,
+      );
+      userPermissionIds.should.deep.eq([1n]);
+
+      // Test the new applicationPermissionIdsValues function
+      const appPermissionIds =
+        await dataPermission.applicationPermissionIdsValues(
+          application1.address,
+        );
+      appPermissionIds.should.deep.eq([1n]);
     });
 
     it("should reject permission with incorrect nonce", async function () {
@@ -216,7 +235,8 @@ describe("DataPermission", () => {
         application: application1.address,
         files: [1n, 2n, 3n],
         operation: "ipfs://operation1",
-        prompt: "ipfs://prompt1",
+        grant: "ipfs://grant1",
+        parameters: "ipfs://parameters1",
         nonce: 1n, // Wrong nonce
       };
 
@@ -235,7 +255,8 @@ describe("DataPermission", () => {
         application: application1.address,
         files: [1n, 2n],
         operation: "ipfs://operation1",
-        prompt: "ipfs://prompt1",
+        grant: "ipfs://grant1",
+        parameters: "ipfs://parameters1",
         nonce: 0n,
       };
 
@@ -243,7 +264,8 @@ describe("DataPermission", () => {
         application: application2.address,
         files: [3n, 4n],
         operation: "ipfs://operation2",
-        prompt: "ipfs://prompt2",
+        grant: "ipfs://grant2",
+        parameters: "ipfs://parameters2",
         nonce: 0n, // Reusing nonce 0
       };
 
@@ -269,7 +291,8 @@ describe("DataPermission", () => {
         application: application1.address,
         files: [1n, 2n],
         operation: "ipfs://operation1",
-        prompt: "ipfs://prompt1",
+        grant: "ipfs://grant1",
+        parameters: "ipfs://parameters1",
         nonce: 0n,
       };
 
@@ -277,7 +300,8 @@ describe("DataPermission", () => {
         application: application2.address,
         files: [3n, 4n],
         operation: "ipfs://operation2",
-        prompt: "ipfs://prompt2",
+        grant: "ipfs://grant2",
+        parameters: "ipfs://parameters2",
         nonce: 1n,
       };
 
@@ -300,7 +324,8 @@ describe("DataPermission", () => {
           permission1.application,
           permission1.files,
           permission1.operation,
-          permission1.prompt,
+          permission1.grant,
+          permission1.parameters,
         );
 
       await expect(tx2)
@@ -311,7 +336,8 @@ describe("DataPermission", () => {
           permission2.application,
           permission2.files,
           permission2.operation,
-          permission2.prompt,
+          permission2.grant,
+          permission2.parameters,
         );
 
       // Verify permissions count increased
@@ -330,6 +356,12 @@ describe("DataPermission", () => {
       (await dataPermission.userPermissionIdsAt(user1.address, 1)).should.eq(
         2n,
       );
+
+      // Test userPermissionIdsValues
+      const userPermissionIds = await dataPermission.userPermissionIdsValues(
+        user1.address,
+      );
+      userPermissionIds.should.deep.eq([1n, 2n]);
 
       // Verify they're indexed by their respective applications
       (
@@ -356,7 +388,8 @@ describe("DataPermission", () => {
         application: application1.address,
         files: [1n, 2n],
         operation: "ipfs://operation1",
-        prompt: "ipfs://prompt1",
+        grant: "ipfs://grant1",
+        parameters: "ipfs://parameters1",
         nonce: 0n,
       };
 
@@ -364,7 +397,8 @@ describe("DataPermission", () => {
         application: application1.address,
         files: [3n, 4n],
         operation: "ipfs://operation2",
-        prompt: "ipfs://prompt2",
+        grant: "ipfs://grant2",
+        parameters: "ipfs://parameters2",
         nonce: 0n,
       };
 
@@ -392,6 +426,13 @@ describe("DataPermission", () => {
         await dataPermission.applicationPermissionIdsAt(application1.address, 1)
       ).should.eq(2n);
 
+      // Test applicationPermissionIdsValues
+      const appPermissionIds =
+        await dataPermission.applicationPermissionIdsValues(
+          application1.address,
+        );
+      appPermissionIds.should.deep.eq([1n, 2n]);
+
       // Verify each user has their nonce incremented independently
       (await dataPermission.userNonce(user1.address)).should.eq(1);
       (await dataPermission.userNonce(user2.address)).should.eq(1);
@@ -402,7 +443,8 @@ describe("DataPermission", () => {
         application: application1.address,
         files: [],
         operation: "ipfs://operation1",
-        prompt: "ipfs://prompt1",
+        grant: "ipfs://grant1",
+        parameters: "ipfs://parameters1",
         nonce: 0n,
       };
 
@@ -421,11 +463,13 @@ describe("DataPermission", () => {
           permission.application,
           permission.files,
           permission.operation,
-          permission.prompt,
+          permission.grant,
+          permission.parameters,
         );
 
       const storedPermission = await dataPermission.permissions(1);
       storedPermission.files.should.have.length(0);
+      storedPermission.grant.should.eq(permission.grant);
 
       // Verify nonce was incremented
       (await dataPermission.userNonce(user1.address)).should.eq(1);
@@ -436,7 +480,8 @@ describe("DataPermission", () => {
         application: application1.address,
         files: [1n],
         operation: "",
-        prompt: "",
+        grant: "",
+        parameters: "",
         nonce: 0n,
       };
 
@@ -447,7 +492,8 @@ describe("DataPermission", () => {
 
       const storedPermission = await dataPermission.permissions(1);
       storedPermission.operation.should.eq("");
-      storedPermission.prompt.should.eq("");
+      storedPermission.grant.should.eq("");
+      storedPermission.parameters.should.eq("");
 
       // Verify nonce was incremented
       (await dataPermission.userNonce(user1.address)).should.eq(1);
@@ -462,7 +508,8 @@ describe("DataPermission", () => {
         application: application1.address,
         files: largeFileArray,
         operation: "ipfs://operation1",
-        prompt: "ipfs://prompt1",
+        grant: "ipfs://grant1",
+        parameters: "ipfs://parameters1",
         nonce: 0n,
       };
 
@@ -474,6 +521,7 @@ describe("DataPermission", () => {
       const storedPermission = await dataPermission.permissions(1);
       storedPermission.files.should.have.length(100);
       storedPermission.files.should.deep.eq(largeFileArray);
+      storedPermission.grant.should.eq(permission.grant);
 
       // Verify nonce was incremented
       (await dataPermission.userNonce(user1.address)).should.eq(1);
@@ -484,7 +532,8 @@ describe("DataPermission", () => {
         application: application1.address,
         files: [1n, 2n, 3n],
         operation: "ipfs://operation1",
-        prompt: "ipfs://prompt1",
+        grant: "ipfs://grant1",
+        parameters: "ipfs://parameters1",
         nonce: 0n,
       };
 
@@ -513,21 +562,24 @@ describe("DataPermission", () => {
           application: application1.address,
           files: [1n],
           operation: "ipfs://operation1",
-          prompt: "ipfs://prompt1",
+          grant: "ipfs://grant1",
+          parameters: "ipfs://parameters1",
           nonce: 0n,
         },
         {
           application: application2.address,
           files: [2n],
           operation: "ipfs://operation2",
-          prompt: "ipfs://prompt2",
+          grant: "ipfs://grant2",
+          parameters: "ipfs://parameters2",
           nonce: 0n,
         },
         {
           application: application3.address,
           files: [3n],
           operation: "ipfs://operation3",
-          prompt: "ipfs://prompt3",
+          grant: "ipfs://grant3",
+          parameters: "ipfs://parameters3",
           nonce: 0n,
         },
       ];
@@ -551,15 +603,17 @@ describe("DataPermission", () => {
         const storedPermission = await dataPermission.permissions(i + 1);
         storedPermission.application.should.eq(permissions[i].application);
         storedPermission.operation.should.eq(permissions[i].operation);
+        storedPermission.grant.should.eq(permissions[i].grant);
       }
     });
 
-    it("should validate IPFS URI format in operation and prompt fields", async function () {
+    it("should validate IPFS URI format in operation, grant and parameters fields", async function () {
       const validPermission = {
         application: application1.address,
         files: [1n],
         operation: "ipfs://operation1",
-        prompt: "ipfs://prompt1",
+        grant: "ipfs://grant1",
+        parameters: "ipfs://parameters1",
         nonce: 0n,
       };
 
@@ -571,6 +625,7 @@ describe("DataPermission", () => {
 
       const storedPermission = await dataPermission.permissions(1);
       storedPermission.operation.should.eq(validPermission.operation);
+      storedPermission.grant.should.eq(validPermission.grant);
     });
 
     it("should return empty permission for non-existent ID", async function () {
@@ -578,7 +633,8 @@ describe("DataPermission", () => {
       permission.application.should.eq(ethers.ZeroAddress);
       permission.files.should.have.length(0);
       permission.operation.should.eq("");
-      permission.prompt.should.eq("");
+      permission.grant.should.eq("");
+      permission.parameters.should.eq("");
     });
 
     it("should handle different signers for same application", async function () {
@@ -586,7 +642,8 @@ describe("DataPermission", () => {
         application: application1.address,
         files: [1n],
         operation: "ipfs://operation1",
-        prompt: "ipfs://prompt1",
+        grant: "ipfs://grant1",
+        parameters: "ipfs://parameters1",
         nonce: 0n,
       };
 
@@ -594,7 +651,8 @@ describe("DataPermission", () => {
         application: application1.address,
         files: [2n],
         operation: "ipfs://operation2",
-        prompt: "ipfs://prompt2",
+        grant: "ipfs://grant2",
+        parameters: "ipfs://parameters2",
         nonce: 0n,
       };
 
@@ -630,21 +688,24 @@ describe("DataPermission", () => {
           application: application1.address,
           files: [1n],
           operation: "ipfs://operation1",
-          prompt: "ipfs://prompt1",
+          grant: "ipfs://grant1",
+          parameters: "ipfs://parameters1",
           nonce: 0n,
         },
         {
           application: application1.address,
           files: [2n],
           operation: "ipfs://operation2",
-          prompt: "ipfs://prompt2",
+          grant: "ipfs://grant2",
+          parameters: "ipfs://parameters2",
           nonce: 1n,
         },
         {
           application: application2.address,
           files: [3n],
           operation: "ipfs://operation3",
-          prompt: "ipfs://prompt3",
+          grant: "ipfs://grant3",
+          parameters: "ipfs://parameters3",
           nonce: 0n,
         },
       ];
@@ -710,7 +771,8 @@ describe("DataPermission", () => {
         application: application1.address,
         files: [1n],
         operation: "ipfs://operation1",
-        prompt: "ipfs://prompt1",
+        grant: "ipfs://grant1",
+        parameters: "ipfs://parameters1",
         nonce: 0n,
       };
 
@@ -737,7 +799,8 @@ describe("DataPermission", () => {
         application: application1.address,
         files: [1n],
         operation: "ipfs://operation1",
-        prompt: "ipfs://prompt1",
+        grant: "ipfs://grant1",
+        parameters: "ipfs://parameters1",
         nonce: 0n,
       };
 
@@ -745,7 +808,8 @@ describe("DataPermission", () => {
         application: application2.address,
         files: [2n],
         operation: "ipfs://operation2",
-        prompt: "ipfs://prompt2",
+        grant: "ipfs://grant2",
+        parameters: "ipfs://parameters2",
         nonce: 0n,
       };
 
@@ -773,7 +837,8 @@ describe("DataPermission", () => {
         application: application3.address,
         files: [3n],
         operation: "ipfs://operation3",
-        prompt: "ipfs://prompt3",
+        grant: "ipfs://grant3",
+        parameters: "ipfs://parameters3",
         nonce: 1n,
       };
 
@@ -792,7 +857,8 @@ describe("DataPermission", () => {
         application: application1.address,
         files: [1n, 2n],
         operation: "ipfs://operation1",
-        prompt: "ipfs://prompt1",
+        grant: "ipfs://grant1",
+        parameters: "ipfs://parameters1",
         nonce: 0n,
       };
 
@@ -800,7 +866,8 @@ describe("DataPermission", () => {
         application: application2.address,
         files: [3n, 4n, 5n],
         operation: "ipfs://operation2",
-        prompt: "ipfs://prompt2",
+        grant: "ipfs://grant2",
+        parameters: "ipfs://parameters2",
         nonce: 0n,
       };
 
@@ -823,7 +890,8 @@ describe("DataPermission", () => {
           permission1.application,
           permission1.files,
           permission1.operation,
-          permission1.prompt,
+          permission1.grant,
+          permission1.parameters,
         );
 
       // Verify second event
@@ -835,404 +903,117 @@ describe("DataPermission", () => {
           permission2.application,
           permission2.files,
           permission2.operation,
-          permission2.prompt,
+          permission2.grant,
+          permission2.parameters,
         );
     });
-  });
 
-  xdescribe("AddPermission2", () => {
-    beforeEach(async () => {
-      await deploy();
-    });
+    it("should test userPermissionIdsValues and applicationPermissionIdsValues functions", async function () {
+      const permissions = [
+        {
+          application: application1.address,
+          files: [1n],
+          operation: "ipfs://operation1",
+          grant: "ipfs://grant1",
+          parameters: "ipfs://parameters1",
+          nonce: 0n,
+        },
+        {
+          application: application1.address,
+          files: [2n],
+          operation: "ipfs://operation2",
+          grant: "ipfs://grant2",
+          parameters: "ipfs://parameters2",
+          nonce: 1n,
+        },
+        {
+          application: application2.address,
+          files: [3n],
+          operation: "ipfs://operation3",
+          grant: "ipfs://grant3",
+          parameters: "ipfs://parameters3",
+          nonce: 2n,
+        },
+      ];
 
-    const createPermission2Signature = async (
-      permission: {
-        application: string;
-        files: bigint[];
-        operation: string;
-        prompt: string;
-        nonce: bigint;
-      },
-      signer: HardhatEthersSigner,
-    ) => {
-      const filesString = permission.files.join(",");
-      const message = `You are signing a message for application ${permission.application} to access files ${filesString} for operation ${permission.operation} using prompt ${permission.prompt}. Nonce: ${permission.nonce}`;
+      // Add all permissions for user1
+      for (let i = 0; i < permissions.length; i++) {
+        const signature = await createPermissionSignature(
+          permissions[i],
+          user1,
+        );
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permissions[i], signature);
+      }
 
-      const domain = {
-        name: "VanaDataWallet",
-        version: "1",
-        chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
-        verifyingContract: await dataPermission.getAddress(),
-      };
-
-      const types = {
-        PermissionMessage: [{ name: "message", type: "string" }],
-      };
-
-      const value = {
-        message: message,
-      };
-
-      return await signer.signTypedData(domain, types, value);
-    };
-
-    it("should add a valid permission with correct message signature and emit event", async function () {
-      const permission = {
-        application: application1.address,
-        files: [1n, 2n, 3n],
-        operation: "ipfs://operation1",
-        prompt: "ipfs://prompt1",
-        nonce: 0n,
-      };
-
-      // User1 should start with nonce 0
-      (await dataPermission.userNonce(user1.address)).should.eq(0);
-
-      const signature = await createPermission2Signature(permission, user1);
-
-      const tx = await dataPermission
-        .connect(sponsor)
-        .addPermission2(permission, signature);
-
-      // Verify event was emitted
-      await expect(tx).to.emit(dataPermission, "PermissionAdded").withArgs(
-        1, // permissionId
-        user1.address, // signer
-        permission.application,
-        permission.files,
-        permission.operation,
-        permission.prompt,
+      // Test userPermissionIdsValues
+      const userPermissionIds = await dataPermission.userPermissionIdsValues(
+        user1.address,
       );
+      userPermissionIds.should.deep.eq([1n, 2n, 3n]);
 
-      // Verify permissions count increased
-      (await dataPermission.permissionsCount()).should.eq(1);
-
-      // Verify nonce increased
-      (await dataPermission.userNonce(user1.address)).should.eq(1);
-
-      // Verify permission was stored
-      const storedPermission = await dataPermission.permissions(1);
-      storedPermission.application.should.eq(permission.application);
-      storedPermission.files.should.deep.eq(permission.files);
-      storedPermission.operation.should.eq(permission.operation);
-      storedPermission.prompt.should.eq(permission.prompt);
-
-      // Verify it's indexed by application
-      (
-        await dataPermission.applicationPermissionIdsLength(
+      // Test applicationPermissionIdsValues for application1 (should have 2 permissions)
+      const app1PermissionIds =
+        await dataPermission.applicationPermissionIdsValues(
           application1.address,
-        )
-      ).should.eq(1);
-      (
-        await dataPermission.applicationPermissionIdsAt(application1.address, 0)
-      ).should.eq(1n);
+        );
+      app1PermissionIds.should.deep.eq([1n, 2n]);
 
-      // Verify it's indexed by user (signer)
-      (await dataPermission.userPermissionIdsLength(user1.address)).should.eq(
-        1,
-      );
-      (await dataPermission.userPermissionIdsAt(user1.address, 0)).should.eq(
-        1n,
-      );
+      // Test applicationPermissionIdsValues for application2 (should have 1 permission)
+      const app2PermissionIds =
+        await dataPermission.applicationPermissionIdsValues(
+          application2.address,
+        );
+      app2PermissionIds.should.deep.eq([3n]);
+
+      // Test for user with no permissions
+      const emptyUserPermissionIds =
+        await dataPermission.userPermissionIdsValues(user2.address);
+      emptyUserPermissionIds.should.deep.eq([]);
+
+      // Test for application with no permissions
+      const emptyAppPermissionIds =
+        await dataPermission.applicationPermissionIdsValues(
+          application3.address,
+        );
+      emptyAppPermissionIds.should.deep.eq([]);
     });
 
-    it("should reject permission2 with invalid signature", async function () {
-      const permission = {
-        application: application1.address,
-        files: [1n, 2n, 3n],
-        operation: "ipfs://operation1",
-        prompt: "ipfs://prompt1",
-        nonce: 0n,
-      };
-
-      // Sign with wrong user (user2 instead of user1)
-      const signature = await createPermission2Signature(permission, user2);
-
-      await dataPermission
-        .connect(sponsor)
-        .addPermission2(permission, signature).should.be.rejected;
-    });
-
-    it("should reject permission2 with incorrect nonce", async function () {
-      const permission = {
-        application: application1.address,
-        files: [1n, 2n, 3n],
-        operation: "ipfs://operation1",
-        prompt: "ipfs://prompt1",
-        nonce: 1n, // Wrong nonce
-      };
-
-      const signature = await createPermission2Signature(permission, user1);
-
-      await dataPermission
-        .connect(sponsor)
-        .addPermission2(permission, signature).should.be.rejected;
-
-      // Nonce should remain unchanged
-      (await dataPermission.userNonce(user1.address)).should.eq(0);
-    });
-
-    it("should add multiple permissions2 for the same user with sequential nonces", async function () {
+    it("should handle grant field with special characters and empty strings", async function () {
       const permission1 = {
         application: application1.address,
-        files: [1n, 2n],
+        files: [1n],
         operation: "ipfs://operation1",
-        prompt: "ipfs://prompt1",
+        grant: "ipfs://grant-with-special-chars_123!@#",
+        parameters: "ipfs://parameters1",
         nonce: 0n,
       };
 
       const permission2 = {
-        application: application2.address,
-        files: [3n, 4n],
+        application: application1.address,
+        files: [2n],
         operation: "ipfs://operation2",
-        prompt: "ipfs://prompt2",
+        grant: "", // Empty grant
+        parameters: "ipfs://parameters2",
         nonce: 1n,
       };
 
-      const signature1 = await createPermission2Signature(permission1, user1);
-      const signature2 = await createPermission2Signature(permission2, user1);
-
-      const tx1 = await dataPermission
-        .connect(sponsor)
-        .addPermission2(permission1, signature1);
-      const tx2 = await dataPermission
-        .connect(sponsor)
-        .addPermission2(permission2, signature2);
-
-      // Verify events were emitted
-      await expect(tx1)
-        .to.emit(dataPermission, "PermissionAdded")
-        .withArgs(
-          1,
-          user1.address,
-          permission1.application,
-          permission1.files,
-          permission1.operation,
-          permission1.prompt,
-        );
-
-      await expect(tx2)
-        .to.emit(dataPermission, "PermissionAdded")
-        .withArgs(
-          2,
-          user1.address,
-          permission2.application,
-          permission2.files,
-          permission2.operation,
-          permission2.prompt,
-        );
-
-      // Verify permissions count increased
-      (await dataPermission.permissionsCount()).should.eq(2);
-
-      // Verify nonce increased to 2
-      (await dataPermission.userNonce(user1.address)).should.eq(2);
-    });
-
-    it("should handle permission2 with empty file arrays", async function () {
-      const permission = {
-        application: application1.address,
-        files: [],
-        operation: "ipfs://operation1",
-        prompt: "ipfs://prompt1",
-        nonce: 0n,
-      };
-
-      const signature = await createPermission2Signature(permission, user1);
-
-      const tx = await dataPermission
-        .connect(sponsor)
-        .addPermission2(permission, signature);
-
-      // Verify event was emitted with empty files array
-      await expect(tx)
-        .to.emit(dataPermission, "PermissionAdded")
-        .withArgs(
-          1,
-          user1.address,
-          permission.application,
-          permission.files,
-          permission.operation,
-          permission.prompt,
-        );
-
-      const storedPermission = await dataPermission.permissions(1);
-      storedPermission.files.should.have.length(0);
-    });
-
-    it("should handle permission2 with single file", async function () {
-      const permission = {
-        application: application1.address,
-        files: [42n],
-        operation: "ipfs://operation1",
-        prompt: "ipfs://prompt1",
-        nonce: 0n,
-      };
-
-      const signature = await createPermission2Signature(permission, user1);
+      const signature1 = await createPermissionSignature(permission1, user1);
+      const signature2 = await createPermissionSignature(permission2, user1);
 
       await dataPermission
         .connect(sponsor)
-        .addPermission2(permission, signature).should.be.fulfilled;
-
-      const storedPermission = await dataPermission.permissions(1);
-      storedPermission.files.should.deep.eq([42n]);
-    });
-
-    it("should handle permission2 with multiple files", async function () {
-      const permission = {
-        application: application1.address,
-        files: [1n, 5n, 10n, 100n],
-        operation: "ipfs://operation1",
-        prompt: "ipfs://prompt1",
-        nonce: 0n,
-      };
-
-      const signature = await createPermission2Signature(permission, user1);
-
+        .addPermission(permission1, signature1).should.be.fulfilled;
       await dataPermission
         .connect(sponsor)
-        .addPermission2(permission, signature).should.be.fulfilled;
+        .addPermission(permission2, signature2).should.be.fulfilled;
 
-      const storedPermission = await dataPermission.permissions(1);
-      storedPermission.files.should.deep.eq([1n, 5n, 10n, 100n]);
-    });
+      const storedPermission1 = await dataPermission.permissions(1);
+      const storedPermission2 = await dataPermission.permissions(2);
 
-    it("should handle permission2 with empty strings", async function () {
-      const permission = {
-        application: application1.address,
-        files: [1n],
-        operation: "",
-        prompt: "",
-        nonce: 0n,
-      };
-
-      const signature = await createPermission2Signature(permission, user1);
-
-      await dataPermission
-        .connect(sponsor)
-        .addPermission2(permission, signature).should.be.fulfilled;
-
-      const storedPermission = await dataPermission.permissions(1);
-      storedPermission.operation.should.eq("");
-      storedPermission.prompt.should.eq("");
-    });
-
-    it("should track nonces correctly for permission2 across multiple users", async function () {
-      const permission1 = {
-        application: application1.address,
-        files: [1n],
-        operation: "ipfs://operation1",
-        prompt: "ipfs://prompt1",
-        nonce: 0n,
-      };
-
-      const permission2 = {
-        application: application2.address,
-        files: [2n],
-        operation: "ipfs://operation2",
-        prompt: "ipfs://prompt2",
-        nonce: 0n,
-      };
-
-      // Both users start with nonce 0
-      (await dataPermission.userNonce(user1.address)).should.eq(0);
-      (await dataPermission.userNonce(user2.address)).should.eq(0);
-
-      const signature1 = await createPermission2Signature(permission1, user1);
-      const signature2 = await createPermission2Signature(permission2, user2);
-
-      await dataPermission
-        .connect(sponsor)
-        .addPermission2(permission1, signature1);
-      await dataPermission
-        .connect(sponsor)
-        .addPermission2(permission2, signature2);
-
-      // Verify nonces were incremented independently
-      (await dataPermission.userNonce(user1.address)).should.eq(1);
-      (await dataPermission.userNonce(user2.address)).should.eq(1);
-    });
-
-    it("should work with mixed addPermission and addPermission2 calls", async function () {
-      const permission1 = {
-        application: application1.address,
-        files: [1n],
-        operation: "ipfs://operation1",
-        prompt: "ipfs://prompt1",
-        nonce: 0n,
-      };
-
-      const permission2 = {
-        application: application2.address,
-        files: [2n],
-        operation: "ipfs://operation2",
-        prompt: "ipfs://prompt2",
-        nonce: 1n,
-      };
-
-      // Use addPermission (EIP-712) for first permission
-      const signature1 = await createPermissionSignature(
-        permission1,
-        0n,
-        user1,
-      );
-      await dataPermission
-        .connect(sponsor)
-        .addPermission(permission1, signature1);
-
-      // Use addPermission2 (simple message) for second permission
-      const signature2 = await createPermission2Signature(permission2, user1);
-      await dataPermission
-        .connect(sponsor)
-        .addPermission2(permission2, signature2);
-
-      // Verify both permissions were added
-      (await dataPermission.permissionsCount()).should.eq(2);
-      (await dataPermission.userNonce(user1.address)).should.eq(2);
-
-      // Verify both permissions are indexed by user
-      (await dataPermission.userPermissionIdsLength(user1.address)).should.eq(
-        2,
-      );
-    });
-
-    it("should handle permission2 with special characters in strings", async function () {
-      const permission = {
-        application: application1.address,
-        files: [1n],
-        operation: "ipfs://operation-with-special-chars_123",
-        prompt: "ipfs://prompt with spaces and symbols!@#$%",
-        nonce: 0n,
-      };
-
-      const signature = await createPermission2Signature(permission, user1);
-
-      await dataPermission
-        .connect(sponsor)
-        .addPermission2(permission, signature).should.be.fulfilled;
-
-      const storedPermission = await dataPermission.permissions(1);
-      storedPermission.operation.should.eq(permission.operation);
-      storedPermission.prompt.should.eq(permission.prompt);
-    });
-
-    it("should reject permission2 with wrong message format", async function () {
-      const permission = {
-        application: application1.address,
-        files: [1n, 2n],
-        operation: "ipfs://operation1",
-        prompt: "ipfs://prompt1",
-        nonce: 0n,
-      };
-
-      // Create a signature with wrong message format
-      const wrongMessage = `Wrong message format for ${permission.application}`;
-      const signature = await user1.signMessage(wrongMessage);
-
-      await dataPermission
-        .connect(sponsor)
-        .addPermission2(permission, signature).should.be.rejected;
+      storedPermission1.grant.should.eq(permission1.grant);
+      storedPermission2.grant.should.eq("");
     });
   });
 });
