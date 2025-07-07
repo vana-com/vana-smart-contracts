@@ -17,10 +17,11 @@ interface IDataPermission {
         address user;
         uint256 nonce;
         string grant;
-        bytes signature;
+        bool isEffective;
     }
 
     struct PermissionInput {
+        address user;
         uint256 nonce;
         string grant;
     }

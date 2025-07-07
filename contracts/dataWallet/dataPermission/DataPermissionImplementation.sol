@@ -28,6 +28,7 @@ contract DataPermissionImplementation is
     string private constant SIGNATURE_VERSION = "1";
 
     bytes32 private constant PERMISSION_TYPEHASH = keccak256("Permission(uint256 nonce,string grant)");
+    bytes32 private constant REVOKE_PERMISSION_TYPEHASH = keccak256("RevokePermission(uint256 permissionId)");
 
     /**
      * @notice Triggered when a permission has been added
@@ -38,10 +39,13 @@ contract DataPermissionImplementation is
      */
     event PermissionAdded(uint256 indexed permissionId, address indexed user, string grant);
 
+    event PermissionRevoked(uint256 indexed permissionId);
+
     error InvalidNonce(uint256 expectedNonce, uint256 providedNonce);
     error GrantAlreadyUsed();
     error InvalidSignature();
     error EmptyGrant();
+    error InvalidSigner();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() ERC2771ContextUpgradeable(address(0)) {
@@ -197,36 +201,42 @@ contract DataPermissionImplementation is
     }
 
     /**
-     * @notice Adds a permission with the provided signature
+     * @notice Adds a permission directly by the user
      *
      * @param permission                        permission input data
-     * @param signature                         signature for the permission
      * @return uint256                          id of the created permission
      */
     function addPermission(
+        PermissionInput calldata permission
+    ) external whenNotPaused returns (uint256) {
+        return _addPermission(permission, _msgSender());
+    }
+
+    function addPermissionWithSignature(
         PermissionInput calldata permission,
         bytes calldata signature
     ) external whenNotPaused returns (uint256) {
-        address signer = _extractSignatureSigner(permission, signature);
-        return _addPermission(permission, signature, signer);
-    }
-
-    /**
-     * @notice Extract the signer from the permission and signature using EIP-712
-     *
-     * @param permission                        permission input data
-     * @param signature                         signature for the permission
-     * @return address                          address of the signer
-     */
-    function _extractSignatureSigner(
-        PermissionInput calldata permission,
-        bytes calldata signature
-    ) internal view returns (address) {
-        // Build struct hash
+        // Validate signature
         bytes32 structHash = keccak256(
             abi.encode(PERMISSION_TYPEHASH, permission.nonce, keccak256(bytes(permission.grant)))
         );
+        address signer = _extractSignatureSigner(structHash, signature);
+        if (signer == address(0)) {
+            revert InvalidSignature();
+        }
 
+        // Add permission
+        return _addPermission(permission, signer);
+    }
+
+    /**
+     * @notice Extract the signer from the message and signature using EIP-712
+     *
+     * @param structHash                        struct hash of the signed message
+     * @param signature                         signature for the permission
+     * @return address                          address of the signer
+     */
+    function _extractSignatureSigner(bytes32 structHash, bytes calldata signature) internal view returns (address) {
         bytes32 digest = _hashTypedDataV4(structHash);
         return digest.recover(signature);
     }
@@ -235,15 +245,10 @@ contract DataPermissionImplementation is
      * @notice Internal function to add a permission
      *
      * @param permission                        permission input data
-     * @param signature                         signature for the permission
-     * @param user                              address of the user
+     * @param signer                            address of the signer
      * @return uint256                          id of the created permission
      */
-    function _addPermission(
-        PermissionInput calldata permission,
-        bytes calldata signature,
-        address user
-    ) internal returns (uint256) {
+    function _addPermission(PermissionInput calldata permission, address signer) internal returns (uint256) {
         // Validate grant is not empty
         if (bytes(permission.grant).length == 0) {
             revert EmptyGrant();
@@ -255,38 +260,69 @@ contract DataPermissionImplementation is
             revert GrantAlreadyUsed();
         }
 
-        // Validate nonce
-        if (permission.nonce != _users[user].nonce) {
-            revert InvalidNonce(_users[user].nonce, permission.nonce);
+        // Validate signer
+        if (permission.user != signer) {
+            revert InvalidSigner();
         }
 
-        // Validate signature by attempting to extract signer
-        address extractedSigner = _extractSignatureSigner(permission, signature);
-        if (extractedSigner != user) {
-            revert InvalidSignature();
+        // Validate nonce
+        if (permission.nonce != _users[permission.user].nonce) {
+            revert InvalidNonce(_users[permission.user].nonce, permission.nonce);
         }
 
         // Increment user nonce
-        ++_users[user].nonce;
+        ++_users[permission.user].nonce;
 
         // Create permission
         uint256 permissionId = ++permissionsCount;
 
         _permissions[permissionId] = Permission({
-            user: user,
+            user: permission.user,
             nonce: permission.nonce,
             grant: permission.grant,
-            signature: signature
+            isEffective: true
         });
 
         // Index by grant hash
         _grantHashToPermissionId[grantHash] = permissionId;
 
         // Add to user's permission set
-        _users[user].permissionIds.add(permissionId);
+        _users[permission.user].permissionIds.add(permissionId);
 
-        emit PermissionAdded(permissionId, user, permission.grant);
+        emit PermissionAdded(permissionId, permission.user, permission.grant);
 
         return permissionId;
+    }
+
+    function isEffectivePermission(uint256 permissionId) external view returns (bool) {
+        return _permissions[permissionId].isEffective;
+    }
+
+    function revokePermission(uint256 permissionId) external whenNotPaused {
+        _revokePermission(permissionId, _msgSender());
+    }
+
+    function revokePermissionWithSignature(
+        uint256 permissionId,
+        bytes calldata signature
+    ) external whenNotPaused {
+        // Validate signature using EIP-712
+        bytes32 structHash = keccak256(abi.encode(REVOKE_PERMISSION_TYPEHASH, permissionId));
+        address signer = _extractSignatureSigner(structHash, signature);
+        
+        // Revoke permission
+        _revokePermission(permissionId, signer);
+    }
+
+    function _revokePermission(uint256 permissionId, address signer) internal {
+        Permission storage permission = _permissions[permissionId];
+        if (permission.user != signer) {
+            revert InvalidSigner();
+        }
+
+        // Mark the permission as ineffective
+        permission.isEffective = false;
+
+        emit PermissionRevoked(permissionId);
     }
 }
