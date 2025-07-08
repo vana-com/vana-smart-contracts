@@ -234,7 +234,11 @@ contract DataRegistryImplementation is
      * @return uint256                          id of the file
      */
     function addFile(string memory url) external override whenNotPaused returns (uint256) {
-        return _addFile(url, _msgSender());
+        return addFileWithSchema(url, 0);
+    }
+
+    function addFileWithSchema(string memory url, uint256 schemaId) public override whenNotPaused returns (uint256) {
+        return _addFile(url, _msgSender(), schemaId);
     }
 
     /**
@@ -250,7 +254,16 @@ contract DataRegistryImplementation is
         address ownerAddress,
         Permission[] memory permissions
     ) external override whenNotPaused returns (uint256) {
-        uint256 fileId = _addFile(url, ownerAddress);
+        return addFileWithPermissionsAndSchema(url, ownerAddress, permissions, 0);
+    }
+
+    function addFileWithPermissionsAndSchema(
+        string memory url,
+        address ownerAddress,
+        Permission[] memory permissions,
+        uint256 schemaId
+    ) public override whenNotPaused returns (uint256) {
+        uint256 fileId = _addFile(url, ownerAddress, schemaId);
 
         for (uint256 i = 0; i < permissions.length; i++) {
             _files[fileId].permissions[permissions[i].account] = permissions[i].key;
@@ -355,8 +368,9 @@ contract DataRegistryImplementation is
      *
      * @param url                               url of the file
      * @param ownerAddress                      address of the owner
+     * @param schemaId                          id of the schema (0 if not applicable)
      */
-    function _addFile(string memory url, address ownerAddress) internal returns (uint256) {
+    function _addFile(string memory url, address ownerAddress, uint256 schemaId) internal returns (uint256) {
         uint256 cachedFilesCount = ++filesCount;
 
         bytes32 urlHash = keccak256(abi.encodePacked(url));
@@ -365,9 +379,16 @@ contract DataRegistryImplementation is
             revert FileUrlAlreadyUsed();
         }
 
-        _files[cachedFilesCount].ownerAddress = ownerAddress;
-        _files[cachedFilesCount].url = url;
-        _files[cachedFilesCount].addedAtBlock = block.number;
+        if (schemaId > 0 && !dataRefinerRegistry.isValidSchemaId(schemaId)) {
+            revert IDataRefinerRegistry.InvalidSchemaId(schemaId);
+        }
+
+        File storage file = _files[cachedFilesCount];
+
+        file.ownerAddress = ownerAddress;
+        file.url = url;
+        file.addedAtBlock = block.number;
+        file.schemaId = schemaId;
 
         _urlHashToFileId[urlHash] = cachedFilesCount;
 
