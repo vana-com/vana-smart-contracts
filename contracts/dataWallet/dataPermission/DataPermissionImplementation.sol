@@ -342,24 +342,6 @@ contract DataPermissionImplementation is
         return permissionId;
     }
 
-    function addServer(
-        Server calldata serverInput
-    ) external whenNotPaused {
-        if (bytes(serverInput.url).length == 0) {
-            revert EmptyUrl();
-        }
-
-        // Check if server already exists
-        if (bytes(_servers[_msgSender()].url).length != 0) {
-            revert ServerAlreadyRegistered();
-        }
-
-        // Create server (cannot be changed after creation)
-        _servers[_msgSender()] = Server({url: serverInput.url});
-        
-        emit ServerAdded(_msgSender(), serverInput.url);
-    }
-
     function _trustServer(address serverId, string memory serverUrl, address signer) internal {
         if (serverId == address(0)) {
             revert ZeroAddress();
@@ -373,9 +355,11 @@ contract DataPermissionImplementation is
         
         // Check if server exists
         if (bytes(server.url).length == 0) {
-            revert ServerNotFound();
+            // Create server (cannot be changed after creation)
+            server.url = serverUrl;
+            emit ServerAdded(serverId, serverUrl);
         }
-        
+
         if (keccak256(bytes(server.url)) != keccak256(bytes(serverUrl))) {
             revert ServerUrlMismatch(server.url, serverUrl);
         }
