@@ -4,6 +4,10 @@ pragma solidity 0.8.24;
 import {IDLPRegistry} from "../../interfaces/IDLPRegistry.sol";
 
 interface IDataRefinerRegistry {
+
+    error NotDlpOwner();
+    error InvalidSchemaId(uint256 schemaId);
+
     struct Schema {
         string name;
         string typ;
@@ -26,6 +30,7 @@ interface IDataRefinerRegistry {
         string name;
         string schemaDefinitionUrl;
         string refinementInstructionUrl;
+        uint256 schemaId; // New field to link to Schema
     }
 
     /// @notice Returns the version of the contract.
@@ -108,4 +113,6 @@ interface IDataRefinerRegistry {
     ) external returns (uint256);
 
     function schemas(uint256 schemaId) external view returns (Schema memory);
+
+    function isValidSchemaId(uint256 schemaId) external view returns (bool);
 }

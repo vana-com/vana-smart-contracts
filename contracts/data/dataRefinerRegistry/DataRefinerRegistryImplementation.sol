@@ -28,9 +28,6 @@ contract DataRefinerRegistryImplementation is
 
     event SchemaAdded(uint256 indexed schemaId, string name, string typ, string definitionUrl);
 
-    error NotDlpOwner();
-    error InvalidSchemaId(uint256 schemaId);
-
     /// @notice Reverts if the caller is not the owner of the DLP
     /// @param dlpId The ID of the DLP
     modifier onlyDlpOwner(uint256 dlpId) {
@@ -99,7 +96,8 @@ contract DataRefinerRegistryImplementation is
                 owner: refiner.owner,
                 name: refiner.name,
                 schemaDefinitionUrl: _schemas[refiner.schemaId].definitionUrl,
-                refinementInstructionUrl: refiner.refinementInstructionUrl
+                refinementInstructionUrl: refiner.refinementInstructionUrl,
+                schemaId: refiner.schemaId
             });
     }
 
@@ -141,7 +139,7 @@ contract DataRefinerRegistryImplementation is
         uint256 refinerId,
         uint256 newSchemaId
     ) external override onlyDlpOwner(_refiners[refinerId].dlpId) whenNotPaused {
-        if (newSchemaId == 0 || newSchemaId > schemasCount) {
+        if (!isValidSchemaId(newSchemaId)) {
             revert InvalidSchemaId(newSchemaId);
         }
 
@@ -215,9 +213,13 @@ contract DataRefinerRegistryImplementation is
     }
 
     function schemas(uint256 schemaId) external view override returns (Schema memory) {
-        if (schemaId == 0 || schemaId > schemasCount) {
+        if (!isValidSchemaId(schemaId)) {
             revert InvalidSchemaId(schemaId);
         }
         return _schemas[schemaId];
+    }
+
+    function isValidSchemaId(uint256 schemaId) public view override returns (bool) {
+        return schemaId > 0 && schemaId <= schemasCount;
     }
 }
