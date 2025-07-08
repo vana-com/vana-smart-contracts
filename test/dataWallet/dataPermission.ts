@@ -808,6 +808,67 @@ describe("DataPermission", () => {
       return await signer.signTypedData(domain, types, value);
     };
 
+    const createTrustServerSignature = async (
+      trustServerInput: {
+        nonce: bigint;
+        serverId: string;
+        serverUrl: string;
+      },
+      signer: HardhatEthersSigner,
+    ) => {
+      const domain = {
+        name: "VanaDataWallet",
+        version: "1",
+        chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
+        verifyingContract: await dataPermission.getAddress(),
+      };
+
+      const types = {
+        TrustServer: [
+          { name: "nonce", type: "uint256" },
+          { name: "serverId", type: "address" },
+          { name: "serverUrl", type: "string" },
+        ],
+      };
+
+      const value = {
+        nonce: trustServerInput.nonce,
+        serverId: trustServerInput.serverId,
+        serverUrl: trustServerInput.serverUrl,
+      };
+
+      return await signer.signTypedData(domain, types, value);
+    };
+
+    const createUntrustServerSignature = async (
+      untrustServerInput: {
+        nonce: bigint;
+        serverId: string;
+      },
+      signer: HardhatEthersSigner,
+    ) => {
+      const domain = {
+        name: "VanaDataWallet",
+        version: "1",
+        chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
+        verifyingContract: await dataPermission.getAddress(),
+      };
+
+      const types = {
+        UntrustServer: [
+          { name: "nonce", type: "uint256" },
+          { name: "serverId", type: "address" },
+        ],
+      };
+
+      const value = {
+        nonce: untrustServerInput.nonce,
+        serverId: untrustServerInput.serverId,
+      };
+
+      return await signer.signTypedData(domain, types, value);
+    };
+
     describe("addServer", () => {
       it("should add a server successfully", async function () {
         const serverUrl = "https://server1.example.com";
@@ -962,38 +1023,6 @@ describe("DataPermission", () => {
           .addServer({ url: serverUrl });
       });
 
-      const createTrustServerSignature = async (
-        trustServerInput: {
-          nonce: bigint;
-          serverId: string;
-          serverUrl: string;
-        },
-        signer: HardhatEthersSigner,
-      ) => {
-        const domain = {
-          name: "VanaDataWallet",
-          version: "1",
-          chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
-          verifyingContract: await dataPermission.getAddress(),
-        };
-
-        const types = {
-          TrustServer: [
-            { name: "nonce", type: "uint256" },
-            { name: "serverId", type: "address" },
-            { name: "serverUrl", type: "string" },
-          ],
-        };
-
-        const value = {
-          nonce: trustServerInput.nonce,
-          serverId: trustServerInput.serverId,
-          serverUrl: trustServerInput.serverUrl,
-        };
-
-        return await signer.signTypedData(domain, types, value);
-      };
-
       it("should trust server with valid signature", async function () {
         const trustServerInput = {
           nonce: 0n,
@@ -1131,35 +1160,6 @@ describe("DataPermission", () => {
           .trustServer(server1.address, serverUrl);
       });
 
-      const createUntrustServerSignature = async (
-        untrustServerInput: {
-          nonce: bigint;
-          serverId: string;
-        },
-        signer: HardhatEthersSigner,
-      ) => {
-        const domain = {
-          name: "VanaDataWallet",
-          version: "1",
-          chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
-          verifyingContract: await dataPermission.getAddress(),
-        };
-
-        const types = {
-          UntrustServer: [
-            { name: "nonce", type: "uint256" },
-            { name: "serverId", type: "address" },
-          ],
-        };
-
-        const value = {
-          nonce: untrustServerInput.nonce,
-          serverId: untrustServerInput.serverId,
-        };
-
-        return await signer.signTypedData(domain, types, value);
-      };
-
       it("should untrust server with valid signature", async function () {
         // Note: nonce should still be 0 since trustServer doesn't increment nonce
         const untrustServerInput = {
@@ -1266,6 +1266,242 @@ describe("DataPermission", () => {
         // Non-existent server should return empty
         const nonExistent = await dataPermission.servers(user3.address);
         nonExistent.url.should.eq("");
+      });
+    });
+
+    describe("Replay Attack Prevention", () => {
+      const serverUrl = "https://server.example.com";
+      
+      beforeEach(async function () {
+        // Add a server for testing
+        await dataPermission
+          .connect(server1)
+          .addServer({ url: serverUrl });
+      });
+
+      it("should prevent replay of trustServerWithSignature", async function () {
+        const trustServerInput = {
+          nonce: 0n,
+          serverId: server1.address,
+          serverUrl: serverUrl,
+        };
+
+        const signature = await createTrustServerSignature(trustServerInput, user1);
+
+        // First call should succeed
+        await dataPermission
+          .connect(sponsor)
+          .trustServerWithSignature(trustServerInput, signature);
+
+        // Verify nonce was incremented
+        (await dataPermission.userNonce(user1.address)).should.eq(1);
+
+        // Replay attempt with same signature should fail due to wrong nonce
+        await expect(
+          dataPermission
+            .connect(sponsor)
+            .trustServerWithSignature(trustServerInput, signature)
+        )
+          .to.be.revertedWithCustomError(dataPermission, "InvalidNonce")
+          .withArgs(1, 0); // expects nonce 1, but signature has nonce 0
+      });
+
+      it("should prevent replay of untrustServerWithSignature", async function () {
+        // First trust the server
+        await dataPermission
+          .connect(user1)
+          .trustServer(server1.address, serverUrl);
+
+        const untrustServerInput = {
+          nonce: 0n,
+          serverId: server1.address,
+        };
+
+        const signature = await createUntrustServerSignature(untrustServerInput, user1);
+
+        // First call should succeed
+        await dataPermission
+          .connect(sponsor)
+          .untrustServerWithSignature(untrustServerInput, signature);
+
+        // Verify nonce was incremented
+        (await dataPermission.userNonce(user1.address)).should.eq(1);
+
+        // Replay attempt should fail due to wrong nonce
+        await expect(
+          dataPermission
+            .connect(sponsor)
+            .untrustServerWithSignature(untrustServerInput, signature)
+        )
+          .to.be.revertedWithCustomError(dataPermission, "InvalidNonce")
+          .withArgs(1, 0);
+      });
+
+      it("should prevent cross-user replay attacks", async function () {
+        // User1 creates a trust signature
+        const trustServerInput = {
+          nonce: 0n,
+          serverId: server1.address,
+          serverUrl: serverUrl,
+        };
+
+        const user1Signature = await createTrustServerSignature(trustServerInput, user1);
+
+        // User1 trusts the server
+        await dataPermission
+          .connect(sponsor)
+          .trustServerWithSignature(trustServerInput, user1Signature);
+
+        // User2 tries to replay User1's signature
+        // This should fail because the signature verification will extract user1's address
+        // but user2's nonce is still 0, so it will try to trust on behalf of user1
+        // which will fail due to nonce mismatch (user1's nonce is now 1)
+        await expect(
+          dataPermission
+            .connect(sponsor)
+            .trustServerWithSignature(trustServerInput, user1Signature)
+        )
+          .to.be.revertedWithCustomError(dataPermission, "InvalidNonce")
+          .withArgs(1, 0);
+
+        // Even if we try with user2 signing with the same parameters
+        // it's a different signature and will work for user2
+        const user2Signature = await createTrustServerSignature(trustServerInput, user2);
+        
+        await dataPermission
+          .connect(sponsor)
+          .trustServerWithSignature(trustServerInput, user2Signature);
+
+        // Verify each user has their own trust relationship
+        (await dataPermission.userServerIdsLength(user1.address)).should.eq(1);
+        (await dataPermission.userServerIdsLength(user2.address)).should.eq(1);
+      });
+
+      it("should prevent replay attacks across different operations", async function () {
+        // Create signatures for both trust and untrust with same nonce
+        const nonce = 0n;
+        
+        const trustInput = {
+          nonce: nonce,
+          serverId: server1.address,
+          serverUrl: serverUrl,
+        };
+
+        const untrustInput = {
+          nonce: nonce,
+          serverId: server1.address,
+        };
+
+        const trustSignature = await createTrustServerSignature(trustInput, user1);
+        const untrustSignature = await createUntrustServerSignature(untrustInput, user1);
+
+        // Execute trust operation
+        await dataPermission
+          .connect(sponsor)
+          .trustServerWithSignature(trustInput, trustSignature);
+
+        // Nonce is now 1, so untrust with nonce 0 should fail
+        await expect(
+          dataPermission
+            .connect(sponsor)
+            .untrustServerWithSignature(untrustInput, untrustSignature)
+        )
+          .to.be.revertedWithCustomError(dataPermission, "InvalidNonce")
+          .withArgs(1, 0);
+
+        // Create new untrust signature with correct nonce
+        const newUntrustInput = {
+          nonce: 1n,
+          serverId: server1.address,
+        };
+
+        const newUntrustSignature = await createUntrustServerSignature(newUntrustInput, user1);
+
+        // This should succeed
+        await dataPermission
+          .connect(sponsor)
+          .untrustServerWithSignature(newUntrustInput, newUntrustSignature);
+      });
+
+      it("should prevent replay of permission signatures in server context", async function () {
+        // Add a permission
+        const permission = {
+          nonce: 0n,
+          grant: "ipfs://grant1",
+        };
+
+        const permSignature = await createPermissionSignature(permission, user1);
+
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, permSignature);
+
+        // Nonce is now 1
+        (await dataPermission.userNonce(user1.address)).should.eq(1);
+
+        // Try to replay the permission - should fail
+        await expect(
+          dataPermission
+            .connect(sponsor)
+            .addPermission(permission, permSignature)
+        )
+          .to.be.revertedWithCustomError(dataPermission, "GrantAlreadyUsed");
+
+        // Now try server operations - they should use the updated nonce
+        const trustServerInput = {
+          nonce: 1n, // Must use nonce 1
+          serverId: server1.address,
+          serverUrl: serverUrl,
+        };
+
+        const trustSignature = await createTrustServerSignature(trustServerInput, user1);
+
+        await dataPermission
+          .connect(sponsor)
+          .trustServerWithSignature(trustServerInput, trustSignature);
+
+        // Verify nonce incremented again
+        (await dataPermission.userNonce(user1.address)).should.eq(2);
+      });
+
+      it("should maintain separate nonces per user preventing cross-contamination", async function () {
+        // Both users start with nonce 0
+        (await dataPermission.userNonce(user1.address)).should.eq(0);
+        (await dataPermission.userNonce(user2.address)).should.eq(0);
+
+        // User1 performs operation
+        const user1Input = {
+          nonce: 0n,
+          serverId: server1.address,
+          serverUrl: serverUrl,
+        };
+
+        const user1Signature = await createTrustServerSignature(user1Input, user1);
+
+        await dataPermission
+          .connect(sponsor)
+          .trustServerWithSignature(user1Input, user1Signature);
+
+        // User1's nonce incremented, user2's unchanged
+        (await dataPermission.userNonce(user1.address)).should.eq(1);
+        (await dataPermission.userNonce(user2.address)).should.eq(0);
+
+        // User2 can still use nonce 0
+        const user2Input = {
+          nonce: 0n,
+          serverId: server1.address,
+          serverUrl: serverUrl,
+        };
+
+        const user2Signature = await createTrustServerSignature(user2Input, user2);
+
+        await dataPermission
+          .connect(sponsor)
+          .trustServerWithSignature(user2Input, user2Signature);
+
+        // Both users now have nonce 1
+        (await dataPermission.userNonce(user1.address)).should.eq(1);
+        (await dataPermission.userNonce(user2.address)).should.eq(1);
       });
     });
 
