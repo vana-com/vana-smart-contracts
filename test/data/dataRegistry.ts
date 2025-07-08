@@ -879,11 +879,16 @@ describe("DataRegistry", () => {
         .addRefinementService(1, dlpRefinementService.address)
         .should.be.fulfilled;
 
+      // Add schema first
+      await dataRefinerRegistry
+        .connect(user1)
+        .addSchema("Schema1", "JSON", "https://example.com/schema1.json");
+
       await dataRefinerRegistry
         .connect(dlp1)
-        .addRefiner(1, "refiner1", "schema1", "instruction1")
+        .addRefiner(1, "refiner1", 1, "instruction1")
         .should.emit(dataRefinerRegistry, "RefinerAdded")
-        .withArgs(1, 1, "refiner1", "schema1", "instruction1");
+        .withArgs(1, 1, "refiner1", 1, "instruction1");
 
       (await dataRefinerRegistry.isRefinementService(1, dlpRefinementService.address)).should.be.true;
 
