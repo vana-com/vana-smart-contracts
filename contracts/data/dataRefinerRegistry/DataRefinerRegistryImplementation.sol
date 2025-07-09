@@ -90,14 +90,15 @@ contract DataRefinerRegistryImplementation is
     /// @inheritdoc IDataRefinerRegistry
     function refiners(uint256 refinerId) external view override returns (RefinerInfo memory) {
         Refiner storage refiner = _refiners[refinerId];
+        uint256 schemaId = refiner.schemaId;
         return
             RefinerInfo({
                 dlpId: refiner.dlpId,
                 owner: refiner.owner,
                 name: refiner.name,
-                schemaDefinitionUrl: _schemas[refiner.schemaId].definitionUrl,
+                schemaDefinitionUrl: schemaId == 0 ? refiner.schemaDefinitionUrl : _schemas[schemaId].definitionUrl,
                 refinementInstructionUrl: refiner.refinementInstructionUrl,
-                schemaId: refiner.schemaId
+                schemaId: schemaId
             });
     }
 
