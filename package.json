@@ -11,13 +11,13 @@
     "@nomicfoundation/hardhat-toolbox": "^4.0.0",
     "@nomicfoundation/hardhat-verify": "^2.0.8",
     "@openzeppelin/hardhat-upgrades": "^3.0.4",
-    "@uniswap/v3-core": "^1.0.1",
     "@typechain/ethers-v6": "^0.5.0",
     "@typechain/hardhat": "^9.0.0",
     "@types/chai": "^4.2.0",
     "@types/mocha": ">=9.1.0",
-    "@types/node": ">=16.0.0",
+    "@types/node": "^24.0.7",
     "@types/yargs": "^17.0.33",
+    "@uniswap/v3-core": "^1.0.1",
     "add": "^2.0.6",
     "chai": "^4.2.0",
     "ethers": "^6.4.0",
@@ -27,9 +27,9 @@
     "prettier": "^3.3.3",
     "prettier-plugin-solidity": "^1.3.1",
     "solidity-coverage": "^0.8.0",
-    "ts-node": ">=8.0.0",
+    "ts-node": "^10.9.2",
     "typechain": "^8.3.0",
-    "typescript": ">=4.5.0",
+    "typescript": "^5.8.3",
     "yarn": "^1.22.21"
   },
   "dependencies": {
@@ -39,8 +39,8 @@
     "commander": "^12.1.0",
     "dotenv": "^16.4.5",
     "eth-crypto": "^2.6.0",
+    "fast-check": "^4.1.1",
     "uniswapv3": "^1.0.0",
-    "yargs": "^17.7.2",
-    "fast-check": "^4.1.1"
+    "yargs": "^17.7.2"
   }
 }
