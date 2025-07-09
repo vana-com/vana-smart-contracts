@@ -869,54 +869,66 @@ describe("DataPermission", () => {
       return await signer.signTypedData(domain, types, value);
     };
 
-    describe("addServer", () => {
-      it("should add a server successfully", async function () {
+    describe("Server Creation through Trust", () => {
+      it("should create server when first trusted", async function () {
         const serverUrl = "https://server1.example.com";
         
+        // Server should not exist initially
+        const serverBefore = await dataPermission.servers(server1.address);
+        serverBefore.url.should.eq("");
+        
+        // Trust server (this will create it)
         const tx = await dataPermission
-          .connect(server1)
-          .addServer({ url: serverUrl });
+          .connect(user1)
+          .trustServer(server1.address, serverUrl);
 
+        // Should emit both ServerAdded and ServerTrusted events
         await expect(tx)
           .to.emit(dataPermission, "ServerAdded")
           .withArgs(server1.address, serverUrl);
+          
+        await expect(tx)
+          .to.emit(dataPermission, "ServerTrusted")
+          .withArgs(user1.address, server1.address, serverUrl);
 
-        // Verify server was stored
-        const server = await dataPermission.servers(server1.address);
-        server.url.should.eq(serverUrl);
+        // Verify server was created
+        const serverAfter = await dataPermission.servers(server1.address);
+        serverAfter.url.should.eq(serverUrl);
       });
 
-      it("should reject adding server with empty URL", async function () {
+      it("should reject trusting with empty URL", async function () {
         await expect(
-          dataPermission.connect(server1).addServer({ url: "" })
+          dataPermission.connect(user1).trustServer(server1.address, "")
         ).to.be.revertedWithCustomError(dataPermission, "EmptyUrl");
       });
 
-      it("should reject adding server twice", async function () {
+      it("should reject changing server URL after creation", async function () {
         const serverUrl = "https://server1.example.com";
         
-        // Add server first time
+        // First user trusts with original URL (creates server)
         await dataPermission
-          .connect(server1)
-          .addServer({ url: serverUrl });
+          .connect(user1)
+          .trustServer(server1.address, serverUrl);
 
-        // Try to add again with different URL
+        // Second user tries to trust with different URL
         await expect(
-          dataPermission.connect(server1).addServer({ url: "https://different.com" })
-        ).to.be.revertedWithCustomError(dataPermission, "ServerAlreadyRegistered");
+          dataPermission.connect(user2).trustServer(server1.address, "https://different.com")
+        ).to.be.revertedWithCustomError(dataPermission, "ServerUrlMismatch");
       });
 
-      it("should allow different servers to register", async function () {
+      it("should allow different servers to be created through trust", async function () {
         const serverUrl1 = "https://server1.example.com";
         const serverUrl2 = "https://server2.example.com";
 
+        // User1 trusts server1 (creates it)
         await dataPermission
-          .connect(server1)
-          .addServer({ url: serverUrl1 });
+          .connect(user1)
+          .trustServer(server1.address, serverUrl1);
 
+        // User2 trusts server2 (creates it)
         await dataPermission
-          .connect(server2)
-          .addServer({ url: serverUrl2 });
+          .connect(user2)
+          .trustServer(server2.address, serverUrl2);
 
         // Verify both servers exist
         const serverInfo1 = await dataPermission.servers(server1.address);
@@ -929,12 +941,6 @@ describe("DataPermission", () => {
 
     describe("trustServer", () => {
       const serverUrl = "https://server.example.com";
-      
-      beforeEach(async function () {
-        await dataPermission
-          .connect(server1)
-          .addServer({ url: serverUrl });
-      });
 
       it("should trust a server successfully", async function () {
         const tx = await dataPermission
@@ -952,15 +958,25 @@ describe("DataPermission", () => {
         );
       });
 
-      it("should reject trusting non-existent server", async function () {
-        await expect(
-          dataPermission.connect(user1).trustServer(server2.address, "https://fake.com")
-        ).to.be.revertedWithCustomError(dataPermission, "ServerNotFound");
+      it("should trust a new server and create it", async function () {
+        const tx = await dataPermission
+          .connect(user1)
+          .trustServer(server2.address, "https://newserver.com");
+          
+        await expect(tx)
+          .to.emit(dataPermission, "ServerAdded")
+          .withArgs(server2.address, "https://newserver.com");
       });
 
-      it("should reject trusting with wrong URL", async function () {
+      it("should reject trusting with wrong URL after server exists", async function () {
+        // First create the server
+        await dataPermission
+          .connect(user1)
+          .trustServer(server1.address, serverUrl);
+          
+        // Try to trust with different URL
         await expect(
-          dataPermission.connect(user1).trustServer(server1.address, "https://wrong.com")
+          dataPermission.connect(user2).trustServer(server1.address, "https://wrong.com")
         ).to.be.revertedWithCustomError(dataPermission, "ServerUrlMismatch");
       });
 
@@ -977,13 +993,9 @@ describe("DataPermission", () => {
       });
 
       it("should allow trusting multiple servers", async function () {
-        // Add another server
         const serverUrl2 = "https://server2.example.com";
-        await dataPermission
-          .connect(server2)
-          .addServer({ url: serverUrl2 });
 
-        // Trust both servers
+        // Trust both servers (they will be created automatically)
         await dataPermission
           .connect(user1)
           .trustServer(server1.address, serverUrl);
@@ -1016,12 +1028,6 @@ describe("DataPermission", () => {
 
     describe("trustServerWithSignature", () => {
       const serverUrl = "https://server.example.com";
-      
-      beforeEach(async function () {
-        await dataPermission
-          .connect(server1)
-          .addServer({ url: serverUrl });
-      });
 
       it("should trust server with valid signature", async function () {
         const trustServerInput = {
@@ -1091,10 +1097,7 @@ describe("DataPermission", () => {
       const serverUrl = "https://server.example.com";
       
       beforeEach(async function () {
-        await dataPermission
-          .connect(server1)
-          .addServer({ url: serverUrl });
-          
+        // Trust server (this will create it)
         await dataPermission
           .connect(user1)
           .trustServer(server1.address, serverUrl);
@@ -1151,10 +1154,7 @@ describe("DataPermission", () => {
       const serverUrl = "https://server.example.com";
       
       beforeEach(async function () {
-        await dataPermission
-          .connect(server1)
-          .addServer({ url: serverUrl });
-          
+        // Trust server (this will create it)
         await dataPermission
           .connect(user1)
           .trustServer(server1.address, serverUrl);
@@ -1204,33 +1204,31 @@ describe("DataPermission", () => {
 
     describe("View Functions", () => {
       beforeEach(async function () {
-        // Setup: Add 3 servers and have user1 trust 2 of them
+        // Setup: Create 3 servers by having different users trust them
         const servers = [
-          { signer: server1, url: "https://server1.com" },
-          { signer: server2, url: "https://server2.com" },
-          { signer: maintainer, url: "https://server3.com" },
+          { serverId: server1.address, url: "https://server1.com" },
+          { serverId: server2.address, url: "https://server2.com" },
+          { serverId: maintainer.address, url: "https://server3.com" },
         ];
 
-        // Add servers
-        for (const server of servers) {
-          await dataPermission
-            .connect(server.signer)
-            .addServer({ url: server.url });
-        }
-
-        // User1 trusts first two servers
+        // User1 trusts first two servers (this creates them)
         await dataPermission
           .connect(user1)
-          .trustServer(server1.address, servers[0].url);
+          .trustServer(servers[0].serverId, servers[0].url);
         
         await dataPermission
           .connect(user1)
-          .trustServer(server2.address, servers[1].url);
+          .trustServer(servers[1].serverId, servers[1].url);
+          
+        // User2 trusts the third server (this creates it)
+        await dataPermission
+          .connect(user2)
+          .trustServer(servers[2].serverId, servers[2].url);
       });
 
       it("should return correct userServerIdsLength", async function () {
         (await dataPermission.userServerIdsLength(user1.address)).should.eq(2);
-        (await dataPermission.userServerIdsLength(user2.address)).should.eq(0);
+        (await dataPermission.userServerIdsLength(user2.address)).should.eq(1);
       });
 
       it("should return correct userServerIdsAt", async function () {
@@ -1252,7 +1250,11 @@ describe("DataPermission", () => {
         const serverIds = await dataPermission.userServerIdsValues(user1.address);
         serverIds.should.deep.eq([server1.address, server2.address]);
 
-        const emptyServerIds = await dataPermission.userServerIdsValues(user2.address);
+        const user2ServerIds = await dataPermission.userServerIdsValues(user2.address);
+        user2ServerIds.should.deep.eq([maintainer.address]);
+        
+        // Test a user with no trusted servers
+        const emptyServerIds = await dataPermission.userServerIdsValues(user3.address);
         emptyServerIds.should.deep.eq([]);
       });
 
@@ -1271,13 +1273,6 @@ describe("DataPermission", () => {
 
     describe("Replay Attack Prevention", () => {
       const serverUrl = "https://server.example.com";
-      
-      beforeEach(async function () {
-        // Add a server for testing
-        await dataPermission
-          .connect(server1)
-          .addServer({ url: serverUrl });
-      });
 
       it("should prevent replay of trustServerWithSignature", async function () {
         const trustServerInput = {
@@ -1509,16 +1504,17 @@ describe("DataPermission", () => {
       it("should handle full server lifecycle", async function () {
         const serverUrl = "https://lifecycle.example.com";
         
-        // 1. Grant role and add server
-        await dataPermission
-          .connect(server1)
-          .addServer({ url: serverUrl });
-
-        // 2. Multiple users trust the server
-        await dataPermission
+        // 1. First user trusts the server (this creates it)
+        const tx = await dataPermission
           .connect(user1)
           .trustServer(server1.address, serverUrl);
-        
+          
+        // Should emit ServerAdded when first trusted
+        await expect(tx)
+          .to.emit(dataPermission, "ServerAdded")
+          .withArgs(server1.address, serverUrl);
+
+        // 2. Second user trusts the same server
         await dataPermission
           .connect(user2)
           .trustServer(server1.address, serverUrl);
@@ -1552,16 +1548,8 @@ describe("DataPermission", () => {
           .connect(sponsor)
           .addPermission(permission, permSignature);
 
-        // Grant role and add server
-        await dataPermission
-          .connect(owner)
-          .grantRole(MAINTAINER_ROLE, server1.address);
-          
+        // Trust a server (this will create it)
         const serverUrl = "https://integrated.example.com";
-        await dataPermission
-          .connect(server1)
-          .addServer({ url: serverUrl });
-        
         await dataPermission
           .connect(user1)
           .trustServer(server1.address, serverUrl);
