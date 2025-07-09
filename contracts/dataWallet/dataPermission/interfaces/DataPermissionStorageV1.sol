@@ -12,4 +12,6 @@ abstract contract DataPermissionStorageV1 is IDataPermission {
     mapping(uint256 permissionId => Permission) internal _permissions;
 
     mapping(bytes32 grantHash => uint256 permissionId) internal _grantHashToPermissionId;
+
+    mapping(address serverId => Server server) internal _servers;
 }

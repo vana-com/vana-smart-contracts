@@ -4,13 +4,24 @@ pragma solidity 0.8.24;
 import {IDLPRegistry} from "../../interfaces/IDLPRegistry.sol";
 
 interface IDataRefinerRegistry {
+
+    error NotDlpOwner();
+    error InvalidSchemaId(uint256 schemaId);
+
+    struct Schema {
+        string name;
+        string typ;
+        string definitionUrl;
+    }
+
     struct Refiner {
         uint256 dlpId;
         address owner;
         string name;
-        string schemaDefinitionUrl;
+        string schemaDefinitionUrl; // Obsolete, kept for backward compatibility
         string refinementInstructionUrl;
         string publicKey; // Obsolete, kept for backward compatibility
+        uint256 schemaId; // New field to link to Schema
     }
 
     struct RefinerInfo {
@@ -19,6 +30,7 @@ interface IDataRefinerRegistry {
         string name;
         string schemaDefinitionUrl;
         string refinementInstructionUrl;
+        uint256 schemaId; // New field to link to Schema
     }
 
     /// @notice Returns the version of the contract.
@@ -51,15 +63,20 @@ interface IDataRefinerRegistry {
     /// @notice Adds a refiner to the registry.
     /// @param dlpId The ID of the DLP.
     /// @param name The name of the refiner.
-    /// @param schemaDefinitionUrl The URL of the schema definition.
+    /// @param schemaId The ID of the schema associated with the refiner.
     /// @param refinementInstructionUrl The URL of the refinement Docker image.
     /// @return The ID of the refiner.
     function addRefiner(
         uint256 dlpId,
         string calldata name,
-        string calldata schemaDefinitionUrl,
+        uint256 schemaId,
         string calldata refinementInstructionUrl
     ) external returns (uint256);
+
+    function updateSchemaId(
+        uint256 refinerId,
+        uint256 newSchemaId
+    ) external;
 
     /// @notice Updates the owner of a refiner.
     /// @param refinerId The ID of the refiner.
@@ -88,4 +105,14 @@ interface IDataRefinerRegistry {
         uint256 refinerId,
         address refinementService
     ) external view returns (bool);
+
+    function addSchema(
+        string calldata name,
+        string calldata typ,
+        string calldata definitionUrl
+    ) external returns (uint256);
+
+    function schemas(uint256 schemaId) external view returns (Schema memory);
+
+    function isValidSchemaId(uint256 schemaId) external view returns (bool);
 }

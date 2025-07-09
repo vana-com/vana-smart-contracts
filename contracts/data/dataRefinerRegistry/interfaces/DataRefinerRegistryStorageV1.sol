@@ -17,4 +17,7 @@ abstract contract DataRefinerRegistryStorageV1 is IDataRefinerRegistry {
     mapping(uint256 dlpId => EnumerableSet.UintSet refinerIds) internal _dlpRefiners;
 
     mapping(uint256 dlpId => EnumerableSet.AddressSet refinementServices) internal _dlpRefinementServices;
+
+    uint256 public schemasCount;
+    mapping(uint256 schemaId => Schema schema) internal _schemas;
 }

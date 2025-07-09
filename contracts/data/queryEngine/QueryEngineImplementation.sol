@@ -23,6 +23,7 @@ contract QueryEngineImplementation is
     QueryEngineStorageV1
 {
     using EnumerableSet for EnumerableSet.UintSet;
+    using EnumerableSet for EnumerableSet.AddressSet;
     using Address for address payable;
     using SafeERC20 for IERC20;
 
@@ -61,6 +62,8 @@ contract QueryEngineImplementation is
     error ColumnNameUnexpected();
     error RefinerNotFound();
     error ZeroAddress();
+    error InvalidPaymentToken(address token);
+    error TokenAlreadyWhitelisted(address token);
 
     /// @notice Reverts if the caller is not the owner of the refiner
     /// @param refinerId The ID of the refiner
@@ -335,6 +338,20 @@ contract QueryEngineImplementation is
     ///// Payments ////////
     ///////////////////////
 
+    function addPaymentToken(address token) external onlyRole(MAINTAINER_ROLE) {
+        if (token == VANA || _whitelistedPaymentTokens.contains(token)) {
+            revert TokenAlreadyWhitelisted(token);
+        }
+        _whitelistedPaymentTokens.add(token);
+    }
+
+    function removePaymentToken(address token) external onlyRole(MAINTAINER_ROLE) {
+        if (token == VANA || !_whitelistedPaymentTokens.contains(token)) {
+            revert InvalidPaymentToken(token);
+        }
+        _whitelistedPaymentTokens.remove(token);
+    }
+
     function requestPaymentInVana(
         uint256 amount,
         uint256 jobId,
@@ -363,6 +380,10 @@ contract QueryEngineImplementation is
     }
 
     function _requestPayment(address token, uint256 amount, bytes memory metadata) internal {
+        if (token != VANA && !_whitelistedPaymentTokens.contains(token)) {
+            revert InvalidPaymentToken(token);
+        }
+
         (uint256 jobId, uint256 refinerId) = abi.decode(metadata, (uint256, uint256));
 
         uint256 dlpId = refinerRegistry.refiners(refinerId).dlpId;

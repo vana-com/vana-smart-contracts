@@ -9,7 +9,7 @@ abstract contract DLPRewardDeployerStorageV1 is IDLPRewardDeployer {
     IDLPRewardSwap public override dlpRewardSwap;
     ITreasury public override treasury;
 
-    uint256 public override numberOfTranches;
+    uint256 public override numberOfBlocksBetweenTranches;
     uint256 public override rewardPercentage;
     uint256 public override maximumSlippagePercentage;
 

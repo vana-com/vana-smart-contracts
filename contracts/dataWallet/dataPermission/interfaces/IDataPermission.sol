@@ -7,6 +7,7 @@ interface IDataPermission {
     struct User {
         uint256 nonce;
         EnumerableSet.UintSet permissionIds;
+        EnumerableSet.AddressSet serverIds;
     }
 
     struct Application {
@@ -24,6 +25,21 @@ interface IDataPermission {
         address user;
         uint256 nonce;
         string grant;
+    }
+
+    struct Server {
+        string url;
+    }
+
+    struct TrustServerInput {
+        uint256 nonce;
+        address serverId;
+        string serverUrl;
+    }
+
+    struct UntrustServerInput {
+        uint256 nonce;
+        address serverId;
     }
 
     function version() external pure returns (uint256);

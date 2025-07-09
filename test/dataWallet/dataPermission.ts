@@ -16,6 +16,8 @@ describe("DataPermission", () => {
   let user2: HardhatEthersSigner;
   let user3: HardhatEthersSigner;
   let sponsor: HardhatEthersSigner;
+  let server1: HardhatEthersSigner;
+  let server2: HardhatEthersSigner;
 
   let dataPermission: DataPermissionImplementation;
 
@@ -65,6 +67,8 @@ describe("DataPermission", () => {
       user1,
       user2,
       user3,
+      server1,
+      server2,
     ] = await ethers.getSigners();
 
     const dataPermissionDeploy = await upgrades.deployProxy(
@@ -751,166 +755,18 @@ describe("DataPermission", () => {
     });
   });
 
-  describe("Direct Permission Addition", () => {
+  describe("Server Functions", () => {
     beforeEach(async () => {
       await deploy();
     });
 
-    it("should allow user to add permission directly without signature", async function () {
-      const permission = {
-        user: user1.address,
-        nonce: 0n,
-        grant: "ipfs://direct-grant1",
-      };
-
-      // User1 calls addPermission directly (no signature needed)
-      const tx = await dataPermission
-        .connect(user1)
-        .addPermission(permission);
-
-      // Verify event was emitted
-      await expect(tx).to.emit(dataPermission, "PermissionAdded").withArgs(
-        1, // permissionId
-        user1.address, // user
-        permission.grant,
-      );
-
-      // Verify permission was stored
-      const storedPermission = await dataPermission.permissions(1);
-      storedPermission.user.should.eq(user1.address);
-      storedPermission.nonce.should.eq(0);
-      storedPermission.grant.should.eq(permission.grant);
-      storedPermission.isEffective.should.eq(true);
-
-      // Verify nonce increased
-      (await dataPermission.userNonce(user1.address)).should.eq(1);
-    });
-
-    it("should reject direct permission when user field doesn't match sender", async function () {
-      const permission = {
-        user: user2.address, // Different from msg.sender
-        nonce: 0n,
-        grant: "ipfs://wrong-user-grant",
-      };
-
-      // User1 tries to add permission for user2
-      await expect(
-        dataPermission.connect(user1).addPermission(permission),
-      ).to.be.revertedWithCustomError(dataPermission, "InvalidSigner");
-    });
-  });
-
-  describe("Permission Revocation", () => {
-    beforeEach(async () => {
-      await deploy();
-    });
-
-    it("should allow user to revoke their own permission", async function () {
-      // First add a permission
-      const permission = {
-        user: user1.address,
-        nonce: 0n,
-        grant: "ipfs://revokable-grant",
-      };
-
-      await dataPermission.connect(user1).addPermission(permission);
-
-      // Verify permission is effective
-      (await dataPermission.isEffectivePermission(1)).should.eq(true);
-
-      // Revoke the permission
-      const tx = await dataPermission.connect(user1).revokePermission(1);
-
-      // Verify event was emitted
-      await expect(tx).to.emit(dataPermission, "PermissionRevoked").withArgs(1);
-
-      // Verify permission is no longer effective
-      (await dataPermission.isEffectivePermission(1)).should.eq(false);
-
-      // Verify permission still exists but is marked ineffective
-      const storedPermission = await dataPermission.permissions(1);
-      storedPermission.user.should.eq(user1.address);
-      storedPermission.isEffective.should.eq(false);
-    });
-
-    it("should reject revocation by non-owner", async function () {
-      // User1 adds a permission
-      const permission = {
-        user: user1.address,
-        nonce: 0n,
-        grant: "ipfs://user1-grant",
-      };
-
-      await dataPermission.connect(user1).addPermission(permission);
-
-      // User2 tries to revoke user1's permission
-      await expect(
-        dataPermission.connect(user2).revokePermission(1),
-      ).to.be.revertedWithCustomError(dataPermission, "InvalidSigner");
-    });
-
-    it("should allow revocation with signature", async function () {
-      // First add a permission
-      const permission = {
-        user: user1.address,
-        nonce: 0n,
-        grant: "ipfs://signature-revokable",
-      };
-
-      const addSig = await createPermissionSignature(permission, user1);
-      await dataPermission
-        .connect(sponsor)
-        .addPermissionWithSignature(permission, addSig);
-
-      // Create revocation signature using EIP-712
-      const permissionId = 1;
-      
-      // Create EIP-712 domain and types for revocation
-      const domain = {
-        name: "VanaDataWallet",
-        version: "1",
-        chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
-        verifyingContract: await dataPermission.getAddress(),
-      };
-
-      // Types for RevokePermission - must match the REVOKE_PERMISSION_TYPEHASH in contract
-      const types = {
-        RevokePermission: [
-          { name: "permissionId", type: "uint256" }
-        ],
-      };
-
-      const value = {
-        permissionId: permissionId,
-      };
-
-      // Sign using EIP-712
-      const revokeSig = await user1.signTypedData(domain, types, value);
-
-      // Sponsor can submit the revocation on behalf of user1
-      const tx = await dataPermission
-        .connect(sponsor)
-        .revokePermissionWithSignature(permissionId, revokeSig);
-
-      await expect(tx).to.emit(dataPermission, "PermissionRevoked").withArgs(1);
-
-      // Verify permission is no longer effective
-      (await dataPermission.isEffectivePermission(1)).should.eq(false);
-    });
-
-    it("should reject revocation with invalid signature", async function () {
-      // First add a permission
-      const permission = {
-        user: user1.address,
-        nonce: 0n,
-        grant: "ipfs://revoke-invalid-sig",
-      };
-
-      await dataPermission.connect(user1).addPermission(permission);
-
-      // Try to revoke with user2's signature (should fail)
-      const permissionId = 1;
-      
+    const createPermissionSignature = async (
+      permission: {
+        nonce: bigint;
+        grant: string;
+      },
+      signer: HardhatEthersSigner,
+    ) => {
       const domain = {
         name: "VanaDataWallet",
         version: "1",
@@ -919,301 +775,773 @@ describe("DataPermission", () => {
       };
 
       const types = {
-        RevokePermission: [
-          { name: "permissionId", type: "uint256" }
+        Permission: [
+          { name: "nonce", type: "uint256" },
+          { name: "grant", type: "string" },
         ],
       };
 
       const value = {
-        permissionId: permissionId,
+        nonce: permission.nonce,
+        grant: permission.grant,
       };
 
-      // User2 signs instead of user1
-      const wrongSig = await user2.signTypedData(domain, types, value);
+      return await signer.signTypedData(domain, types, value);
+    };
 
-      // Should fail because user2 is not the permission owner
-      await expect(
-        dataPermission
+    const createTrustServerSignature = async (
+      trustServerInput: {
+        nonce: bigint;
+        serverId: string;
+        serverUrl: string;
+      },
+      signer: HardhatEthersSigner,
+    ) => {
+      const domain = {
+        name: "VanaDataWallet",
+        version: "1",
+        chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
+        verifyingContract: await dataPermission.getAddress(),
+      };
+
+      const types = {
+        TrustServer: [
+          { name: "nonce", type: "uint256" },
+          { name: "serverId", type: "address" },
+          { name: "serverUrl", type: "string" },
+        ],
+      };
+
+      const value = {
+        nonce: trustServerInput.nonce,
+        serverId: trustServerInput.serverId,
+        serverUrl: trustServerInput.serverUrl,
+      };
+
+      return await signer.signTypedData(domain, types, value);
+    };
+
+    const createUntrustServerSignature = async (
+      untrustServerInput: {
+        nonce: bigint;
+        serverId: string;
+      },
+      signer: HardhatEthersSigner,
+    ) => {
+      const domain = {
+        name: "VanaDataWallet",
+        version: "1",
+        chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
+        verifyingContract: await dataPermission.getAddress(),
+      };
+
+      const types = {
+        UntrustServer: [
+          { name: "nonce", type: "uint256" },
+          { name: "serverId", type: "address" },
+        ],
+      };
+
+      const value = {
+        nonce: untrustServerInput.nonce,
+        serverId: untrustServerInput.serverId,
+      };
+
+      return await signer.signTypedData(domain, types, value);
+    };
+
+    describe("Server Creation through Trust", () => {
+      it("should create server when first trusted", async function () {
+        const serverUrl = "https://server1.example.com";
+        
+        // Server should not exist initially
+        const serverBefore = await dataPermission.servers(server1.address);
+        serverBefore.url.should.eq("");
+        
+        // Trust server (this will create it)
+        const tx = await dataPermission
+          .connect(user1)
+          .trustServer(server1.address, serverUrl);
+
+        // Should emit both ServerAdded and ServerTrusted events
+        await expect(tx)
+          .to.emit(dataPermission, "ServerAdded")
+          .withArgs(server1.address, serverUrl);
+          
+        await expect(tx)
+          .to.emit(dataPermission, "ServerTrusted")
+          .withArgs(user1.address, server1.address, serverUrl);
+
+        // Verify server was created
+        const serverAfter = await dataPermission.servers(server1.address);
+        serverAfter.url.should.eq(serverUrl);
+      });
+
+      it("should reject trusting with empty URL", async function () {
+        await expect(
+          dataPermission.connect(user1).trustServer(server1.address, "")
+        ).to.be.revertedWithCustomError(dataPermission, "EmptyUrl");
+      });
+
+      it("should reject changing server URL after creation", async function () {
+        const serverUrl = "https://server1.example.com";
+        
+        // First user trusts with original URL (creates server)
+        await dataPermission
+          .connect(user1)
+          .trustServer(server1.address, serverUrl);
+
+        // Second user tries to trust with different URL
+        await expect(
+          dataPermission.connect(user2).trustServer(server1.address, "https://different.com")
+        ).to.be.revertedWithCustomError(dataPermission, "ServerUrlMismatch");
+      });
+
+      it("should allow different servers to be created through trust", async function () {
+        const serverUrl1 = "https://server1.example.com";
+        const serverUrl2 = "https://server2.example.com";
+
+        // User1 trusts server1 (creates it)
+        await dataPermission
+          .connect(user1)
+          .trustServer(server1.address, serverUrl1);
+
+        // User2 trusts server2 (creates it)
+        await dataPermission
+          .connect(user2)
+          .trustServer(server2.address, serverUrl2);
+
+        // Verify both servers exist
+        const serverInfo1 = await dataPermission.servers(server1.address);
+        const serverInfo2 = await dataPermission.servers(server2.address);
+        
+        serverInfo1.url.should.eq(serverUrl1);
+        serverInfo2.url.should.eq(serverUrl2);
+      });
+    });
+
+    describe("trustServer", () => {
+      const serverUrl = "https://server.example.com";
+
+      it("should trust a server successfully", async function () {
+        const tx = await dataPermission
+          .connect(user1)
+          .trustServer(server1.address, serverUrl);
+
+        await expect(tx)
+          .to.emit(dataPermission, "ServerTrusted")
+          .withArgs(user1.address, server1.address, serverUrl);
+
+        // Verify server is in user's trusted list
+        (await dataPermission.userServerIdsLength(user1.address)).should.eq(1);
+        (await dataPermission.userServerIdsAt(user1.address, 0)).should.eq(
+          server1.address
+        );
+      });
+
+      it("should trust a new server and create it", async function () {
+        const tx = await dataPermission
+          .connect(user1)
+          .trustServer(server2.address, "https://newserver.com");
+          
+        await expect(tx)
+          .to.emit(dataPermission, "ServerAdded")
+          .withArgs(server2.address, "https://newserver.com");
+      });
+
+      it("should reject trusting with wrong URL after server exists", async function () {
+        // First create the server
+        await dataPermission
+          .connect(user1)
+          .trustServer(server1.address, serverUrl);
+          
+        // Try to trust with different URL
+        await expect(
+          dataPermission.connect(user2).trustServer(server1.address, "https://wrong.com")
+        ).to.be.revertedWithCustomError(dataPermission, "ServerUrlMismatch");
+      });
+
+      it("should reject trusting zero address", async function () {
+        await expect(
+          dataPermission.connect(user1).trustServer(ethers.ZeroAddress, serverUrl)
+        ).to.be.revertedWithCustomError(dataPermission, "ZeroAddress");
+      });
+
+      it("should reject trusting with empty URL", async function () {
+        await expect(
+          dataPermission.connect(user1).trustServer(server1.address, "")
+        ).to.be.revertedWithCustomError(dataPermission, "EmptyUrl");
+      });
+
+      it("should allow trusting multiple servers", async function () {
+        const serverUrl2 = "https://server2.example.com";
+
+        // Trust both servers (they will be created automatically)
+        await dataPermission
+          .connect(user1)
+          .trustServer(server1.address, serverUrl);
+        
+        await dataPermission
+          .connect(user1)
+          .trustServer(server2.address, serverUrl2);
+
+        // Verify both are trusted
+        (await dataPermission.userServerIdsLength(user1.address)).should.eq(2);
+        
+        const trustedServers = await dataPermission.userServerIdsValues(user1.address);
+        trustedServers.should.deep.eq([server1.address, server2.address]);
+      });
+
+      it("should allow trusting same server multiple times (idempotent)", async function () {
+        await dataPermission
+          .connect(user1)
+          .trustServer(server1.address, serverUrl);
+        
+        // Trust again - should not fail
+        await dataPermission
+          .connect(user1)
+          .trustServer(server1.address, serverUrl);
+
+        // Should still have only one trusted server
+        (await dataPermission.userServerIdsLength(user1.address)).should.eq(1);
+      });
+    });
+
+    describe("trustServerWithSignature", () => {
+      const serverUrl = "https://server.example.com";
+
+      it("should trust server with valid signature", async function () {
+        const trustServerInput = {
+          nonce: 0n,
+          serverId: server1.address,
+          serverUrl: serverUrl,
+        };
+
+        const signature = await createTrustServerSignature(trustServerInput, user1);
+
+        // User nonce should start at 0
+        (await dataPermission.userNonce(user1.address)).should.eq(0);
+
+        const tx = await dataPermission
           .connect(sponsor)
-          .revokePermissionWithSignature(permissionId, wrongSig),
-      ).to.be.revertedWithCustomError(dataPermission, "InvalidSigner");
+          .trustServerWithSignature(trustServerInput, signature);
+
+        await expect(tx)
+          .to.emit(dataPermission, "ServerTrusted")
+          .withArgs(user1.address, server1.address, serverUrl);
+
+        // Verify nonce was incremented
+        (await dataPermission.userNonce(user1.address)).should.eq(1);
+
+        // Verify server is trusted
+        (await dataPermission.userServerIdsLength(user1.address)).should.eq(1);
+      });
+
+      it("should reject with incorrect nonce", async function () {
+        const trustServerInput = {
+          nonce: 1n, // Wrong nonce
+          serverId: server1.address,
+          serverUrl: serverUrl,
+        };
+
+        const signature = await createTrustServerSignature(trustServerInput, user1);
+
+        await expect(
+          dataPermission
+            .connect(sponsor)
+            .trustServerWithSignature(trustServerInput, signature)
+        )
+          .to.be.revertedWithCustomError(dataPermission, "InvalidNonce")
+          .withArgs(0, 1);
+      });
+
+      it("should work when called by sponsor but signed by user", async function () {
+        const trustServerInput = {
+          nonce: 0n,
+          serverId: server1.address,
+          serverUrl: serverUrl,
+        };
+
+        const signature = await createTrustServerSignature(trustServerInput, user1);
+
+        await dataPermission
+          .connect(sponsor)
+          .trustServerWithSignature(trustServerInput, signature);
+
+        // Verify it's indexed by the signer (user1), not the caller (sponsor)
+        (await dataPermission.userServerIdsLength(user1.address)).should.eq(1);
+        (await dataPermission.userServerIdsLength(sponsor.address)).should.eq(0);
+      });
     });
 
-    it("should handle multiple revocations", async function () {
-      // Add multiple permissions
-      const permissions = [
-        { user: user1.address, nonce: 0n, grant: "ipfs://grant1" },
-        { user: user1.address, nonce: 1n, grant: "ipfs://grant2" },
-        { user: user1.address, nonce: 2n, grant: "ipfs://grant3" },
-      ];
-
-      for (const perm of permissions) {
-        await dataPermission.connect(user1).addPermission(perm);
-      }
-
-      // Verify all are effective
-      (await dataPermission.isEffectivePermission(1)).should.eq(true);
-      (await dataPermission.isEffectivePermission(2)).should.eq(true);
-      (await dataPermission.isEffectivePermission(3)).should.eq(true);
-
-      // Revoke permission 2
-      await dataPermission.connect(user1).revokePermission(2);
-
-      // Verify only permission 2 is ineffective
-      (await dataPermission.isEffectivePermission(1)).should.eq(true);
-      (await dataPermission.isEffectivePermission(2)).should.eq(false);
-      (await dataPermission.isEffectivePermission(3)).should.eq(true);
-    });
-
-    it("should not affect permission count when revoking", async function () {
-      const permission = {
-        user: user1.address,
-        nonce: 0n,
-        grant: "ipfs://count-test",
-      };
-
-      await dataPermission.connect(user1).addPermission(permission);
-      (await dataPermission.permissionsCount()).should.eq(1);
-
-      await dataPermission.connect(user1).revokePermission(1);
+    describe("untrustServer", () => {
+      const serverUrl = "https://server.example.com";
       
-      // Permission count should remain the same
-      (await dataPermission.permissionsCount()).should.eq(1);
+      beforeEach(async function () {
+        // Trust server (this will create it)
+        await dataPermission
+          .connect(user1)
+          .trustServer(server1.address, serverUrl);
+      });
+
+      it("should untrust a server successfully", async function () {
+        // Verify server is trusted
+        (await dataPermission.userServerIdsLength(user1.address)).should.eq(1);
+
+        const tx = await dataPermission
+          .connect(user1)
+          .untrustServer(server1.address);
+
+        await expect(tx)
+          .to.emit(dataPermission, "ServerUntrusted")
+          .withArgs(user1.address, server1.address);
+
+        // Verify server is no longer trusted
+        (await dataPermission.userServerIdsLength(user1.address)).should.eq(0);
+      });
+
+      it("should reject untrusting non-trusted server", async function () {
+        await expect(
+          dataPermission.connect(user1).untrustServer(server2.address)
+        ).to.be.revertedWithCustomError(dataPermission, "ServerNotTrusted");
+      });
+
+      it("should reject untrusting zero address", async function () {
+        await expect(
+          dataPermission.connect(user1).untrustServer(ethers.ZeroAddress)
+        ).to.be.revertedWithCustomError(dataPermission, "ZeroAddress");
+      });
+
+      it("should not affect other users' trust", async function () {
+        // User2 also trusts the server
+        await dataPermission
+          .connect(user2)
+          .trustServer(server1.address, serverUrl);
+
+        // User1 untrusts
+        await dataPermission
+          .connect(user1)
+          .untrustServer(server1.address);
+
+        // User1 should have no trusted servers
+        (await dataPermission.userServerIdsLength(user1.address)).should.eq(0);
+        
+        // User2 should still trust the server
+        (await dataPermission.userServerIdsLength(user2.address)).should.eq(1);
+      });
+    });
+
+    describe("untrustServerWithSignature", () => {
+      const serverUrl = "https://server.example.com";
       
-      // User still has the permission in their list
-      (await dataPermission.userPermissionIdsLength(user1.address)).should.eq(1);
-    });
-  });
+      beforeEach(async function () {
+        // Trust server (this will create it)
+        await dataPermission
+          .connect(user1)
+          .trustServer(server1.address, serverUrl);
+      });
 
-  describe("InvalidSigner Error Cases", () => {
-    beforeEach(async () => {
-      await deploy();
-    });
+      it("should untrust server with valid signature", async function () {
+        // Note: nonce should still be 0 since trustServer doesn't increment nonce
+        const untrustServerInput = {
+          nonce: 0n,
+          serverId: server1.address,
+        };
 
-    it("should revert with InvalidSigner when signature doesn't match user field", async function () {
-      const permission = {
-        user: user1.address, // Says user1
-        nonce: 0n,
-        grant: "ipfs://mismatched-signer",
-      };
+        const signature = await createUntrustServerSignature(untrustServerInput, user1);
 
-      // But user2 signs it
-      const signature = await createPermissionSignature(permission, user2);
-
-      await expect(
-        dataPermission
+        const tx = await dataPermission
           .connect(sponsor)
-          .addPermissionWithSignature(permission, signature),
-      ).to.be.revertedWithCustomError(dataPermission, "InvalidSigner");
+          .untrustServerWithSignature(untrustServerInput, signature);
+
+        await expect(tx)
+          .to.emit(dataPermission, "ServerUntrusted")
+          .withArgs(user1.address, server1.address);
+
+        // Verify nonce was incremented
+        (await dataPermission.userNonce(user1.address)).should.eq(1);
+
+        // Verify server is no longer trusted
+        (await dataPermission.userServerIdsLength(user1.address)).should.eq(0);
+      });
+
+      it("should reject with incorrect nonce", async function () {
+        const untrustServerInput = {
+          nonce: 1n, // Wrong nonce
+          serverId: server1.address,
+        };
+
+        const signature = await createUntrustServerSignature(untrustServerInput, user1);
+
+        await expect(
+          dataPermission
+            .connect(sponsor)
+            .untrustServerWithSignature(untrustServerInput, signature)
+        )
+          .to.be.revertedWithCustomError(dataPermission, "InvalidNonce")
+          .withArgs(0, 1);
+      });
     });
 
-    it("should handle invalid signature gracefully", async function () {
-      const permission = {
-        user: user1.address,
-        nonce: 0n,
-        grant: "ipfs://invalid-sig",
-      };
+    describe("View Functions", () => {
+      beforeEach(async function () {
+        // Setup: Create 3 servers by having different users trust them
+        const servers = [
+          { serverId: server1.address, url: "https://server1.com" },
+          { serverId: server2.address, url: "https://server2.com" },
+          { serverId: maintainer.address, url: "https://server3.com" },
+        ];
 
-      // Create invalid signature (random bytes)
-      const invalidSignature = "0x" + "00".repeat(65);
+        // User1 trusts first two servers (this creates them)
+        await dataPermission
+          .connect(user1)
+          .trustServer(servers[0].serverId, servers[0].url);
+        
+        await dataPermission
+          .connect(user1)
+          .trustServer(servers[1].serverId, servers[1].url);
+          
+        // User2 trusts the third server (this creates it)
+        await dataPermission
+          .connect(user2)
+          .trustServer(servers[2].serverId, servers[2].url);
+      });
 
-      await expect(
-        dataPermission
+      it("should return correct userServerIdsLength", async function () {
+        (await dataPermission.userServerIdsLength(user1.address)).should.eq(2);
+        (await dataPermission.userServerIdsLength(user2.address)).should.eq(1);
+      });
+
+      it("should return correct userServerIdsAt", async function () {
+        (await dataPermission.userServerIdsAt(user1.address, 0)).should.eq(
+          server1.address
+        );
+        (await dataPermission.userServerIdsAt(user1.address, 1)).should.eq(
+          server2.address
+        );
+      });
+
+      it("should revert on out of bounds userServerIdsAt", async function () {
+        await expect(
+          dataPermission.userServerIdsAt(user1.address, 2)
+        ).to.be.reverted;
+      });
+
+      it("should return correct userServerIdsValues", async function () {
+        const serverIds = await dataPermission.userServerIdsValues(user1.address);
+        serverIds.should.deep.eq([server1.address, server2.address]);
+
+        const user2ServerIds = await dataPermission.userServerIdsValues(user2.address);
+        user2ServerIds.should.deep.eq([maintainer.address]);
+        
+        // Test a user with no trusted servers
+        const emptyServerIds = await dataPermission.userServerIdsValues(user3.address);
+        emptyServerIds.should.deep.eq([]);
+      });
+
+      it("should return correct server info", async function () {
+        const serverInfo1 = await dataPermission.servers(server1.address);
+        serverInfo1.url.should.eq("https://server1.com");
+
+        const serverInfo2 = await dataPermission.servers(server2.address);
+        serverInfo2.url.should.eq("https://server2.com");
+
+        // Non-existent server should return empty
+        const nonExistent = await dataPermission.servers(user3.address);
+        nonExistent.url.should.eq("");
+      });
+    });
+
+    describe("Replay Attack Prevention", () => {
+      const serverUrl = "https://server.example.com";
+
+      it("should prevent replay of trustServerWithSignature", async function () {
+        const trustServerInput = {
+          nonce: 0n,
+          serverId: server1.address,
+          serverUrl: serverUrl,
+        };
+
+        const signature = await createTrustServerSignature(trustServerInput, user1);
+
+        // First call should succeed
+        await dataPermission
           .connect(sponsor)
-          .addPermissionWithSignature(permission, invalidSignature),
-      ).to.be.revertedWithCustomError(dataPermission, "ECDSAInvalidSignature");
-    });
-  });
+          .trustServerWithSignature(trustServerInput, signature);
 
-  describe("Pausable Functionality", () => {
-    beforeEach(async () => {
-      await deploy();
-    });
+        // Verify nonce was incremented
+        (await dataPermission.userNonce(user1.address)).should.eq(1);
 
-    it("should reject permission operations when paused", async function () {
-      // Pause the contract
-      await dataPermission.connect(maintainer).pause();
-      (await dataPermission.paused()).should.eq(true);
+        // Replay attempt with same signature should fail due to wrong nonce
+        await expect(
+          dataPermission
+            .connect(sponsor)
+            .trustServerWithSignature(trustServerInput, signature)
+        )
+          .to.be.revertedWithCustomError(dataPermission, "InvalidNonce")
+          .withArgs(1, 0); // expects nonce 1, but signature has nonce 0
+      });
 
-      const permission = {
-        user: user1.address,
-        nonce: 0n,
-        grant: "ipfs://paused-grant",
-      };
+      it("should prevent replay of untrustServerWithSignature", async function () {
+        // First trust the server
+        await dataPermission
+          .connect(user1)
+          .trustServer(server1.address, serverUrl);
 
-      // Try to add permission while paused
-      await expect(
-        dataPermission.connect(user1).addPermission(permission),
-      ).to.be.revertedWithCustomError(dataPermission, "EnforcedPause");
+        const untrustServerInput = {
+          nonce: 0n,
+          serverId: server1.address,
+        };
 
-      // Try with signature
-      const signature = await createPermissionSignature(permission, user1);
-      await expect(
-        dataPermission
+        const signature = await createUntrustServerSignature(untrustServerInput, user1);
+
+        // First call should succeed
+        await dataPermission
           .connect(sponsor)
-          .addPermissionWithSignature(permission, signature),
-      ).to.be.revertedWithCustomError(dataPermission, "EnforcedPause");
+          .untrustServerWithSignature(untrustServerInput, signature);
 
-      // Unpause
-      await dataPermission.connect(maintainer).unpause();
-      (await dataPermission.paused()).should.eq(false);
+        // Verify nonce was incremented
+        (await dataPermission.userNonce(user1.address)).should.eq(1);
 
-      // Now it should work
-      await dataPermission.connect(user1).addPermission(permission).should.be
-        .fulfilled;
-    });
+        // Replay attempt should fail due to wrong nonce
+        await expect(
+          dataPermission
+            .connect(sponsor)
+            .untrustServerWithSignature(untrustServerInput, signature)
+        )
+          .to.be.revertedWithCustomError(dataPermission, "InvalidNonce")
+          .withArgs(1, 0);
+      });
 
-    it("should reject revocation when paused", async function () {
-      // Add permission first
-      const permission = {
-        user: user1.address,
-        nonce: 0n,
-        grant: "ipfs://pausable-revoke",
-      };
-      await dataPermission.connect(user1).addPermission(permission);
+      it("should prevent cross-user replay attacks", async function () {
+        // User1 creates a trust signature
+        const trustServerInput = {
+          nonce: 0n,
+          serverId: server1.address,
+          serverUrl: serverUrl,
+        };
 
-      // Pause the contract
-      await dataPermission.connect(maintainer).pause();
+        const user1Signature = await createTrustServerSignature(trustServerInput, user1);
 
-      // Try to revoke while paused
-      await expect(
-        dataPermission.connect(user1).revokePermission(1),
-      ).to.be.revertedWithCustomError(dataPermission, "EnforcedPause");
-    });
-  });
-
-  describe("Signature Extraction Optimization", () => {
-    beforeEach(async () => {
-      await deploy();
-    });
-
-    it("should correctly extract signer from signature", async function () {
-      const permission = {
-        user: user1.address,
-        nonce: 0n,
-        grant: "ipfs://sig-extraction-test",
-      };
-
-      const signature = await createPermissionSignature(permission, user1);
-
-      // The signature should be valid for user1
-      await dataPermission
-        .connect(sponsor)
-        .addPermissionWithSignature(permission, signature).should.be.fulfilled;
-
-      // Verify the permission was added for the correct user
-      const storedPermission = await dataPermission.permissions(1);
-      storedPermission.user.should.eq(user1.address);
-    });
-
-    it("should handle signature from different signers correctly", async function () {
-      // User1's permission but signed by user2 (should fail)
-      const permission1 = {
-        user: user1.address,
-        nonce: 0n,
-        grant: "ipfs://wrong-signer-test",
-      };
-
-      const wrongSignature = await createPermissionSignature(permission1, user2);
-
-      await expect(
-        dataPermission
+        // User1 trusts the server
+        await dataPermission
           .connect(sponsor)
-          .addPermissionWithSignature(permission1, wrongSignature),
-      ).to.be.revertedWithCustomError(dataPermission, "InvalidSigner");
+          .trustServerWithSignature(trustServerInput, user1Signature);
 
-      // User2's permission signed by user2 (should succeed)
-      const permission2 = {
-        user: user2.address,
-        nonce: 0n,
-        grant: "ipfs://correct-signer-test",
-      };
+        // User2 tries to replay User1's signature
+        // This should fail because the signature verification will extract user1's address
+        // but user2's nonce is still 0, so it will try to trust on behalf of user1
+        // which will fail due to nonce mismatch (user1's nonce is now 1)
+        await expect(
+          dataPermission
+            .connect(sponsor)
+            .trustServerWithSignature(trustServerInput, user1Signature)
+        )
+          .to.be.revertedWithCustomError(dataPermission, "InvalidNonce")
+          .withArgs(1, 0);
 
-      const correctSignature = await createPermissionSignature(permission2, user2);
+        // Even if we try with user2 signing with the same parameters
+        // it's a different signature and will work for user2
+        const user2Signature = await createTrustServerSignature(trustServerInput, user2);
+        
+        await dataPermission
+          .connect(sponsor)
+          .trustServerWithSignature(trustServerInput, user2Signature);
 
-      await dataPermission
-        .connect(sponsor)
-        .addPermissionWithSignature(permission2, correctSignature).should.be
-        .fulfilled;
+        // Verify each user has their own trust relationship
+        (await dataPermission.userServerIdsLength(user1.address)).should.eq(1);
+        (await dataPermission.userServerIdsLength(user2.address)).should.eq(1);
+      });
+
+      it("should prevent replay attacks across different operations", async function () {
+        // Create signatures for both trust and untrust with same nonce
+        const nonce = 0n;
+        
+        const trustInput = {
+          nonce: nonce,
+          serverId: server1.address,
+          serverUrl: serverUrl,
+        };
+
+        const untrustInput = {
+          nonce: nonce,
+          serverId: server1.address,
+        };
+
+        const trustSignature = await createTrustServerSignature(trustInput, user1);
+        const untrustSignature = await createUntrustServerSignature(untrustInput, user1);
+
+        // Execute trust operation
+        await dataPermission
+          .connect(sponsor)
+          .trustServerWithSignature(trustInput, trustSignature);
+
+        // Nonce is now 1, so untrust with nonce 0 should fail
+        await expect(
+          dataPermission
+            .connect(sponsor)
+            .untrustServerWithSignature(untrustInput, untrustSignature)
+        )
+          .to.be.revertedWithCustomError(dataPermission, "InvalidNonce")
+          .withArgs(1, 0);
+
+        // Create new untrust signature with correct nonce
+        const newUntrustInput = {
+          nonce: 1n,
+          serverId: server1.address,
+        };
+
+        const newUntrustSignature = await createUntrustServerSignature(newUntrustInput, user1);
+
+        // This should succeed
+        await dataPermission
+          .connect(sponsor)
+          .untrustServerWithSignature(newUntrustInput, newUntrustSignature);
+      });
+
+      it("should prevent replay of permission signatures in server context", async function () {
+        // Add a permission
+        const permission = {
+          nonce: 0n,
+          grant: "ipfs://grant1",
+        };
+
+        const permSignature = await createPermissionSignature(permission, user1);
+
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, permSignature);
+
+        // Nonce is now 1
+        (await dataPermission.userNonce(user1.address)).should.eq(1);
+
+        // Try to replay the permission - should fail
+        await expect(
+          dataPermission
+            .connect(sponsor)
+            .addPermission(permission, permSignature)
+        )
+          .to.be.revertedWithCustomError(dataPermission, "GrantAlreadyUsed");
+
+        // Now try server operations - they should use the updated nonce
+        const trustServerInput = {
+          nonce: 1n, // Must use nonce 1
+          serverId: server1.address,
+          serverUrl: serverUrl,
+        };
+
+        const trustSignature = await createTrustServerSignature(trustServerInput, user1);
+
+        await dataPermission
+          .connect(sponsor)
+          .trustServerWithSignature(trustServerInput, trustSignature);
+
+        // Verify nonce incremented again
+        (await dataPermission.userNonce(user1.address)).should.eq(2);
+      });
+
+      it("should maintain separate nonces per user preventing cross-contamination", async function () {
+        // Both users start with nonce 0
+        (await dataPermission.userNonce(user1.address)).should.eq(0);
+        (await dataPermission.userNonce(user2.address)).should.eq(0);
+
+        // User1 performs operation
+        const user1Input = {
+          nonce: 0n,
+          serverId: server1.address,
+          serverUrl: serverUrl,
+        };
+
+        const user1Signature = await createTrustServerSignature(user1Input, user1);
+
+        await dataPermission
+          .connect(sponsor)
+          .trustServerWithSignature(user1Input, user1Signature);
+
+        // User1's nonce incremented, user2's unchanged
+        (await dataPermission.userNonce(user1.address)).should.eq(1);
+        (await dataPermission.userNonce(user2.address)).should.eq(0);
+
+        // User2 can still use nonce 0
+        const user2Input = {
+          nonce: 0n,
+          serverId: server1.address,
+          serverUrl: serverUrl,
+        };
+
+        const user2Signature = await createTrustServerSignature(user2Input, user2);
+
+        await dataPermission
+          .connect(sponsor)
+          .trustServerWithSignature(user2Input, user2Signature);
+
+        // Both users now have nonce 1
+        (await dataPermission.userNonce(user1.address)).should.eq(1);
+        (await dataPermission.userNonce(user2.address)).should.eq(1);
+      });
     });
-  });
 
-  describe("Complex Scenarios", () => {
-    beforeEach(async () => {
-      await deploy();
-    });
+    describe("Integration Tests", () => {
+      it("should handle full server lifecycle", async function () {
+        const serverUrl = "https://lifecycle.example.com";
+        
+        // 1. First user trusts the server (this creates it)
+        const tx = await dataPermission
+          .connect(user1)
+          .trustServer(server1.address, serverUrl);
+          
+        // Should emit ServerAdded when first trusted
+        await expect(tx)
+          .to.emit(dataPermission, "ServerAdded")
+          .withArgs(server1.address, serverUrl);
 
-    it("should handle mixed direct and signature-based permissions", async function () {
-      // User1 adds direct permission
-      const directPermission = {
-        user: user1.address,
-        nonce: 0n,
-        grant: "ipfs://direct-grant",
-      };
-      await dataPermission.connect(user1).addPermission(directPermission);
+        // 2. Second user trusts the same server
+        await dataPermission
+          .connect(user2)
+          .trustServer(server1.address, serverUrl);
 
-      // User1 adds signature-based permission
-      const signedPermission = {
-        user: user1.address,
-        nonce: 1n,
-        grant: "ipfs://signed-grant",
-      };
-      const signature = await createPermissionSignature(signedPermission, user1);
-      await dataPermission
-        .connect(sponsor)
-        .addPermissionWithSignature(signedPermission, signature);
+        // Verify both users trust the server
+        (await dataPermission.userServerIdsLength(user1.address)).should.eq(1);
+        (await dataPermission.userServerIdsLength(user2.address)).should.eq(1);
 
-      // Verify both permissions exist
-      (await dataPermission.permissionsCount()).should.eq(2);
-      (await dataPermission.userNonce(user1.address)).should.eq(2);
+        // 3. User1 untrusts the server
+        await dataPermission
+          .connect(user1)
+          .untrustServer(server1.address);
 
-      // Verify both are in user's permission list
-      const userPermissions = await dataPermission.userPermissionIdsValues(
-        user1.address
-      );
-      userPermissions.should.deep.eq([1n, 2n]);
-    });
+        // Verify user1 no longer trusts, but user2 still does
+        (await dataPermission.userServerIdsLength(user1.address)).should.eq(0);
+        (await dataPermission.userServerIdsLength(user2.address)).should.eq(1);
 
-    it("should handle permission lifecycle: add, check, revoke, check again", async function () {
-      const permission = {
-        user: user1.address,
-        nonce: 0n,
-        grant: "ipfs://lifecycle-test",
-      };
+        // 4. Server info should still be available
+        const server = await dataPermission.servers(server1.address);
+        server.url.should.eq(serverUrl);
+      });
 
-      // Add permission
-      await dataPermission.connect(user1).addPermission(permission);
-      const permissionId = 1;
+      it("should handle permissions and servers together", async function () {
+        // Add a permission for user1
+        const permission = {
+          nonce: 0n,
+          grant: "ipfs://grant1",
+        };
+        const permSignature = await createPermissionSignature(permission, user1);
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, permSignature);
 
-      // Check it's effective
-      (await dataPermission.isEffectivePermission(permissionId)).should.eq(true);
+        // Trust a server (this will create it)
+        const serverUrl = "https://integrated.example.com";
+        await dataPermission
+          .connect(user1)
+          .trustServer(server1.address, serverUrl);
 
-      // Check it's indexed properly
-      (await dataPermission.permissionIdByGrant(permission.grant)).should.eq(
-        permissionId
-      );
-
-      // Revoke it
-      await dataPermission.connect(user1).revokePermission(permissionId);
-
-      // Check it's no longer effective
-      (await dataPermission.isEffectivePermission(permissionId)).should.eq(false);
-
-      // But it's still indexed (grant hash doesn't get removed)
-      (await dataPermission.permissionIdByGrant(permission.grant)).should.eq(
-        permissionId
-      );
-
-      // Cannot reuse the same grant even after revocation
-      const newPermission = {
-        user: user1.address,
-        nonce: 1n,
-        grant: permission.grant, // Same grant
-      };
-
-      await expect(
-        dataPermission.connect(user1).addPermission(newPermission),
-      ).to.be.revertedWithCustomError(dataPermission, "GrantAlreadyUsed");
+        // Verify user has both permissions and trusted servers
+        (await dataPermission.userPermissionIdsLength(user1.address)).should.eq(1);
+        (await dataPermission.userServerIdsLength(user1.address)).should.eq(1);
+        
+        // Nonce should have been incremented by permission (not by direct trust)
+        (await dataPermission.userNonce(user1.address)).should.eq(1);
+      });
     });
   });
 });
