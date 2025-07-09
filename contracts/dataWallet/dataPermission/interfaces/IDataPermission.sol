@@ -7,7 +7,8 @@ interface IDataPermission {
     struct User {
         uint256 nonce;
         EnumerableSet.UintSet permissionIds;
-        EnumerableSet.AddressSet serverIds;
+        EnumerableSet.AddressSet trustedServerIds;
+        EnumerableSet.UintSet revokedPermissionIds;
     }
 
     struct Application {
@@ -19,6 +20,11 @@ interface IDataPermission {
         uint256 nonce;
         string grant;
         bytes signature;
+        bool isActive;
+    }
+
+    struct Server {
+        string url;
     }
 
     struct PermissionInput {
@@ -26,8 +32,9 @@ interface IDataPermission {
         string grant;
     }
 
-    struct Server {
-        string url;
+    struct RevokePermissionInput {
+        uint256 nonce;
+        uint256 permissionId;
     }
 
     struct TrustServerInput {

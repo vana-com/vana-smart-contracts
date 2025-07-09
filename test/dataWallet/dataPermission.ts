@@ -690,6 +690,845 @@ describe("DataPermission", () => {
     });
   });
 
+  describe("RevokePermission", () => {
+    beforeEach(async () => {
+      await deploy();
+    });
+
+    const createPermissionSignature = async (
+      permission: {
+        nonce: bigint;
+        grant: string;
+      },
+      signer: HardhatEthersSigner,
+    ) => {
+      const domain = {
+        name: "VanaDataWallet",
+        version: "1",
+        chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
+        verifyingContract: await dataPermission.getAddress(),
+      };
+
+      const types = {
+        Permission: [
+          { name: "nonce", type: "uint256" },
+          { name: "grant", type: "string" },
+        ],
+      };
+
+      const value = {
+        nonce: permission.nonce,
+        grant: permission.grant,
+      };
+
+      return await signer.signTypedData(domain, types, value);
+    };
+
+    const createRevokePermissionSignature = async (
+      revokePermissionInput: {
+        nonce: bigint;
+        permissionId: bigint;
+      },
+      signer: HardhatEthersSigner,
+    ) => {
+      const domain = {
+        name: "VanaDataWallet",
+        version: "1",
+        chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
+        verifyingContract: await dataPermission.getAddress(),
+      };
+
+      const types = {
+        RevokePermission: [
+          { name: "nonce", type: "uint256" },
+          { name: "permissionId", type: "uint256" },
+        ],
+      };
+
+      const value = {
+        nonce: revokePermissionInput.nonce,
+        permissionId: revokePermissionInput.permissionId,
+      };
+
+      return await signer.signTypedData(domain, types, value);
+    };
+
+    describe("Direct Revocation", () => {
+      it("should revoke permission by owner successfully", async function () {
+        // First add a permission
+        const permission = {
+          nonce: 0n,
+          grant: "ipfs://grant1",
+        };
+
+        const signature = await createPermissionSignature(permission, user1);
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, signature);
+
+        // Verify permission is active
+        (await dataPermission.isActivePermission(1)).should.eq(true);
+        (await dataPermission.userPermissionIdsLength(user1.address)).should.eq(1);
+
+        // Revoke the permission
+        const tx = await dataPermission
+          .connect(user1)
+          .revokePermission(1);
+
+        // Verify event was emitted
+        await expect(tx)
+          .to.emit(dataPermission, "PermissionRevoked")
+          .withArgs(1);
+
+        // Verify permission is no longer active
+        (await dataPermission.isActivePermission(1)).should.eq(false);
+        
+        // Verify permission is removed from user's active permissions
+        (await dataPermission.userPermissionIdsLength(user1.address)).should.eq(0);
+        
+        // Verify permission data still exists but is marked inactive
+        const revokedPermission = await dataPermission.permissions(1);
+        revokedPermission.user.should.eq(user1.address);
+        revokedPermission.grant.should.eq(permission.grant);
+        revokedPermission.isActive.should.eq(false);
+      });
+
+      it("should reject revocation by non-owner", async function () {
+        // User1 adds a permission
+        const permission = {
+          nonce: 0n,
+          grant: "ipfs://grant1",
+        };
+
+        const signature = await createPermissionSignature(permission, user1);
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, signature);
+
+        // User2 tries to revoke user1's permission
+        await expect(
+          dataPermission.connect(user2).revokePermission(1)
+        ).to.be.revertedWithCustomError(dataPermission, "NotPermissionOwner");
+
+        // Verify permission is still active
+        (await dataPermission.isActivePermission(1)).should.eq(true);
+      });
+
+      it("should reject revoking already revoked permission", async function () {
+        // Add and revoke a permission
+        const permission = {
+          nonce: 0n,
+          grant: "ipfs://grant1",
+        };
+
+        const signature = await createPermissionSignature(permission, user1);
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, signature);
+
+        await dataPermission.connect(user1).revokePermission(1);
+
+        // Try to revoke again
+        await expect(
+          dataPermission.connect(user1).revokePermission(1)
+        ).to.be.revertedWithCustomError(dataPermission, "InactivePermission")
+        .withArgs(1);
+      });
+
+      it("should handle multiple permissions correctly", async function () {
+        // Add multiple permissions
+        const permissions = [
+          { nonce: 0n, grant: "ipfs://grant1" },
+          { nonce: 1n, grant: "ipfs://grant2" },
+          { nonce: 2n, grant: "ipfs://grant3" },
+        ];
+
+        for (const perm of permissions) {
+          const sig = await createPermissionSignature(perm, user1);
+          await dataPermission.connect(sponsor).addPermission(perm, sig);
+        }
+
+        // Verify all are active
+        (await dataPermission.userPermissionIdsLength(user1.address)).should.eq(3);
+
+        // Revoke the middle permission
+        await dataPermission.connect(user1).revokePermission(2);
+
+        // Verify correct permission was revoked
+        (await dataPermission.isActivePermission(1)).should.eq(true);
+        (await dataPermission.isActivePermission(2)).should.eq(false);
+        (await dataPermission.isActivePermission(3)).should.eq(true);
+
+        // Verify user now has 2 active permissions
+        (await dataPermission.userPermissionIdsLength(user1.address)).should.eq(2);
+        
+        // Verify remaining permissions
+        const remainingPermIds = await dataPermission.userPermissionIdsValues(user1.address);
+        remainingPermIds.should.deep.eq([1n, 3n]);
+      });
+    });
+
+    describe("Signature-based Revocation", () => {
+      it("should revoke permission with valid signature", async function () {
+        // Add a permission first
+        const permission = {
+          nonce: 0n,
+          grant: "ipfs://grant1",
+        };
+
+        const permSignature = await createPermissionSignature(permission, user1);
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, permSignature);
+
+        // User nonce should be 1 after adding permission
+        (await dataPermission.userNonce(user1.address)).should.eq(1);
+
+        // Create revoke permission input
+        const revokeInput = {
+          nonce: 1n,
+          permissionId: 1n,
+        };
+
+        const revokeSignature = await createRevokePermissionSignature(revokeInput, user1);
+
+        // Sponsor executes the revocation
+        const tx = await dataPermission
+          .connect(sponsor)
+          .revokePermissionWithSignature(revokeInput, revokeSignature);
+
+        // Verify event
+        await expect(tx)
+          .to.emit(dataPermission, "PermissionRevoked")
+          .withArgs(1);
+
+        // Verify nonce was incremented
+        (await dataPermission.userNonce(user1.address)).should.eq(2);
+
+        // Verify permission is inactive
+        (await dataPermission.isActivePermission(1)).should.eq(false);
+      });
+
+      it("should reject revocation with wrong nonce", async function () {
+        // Add a permission
+        const permission = {
+          nonce: 0n,
+          grant: "ipfs://grant1",
+        };
+
+        const permSignature = await createPermissionSignature(permission, user1);
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, permSignature);
+
+        // Try to revoke with wrong nonce
+        const revokeInput = {
+          nonce: 0n, // Wrong - should be 1
+          permissionId: 1n,
+        };
+
+        const revokeSignature = await createRevokePermissionSignature(revokeInput, user1);
+
+        await expect(
+          dataPermission
+            .connect(sponsor)
+            .revokePermissionWithSignature(revokeInput, revokeSignature)
+        ).to.be.revertedWithCustomError(dataPermission, "InvalidNonce")
+        .withArgs(1, 0);
+      });
+
+      it("should reject revocation of non-owned permission", async function () {
+        // User1 adds a permission
+        const permission1 = {
+          nonce: 0n,
+          grant: "ipfs://grant1",
+        };
+
+        const sig1 = await createPermissionSignature(permission1, user1);
+        await dataPermission.connect(sponsor).addPermission(permission1, sig1);
+
+        // User2 adds a permission
+        const permission2 = {
+          nonce: 0n,
+          grant: "ipfs://grant2",
+        };
+
+        const sig2 = await createPermissionSignature(permission2, user2);
+        await dataPermission.connect(sponsor).addPermission(permission2, sig2);
+
+        // User2 tries to revoke user1's permission (ID 1)
+        const revokeInput = {
+          nonce: 1n, // User2's current nonce
+          permissionId: 1n, // User1's permission
+        };
+
+        const revokeSignature = await createRevokePermissionSignature(revokeInput, user2);
+
+        await expect(
+          dataPermission
+            .connect(sponsor)
+            .revokePermissionWithSignature(revokeInput, revokeSignature)
+        ).to.be.revertedWithCustomError(dataPermission, "NotPermissionOwner");
+      });
+
+      it("should handle gasless revocation via sponsor", async function () {
+        // Add permission
+        const permission = {
+          nonce: 0n,
+          grant: "ipfs://grant1",
+        };
+
+        const permSignature = await createPermissionSignature(permission, user1);
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, permSignature);
+
+        // Create revocation signature
+        const revokeInput = {
+          nonce: 1n,
+          permissionId: 1n,
+        };
+
+        const revokeSignature = await createRevokePermissionSignature(revokeInput, user1);
+
+        // Sponsor pays for gas
+        const tx = await dataPermission
+          .connect(sponsor)
+          .revokePermissionWithSignature(revokeInput, revokeSignature);
+
+        // Verify it worked
+        await expect(tx)
+          .to.emit(dataPermission, "PermissionRevoked")
+          .withArgs(1);
+
+        // Verify the permission belongs to user1, not sponsor
+        const revokedPerm = await dataPermission.permissions(1);
+        revokedPerm.user.should.eq(user1.address);
+      });
+    });
+
+    describe("Edge Cases and State Management", () => {
+      it("should not affect grant hash mapping after revocation", async function () {
+        const permission = {
+          nonce: 0n,
+          grant: "ipfs://grant1",
+        };
+
+        const signature = await createPermissionSignature(permission, user1);
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, signature);
+
+        // Revoke the permission
+        await dataPermission.connect(user1).revokePermission(1);
+
+        // Grant hash should still map to the permission ID
+        (await dataPermission.permissionIdByGrant(permission.grant)).should.eq(1);
+
+        // But trying to add same grant again should still fail
+        const permission2 = {
+          nonce: 1n,
+          grant: "ipfs://grant1", // Same grant
+        };
+
+        const signature2 = await createPermissionSignature(permission2, user1);
+        
+        await expect(
+          dataPermission.connect(sponsor).addPermission(permission2, signature2)
+        ).to.be.revertedWithCustomError(dataPermission, "GrantAlreadyUsed");
+      });
+
+      it("should correctly update user permission sets", async function () {
+        // Add 3 permissions
+        const permissions = [
+          { nonce: 0n, grant: "ipfs://grant1" },
+          { nonce: 1n, grant: "ipfs://grant2" },
+          { nonce: 2n, grant: "ipfs://grant3" },
+        ];
+
+        for (const perm of permissions) {
+          const sig = await createPermissionSignature(perm, user1);
+          await dataPermission.connect(sponsor).addPermission(perm, sig);
+        }
+
+        // Initial state
+        let activePerms = await dataPermission.userPermissionIdsValues(user1.address);
+        activePerms.should.deep.eq([1n, 2n, 3n]);
+
+        // Revoke permission 2
+        await dataPermission.connect(user1).revokePermission(2);
+
+        // Check updated state
+        activePerms = await dataPermission.userPermissionIdsValues(user1.address);
+        activePerms.should.deep.eq([1n, 3n]);
+
+        // Revoke permission 1
+        await dataPermission.connect(user1).revokePermission(1);
+
+        // Check state again
+        activePerms = await dataPermission.userPermissionIdsValues(user1.address);
+        activePerms.should.deep.eq([3n]);
+
+        // Revoke last permission
+        await dataPermission.connect(user1).revokePermission(3);
+
+        // Should have no active permissions
+        activePerms = await dataPermission.userPermissionIdsValues(user1.address);
+        activePerms.should.deep.eq([]);
+        
+        (await dataPermission.userPermissionIdsLength(user1.address)).should.eq(0);
+      });
+
+      it("should prevent replay attacks on revocation", async function () {
+        // Add permission
+        const permission = {
+          nonce: 0n,
+          grant: "ipfs://grant1",
+        };
+
+        const permSignature = await createPermissionSignature(permission, user1);
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, permSignature);
+
+        // Create revocation signature
+        const revokeInput = {
+          nonce: 1n,
+          permissionId: 1n,
+        };
+
+        const revokeSignature = await createRevokePermissionSignature(revokeInput, user1);
+
+        // First revocation succeeds
+        await dataPermission
+          .connect(sponsor)
+          .revokePermissionWithSignature(revokeInput, revokeSignature);
+
+        // Replay attempt should fail due to incremented nonce
+        await expect(
+          dataPermission
+            .connect(sponsor)
+            .revokePermissionWithSignature(revokeInput, revokeSignature)
+        ).to.be.revertedWithCustomError(dataPermission, "InvalidNonce")
+        .withArgs(2, 1); // Expected nonce 2, provided 1
+      });
+
+      it("should handle revocation of non-existent permission", async function () {
+        // Try to revoke permission that doesn't exist
+        await expect(
+          dataPermission.connect(user1).revokePermission(999)
+        ).to.be.revertedWithCustomError(dataPermission, "NotPermissionOwner");
+      });
+
+      it("should maintain correct state after mixed operations", async function () {
+        // Add permission 1
+        const perm1 = { nonce: 0n, grant: "ipfs://grant1" };
+        const sig1 = await createPermissionSignature(perm1, user1);
+        await dataPermission.connect(sponsor).addPermission(perm1, sig1);
+
+        // Add permission 2
+        const perm2 = { nonce: 1n, grant: "ipfs://grant2" };
+        const sig2 = await createPermissionSignature(perm2, user1);
+        await dataPermission.connect(sponsor).addPermission(perm2, sig2);
+
+        // Revoke permission 1
+        await dataPermission.connect(user1).revokePermission(1);
+
+        // Add permission 3
+        const perm3 = { nonce: 2n, grant: "ipfs://grant3" };
+        const sig3 = await createPermissionSignature(perm3, user1);
+        await dataPermission.connect(sponsor).addPermission(perm3, sig3);
+
+        // Check final state
+        const activePerms = await dataPermission.userPermissionIdsValues(user1.address);
+        activePerms.should.deep.eq([2n, 3n]);
+
+        // Verify individual permission states
+        (await dataPermission.isActivePermission(1)).should.eq(false);
+        (await dataPermission.isActivePermission(2)).should.eq(true);
+        (await dataPermission.isActivePermission(3)).should.eq(true);
+      });
+    });
+
+    describe("Integration with Other Features", () => {
+      it("should work correctly with trusted servers", async function () {
+        // Add a permission
+        const permission = {
+          nonce: 0n,
+          grant: "ipfs://grant1",
+        };
+
+        const permSignature = await createPermissionSignature(permission, user1);
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, permSignature);
+
+        // Trust a server
+        await dataPermission
+          .connect(user1)
+          .trustServer(server1.address, "https://server1.com");
+
+        // Revoke the permission
+        await dataPermission.connect(user1).revokePermission(1);
+
+        // Server trust should be unaffected
+        (await dataPermission.userServerIdsLength(user1.address)).should.eq(1);
+        
+        // Permission should be revoked
+        (await dataPermission.isActivePermission(1)).should.eq(false);
+      });
+
+      it("should handle nonce correctly across different operations", async function () {
+        // Initial nonce
+        (await dataPermission.userNonce(user1.address)).should.eq(0);
+
+        // Add permission (increments nonce to 1)
+        const perm1 = { nonce: 0n, grant: "ipfs://grant1" };
+        const sig1 = await createPermissionSignature(perm1, user1);
+        await dataPermission.connect(sponsor).addPermission(perm1, sig1);
+
+        // Add another permission (increments nonce to 2)
+        const perm2 = { nonce: 1n, grant: "ipfs://grant2" };
+        const sig2 = await createPermissionSignature(perm2, user1);
+        await dataPermission.connect(sponsor).addPermission(perm2, sig2);
+
+        // Revoke with signature (increments nonce to 3)
+        const revokeInput = {
+          nonce: 2n,
+          permissionId: 1n,
+        };
+        const revokeSig = await createRevokePermissionSignature(revokeInput, user1);
+        await dataPermission
+          .connect(sponsor)
+          .revokePermissionWithSignature(revokeInput, revokeSig);
+
+        // Final nonce should be 3
+        (await dataPermission.userNonce(user1.address)).should.eq(3);
+
+        // Direct revocation should not affect nonce
+        await dataPermission.connect(user1).revokePermission(2);
+        (await dataPermission.userNonce(user1.address)).should.eq(3);
+      });
+    });
+
+    describe("Pause Functionality", () => {
+      it("should reject revocation when paused", async function () {
+        // Add a permission
+        const permission = {
+          nonce: 0n,
+          grant: "ipfs://grant1",
+        };
+
+        const signature = await createPermissionSignature(permission, user1);
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, signature);
+
+        // Pause the contract
+        await dataPermission.connect(maintainer).pause();
+
+        // Try to revoke directly
+        await expect(
+          dataPermission.connect(user1).revokePermission(1)
+        ).to.be.revertedWithCustomError(dataPermission, "EnforcedPause");
+
+        // Try to revoke with signature
+        const revokeInput = {
+          nonce: 1n,
+          permissionId: 1n,
+        };
+        const revokeSignature = await createRevokePermissionSignature(revokeInput, user1);
+
+        await expect(
+          dataPermission
+            .connect(sponsor)
+            .revokePermissionWithSignature(revokeInput, revokeSignature)
+        ).to.be.revertedWithCustomError(dataPermission, "EnforcedPause");
+
+        // Unpause
+        await dataPermission.connect(maintainer).unpause();
+
+        // Now revocation should work
+        await dataPermission.connect(user1).revokePermission(1);
+        (await dataPermission.isActivePermission(1)).should.eq(false);
+      });
+    });
+
+    describe("Revoked Permission Tracking", () => {
+      it("should track revoked permissions with userRevokedPermissionIdsLength", async function () {
+        // Initially no revoked permissions
+        (await dataPermission.userRevokedPermissionIdsLength(user1.address)).should.eq(0);
+
+        // Add and revoke a permission
+        const permission = {
+          nonce: 0n,
+          grant: "ipfs://grant1",
+        };
+        const signature = await createPermissionSignature(permission, user1);
+        await dataPermission.connect(sponsor).addPermission(permission, signature);
+        await dataPermission.connect(user1).revokePermission(1);
+
+        // Should have 1 revoked permission
+        (await dataPermission.userRevokedPermissionIdsLength(user1.address)).should.eq(1);
+      });
+
+      it("should return revoked permission IDs with userRevokedPermissionIdsValues", async function () {
+        // Add multiple permissions
+        const permissions = [
+          { nonce: 0n, grant: "ipfs://grant1" },
+          { nonce: 1n, grant: "ipfs://grant2" },
+          { nonce: 2n, grant: "ipfs://grant3" },
+          { nonce: 3n, grant: "ipfs://grant4" },
+        ];
+
+        for (const perm of permissions) {
+          const sig = await createPermissionSignature(perm, user1);
+          await dataPermission.connect(sponsor).addPermission(perm, sig);
+        }
+
+        // Initially no revoked permissions
+        let revokedIds = await dataPermission.userRevokedPermissionIdsValues(user1.address);
+        revokedIds.should.deep.eq([]);
+
+        // Revoke permissions 2 and 4
+        await dataPermission.connect(user1).revokePermission(2);
+        await dataPermission.connect(user1).revokePermission(4);
+
+        // Check revoked IDs
+        revokedIds = await dataPermission.userRevokedPermissionIdsValues(user1.address);
+        revokedIds.should.deep.eq([2n, 4n]);
+
+        // Revoke permission 1
+        await dataPermission.connect(user1).revokePermission(1);
+
+        // Check updated revoked IDs
+        revokedIds = await dataPermission.userRevokedPermissionIdsValues(user1.address);
+        revokedIds.should.deep.eq([2n, 4n, 1n]);
+      });
+
+      it("should access revoked permissions by index with userRevokedPermissionIdsAt", async function () {
+        // Add and revoke multiple permissions
+        const permissions = [
+          { nonce: 0n, grant: "ipfs://grant1" },
+          { nonce: 1n, grant: "ipfs://grant2" },
+          { nonce: 2n, grant: "ipfs://grant3" },
+        ];
+
+        for (const perm of permissions) {
+          const sig = await createPermissionSignature(perm, user1);
+          await dataPermission.connect(sponsor).addPermission(perm, sig);
+        }
+
+        // Revoke in specific order: 3, 1, 2
+        await dataPermission.connect(user1).revokePermission(3);
+        await dataPermission.connect(user1).revokePermission(1);
+        await dataPermission.connect(user1).revokePermission(2);
+
+        // Check individual indices
+        (await dataPermission.userRevokedPermissionIdsAt(user1.address, 0)).should.eq(3n);
+        (await dataPermission.userRevokedPermissionIdsAt(user1.address, 1)).should.eq(1n);
+        (await dataPermission.userRevokedPermissionIdsAt(user1.address, 2)).should.eq(2n);
+
+        // Verify length
+        (await dataPermission.userRevokedPermissionIdsLength(user1.address)).should.eq(3);
+      });
+
+      it("should revert when accessing out of bounds revoked permission index", async function () {
+        // Add and revoke one permission
+        const permission = {
+          nonce: 0n,
+          grant: "ipfs://grant1",
+        };
+        const signature = await createPermissionSignature(permission, user1);
+        await dataPermission.connect(sponsor).addPermission(permission, signature);
+        await dataPermission.connect(user1).revokePermission(1);
+
+        // Should have 1 revoked permission
+        (await dataPermission.userRevokedPermissionIdsLength(user1.address)).should.eq(1);
+
+        // Accessing index 0 should work
+        (await dataPermission.userRevokedPermissionIdsAt(user1.address, 0)).should.eq(1n);
+
+        // Accessing index 1 should revert
+        await expect(
+          dataPermission.userRevokedPermissionIdsAt(user1.address, 1)
+        ).to.be.reverted;
+
+        // User with no revoked permissions should revert on index 0
+        await expect(
+          dataPermission.userRevokedPermissionIdsAt(user2.address, 0)
+        ).to.be.reverted;
+      });
+
+      it("should track revoked permissions separately per user", async function () {
+        // User1 adds and revokes permissions
+        const user1Perms = [
+          { nonce: 0n, grant: "ipfs://user1-grant1" },
+          { nonce: 1n, grant: "ipfs://user1-grant2" },
+        ];
+
+        for (const perm of user1Perms) {
+          const sig = await createPermissionSignature(perm, user1);
+          await dataPermission.connect(sponsor).addPermission(perm, sig);
+        }
+
+        // User2 adds and revokes permissions
+        const user2Perms = [
+          { nonce: 0n, grant: "ipfs://user2-grant1" },
+          { nonce: 1n, grant: "ipfs://user2-grant2" },
+          { nonce: 2n, grant: "ipfs://user2-grant3" },
+        ];
+
+        for (const perm of user2Perms) {
+          const sig = await createPermissionSignature(perm, user2);
+          await dataPermission.connect(sponsor).addPermission(perm, sig);
+        }
+
+        // User1 revokes their first permission
+        await dataPermission.connect(user1).revokePermission(1);
+
+        // User2 revokes all their permissions
+        await dataPermission.connect(user2).revokePermission(3);
+        await dataPermission.connect(user2).revokePermission(4);
+        await dataPermission.connect(user2).revokePermission(5);
+
+        // Check user1's revoked permissions
+        (await dataPermission.userRevokedPermissionIdsLength(user1.address)).should.eq(1);
+        const user1Revoked = await dataPermission.userRevokedPermissionIdsValues(user1.address);
+        user1Revoked.should.deep.eq([1n]);
+
+        // Check user2's revoked permissions
+        (await dataPermission.userRevokedPermissionIdsLength(user2.address)).should.eq(3);
+        const user2Revoked = await dataPermission.userRevokedPermissionIdsValues(user2.address);
+        user2Revoked.should.deep.eq([3n, 4n, 5n]);
+
+        // User3 should have no revoked permissions
+        (await dataPermission.userRevokedPermissionIdsLength(user3.address)).should.eq(0);
+        const user3Revoked = await dataPermission.userRevokedPermissionIdsValues(user3.address);
+        user3Revoked.should.deep.eq([]);
+      });
+
+      it("should maintain consistency between active and revoked permissions", async function () {
+        // Add 5 permissions
+        const permissions = [
+          { nonce: 0n, grant: "ipfs://grant1" },
+          { nonce: 1n, grant: "ipfs://grant2" },
+          { nonce: 2n, grant: "ipfs://grant3" },
+          { nonce: 3n, grant: "ipfs://grant4" },
+          { nonce: 4n, grant: "ipfs://grant5" },
+        ];
+
+        for (const perm of permissions) {
+          const sig = await createPermissionSignature(perm, user1);
+          await dataPermission.connect(sponsor).addPermission(perm, sig);
+        }
+
+        // Initially all active, none revoked
+        (await dataPermission.userPermissionIdsLength(user1.address)).should.eq(5);
+        (await dataPermission.userRevokedPermissionIdsLength(user1.address)).should.eq(0);
+
+        // Revoke permissions 2, 3, and 5
+        await dataPermission.connect(user1).revokePermission(2);
+        await dataPermission.connect(user1).revokePermission(3);
+        await dataPermission.connect(user1).revokePermission(5);
+
+        // Check active permissions (should be 1 and 4)
+        (await dataPermission.userPermissionIdsLength(user1.address)).should.eq(2);
+        const activeIds = await dataPermission.userPermissionIdsValues(user1.address);
+        activeIds.should.deep.eq([1n, 4n]);
+
+        // Check revoked permissions (should be 2, 3, and 5)
+        (await dataPermission.userRevokedPermissionIdsLength(user1.address)).should.eq(3);
+        const revokedIds = await dataPermission.userRevokedPermissionIdsValues(user1.address);
+        revokedIds.should.deep.eq([2n, 3n, 5n]);
+
+        // Verify individual permission states
+        (await dataPermission.isActivePermission(1)).should.eq(true);
+        (await dataPermission.isActivePermission(2)).should.eq(false);
+        (await dataPermission.isActivePermission(3)).should.eq(false);
+        (await dataPermission.isActivePermission(4)).should.eq(true);
+        (await dataPermission.isActivePermission(5)).should.eq(false);
+      });
+
+      it("should handle signature-based revocation in revoked tracking", async function () {
+        // Add permissions
+        const perm1 = { nonce: 0n, grant: "ipfs://grant1" };
+        const perm2 = { nonce: 1n, grant: "ipfs://grant2" };
+        
+        const sig1 = await createPermissionSignature(perm1, user1);
+        const sig2 = await createPermissionSignature(perm2, user1);
+        
+        await dataPermission.connect(sponsor).addPermission(perm1, sig1);
+        await dataPermission.connect(sponsor).addPermission(perm2, sig2);
+
+        // Revoke first permission directly
+        await dataPermission.connect(user1).revokePermission(1);
+
+        // Revoke second permission with signature
+        const revokeInput = {
+          nonce: 2n, // Current nonce after adding 2 permissions
+          permissionId: 2n,
+        };
+        const revokeSignature = await createRevokePermissionSignature(revokeInput, user1);
+        await dataPermission
+          .connect(sponsor)
+          .revokePermissionWithSignature(revokeInput, revokeSignature);
+
+        // Both should be in revoked list
+        (await dataPermission.userRevokedPermissionIdsLength(user1.address)).should.eq(2);
+        const revokedIds = await dataPermission.userRevokedPermissionIdsValues(user1.address);
+        revokedIds.should.deep.eq([1n, 2n]);
+
+        // No active permissions left
+        (await dataPermission.userPermissionIdsLength(user1.address)).should.eq(0);
+      });
+
+      it("should not add duplicate entries to revoked permissions", async function () {
+        // Add a permission
+        const permission = {
+          nonce: 0n,
+          grant: "ipfs://grant1",
+        };
+        const signature = await createPermissionSignature(permission, user1);
+        await dataPermission.connect(sponsor).addPermission(permission, signature);
+
+        // Revoke it
+        await dataPermission.connect(user1).revokePermission(1);
+
+        // Check revoked count
+        (await dataPermission.userRevokedPermissionIdsLength(user1.address)).should.eq(1);
+
+        // Try to revoke again (should fail)
+        await expect(
+          dataPermission.connect(user1).revokePermission(1)
+        ).to.be.revertedWithCustomError(dataPermission, "InactivePermission");
+
+        // Revoked count should still be 1
+        (await dataPermission.userRevokedPermissionIdsLength(user1.address)).should.eq(1);
+      });
+
+      it("should handle empty revoked permissions list", async function () {
+        // User with no permissions at all
+        (await dataPermission.userRevokedPermissionIdsLength(user1.address)).should.eq(0);
+        const revokedIds = await dataPermission.userRevokedPermissionIdsValues(user1.address);
+        revokedIds.should.deep.eq([]);
+
+        // User with active permissions but none revoked
+        const permission = {
+          nonce: 0n,
+          grant: "ipfs://grant1",
+        };
+        const signature = await createPermissionSignature(permission, user1);
+        await dataPermission.connect(sponsor).addPermission(permission, signature);
+
+        // Still no revoked permissions
+        (await dataPermission.userRevokedPermissionIdsLength(user1.address)).should.eq(0);
+        const revokedIdsAfter = await dataPermission.userRevokedPermissionIdsValues(user1.address);
+        revokedIdsAfter.should.deep.eq([]);
+      });
+    });
+  });
+
   describe("Edge Cases", () => {
     beforeEach(async () => {
       await deploy();
@@ -1434,13 +2273,14 @@ describe("DataPermission", () => {
         // Nonce is now 1
         (await dataPermission.userNonce(user1.address)).should.eq(1);
 
-        // Try to replay the permission - should fail
+        // Try to replay the permission - should fail due to nonce mismatch
         await expect(
           dataPermission
             .connect(sponsor)
             .addPermission(permission, permSignature)
         )
-          .to.be.revertedWithCustomError(dataPermission, "GrantAlreadyUsed");
+          .to.be.revertedWithCustomError(dataPermission, "InvalidNonce")
+          .withArgs(1, 0); // Expected nonce 1, provided 0
 
         // Now try server operations - they should use the updated nonce
         const trustServerInput = {
