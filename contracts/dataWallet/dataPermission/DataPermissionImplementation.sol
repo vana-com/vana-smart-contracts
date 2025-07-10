@@ -42,7 +42,7 @@ contract DataPermissionImplementation is
      * @param user                              address of the user
      * @param grant                             grant of the permission
      */
-    event PermissionAdded(uint256 indexed permissionId, address indexed user, string grant);
+    event PermissionAdded(uint256 indexed permissionId, address indexed user, string grant, uint256[] fileIds);
     event PermissionRevoked(uint256 indexed permissionId);
     event ServerAdded(address indexed serverId, string url);
     event ServerTrusted(address indexed user, address indexed serverId, string serverUrl);
@@ -391,7 +391,7 @@ contract DataPermissionImplementation is
         // Add to user's permission set
         _users[signer].permissionIds.add(permissionId);
 
-        emit PermissionAdded(permissionId, signer, permissionInput.grant);
+        emit PermissionAdded(permissionId, signer, permissionInput.grant, permissionInput.fileIds);
 
         return permissionId;
     }
