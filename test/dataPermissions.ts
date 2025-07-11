@@ -1,7 +1,7 @@
 import chai, { expect, should } from "chai";
 import chaiAsPromised from "chai-as-promised";
 import { ethers, upgrades } from "hardhat";
-import { DataPermissionImplementation, MockDataRegistry } from "../../typechain-types";
+import { DataPermissionImplementation, MockDataRegistry } from "../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 
 chai.use(chaiAsPromised);
@@ -42,32 +42,27 @@ describe("DataPermission", () => {
       server2,
     ] = await ethers.getSigners();
 
+    // Deploy MockDataRegistry
+    const MockDataRegistry = await ethers.getContractFactory("MockDataRegistry");
+    dataRegistry = await MockDataRegistry.deploy();
+    await dataRegistry.waitForDeployment();
+
     const dataPermissionDeploy = await upgrades.deployProxy(
-      await ethers.getContractFactory("DataPermissionImplementation"),
-      [trustedForwarder.address, owner.address],
+      await ethers.getContractFactory("DataPermissionsImplementation"),
+      [trustedForwarder.address, owner.address, await dataRegistry.getAddress()],
       {
         kind: "uups",
       },
     );
 
     dataPermission = await ethers.getContractAt(
-      "DataPermissionImplementation",
+      "DataPermissionsImplementation",
       dataPermissionDeploy.target,
     );
 
     await dataPermission
       .connect(owner)
       .grantRole(MAINTAINER_ROLE, maintainer.address);
-
-    // Deploy MockDataRegistry
-    const MockDataRegistry = await ethers.getContractFactory("MockDataRegistry");
-    dataRegistry = await MockDataRegistry.deploy();
-    await dataRegistry.waitForDeployment();
-
-    // Update dataPermission with the mock registry
-    await dataPermission
-      .connect(owner)
-      .updateDataRegistry(await dataRegistry.getAddress());
   };
 
   describe("Setup", () => {
@@ -124,7 +119,7 @@ describe("DataPermission", () => {
       signer: HardhatEthersSigner,
     ) => {
       const domain = {
-        name: "VanaDataWallet",
+        name: "VanaDataPermissions",
         version: "1",
         chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
         verifyingContract: await dataPermission.getAddress(),
@@ -155,7 +150,7 @@ describe("DataPermission", () => {
       signer: HardhatEthersSigner,
     ) => {
       const domain = {
-        name: "VanaDataWallet",
+        name: "VanaDataPermissions",
         version: "1",
         chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
         verifyingContract: await dataPermission.getAddress(),
@@ -197,6 +192,7 @@ describe("DataPermission", () => {
         1, // permissionId
         user1.address, // user
         permission.grant,
+        [],
       );
 
       // Verify permissions count increased
@@ -323,11 +319,11 @@ describe("DataPermission", () => {
       // Verify events were emitted
       await expect(tx1)
         .to.emit(dataPermission, "PermissionAdded")
-        .withArgs(1, user1.address, permission1.grant);
+        .withArgs(1, user1.address, permission1.grant, []);
 
       await expect(tx2)
         .to.emit(dataPermission, "PermissionAdded")
-        .withArgs(2, user1.address, permission2.grant);
+        .withArgs(2, user1.address, permission2.grant, []);
 
       // Verify permissions count increased
       (await dataPermission.permissionsCount()).should.eq(2);
@@ -591,12 +587,12 @@ describe("DataPermission", () => {
       // Verify first event
       await expect(tx1)
         .to.emit(dataPermission, "PermissionAdded")
-        .withArgs(1, user1.address, permission1.grant);
+        .withArgs(1, user1.address, permission1.grant, []);
 
       // Verify second event
       await expect(tx2)
         .to.emit(dataPermission, "PermissionAdded")
-        .withArgs(2, user2.address, permission2.grant);
+        .withArgs(2, user2.address, permission2.grant, []);
     });
 
     it("should work when called by sponsor wallet but signed by actual user", async function () {
@@ -770,7 +766,7 @@ describe("DataPermission", () => {
       signer: HardhatEthersSigner,
     ) => {
       const domain = {
-        name: "VanaDataWallet",
+        name: "VanaDataPermissions",
         version: "1",
         chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
         verifyingContract: await dataPermission.getAddress(),
@@ -801,7 +797,7 @@ describe("DataPermission", () => {
       signer: HardhatEthersSigner,
     ) => {
       const domain = {
-        name: "VanaDataWallet",
+        name: "VanaDataPermissions",
         version: "1",
         chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
         verifyingContract: await dataPermission.getAddress(),
@@ -1629,7 +1625,7 @@ describe("DataPermission", () => {
       signer: HardhatEthersSigner,
     ) => {
       const domain = {
-        name: "VanaDataWallet",
+        name: "VanaDataPermissions",
         version: "1",
         chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
         verifyingContract: await dataPermission.getAddress(),
@@ -1718,7 +1714,7 @@ describe("DataPermission", () => {
       signer: HardhatEthersSigner,
     ) => {
       const domain = {
-        name: "VanaDataWallet",
+        name: "VanaDataPermissions",
         version: "1",
         chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
         verifyingContract: await dataPermission.getAddress(),
@@ -1750,7 +1746,7 @@ describe("DataPermission", () => {
       signer: HardhatEthersSigner,
     ) => {
       const domain = {
-        name: "VanaDataWallet",
+        name: "VanaDataPermissions",
         version: "1",
         chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
         verifyingContract: await dataPermission.getAddress(),
@@ -1781,7 +1777,7 @@ describe("DataPermission", () => {
       signer: HardhatEthersSigner,
     ) => {
       const domain = {
-        name: "VanaDataWallet",
+        name: "VanaDataPermissions",
         version: "1",
         chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
         verifyingContract: await dataPermission.getAddress(),
@@ -2448,7 +2444,7 @@ describe("DataPermission", () => {
         signer: HardhatEthersSigner,
       ) => {
         const domain = {
-          name: "VanaDataWallet",
+          name: "VanaDataPermissions",
           version: "1",
           chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
           verifyingContract: await dataPermission.getAddress(),
@@ -2492,6 +2488,7 @@ describe("DataPermission", () => {
           1, // permissionId
           user1.address, // grantor
           permission.grant,
+          [1n, 2n, 3n]
         );
 
         // Verify permission was stored with fileIds
