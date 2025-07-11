@@ -2,9 +2,9 @@
 pragma solidity 0.8.24;
 
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
-import "../../../data/dataRegistry/interfaces/IDataRegistry.sol";
+import "../../data/dataRegistry/interfaces/IDataRegistry.sol";
 
-interface IDataPermission {
+interface IDataPermissions {
     struct User {
         uint256 nonce;
         EnumerableSet.UintSet permissionIds;
