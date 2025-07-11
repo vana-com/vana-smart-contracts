@@ -3,10 +3,10 @@ import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { DeployFunction } from "hardhat-deploy/types";
 import { deployProxy, verifyProxy } from "../helpers";
 
-const implementationContractName = "DataPermissionImplementation";
-const proxyContractName = "DataPermissionProxy";
+const implementationContractName = "DataPermissionsImplementation";
+const proxyContractName = "DataPermissionsProxy";
 const proxyContractPath =
-  "contracts/dataWallet/DataPermissionProxy.sol:DataPermissionProxy";
+  "contracts/dataPermissions/DataPermissionsProxy.sol:DataPermissionsProxy";
 
 const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const [deployer] = await ethers.getSigners();
@@ -51,4 +51,4 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 };
 
 export default func;
-func.tags = ["DataPermissionProxy"];
+func.tags = ["DataPermissionsProxy"];

@@ -2,12 +2,14 @@
 pragma solidity 0.8.24;
 
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import "../../data/dataRegistry/interfaces/IDataRegistry.sol";
 
-interface IDataPermission {
+interface IDataPermissions {
     struct User {
         uint256 nonce;
         EnumerableSet.UintSet permissionIds;
-        EnumerableSet.AddressSet serverIds;
+        EnumerableSet.AddressSet trustedServerIds;
+        EnumerableSet.UintSet revokedPermissionIds;
     }
 
     struct Application {
@@ -15,19 +17,37 @@ interface IDataPermission {
     }
 
     struct Permission {
-        address user;
+        address grantor;
         uint256 nonce;
         string grant;
         bytes signature;
+        bool isActive;
+        EnumerableSet.UintSet fileIds;
+    }
+
+    struct PermissionInfo {
+        uint256 id;
+        address grantor;
+        uint256 nonce;
+        string grant;
+        bytes signature;
+        bool isActive;
+        uint256[] fileIds;
+    }
+
+    struct Server {
+        string url;
     }
 
     struct PermissionInput {
         uint256 nonce;
         string grant;
+        uint256[] fileIds;
     }
 
-    struct Server {
-        string url;
+    struct RevokePermissionInput {
+        uint256 nonce;
+        uint256 permissionId;
     }
 
     struct TrustServerInput {

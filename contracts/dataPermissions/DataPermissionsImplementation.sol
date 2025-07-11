@@ -8,16 +8,16 @@ import "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import "./interfaces/DataPermissionStorageV1.sol";
+import "./interfaces/DataPermissionsStorageV1.sol";
 
-contract DataPermissionImplementation is
+contract DataPermissionsImplementation is
     UUPSUpgradeable,
     PausableUpgradeable,
     AccessControlUpgradeable,
     MulticallUpgradeable,
     ERC2771ContextUpgradeable,
     EIP712Upgradeable,
-    DataPermissionStorageV1
+    DataPermissionsStorageV1
 {
     using ECDSA for bytes32;
     using EnumerableSet for EnumerableSet.UintSet;
@@ -25,11 +25,14 @@ contract DataPermissionImplementation is
 
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
 
-    string private constant SIGNING_DOMAIN = "VanaDataWallet";
+    string private constant SIGNING_DOMAIN = "VanaDataPermissions";
     string private constant SIGNATURE_VERSION = "1";
 
-    bytes32 private constant PERMISSION_TYPEHASH = keccak256("Permission(uint256 nonce,string grant)");
-    bytes32 private constant TRUST_SERVER_TYPEHASH = keccak256("TrustServer(uint256 nonce,address serverId,string serverUrl)");
+    bytes32 private constant PERMISSION_TYPEHASH = keccak256("Permission(uint256 nonce,string grant,uint256[] fileIds)");
+    bytes32 private constant REVOKE_PERMISSION_TYPEHASH =
+        keccak256("RevokePermission(uint256 nonce,uint256 permissionId)");
+    bytes32 private constant TRUST_SERVER_TYPEHASH =
+        keccak256("TrustServer(uint256 nonce,address serverId,string serverUrl)");
     bytes32 private constant UNTRUST_SERVER_TYPEHASH = keccak256("UntrustServer(uint256 nonce,address serverId)");
 
     /**
@@ -39,7 +42,8 @@ contract DataPermissionImplementation is
      * @param user                              address of the user
      * @param grant                             grant of the permission
      */
-    event PermissionAdded(uint256 indexed permissionId, address indexed user, string grant);
+    event PermissionAdded(uint256 indexed permissionId, address indexed user, string grant, uint256[] fileIds);
+    event PermissionRevoked(uint256 indexed permissionId);
     event ServerAdded(address indexed serverId, string url);
     event ServerTrusted(address indexed user, address indexed serverId, string serverUrl);
     event ServerUntrusted(address indexed user, address indexed serverId);
@@ -54,6 +58,9 @@ contract DataPermissionImplementation is
     error ServerNotFound();
     error ServerAlreadyRegistered();
     error ServerNotTrusted();
+    error InactivePermission(uint256 permissionId);
+    error NotPermissionGrantor(address permissionOwner, address requestor);
+    error NotFileOwner(address fileOwner, address requestor);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() ERC2771ContextUpgradeable(address(0)) {
@@ -66,13 +73,14 @@ contract DataPermissionImplementation is
      * @param trustedForwarderAddress           address of the trusted forwarder
      * @param ownerAddress                      address of the owner
      */
-    function initialize(address trustedForwarderAddress, address ownerAddress) external initializer {
+    function initialize(address trustedForwarderAddress, address ownerAddress, IDataRegistry dataRegistryAddress) external initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
         __Pausable_init();
         __EIP712_init(SIGNING_DOMAIN, SIGNATURE_VERSION);
 
         _trustedForwarder = trustedForwarderAddress;
+        _dataRegistry = dataRegistryAddress;
 
         _grantRole(DEFAULT_ADMIN_ROLE, ownerAddress);
         _grantRole(MAINTAINER_ROLE, ownerAddress);
@@ -139,12 +147,88 @@ contract DataPermissionImplementation is
         _trustedForwarder = trustedForwarderAddress;
     }
 
+    function dataRegistry() external view returns (IDataRegistry) {
+        return _dataRegistry;
+    }
+
+    function updateDataRegistry(IDataRegistry newDataRegistry) external onlyRole(MAINTAINER_ROLE) {
+        if (address(newDataRegistry) == address(0)) {
+            revert ZeroAddress();
+        }
+        _dataRegistry = newDataRegistry;
+    }
+
     function pause() external override onlyRole(MAINTAINER_ROLE) {
         _pause();
     }
 
     function unpause() external override onlyRole(MAINTAINER_ROLE) {
         _unpause();
+    }
+
+    /**
+     * @notice Extract the signer from the permission and signature using EIP-712
+     *
+     * @param permission                        permission input data
+     * @param signature                         signature for the permission
+     * @return address                          address of the signer
+     */
+    function _extractSignerFromPermission(
+        PermissionInput calldata permission,
+        bytes calldata signature
+    ) internal view returns (address) {
+        // Build struct hash
+        bytes32 structHash = keccak256(
+            abi.encode(PERMISSION_TYPEHASH, permission.nonce, keccak256(bytes(permission.grant)), keccak256(abi.encodePacked(permission.fileIds)))
+        );
+
+        return _extractSigner(structHash, signature);
+    }
+
+    function _extractSignerFromRevokePermission(
+        RevokePermissionInput calldata revokePermissionInput,
+        bytes calldata signature
+    ) internal view returns (address) {
+        // Build struct hash
+        bytes32 structHash = keccak256(
+            abi.encode(REVOKE_PERMISSION_TYPEHASH, revokePermissionInput.nonce, revokePermissionInput.permissionId)
+        );
+
+        return _extractSigner(structHash, signature);
+    }
+
+    function _extractSignerFromTrustServer(
+        TrustServerInput calldata trustServerInput,
+        bytes calldata signature
+    ) internal view returns (address) {
+        // Build struct hash
+        bytes32 structHash = keccak256(
+            abi.encode(
+                TRUST_SERVER_TYPEHASH,
+                trustServerInput.nonce,
+                trustServerInput.serverId,
+                keccak256(bytes(trustServerInput.serverUrl))
+            )
+        );
+
+        return _extractSigner(structHash, signature);
+    }
+
+    function _extractSignerFromUntrustServer(
+        UntrustServerInput calldata untrustServerInput,
+        bytes calldata signature
+    ) internal view returns (address) {
+        // Build struct hash
+        bytes32 structHash = keccak256(
+            abi.encode(UNTRUST_SERVER_TYPEHASH, untrustServerInput.nonce, untrustServerInput.serverId)
+        );
+
+        return _extractSigner(structHash, signature);
+    }
+
+    function _extractSigner(bytes32 structHash, bytes calldata signature) internal view returns (address) {
+        bytes32 digest = _hashTypedDataV4(structHash);
+        return digest.recover(signature);
     }
 
     /**
@@ -178,14 +262,36 @@ contract DataPermissionImplementation is
         return _users[user].permissionIds.length();
     }
 
+    function userRevokedPermissionIdsValues(address user) external view returns (uint256[] memory) {
+        return _users[user].revokedPermissionIds.values();
+    }
+
+    function userRevokedPermissionIdsAt(address user, uint256 permissionIndex) external view returns (uint256) {
+        return _users[user].revokedPermissionIds.at(permissionIndex);
+    }
+
+    function userRevokedPermissionIdsLength(address user) external view returns (uint256) {
+        return _users[user].revokedPermissionIds.length();
+    }
+
     /**
      * @notice Returns information about a permission
      *
      * @param permissionId                      id of the permission
      * @return Permission                       permission information
      */
-    function permissions(uint256 permissionId) external view returns (Permission memory) {
-        return _permissions[permissionId];
+    function permissions(uint256 permissionId) external view returns (PermissionInfo memory) {
+        Permission storage permission = _permissions[permissionId];
+        return 
+            PermissionInfo({
+                id: permissionId,
+                grantor: permission.grantor,
+                nonce: permission.nonce,
+                grant: permission.grant,
+                signature: permission.signature,
+                isActive: permission.isActive,
+                fileIds: permission.fileIds.values()
+            });
     }
 
     /**
@@ -220,139 +326,135 @@ contract DataPermissionImplementation is
         bytes calldata signature
     ) external whenNotPaused returns (uint256) {
         address signer = _extractSignerFromPermission(permission, signature);
+         User storage user = _users[signer];
+
+        if (permission.nonce != user.nonce) {
+            revert InvalidNonce(user.nonce, permission.nonce);
+        }
+
+        // Increment user nonce
+        ++user.nonce;
+
         return _addPermission(permission, signature, signer);
-    }
-
-    /**
-     * @notice Extract the signer from the permission and signature using EIP-712
-     *
-     * @param permission                        permission input data
-     * @param signature                         signature for the permission
-     * @return address                          address of the signer
-     */
-    function _extractSignerFromPermission(
-        PermissionInput calldata permission,
-        bytes calldata signature
-    ) internal view returns (address) {
-        // Build struct hash
-        bytes32 structHash = keccak256(
-            abi.encode(PERMISSION_TYPEHASH, permission.nonce, keccak256(bytes(permission.grant)))
-        );
-
-        return _extractSigner(structHash, signature);
-    }
-
-    function _extractSignerFromTrustServer(
-        TrustServerInput calldata trustServerInput,
-        bytes calldata signature
-    ) internal view returns (address) {
-        // Build struct hash
-        bytes32 structHash = keccak256(
-            abi.encode(
-                TRUST_SERVER_TYPEHASH,
-                trustServerInput.nonce,
-                trustServerInput.serverId,
-                keccak256(bytes(trustServerInput.serverUrl))
-            )
-        );
-
-        return _extractSigner(structHash, signature);
-    }
-
-    function _extractSignerFromUntrustServer(
-        UntrustServerInput calldata untrustServerInput,
-        bytes calldata signature
-    ) internal view returns (address) {
-        // Build struct hash
-        bytes32 structHash = keccak256(
-            abi.encode(
-                UNTRUST_SERVER_TYPEHASH,
-                untrustServerInput.nonce,
-                untrustServerInput.serverId
-            )
-        );
-
-        return _extractSigner(structHash, signature);
-    }
-
-    function _extractSigner(
-        bytes32 structHash,
-        bytes calldata signature
-    ) internal view returns (address) {
-        bytes32 digest = _hashTypedDataV4(structHash);
-        return digest.recover(signature);
     }
 
     /**
      * @notice Internal function to add a permission
      *
-     * @param permission                        permission input data
+     * @param permissionInput                   permission input data
      * @param signature                         signature for the permission
-     * @param user                              address of the user
+     * @param signer                            address of the user
      * @return uint256                          id of the created permission
      */
     function _addPermission(
-        PermissionInput calldata permission,
+        PermissionInput calldata permissionInput,
         bytes calldata signature,
-        address user
+        address signer
     ) internal returns (uint256) {
         // Validate grant is not empty
-        if (bytes(permission.grant).length == 0) {
+        if (bytes(permissionInput.grant).length == 0) {
             revert EmptyGrant();
         }
 
         // Check if grant is already used
-        bytes32 grantHash = keccak256(abi.encodePacked(permission.grant));
+        bytes32 grantHash = keccak256(abi.encodePacked(permissionInput.grant));
         if (_grantHashToPermissionId[grantHash] != 0) {
             revert GrantAlreadyUsed();
         }
 
-        // Validate nonce
-        if (permission.nonce != _users[user].nonce) {
-            revert InvalidNonce(_users[user].nonce, permission.nonce);
-        }
-
-        // Validate signature by attempting to extract signer
-        address extractedSigner = _extractSignerFromPermission(permission, signature);
-        if (extractedSigner != user) {
-            revert InvalidSignature();
-        }
-
-        // Increment user nonce
-        ++_users[user].nonce;
-
         // Create permission
         uint256 permissionId = ++permissionsCount;
 
-        _permissions[permissionId] = Permission({
-            user: user,
-            nonce: permission.nonce,
-            grant: permission.grant,
-            signature: signature
-        });
+        Permission storage permission = _permissions[permissionId];
+        permission.grantor = signer;
+        permission.nonce = permissionInput.nonce;
+        permission.grant = permissionInput.grant;
+        permission.signature = signature;
+        permission.isActive = true;
+        
+        uint256 fileIdsLength = permissionInput.fileIds.length;
+        for (uint256 i = 0; i < fileIdsLength;) {
+            uint256 fileId = permissionInput.fileIds[i];
+            address fileOwner = _dataRegistry.files(fileId).ownerAddress;
+            if (fileOwner != signer) {
+                revert NotFileOwner(fileOwner, signer);
+            }
+            permission.fileIds.add(fileId);
+            _filePermissions[fileId].add(permissionId);
+            unchecked {
+                ++i;
+            }
+        }
 
         // Index by grant hash
         _grantHashToPermissionId[grantHash] = permissionId;
 
         // Add to user's permission set
-        _users[user].permissionIds.add(permissionId);
+        _users[signer].permissionIds.add(permissionId);
 
-        emit PermissionAdded(permissionId, user, permission.grant);
+        emit PermissionAdded(permissionId, signer, permissionInput.grant, permissionInput.fileIds);
 
         return permissionId;
+    }
+
+    function isActivePermission(uint256 permissionId) external view returns (bool) {
+        return _permissions[permissionId].isActive;
+    }
+
+    function revokePermission(uint256 permissionId) external whenNotPaused {
+        _revokePermission(permissionId, _msgSender());
+    }
+
+    function revokePermissionWithSignature(RevokePermissionInput calldata revokePermissionInput, bytes calldata signature) external whenNotPaused {
+        address signer = _extractSignerFromRevokePermission(revokePermissionInput, signature);
+
+        User storage user = _users[signer];
+
+        if (revokePermissionInput.nonce != user.nonce) {
+            revert InvalidNonce(user.nonce, revokePermissionInput.nonce);
+        }
+
+        // Increment user nonce
+        ++user.nonce;
+
+        // Revoke permission
+        _revokePermission(revokePermissionInput.permissionId, signer);
+    }
+
+    function _revokePermission(uint256 permissionId, address signer) internal {
+        Permission storage permission = _permissions[permissionId];
+        if (permission.grantor != signer) {
+            revert NotPermissionGrantor(permission.grantor, signer);
+        }
+
+        if (!permission.isActive) {
+            revert InactivePermission(permissionId);
+        }
+        // Mark the permission as inactive
+        permission.isActive = false;
+
+        // Remove from user's permission set
+        User storage user = _users[signer];
+        if (!user.permissionIds.remove(permissionId)) {
+            revert InactivePermission(permissionId);
+        }
+        // Add to user's revoked permission set
+        user.revokedPermissionIds.add(permissionId);
+
+        emit PermissionRevoked(permissionId);
     }
 
     function _trustServer(address serverId, string memory serverUrl, address signer) internal {
         if (serverId == address(0)) {
             revert ZeroAddress();
         }
-        
+
         if (bytes(serverUrl).length == 0) {
             revert EmptyUrl();
         }
 
         Server storage server = _servers[serverId];
-        
+
         // Check if server exists
         if (bytes(server.url).length == 0) {
             // Create server (cannot be changed after creation)
@@ -367,8 +469,8 @@ contract DataPermissionImplementation is
         User storage user = _users[signer];
 
         // Add server to user's set
-        user.serverIds.add(serverId);
-        
+        user.trustedServerIds.add(serverId);
+
         emit ServerTrusted(signer, serverId, serverUrl);
     }
 
@@ -377,7 +479,7 @@ contract DataPermissionImplementation is
         bytes calldata signature
     ) external whenNotPaused {
         address signer = _extractSignerFromTrustServer(trustServerInput, signature);
-        
+
         User storage user = _users[signer];
 
         if (trustServerInput.nonce != user.nonce) {
@@ -386,7 +488,7 @@ contract DataPermissionImplementation is
 
         // Increment user nonce
         ++user.nonce;
-        
+
         _trustServer(trustServerInput.serverId, trustServerInput.serverUrl, signer);
     }
 
@@ -400,15 +502,12 @@ contract DataPermissionImplementation is
         }
 
         User storage user = _users[signer];
-        
-        // Check if server is trusted
-        if (!user.serverIds.contains(serverId)) {
+
+        // Remove server from user's set
+        if (!user.trustedServerIds.remove(serverId)) {
             revert ServerNotTrusted();
         }
 
-        // Remove server from user's set
-        user.serverIds.remove(serverId);
-        
         emit ServerUntrusted(signer, serverId);
     }
 
@@ -422,14 +521,14 @@ contract DataPermissionImplementation is
     ) external whenNotPaused {
         address signer = _extractSignerFromUntrustServer(untrustServerInput, signature);
         User storage user = _users[signer];
-        
+
         if (untrustServerInput.nonce != user.nonce) {
             revert InvalidNonce(user.nonce, untrustServerInput.nonce);
         }
-        
+
         // Increment nonce
         ++user.nonce;
-        
+
         _untrustServer(untrustServerInput.serverId, signer);
     }
 
@@ -440,7 +539,7 @@ contract DataPermissionImplementation is
      * @return address[]                        array of server IDs
      */
     function userServerIdsValues(address user) external view returns (address[] memory) {
-        return _users[user].serverIds.values();
+        return _users[user].trustedServerIds.values();
     }
 
     /**
@@ -451,7 +550,7 @@ contract DataPermissionImplementation is
      * @return address                          server ID
      */
     function userServerIdsAt(address user, uint256 serverIndex) external view returns (address) {
-        return _users[user].serverIds.at(serverIndex);
+        return _users[user].trustedServerIds.at(serverIndex);
     }
 
     /**
@@ -461,7 +560,7 @@ contract DataPermissionImplementation is
      * @return uint256                          number of servers
      */
     function userServerIdsLength(address user) external view returns (uint256) {
-        return _users[user].serverIds.length();
+        return _users[user].trustedServerIds.length();
     }
 
     /**
@@ -472,5 +571,25 @@ contract DataPermissionImplementation is
      */
     function servers(address serverId) external view returns (Server memory) {
         return _servers[serverId];
+    }
+
+    /**
+     * @notice Returns all permission IDs for a specific file
+     *
+     * @param fileId                            id of the file
+     * @return uint256[]                        array of permission IDs
+     */
+    function filePermissionIds(uint256 fileId) external view returns (uint256[] memory) {
+        return _filePermissions[fileId].values();
+    }
+
+    /**
+     * @notice Returns all file IDs associated with a permission
+     *
+     * @param permissionId                      id of the permission
+     * @return uint256[]                        array of file IDs
+     */
+    function permissionFileIds(uint256 permissionId) external view returns (uint256[] memory) {
+        return _permissions[permissionId].fileIds.values();
     }
 }
