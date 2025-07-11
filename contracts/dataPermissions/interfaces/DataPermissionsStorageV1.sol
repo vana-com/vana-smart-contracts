@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-import "./IDataPermission.sol";
+import "./IDataPermissions.sol";
 
-abstract contract DataPermissionStorageV1 is IDataPermission {
+abstract contract DataPermissionsStorageV1 is IDataPermissions {
     address internal _trustedForwarder;
 
     mapping(address userAddress => User) internal _users;

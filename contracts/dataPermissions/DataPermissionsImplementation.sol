@@ -8,16 +8,16 @@ import "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import "./interfaces/DataPermissionStorageV1.sol";
+import "./interfaces/DataPermissionsStorageV1.sol";
 
-contract DataPermissionImplementation is
+contract DataPermissionsImplementation is
     UUPSUpgradeable,
     PausableUpgradeable,
     AccessControlUpgradeable,
     MulticallUpgradeable,
     ERC2771ContextUpgradeable,
     EIP712Upgradeable,
-    DataPermissionStorageV1
+    DataPermissionsStorageV1
 {
     using ECDSA for bytes32;
     using EnumerableSet for EnumerableSet.UintSet;
@@ -25,7 +25,7 @@ contract DataPermissionImplementation is
 
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
 
-    string private constant SIGNING_DOMAIN = "VanaDataWallet";
+    string private constant SIGNING_DOMAIN = "VanaDataPermissions";
     string private constant SIGNATURE_VERSION = "1";
 
     bytes32 private constant PERMISSION_TYPEHASH = keccak256("Permission(uint256 nonce,string grant,uint256[] fileIds)");
@@ -73,13 +73,14 @@ contract DataPermissionImplementation is
      * @param trustedForwarderAddress           address of the trusted forwarder
      * @param ownerAddress                      address of the owner
      */
-    function initialize(address trustedForwarderAddress, address ownerAddress) external initializer {
+    function initialize(address trustedForwarderAddress, address ownerAddress, IDataRegistry dataRegistryAddress) external initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
         __Pausable_init();
         __EIP712_init(SIGNING_DOMAIN, SIGNATURE_VERSION);
 
         _trustedForwarder = trustedForwarderAddress;
+        _dataRegistry = dataRegistryAddress;
 
         _grantRole(DEFAULT_ADMIN_ROLE, ownerAddress);
         _grantRole(MAINTAINER_ROLE, ownerAddress);
