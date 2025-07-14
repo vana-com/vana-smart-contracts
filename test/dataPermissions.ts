@@ -1,7 +1,7 @@
 import chai, { expect, should } from "chai";
 import chaiAsPromised from "chai-as-promised";
 import { ethers, upgrades } from "hardhat";
-import { DataPermissionImplementation, MockDataRegistry } from "../typechain-types";
+import { DataPermissionsImplementation, MockDataRegistry } from "../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 
 chai.use(chaiAsPromised);
@@ -19,7 +19,7 @@ describe("DataPermission", () => {
   let server1: HardhatEthersSigner;
   let server2: HardhatEthersSigner;
 
-  let dataPermission: DataPermissionImplementation;
+  let dataPermission: DataPermissionsImplementation;
   let dataRegistry: MockDataRegistry;
 
   const DEFAULT_ADMIN_ROLE =

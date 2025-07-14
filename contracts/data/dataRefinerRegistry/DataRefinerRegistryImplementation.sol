@@ -23,6 +23,7 @@ contract DataRefinerRegistryImplementation is
         uint256 indexed dlpId,
         string name,
         uint256 indexed schemaId,
+        string schemaDefinitionUrl,
         string refinementInstructionUrl
     );
 
@@ -111,9 +112,33 @@ contract DataRefinerRegistryImplementation is
     function addRefiner(
         uint256 dlpId,
         string calldata name,
-        uint256 schemaId,
+        string calldata schemaDefinitionUrl,
         string calldata refinementInstructionUrl
     ) external override onlyDlpOwner(dlpId) whenNotPaused returns (uint256) {
+        uint256 newRefinerId = ++refinersCount;
+
+        {
+            Refiner storage newRefiner = _refiners[newRefinerId];
+            newRefiner.dlpId = dlpId;
+            newRefiner.owner = msg.sender;
+            newRefiner.name = name;
+            newRefiner.schemaDefinitionUrl = schemaDefinitionUrl;
+            newRefiner.refinementInstructionUrl = refinementInstructionUrl;
+        }
+
+        _dlpRefiners[dlpId].add(newRefinerId);
+
+        emit RefinerAdded(newRefinerId, dlpId, name, 0, schemaDefinitionUrl, refinementInstructionUrl);
+
+        return newRefinerId;
+    }
+
+    function addRefinerWithSchemaId(
+        uint256 dlpId,
+        string calldata name,
+        uint256 schemaId,
+        string calldata refinementInstructionUrl
+    ) external onlyDlpOwner(dlpId) whenNotPaused returns (uint256) {
         if (schemaId == 0 || schemaId > schemasCount) {
             revert InvalidSchemaId(schemaId);
         }
@@ -131,7 +156,7 @@ contract DataRefinerRegistryImplementation is
 
         _dlpRefiners[dlpId].add(newRefinerId);
 
-        emit RefinerAdded(newRefinerId, dlpId, name, schemaId, refinementInstructionUrl);
+        emit RefinerAdded(newRefinerId, dlpId, name, schemaId, _schemas[schemaId].definitionUrl, refinementInstructionUrl);
 
         return newRefinerId;
     }
