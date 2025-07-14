@@ -63,13 +63,13 @@ interface IDataRefinerRegistry {
     /// @notice Adds a refiner to the registry.
     /// @param dlpId The ID of the DLP.
     /// @param name The name of the refiner.
-    /// @param schemaId The ID of the schema associated with the refiner.
+    /// @param schemaDefinitionUrl The URL of the schema definition.
     /// @param refinementInstructionUrl The URL of the refinement Docker image.
     /// @return The ID of the refiner.
     function addRefiner(
         uint256 dlpId,
         string calldata name,
-        uint256 schemaId,
+        string calldata schemaDefinitionUrl,
         string calldata refinementInstructionUrl
     ) external returns (uint256);
 
