@@ -28,25 +28,34 @@ contract DataPermissionsImplementation is
     string private constant SIGNING_DOMAIN = "VanaDataPermissions";
     string private constant SIGNATURE_VERSION = "1";
 
-    bytes32 private constant PERMISSION_TYPEHASH = keccak256("Permission(uint256 nonce,string grant,uint256[] fileIds)");
+    bytes32 private constant PERMISSION_TYPEHASH =
+        keccak256("Permission(uint256 nonce,uint256 applicationId,string grant,uint256[] fileIds)");
     bytes32 private constant REVOKE_PERMISSION_TYPEHASH =
         keccak256("RevokePermission(uint256 nonce,uint256 permissionId)");
     bytes32 private constant TRUST_SERVER_TYPEHASH =
-        keccak256("TrustServer(uint256 nonce,address serverId,string serverUrl)");
-    bytes32 private constant UNTRUST_SERVER_TYPEHASH = keccak256("UntrustServer(uint256 nonce,address serverId)");
+        keccak256("TrustServer(uint256 nonce,bytes serverPublicKey,string serverUrl)");
+    bytes32 private constant UNTRUST_SERVER_TYPEHASH = keccak256("UntrustServer(uint256 nonce,uint256 serverId)");
 
     /**
      * @notice Triggered when a permission has been added
      *
      * @param permissionId                      id of the permission
      * @param user                              address of the user
+     * @param applicationId                     id of the application
      * @param grant                             grant of the permission
      */
-    event PermissionAdded(uint256 indexed permissionId, address indexed user, string grant, uint256[] fileIds);
+    event PermissionAdded(
+        uint256 indexed permissionId,
+        address indexed user,
+        uint256 indexed applicationId,
+        string grant,
+        uint256[] fileIds
+    );
     event PermissionRevoked(uint256 indexed permissionId);
-    event ServerAdded(address indexed serverId, string url);
-    event ServerTrusted(address indexed user, address indexed serverId, string serverUrl);
-    event ServerUntrusted(address indexed user, address indexed serverId);
+    event ServerRegistered(uint256 indexed serverId, address indexed serverAddress, string url);
+    event ServerTrusted(address indexed user, uint256 indexed serverId, string serverUrl);
+    event ServerUntrusted(address indexed user, uint256 indexed serverId);
+    event ApplicationRegistered(uint256 indexed applicationId, address indexed applicationAddress);
 
     error InvalidNonce(uint256 expectedNonce, uint256 providedNonce);
     error GrantAlreadyUsed();
@@ -54,10 +63,13 @@ contract DataPermissionsImplementation is
     error EmptyGrant();
     error EmptyUrl();
     error ZeroAddress();
+    error EmptyPublicKey();
     error ServerUrlMismatch(string existingUrl, string providedUrl);
     error ServerNotFound();
     error ServerAlreadyRegistered();
     error ServerNotTrusted();
+    error ApplicationNotFound();
+    error ApplicationAlreadyRegistered();
     error InactivePermission(uint256 permissionId);
     error NotPermissionGrantor(address permissionOwner, address requestor);
     error NotFileOwner(address fileOwner, address requestor);
@@ -73,7 +85,11 @@ contract DataPermissionsImplementation is
      * @param trustedForwarderAddress           address of the trusted forwarder
      * @param ownerAddress                      address of the owner
      */
-    function initialize(address trustedForwarderAddress, address ownerAddress, IDataRegistry dataRegistryAddress) external initializer {
+    function initialize(
+        address trustedForwarderAddress,
+        address ownerAddress,
+        IDataRegistry dataRegistryAddress
+    ) external initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
         __Pausable_init();
@@ -167,6 +183,73 @@ contract DataPermissionsImplementation is
     }
 
     /**
+     * @notice Derive address from public key
+     */
+    function _deriveAddress(bytes memory publicKey) internal pure returns (address) {
+        if (publicKey.length != 64) {
+            revert EmptyPublicKey();
+        }
+        return address(uint160(uint256(keccak256(publicKey))));
+    }
+
+    /**
+     * @notice Register a new application
+     */
+    function registerApplication(bytes memory publicKey) external whenNotPaused returns (uint256) {
+        if (publicKey.length == 0) {
+            revert EmptyPublicKey();
+        }
+
+        address applicationAddress = _deriveAddress(publicKey);
+
+        if (_applicationAddressToId[applicationAddress] != 0) {
+            revert ApplicationAlreadyRegistered();
+        }
+
+        uint256 applicationId = ++applicationsCount;
+
+        Application storage application = _applications[applicationId];
+        application.publicKey = publicKey;
+
+        _applicationAddressToId[applicationAddress] = applicationId;
+
+        emit ApplicationRegistered(applicationId, applicationAddress);
+
+        return applicationId;
+    }
+
+    /**
+     * @notice Register a new server
+     */
+    function registerServer(bytes memory publicKey, string memory url) external whenNotPaused returns (uint256) {
+        if (publicKey.length == 0) {
+            revert EmptyPublicKey();
+        }
+
+        if (bytes(url).length == 0) {
+            revert EmptyUrl();
+        }
+
+        address serverAddress = _deriveAddress(publicKey);
+
+        if (_serverAddressToId[serverAddress] != 0) {
+            revert ServerAlreadyRegistered();
+        }
+
+        uint256 serverId = ++serversCount;
+
+        Server storage server = _servers[serverId];
+        server.publicKey = publicKey;
+        server.url = url;
+
+        _serverAddressToId[serverAddress] = serverId;
+
+        emit ServerRegistered(serverId, serverAddress, url);
+
+        return serverId;
+    }
+
+    /**
      * @notice Extract the signer from the permission and signature using EIP-712
      *
      * @param permission                        permission input data
@@ -179,7 +262,13 @@ contract DataPermissionsImplementation is
     ) internal view returns (address) {
         // Build struct hash
         bytes32 structHash = keccak256(
-            abi.encode(PERMISSION_TYPEHASH, permission.nonce, keccak256(bytes(permission.grant)), keccak256(abi.encodePacked(permission.fileIds)))
+            abi.encode(
+                PERMISSION_TYPEHASH,
+                permission.nonce,
+                permission.applicationId,
+                keccak256(bytes(permission.grant)),
+                keccak256(abi.encodePacked(permission.fileIds))
+            )
         );
 
         return _extractSigner(structHash, signature);
@@ -206,7 +295,7 @@ contract DataPermissionsImplementation is
             abi.encode(
                 TRUST_SERVER_TYPEHASH,
                 trustServerInput.nonce,
-                trustServerInput.serverId,
+                keccak256(trustServerInput.serverPublicKey),
                 keccak256(bytes(trustServerInput.serverUrl))
             )
         );
@@ -282,11 +371,12 @@ contract DataPermissionsImplementation is
      */
     function permissions(uint256 permissionId) external view returns (PermissionInfo memory) {
         Permission storage permission = _permissions[permissionId];
-        return 
+        return
             PermissionInfo({
                 id: permissionId,
                 grantor: permission.grantor,
                 nonce: permission.nonce,
+                applicationId: permission.applicationId,
                 grant: permission.grant,
                 signature: permission.signature,
                 isActive: permission.isActive,
@@ -326,7 +416,7 @@ contract DataPermissionsImplementation is
         bytes calldata signature
     ) external whenNotPaused returns (uint256) {
         address signer = _extractSignerFromPermission(permission, signature);
-         User storage user = _users[signer];
+        User storage user = _users[signer];
 
         if (permission.nonce != user.nonce) {
             revert InvalidNonce(user.nonce, permission.nonce);
@@ -356,6 +446,11 @@ contract DataPermissionsImplementation is
             revert EmptyGrant();
         }
 
+        // Validate application exists
+        if (permissionInput.applicationId == 0 || permissionInput.applicationId > applicationsCount) {
+            revert ApplicationNotFound();
+        }
+
         // Check if grant is already used
         bytes32 grantHash = keccak256(abi.encodePacked(permissionInput.grant));
         if (_grantHashToPermissionId[grantHash] != 0) {
@@ -368,12 +463,13 @@ contract DataPermissionsImplementation is
         Permission storage permission = _permissions[permissionId];
         permission.grantor = signer;
         permission.nonce = permissionInput.nonce;
+        permission.applicationId = permissionInput.applicationId;
         permission.grant = permissionInput.grant;
         permission.signature = signature;
         permission.isActive = true;
-        
+
         uint256 fileIdsLength = permissionInput.fileIds.length;
-        for (uint256 i = 0; i < fileIdsLength;) {
+        for (uint256 i = 0; i < fileIdsLength; ) {
             uint256 fileId = permissionInput.fileIds[i];
             address fileOwner = _dataRegistry.files(fileId).ownerAddress;
             if (fileOwner != signer) {
@@ -392,7 +488,16 @@ contract DataPermissionsImplementation is
         // Add to user's permission set
         _users[signer].permissionIds.add(permissionId);
 
-        emit PermissionAdded(permissionId, signer, permissionInput.grant, permissionInput.fileIds);
+        // Add to application's permission set
+        _applicationPermissions[permissionInput.applicationId].add(permissionId);
+
+        emit PermissionAdded(
+            permissionId,
+            signer,
+            permissionInput.applicationId,
+            permissionInput.grant,
+            permissionInput.fileIds
+        );
 
         return permissionId;
     }
@@ -405,7 +510,10 @@ contract DataPermissionsImplementation is
         _revokePermission(permissionId, _msgSender());
     }
 
-    function revokePermissionWithSignature(RevokePermissionInput calldata revokePermissionInput, bytes calldata signature) external whenNotPaused {
+    function revokePermissionWithSignature(
+        RevokePermissionInput calldata revokePermissionInput,
+        bytes calldata signature
+    ) external whenNotPaused {
         address signer = _extractSignerFromRevokePermission(revokePermissionInput, signature);
 
         User storage user = _users[signer];
@@ -444,26 +552,36 @@ contract DataPermissionsImplementation is
         emit PermissionRevoked(permissionId);
     }
 
-    function _trustServer(address serverId, string memory serverUrl, address signer) internal {
-        if (serverId == address(0)) {
-            revert ZeroAddress();
+    function _trustServer(bytes memory serverPublicKey, string memory serverUrl, address signer) internal {
+        if (serverPublicKey.length == 0) {
+            revert EmptyPublicKey();
         }
 
         if (bytes(serverUrl).length == 0) {
             revert EmptyUrl();
         }
 
-        Server storage server = _servers[serverId];
+        address serverAddress = _deriveAddress(serverPublicKey);
+        uint256 serverId = _serverAddressToId[serverAddress];
 
         // Check if server exists
-        if (bytes(server.url).length == 0) {
-            // Create server (cannot be changed after creation)
-            server.url = serverUrl;
-            emit ServerAdded(serverId, serverUrl);
-        }
+        if (serverId == 0) {
+            // Register server automatically
+            serverId = ++serversCount;
 
-        if (keccak256(bytes(server.url)) != keccak256(bytes(serverUrl))) {
-            revert ServerUrlMismatch(server.url, serverUrl);
+            Server storage server = _servers[serverId];
+            server.publicKey = serverPublicKey;
+            server.url = serverUrl;
+
+            _serverAddressToId[serverAddress] = serverId;
+
+            emit ServerRegistered(serverId, serverAddress, serverUrl);
+        } else {
+            // Verify URL matches
+            Server storage existingServer = _servers[serverId];
+            if (keccak256(bytes(existingServer.url)) != keccak256(bytes(serverUrl))) {
+                revert ServerUrlMismatch(existingServer.url, serverUrl);
+            }
         }
 
         User storage user = _users[signer];
@@ -489,16 +607,16 @@ contract DataPermissionsImplementation is
         // Increment user nonce
         ++user.nonce;
 
-        _trustServer(trustServerInput.serverId, trustServerInput.serverUrl, signer);
+        _trustServer(trustServerInput.serverPublicKey, trustServerInput.serverUrl, signer);
     }
 
-    function trustServer(address serverId, string memory serverUrl) external whenNotPaused {
-        _trustServer(serverId, serverUrl, _msgSender());
+    function trustServer(bytes memory serverPublicKey, string memory serverUrl) external whenNotPaused {
+        _trustServer(serverPublicKey, serverUrl, _msgSender());
     }
 
-    function _untrustServer(address serverId, address signer) internal {
-        if (serverId == address(0)) {
-            revert ZeroAddress();
+    function _untrustServer(uint256 serverId, address signer) internal {
+        if (serverId == 0) {
+            revert ServerNotFound();
         }
 
         User storage user = _users[signer];
@@ -511,7 +629,7 @@ contract DataPermissionsImplementation is
         emit ServerUntrusted(signer, serverId);
     }
 
-    function untrustServer(address serverId) external whenNotPaused {
+    function untrustServer(uint256 serverId) external whenNotPaused {
         _untrustServer(serverId, _msgSender());
     }
 
@@ -536,9 +654,9 @@ contract DataPermissionsImplementation is
      * @notice Returns all server IDs trusted by a user
      *
      * @param user                              address of the user
-     * @return address[]                        array of server IDs
+     * @return uint256[]                        array of server IDs
      */
-    function userServerIdsValues(address user) external view returns (address[] memory) {
+    function userServerIdsValues(address user) external view returns (uint256[] memory) {
         return _users[user].trustedServerIds.values();
     }
 
@@ -547,9 +665,9 @@ contract DataPermissionsImplementation is
      *
      * @param user                              address of the user
      * @param serverIndex                       index of the server
-     * @return address                          server ID
+     * @return uint256                          server ID
      */
-    function userServerIdsAt(address user, uint256 serverIndex) external view returns (address) {
+    function userServerIdsAt(address user, uint256 serverIndex) external view returns (uint256) {
         return _users[user].trustedServerIds.at(serverIndex);
     }
 
@@ -567,10 +685,52 @@ contract DataPermissionsImplementation is
      * @notice Returns information about a server
      *
      * @param serverId                          id of the server
-     * @return Server                           server information
+     * @return ServerInfo                       server information
      */
-    function servers(address serverId) external view returns (Server memory) {
-        return _servers[serverId];
+    function servers(uint256 serverId) public view returns (ServerInfo memory) {
+        Server storage server = _servers[serverId];
+        return
+            ServerInfo({
+                publicKey: server.publicKey,
+                derivedAddress: server.publicKey.length > 0 ? _deriveAddress(server.publicKey) : address(0),
+                url: server.url
+            });
+    }
+
+    /**
+     * @notice Returns information about a server by its derived address
+     *
+     * @param derivedAddress                    derived address of the server
+     * @return ServerInfo                       server information
+     */
+    function serverByAddress(address derivedAddress) external view returns (ServerInfo memory) {
+        return servers(_serverAddressToId[derivedAddress]);
+    }
+
+    /**
+     * @notice Returns information about an application
+     *
+     * @param applicationId                     id of the application
+     * @return ApplicationInfo                  application information
+     */
+    function applications(uint256 applicationId) public view returns (ApplicationInfo memory) {
+        Application storage application = _applications[applicationId];
+        return
+            ApplicationInfo({
+                publicKey: application.publicKey,
+                derivedAddress: application.publicKey.length > 0 ? _deriveAddress(application.publicKey) : address(0),
+                permissionIds: application.permissionIds.values()
+            });
+    }
+
+    /**
+     * @notice Returns information about an application by its derived address
+     *
+     * @param derivedAddress                    derived address of the application
+     * @return ApplicationInfo                  application information
+     */
+    function applicationByAddress(address derivedAddress) external view returns (ApplicationInfo memory) {
+        return applications(_applicationAddressToId[derivedAddress]);
     }
 
     /**
@@ -591,5 +751,15 @@ contract DataPermissionsImplementation is
      */
     function permissionFileIds(uint256 permissionId) external view returns (uint256[] memory) {
         return _permissions[permissionId].fileIds.values();
+    }
+
+    /**
+     * @notice Returns all permission IDs for an application
+     *
+     * @param applicationId                     id of the application
+     * @return uint256[]                        array of permission IDs
+     */
+    function applicationPermissionIds(uint256 applicationId) external view returns (uint256[] memory) {
+        return _applicationPermissions[applicationId].values();
     }
 }

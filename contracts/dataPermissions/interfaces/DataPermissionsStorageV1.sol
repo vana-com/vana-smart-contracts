@@ -13,10 +13,17 @@ abstract contract DataPermissionsStorageV1 is IDataPermissions {
 
     mapping(bytes32 grantHash => uint256 permissionId) internal _grantHashToPermissionId;
 
-    mapping(address serverId => Server server) internal _servers;
-    
+    uint256 public serversCount;
+    mapping(uint256 serverId => Server) internal _servers;
+    mapping(address serverAddress => uint256 serverId) internal _serverAddressToId;
+
+    uint256 public applicationsCount;
+    mapping(uint256 applicationId => Application) internal _applications;
+    mapping(address applicationAddress => uint256 applicationId) internal _applicationAddressToId;
+
     IDataRegistry internal _dataRegistry;
 
-    // File tracking
     mapping(uint256 fileId => EnumerableSet.UintSet permissionIds) internal _filePermissions;
+
+    mapping(uint256 applicationId => EnumerableSet.UintSet permissionIds) internal _applicationPermissions;
 }

@@ -8,17 +8,25 @@ interface IDataPermissions {
     struct User {
         uint256 nonce;
         EnumerableSet.UintSet permissionIds;
-        EnumerableSet.AddressSet trustedServerIds;
+        EnumerableSet.UintSet trustedServerIds;
         EnumerableSet.UintSet revokedPermissionIds;
     }
 
     struct Application {
+        bytes publicKey;
         EnumerableSet.UintSet permissionIds;
+    }
+
+    struct ApplicationInfo {
+        bytes publicKey;
+        address derivedAddress;
+        uint256[] permissionIds;
     }
 
     struct Permission {
         address grantor;
         uint256 nonce;
+        uint256 applicationId;
         string grant;
         bytes signature;
         bool isActive;
@@ -29,6 +37,7 @@ interface IDataPermissions {
         uint256 id;
         address grantor;
         uint256 nonce;
+        uint256 applicationId;
         string grant;
         bytes signature;
         bool isActive;
@@ -36,11 +45,19 @@ interface IDataPermissions {
     }
 
     struct Server {
+        bytes publicKey;
+        string url;
+    }
+
+    struct ServerInfo {
+        bytes publicKey;
+        address derivedAddress;
         string url;
     }
 
     struct PermissionInput {
         uint256 nonce;
+        uint256 applicationId;
         string grant;
         uint256[] fileIds;
     }
@@ -52,13 +69,22 @@ interface IDataPermissions {
 
     struct TrustServerInput {
         uint256 nonce;
-        address serverId;
+        bytes serverPublicKey;
         string serverUrl;
     }
 
     struct UntrustServerInput {
         uint256 nonce;
-        address serverId;
+        uint256 serverId;
+    }
+
+    struct RegisterApplicationInput {
+        bytes publicKey;
+    }
+
+    struct RegisterServerInput {
+        bytes publicKey;
+        string url;
     }
 
     function version() external pure returns (uint256);
