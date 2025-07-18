@@ -1,10 +1,9 @@
-import { deployments, ethers, upgrades } from "hardhat";
+import { deployments, ethers } from "hardhat";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { DeployFunction } from "hardhat-deploy/types";
 import { verifyContract } from "../helpers";
 
-const implementationContractName = "DataPermissionsImplementation";
-const previousImplementationContractName = "DataPermissionsImplementationOld";
+const implementationContractName = "DataPortabilityGranteesImplementation";
 
 const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const [deployer] = await ethers.getSigners();
@@ -16,11 +15,6 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   console.log(`**************************************************************`);
   console.log(`**************************************************************`);
   console.log(`********** Deploy new ${implementationContractName} **********`);
-
-  // await upgrades.validateUpgrade(
-  //   await ethers.getContractFactory(previousImplementationContractName),
-  //   await ethers.getContractFactory(implementationContractName),
-  // );
 
   const implementationDeploy = await deployments.deploy(
     implementationContractName,
@@ -37,4 +31,4 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 };
 
 export default func;
-func.tags = ["DataPermissionsImplementation"];
+func.tags = ["DataPortabilityGranteesImplementation"];
