@@ -1,0 +1,4406 @@
+import chai, { expect, should } from "chai";
+import chaiAsPromised from "chai-as-promised";
+import { ethers, upgrades } from "hardhat";
+import {
+  DataPortabilityPermissionsImplementation,
+  DataPortabilityServersImplementation,
+  DataPortabilityGranteesImplementation,
+  MockDataRegistry,
+} from "../typechain-types";
+import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+
+chai.use(chaiAsPromised);
+should();
+
+describe("DataPortabilityPermissions", () => {
+  let trustedForwarder: HardhatEthersSigner;
+  let deployer: HardhatEthersSigner;
+  let owner: HardhatEthersSigner;
+  let maintainer: HardhatEthersSigner;
+  let testUser1: HardhatEthersSigner;
+  let testUser2: HardhatEthersSigner;
+  let user3: HardhatEthersSigner;
+  let sponsor: HardhatEthersSigner;
+  let testServer1: HardhatEthersSigner;
+  let testServer2: HardhatEthersSigner;
+
+  let dataPermission: DataPortabilityPermissionsImplementation;
+  let dataRegistry: MockDataRegistry;
+  let testServersContract: DataPortabilityServersImplementation;
+  let granteesContract: DataPortabilityGranteesImplementation;
+
+  const DEFAULT_ADMIN_ROLE =
+    "0x0000000000000000000000000000000000000000000000000000000000000000";
+  const MAINTAINER_ROLE = ethers.keccak256(
+    ethers.toUtf8Bytes("MAINTAINER_ROLE"),
+  );
+
+  const deploy = async () => {
+    [
+      trustedForwarder,
+      deployer,
+      owner,
+      maintainer,
+      sponsor,
+      testUser1,
+      testUser2,
+      user3,
+      testServer1,
+      testServer2,
+    ] = await ethers.getSigners();
+
+    // Deploy MockDataRegistry
+    const MockDataRegistry =
+      await ethers.getContractFactory("MockDataRegistry");
+    dataRegistry = await MockDataRegistry.deploy();
+    await dataRegistry.waitForDeployment();
+
+    // Deploy mock servers contract
+    const MockServersContract = await ethers.getContractFactory(
+      "DataPortabilityServersImplementation",
+    );
+    const testServersContractDeploy = await upgrades.deployProxy(
+      MockServersContract,
+      [trustedForwarder.address, owner.address],
+      {
+        kind: "uups",
+      },
+    );
+    testServersContract = await ethers.getContractAt(
+      "DataPortabilityServersImplementation",
+      testServersContractDeploy.target,
+    );
+
+    // Deploy mock grantees contract
+    const MockGranteesContract = await ethers.getContractFactory(
+      "DataPortabilityGranteesImplementation",
+    );
+    const granteesContractDeploy = await upgrades.deployProxy(
+      MockGranteesContract,
+      [trustedForwarder.address, owner.address],
+      {
+        kind: "uups",
+      },
+    );
+    granteesContract = await ethers.getContractAt(
+      "DataPortabilityGranteesImplementation",
+      granteesContractDeploy.target,
+    );
+
+    const dataPermissionDeploy = await upgrades.deployProxy(
+      await ethers.getContractFactory(
+        "DataPortabilityPermissionsImplementation",
+      ),
+      [
+        trustedForwarder.address,
+        owner.address,
+        await dataRegistry.getAddress(),
+        await testServersContract.getAddress(),
+        await granteesContract.getAddress(),
+      ],
+      {
+        kind: "uups",
+      },
+    );
+
+    dataPermission = await ethers.getContractAt(
+      "DataPortabilityPermissionsImplementation",
+      dataPermissionDeploy.target,
+    );
+
+    await dataPermission
+      .connect(owner)
+      .grantRole(MAINTAINER_ROLE, maintainer.address);
+
+    // Grant PERMISSION_MANAGER_ROLE to main contract so it can manage grantee permissions
+    const PERMISSION_MANAGER_ROLE = ethers.keccak256(
+      ethers.toUtf8Bytes("PERMISSION_MANAGER_ROLE"),
+    );
+    await granteesContract
+      .connect(owner)
+      .grantRole(PERMISSION_MANAGER_ROLE, await dataPermission.getAddress());
+  };
+
+  describe("Setup", () => {
+    beforeEach(async () => {
+      await deploy();
+    });
+
+    it("should have correct params after deploy", async function () {
+      (await dataPermission.hasRole(DEFAULT_ADMIN_ROLE, owner)).should.eq(true);
+      (await dataPermission.hasRole(MAINTAINER_ROLE, owner)).should.eq(true);
+      (await dataPermission.hasRole(MAINTAINER_ROLE, maintainer)).should.eq(
+        true,
+      );
+      (await dataPermission.version()).should.eq(2);
+    });
+
+    it("should grant roles", async function () {
+      await dataPermission
+        .connect(owner)
+        .grantRole(MAINTAINER_ROLE, testUser1.address).should.not.be.rejected;
+
+      await dataPermission
+        .connect(owner)
+        .grantRole(DEFAULT_ADMIN_ROLE, testUser1.address).should.be.fulfilled;
+
+      await dataPermission
+        .connect(testUser1)
+        .revokeRole(DEFAULT_ADMIN_ROLE, owner.address);
+
+      await dataPermission
+        .connect(owner)
+        .grantRole(DEFAULT_ADMIN_ROLE, testUser2.address)
+        .should.rejectedWith(
+          `AccessControlUnauthorizedAccount("${owner.address}", "${DEFAULT_ADMIN_ROLE}`,
+        );
+
+      await dataPermission
+        .connect(testUser1)
+        .grantRole(DEFAULT_ADMIN_ROLE, testUser2.address).should.be.fulfilled;
+    });
+  });
+
+  describe("AddPermission", () => {
+    beforeEach(async () => {
+      await deploy();
+    });
+
+    const createPermissionSignature = async (
+      permission: {
+        nonce: bigint;
+        granteeId: bigint;
+        grant: string;
+        fileIds: bigint[];
+      },
+      signer: HardhatEthersSigner,
+    ) => {
+      const domain = {
+        name: "VanaDataPortabilityPermissions",
+        version: "1",
+        chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
+        verifyingContract: await dataPermission.getAddress(),
+      };
+
+      const types = {
+        Permission: [
+          { name: "nonce", type: "uint256" },
+          { name: "granteeId", type: "uint256" },
+          { name: "grant", type: "string" },
+          { name: "fileIds", type: "uint256[]" },
+        ],
+      };
+
+      const value = {
+        nonce: permission.nonce,
+        granteeId: permission.granteeId,
+        grant: permission.grant,
+        fileIds: permission.fileIds,
+      };
+
+      return await signer.signTypedData(domain, types, value);
+    };
+
+    const createRevokePermissionSignature = async (
+      revokePermissionInput: {
+        nonce: bigint;
+        permissionId: bigint;
+      },
+      signer: HardhatEthersSigner,
+    ) => {
+      const domain = {
+        name: "VanaDataPortabilityPermissions",
+        version: "1",
+        chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
+        verifyingContract: await dataPermission.getAddress(),
+      };
+
+      const types = {
+        RevokePermission: [
+          { name: "nonce", type: "uint256" },
+          { name: "permissionId", type: "uint256" },
+        ],
+      };
+
+      const value = {
+        nonce: revokePermissionInput.nonce,
+        permissionId: revokePermissionInput.permissionId,
+      };
+
+      return await signer.signTypedData(domain, types, value);
+    };
+
+    it("should add a valid permission and emit event", async function () {
+      // First register a grantee
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+      const permission = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant1",
+        fileIds: [],
+      };
+
+      // User1 should start with nonce 0
+      (await dataPermission.userNonce(testUser1.address)).should.eq(0);
+
+      const signature = await createPermissionSignature(permission, testUser1);
+
+      const tx = await dataPermission
+        .connect(testUser1)
+        .addPermission(permission, signature);
+
+      // Verify event was emitted
+      await expect(tx).to.emit(dataPermission, "PermissionAdded");
+
+      // Verify permissions count increased
+      (await dataPermission.permissionsCount()).should.eq(1);
+
+      // Verify nonce increased
+      (await dataPermission.userNonce(testUser1.address)).should.eq(1);
+
+      // Verify permission was stored
+      const storedPermission = await dataPermission.permission(1);
+      storedPermission.grantor.should.eq(testUser1.address);
+      storedPermission.nonce.should.eq(0);
+      storedPermission.granteeId.should.eq(1);
+      storedPermission.grant.should.eq(permission.grant);
+      storedPermission.signature.should.eq(signature);
+
+      // Verify it's indexed by user
+      (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
+        1,
+      );
+      (await dataPermission.userPermissionIdsAt(testUser1.address, 0)).should.eq(
+        1n,
+      );
+
+      // Test the userPermissionIdsValues function
+      const userPermissionIds = await dataPermission.userPermissionIdsValues(
+        testUser1.address,
+      );
+      userPermissionIds.should.deep.eq([1n]);
+
+      // Verify grant hash mapping
+      (await dataPermission.permissionIdByGrant(permission.grant)).should.eq(1);
+    });
+
+    it("should reject permission with incorrect nonce", async function () {
+      // First register a grantee
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+      const permission = {
+        nonce: 1n, // Wrong nonce - should be 0
+        granteeId: 1n,
+        grant: "ipfs://grant1",
+        fileIds: [],
+      };
+
+      const signature = await createPermissionSignature(permission, testUser1);
+
+      await expect(
+        dataPermission.connect(sponsor).addPermission(permission, signature),
+      )
+        .to.be.revertedWithCustomError(dataPermission, "InvalidNonce")
+        .withArgs(0, 1); // expected, provided
+
+      // Nonce should remain unchanged
+      (await dataPermission.userNonce(testUser1.address)).should.eq(0);
+    });
+
+    it("should reject permission with empty grant", async function () {
+      // First register a grantee
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+      const permission = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "", // Empty grant
+        fileIds: [],
+      };
+
+      const signature = await createPermissionSignature(permission, testUser1);
+
+      await expect(
+        dataPermission.connect(sponsor).addPermission(permission, signature),
+      ).to.be.revertedWithCustomError(dataPermission, "EmptyGrant");
+
+      // Nonce should remain unchanged
+      (await dataPermission.userNonce(testUser1.address)).should.eq(0);
+    });
+
+    it("should reject permission with already used grant", async function () {
+      // First register a grantee
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+      const permission1 = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant1",
+        fileIds: [],
+      };
+
+      const permission2 = {
+        nonce: 1n,
+        granteeId: 1n,
+        grant: "ipfs://grant1", // Same grant
+        fileIds: [],
+      };
+
+      const signature1 = await createPermissionSignature(permission1, testUser1);
+      const signature2 = await createPermissionSignature(permission2, testUser1);
+
+      // Add first permission
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission1, signature1);
+
+      // Try to reuse same grant - should fail
+      await expect(
+        dataPermission.connect(sponsor).addPermission(permission2, signature2),
+      ).to.be.revertedWithCustomError(dataPermission, "GrantAlreadyUsed");
+
+      // Verify only one permission was added
+      (await dataPermission.permissionsCount()).should.eq(1);
+      (await dataPermission.userNonce(testUser1.address)).should.eq(1);
+    });
+
+    it("should add multiple permissions for the same user with sequential nonces", async function () {
+      // First register a grantee
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+      const permission1 = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant1",
+        fileIds: [],
+      };
+
+      const permission2 = {
+        nonce: 1n,
+        granteeId: 1n,
+        grant: "ipfs://grant2",
+        fileIds: [],
+      };
+
+      const signature1 = await createPermissionSignature(permission1, testUser1);
+      const signature2 = await createPermissionSignature(permission2, testUser1);
+
+      const tx1 = await dataPermission
+        .connect(sponsor)
+        .addPermission(permission1, signature1);
+      const tx2 = await dataPermission
+        .connect(sponsor)
+        .addPermission(permission2, signature2);
+
+      // Verify events were emitted
+      await expect(tx1)
+        .to.emit(dataPermission, "PermissionAdded")
+        .withArgs(1, testUser1.address, permission1.granteeId, permission1.grant, []);
+
+      await expect(tx2)
+        .to.emit(dataPermission, "PermissionAdded")
+        .withArgs(2, testUser1.address, permission2.granteeId, permission2.grant, []);
+
+      // Verify permissions count increased
+      (await dataPermission.permissionsCount()).should.eq(2);
+
+      // Verify nonce increased to 2
+      (await dataPermission.userNonce(testUser1.address)).should.eq(2);
+
+      // Verify both permissions are indexed by user
+      (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
+        2,
+      );
+      (await dataPermission.userPermissionIdsAt(testUser1.address, 0)).should.eq(
+        1n,
+      );
+      (await dataPermission.userPermissionIdsAt(testUser1.address, 1)).should.eq(
+        2n,
+      );
+
+      // Test userPermissionIdsValues
+      const userPermissionIds = await dataPermission.userPermissionIdsValues(
+        testUser1.address,
+      );
+      userPermissionIds.should.deep.eq([1n, 2n]);
+
+      // Verify grant hash mappings
+      (await dataPermission.permissionIdByGrant(permission1.grant)).should.eq(
+        1,
+      );
+      (await dataPermission.permissionIdByGrant(permission2.grant)).should.eq(
+        2,
+      );
+    });
+
+    it("should add permissions for different users independently", async function () {
+      // First register grantees for both users
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+      await granteesContract
+        .connect(testUser2)
+        .registerGrantee(testUser2.address, testUser1.address, "publicKey2");
+
+      const permission1 = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant1",
+        fileIds: [],
+      };
+
+      const permission2 = {
+        nonce: 0n, // Each user starts with nonce 0
+        granteeId: 2n,
+        grant: "ipfs://grant2",
+        fileIds: [],
+      };
+
+      const signature1 = await createPermissionSignature(permission1, testUser1);
+      const signature2 = await createPermissionSignature(permission2, testUser2);
+
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission1, signature1);
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission2, signature2);
+
+      // Verify each user has their nonce incremented independently
+      (await dataPermission.userNonce(testUser1.address)).should.eq(1);
+      (await dataPermission.userNonce(testUser2.address)).should.eq(1);
+
+      // Verify each user has one permission
+      (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
+        1,
+      );
+      (await dataPermission.userPermissionIdsLength(testUser2.address)).should.eq(
+        1,
+      );
+
+      // Verify stored permissions have correct user fields
+      const storedPermission1 = await dataPermission.permission(1);
+      const storedPermission2 = await dataPermission.permission(2);
+      storedPermission1.grantor.should.eq(testUser1.address);
+      storedPermission2.grantor.should.eq(testUser2.address);
+    });
+
+    it("should assign sequential IDs to permissions", async function () {
+      // First register grantees for all users
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+      await granteesContract
+        .connect(testUser2)
+        .registerGrantee(testUser2.address, user3.address, "publicKey2");
+      await granteesContract
+        .connect(user3)
+        .registerGrantee(user3.address, maintainer.address, "publicKey3");
+
+      const permissions = [
+        { nonce: 0n, granteeId: 1n, grant: "ipfs://grant1", fileIds: [] },
+        { nonce: 0n, granteeId: 2n, grant: "ipfs://grant2", fileIds: [] },
+        { nonce: 0n, granteeId: 3n, grant: "ipfs://grant3", fileIds: [] },
+      ];
+
+      const users = [testUser1, testUser2, user3];
+
+      for (let i = 0; i < permissions.length; i++) {
+        const signature = await createPermissionSignature(
+          permissions[i],
+          users[i],
+        );
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permissions[i], signature);
+      }
+
+      // Verify permissions count
+      (await dataPermission.permissionsCount()).should.eq(3);
+
+      // Verify all permissions are stored with correct IDs (starting from 1)
+      for (let i = 0; i < permissions.length; i++) {
+        const storedPermission = await dataPermission.permission(i + 1);
+        storedPermission.grantor.should.eq(users[i].address);
+        storedPermission.grant.should.eq(permissions[i].grant);
+      }
+    });
+
+    it("should return empty permission for non-existent ID", async function () {
+      const permission = await dataPermission.permission(999);
+      permission.grantor.should.eq(ethers.ZeroAddress);
+      permission.nonce.should.eq(0);
+      permission.grant.should.eq("");
+      permission.signature.should.eq("0x");
+    });
+
+    it("should return 0 for non-existent grant", async function () {
+      const permissionId =
+        await dataPermission.permissionIdByGrant("ipfs://nonexistent");
+      permissionId.should.eq(0);
+    });
+
+    it("should revert when accessing out of bounds permission indices", async function () {
+      // First register a grantee
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+      const permission = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant1",
+        fileIds: [],
+      };
+
+      const signature = await createPermissionSignature(permission, testUser1);
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission, signature);
+
+      // Should revert when accessing index 1 (only index 0 exists)
+      await expect(dataPermission.userPermissionIdsAt(testUser1.address, 1)).to.be
+        .rejected;
+
+      // Should revert for non-existent user
+      await expect(dataPermission.userPermissionIdsAt(testUser2.address, 0)).to.be
+        .rejected;
+    });
+
+    it("should track nonces correctly across multiple users", async function () {
+      // First register grantees for both users
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+      await granteesContract
+        .connect(testUser2)
+        .registerGrantee(testUser2.address, testUser1.address, "publicKey2");
+
+      const permission1 = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant1",
+        fileIds: [],
+      };
+
+      const permission2 = {
+        nonce: 0n,
+        granteeId: 2n,
+        grant: "ipfs://grant2",
+        fileIds: [],
+      };
+
+      // Both users start with nonce 0
+      (await dataPermission.userNonce(testUser1.address)).should.eq(0);
+      (await dataPermission.userNonce(testUser2.address)).should.eq(0);
+
+      const signature1 = await createPermissionSignature(permission1, testUser1);
+      const signature2 = await createPermissionSignature(permission2, testUser2);
+
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission1, signature1);
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission2, signature2);
+
+      // Verify nonces were incremented independently
+      (await dataPermission.userNonce(testUser1.address)).should.eq(1);
+      (await dataPermission.userNonce(testUser2.address)).should.eq(1);
+
+      // Add another permission for testUser1
+      const permission3 = {
+        nonce: 1n,
+        granteeId: 1n,
+        grant: "ipfs://grant3",
+        fileIds: [],
+      };
+
+      const signature3 = await createPermissionSignature(permission3, testUser1);
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission3, signature3);
+
+      // Verify testUser1's nonce incremented while testUser2's remained the same
+      (await dataPermission.userNonce(testUser1.address)).should.eq(2);
+      (await dataPermission.userNonce(testUser2.address)).should.eq(1);
+    });
+
+    it("should handle grants with special characters", async function () {
+      // First register a grantee
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+      const permission = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant-with-special-chars_123!@#$%^&*()",
+        fileIds: [],
+      };
+
+      const signature = await createPermissionSignature(permission, testUser1);
+
+      await dataPermission.connect(sponsor).addPermission(permission, signature)
+        .should.be.fulfilled;
+
+      const storedPermission = await dataPermission.permission(1);
+      storedPermission.grant.should.eq(permission.grant);
+
+      // Verify grant hash mapping works with special characters
+      (await dataPermission.permissionIdByGrant(permission.grant)).should.eq(1);
+    });
+
+    it("should test userPermissionIdsValues function with multiple permissions", async function () {
+      // First register a grantee
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+      const permissions = [
+        { nonce: 0n, granteeId: 1n, grant: "ipfs://grant1", fileIds: [] },
+        { nonce: 1n, granteeId: 1n, grant: "ipfs://grant2", fileIds: [] },
+        { nonce: 2n, granteeId: 1n, grant: "ipfs://grant3", fileIds: [] },
+      ];
+
+      // Add all permissions for testUser1
+      for (let i = 0; i < permissions.length; i++) {
+        const signature = await createPermissionSignature(
+          permissions[i],
+          testUser1,
+        );
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permissions[i], signature);
+      }
+
+      // Test userPermissionIdsValues
+      const userPermissionIds = await dataPermission.userPermissionIdsValues(
+        testUser1.address,
+      );
+      userPermissionIds.should.deep.eq([1n, 2n, 3n]);
+
+      // Test for user with no permissions
+      const emptyUserPermissionIds =
+        await dataPermission.userPermissionIdsValues(testUser2.address);
+      emptyUserPermissionIds.should.deep.eq([]);
+    });
+
+    it("should emit events with correct parameters for multiple permissions", async function () {
+      // First register grantees for both users
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+      await granteesContract
+        .connect(testUser2)
+        .registerGrantee(testUser2.address, testUser1.address, "publicKey2");
+
+      const permission1 = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant1",
+        fileIds: [],
+      };
+
+      const permission2 = {
+        nonce: 0n,
+        granteeId: 2n,
+        grant: "ipfs://grant2",
+        fileIds: [],
+      };
+
+      const signature1 = await createPermissionSignature(permission1, testUser1);
+      const signature2 = await createPermissionSignature(permission2, testUser2);
+
+      const tx1 = await dataPermission
+        .connect(sponsor)
+        .addPermission(permission1, signature1);
+      const tx2 = await dataPermission
+        .connect(sponsor)
+        .addPermission(permission2, signature2);
+
+      // Verify first event
+      await expect(tx1)
+        .to.emit(dataPermission, "PermissionAdded")
+        .withArgs(1, testUser1.address, permission1.granteeId, permission1.grant, []);
+
+      // Verify second event
+      await expect(tx2)
+        .to.emit(dataPermission, "PermissionAdded")
+        .withArgs(2, testUser2.address, permission2.granteeId, permission2.grant, []);
+    });
+
+    it("should work when called by sponsor wallet but signed by actual user", async function () {
+      // First register a grantee
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+      const permission = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant1",
+        fileIds: [],
+      };
+
+      const signature = await createPermissionSignature(permission, testUser1);
+
+      // sponsor calls the function but permission is signed by testUser1
+      await dataPermission.connect(sponsor).addPermission(permission, signature)
+        .should.be.fulfilled;
+
+      // Verify it's indexed by the signer (testUser1), not the caller (sponsor)
+      (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
+        1,
+      );
+      (await dataPermission.userPermissionIdsAt(testUser1.address, 0)).should.eq(
+        1n,
+      );
+
+      (await dataPermission.userPermissionIdsLength(sponsor.address)).should.eq(
+        0,
+      );
+
+      // Verify stored permission has correct user field
+      const storedPermission = await dataPermission.permission(1);
+      storedPermission.grantor.should.eq(testUser1.address);
+    });
+
+    it("should validate IPFS URI format in grant field", async function () {
+      // First register a grantee
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+      const validPermission = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant1",
+        fileIds: [],
+      };
+
+      const signature = await createPermissionSignature(validPermission, testUser1);
+
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(validPermission, signature).should.be.fulfilled;
+
+      const storedPermission = await dataPermission.permission(1);
+      storedPermission.grant.should.eq(validPermission.grant);
+    });
+
+    it("should handle grant field with very long strings", async function () {
+      // First register a grantee
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+      const longGrant = "ipfs://" + "a".repeat(1000); // Very long grant
+      const permission = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: longGrant,
+        fileIds: [],
+      };
+
+      const signature = await createPermissionSignature(permission, testUser1);
+
+      await dataPermission.connect(sponsor).addPermission(permission, signature)
+        .should.be.fulfilled;
+
+      const storedPermission = await dataPermission.permission(1);
+      storedPermission.grant.should.eq(longGrant);
+    });
+
+    it("should handle unicode characters in grant", async function () {
+      // First register a grantee
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+      const permission = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant-with-unicode-🚀-💎-🌟",
+        fileIds: [],
+      };
+
+      const signature = await createPermissionSignature(permission, testUser1);
+
+      await dataPermission.connect(sponsor).addPermission(permission, signature)
+        .should.be.fulfilled;
+
+      const storedPermission = await dataPermission.permission(1);
+      storedPermission.grant.should.eq(permission.grant);
+
+      // Verify grant hash mapping works with unicode
+      (await dataPermission.permissionIdByGrant(permission.grant)).should.eq(1);
+    });
+
+    it("should store exact signature bytes", async function () {
+      // First register a grantee
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+      const permission = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant1",
+        fileIds: [],
+      };
+
+      const signature = await createPermissionSignature(permission, testUser1);
+
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission, signature);
+
+      const storedPermission = await dataPermission.permission(1);
+      storedPermission.signature.should.eq(signature);
+
+      // Verify signature length (should be 65 bytes for ECDSA)
+      ethers.getBytes(storedPermission.signature).length.should.eq(65);
+    });
+
+    it("should handle max nonce values", async function () {
+      // First register a grantee
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+      const permission = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant1",
+        fileIds: [],
+      };
+
+      // Add first permission to increment nonce
+      let signature = await createPermissionSignature(permission, testUser1);
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission, signature);
+
+      // Try with very large nonce (but wrong)
+      const largeNoncePermission = {
+        nonce: 999999n,
+        granteeId: 1n,
+        grant: "ipfs://grant2",
+        fileIds: [],
+      };
+
+      signature = await createPermissionSignature(largeNoncePermission, testUser1);
+
+      await expect(
+        dataPermission
+          .connect(sponsor)
+          .addPermission(largeNoncePermission, signature),
+      )
+        .to.be.revertedWithCustomError(dataPermission, "InvalidNonce")
+        .withArgs(1, 999999); // expected 1, provided 999999
+    });
+  });
+
+  describe("Access Control", () => {
+    beforeEach(async () => {
+      await deploy();
+    });
+
+    it("should only allow admin to authorize upgrades", async function () {
+      // This would be tested in a real upgrade scenario
+      // For now, just verify the role is set correctly
+      (await dataPermission.hasRole(DEFAULT_ADMIN_ROLE, owner)).should.eq(true);
+      (await dataPermission.hasRole(DEFAULT_ADMIN_ROLE, testUser1)).should.eq(
+        false,
+      );
+    });
+
+    it("should allow admin to update trusted forwarder", async function () {
+      const newForwarder = user3.address;
+
+      await dataPermission.connect(owner).updateTrustedForwarder(newForwarder);
+      (await dataPermission.trustedForwarder()).should.eq(newForwarder);
+    });
+  });
+
+  describe("RevokePermission", () => {
+    beforeEach(async () => {
+      await deploy();
+    });
+
+    const createPermissionSignature = async (
+      permission: {
+        nonce: bigint;
+        granteeId: bigint;
+        grant: string;
+        fileIds: bigint[];
+      },
+      signer: HardhatEthersSigner,
+    ) => {
+      const domain = {
+        name: "VanaDataPortabilityPermissions",
+        version: "1",
+        chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
+        verifyingContract: await dataPermission.getAddress(),
+      };
+
+      const types = {
+        Permission: [
+          { name: "nonce", type: "uint256" },
+          { name: "granteeId", type: "uint256" },
+          { name: "grant", type: "string" },
+          { name: "fileIds", type: "uint256[]" },
+        ],
+      };
+
+      const value = {
+        nonce: permission.nonce,
+        granteeId: permission.granteeId,
+        grant: permission.grant,
+        fileIds: permission.fileIds,
+      };
+
+      return await signer.signTypedData(domain, types, value);
+    };
+
+    const createRevokePermissionSignature = async (
+      revokePermissionInput: {
+        nonce: bigint;
+        permissionId: bigint;
+      },
+      signer: HardhatEthersSigner,
+    ) => {
+      const domain = {
+        name: "VanaDataPortabilityPermissions",
+        version: "1",
+        chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
+        verifyingContract: await dataPermission.getAddress(),
+      };
+
+      const types = {
+        RevokePermission: [
+          { name: "nonce", type: "uint256" },
+          { name: "permissionId", type: "uint256" },
+        ],
+      };
+
+      const value = {
+        nonce: revokePermissionInput.nonce,
+        permissionId: revokePermissionInput.permissionId,
+      };
+
+      return await signer.signTypedData(domain, types, value);
+    };
+
+    describe("Direct Revocation", () => {
+      it("should revoke permission by owner successfully", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        // First add a permission
+        const permission = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [],
+        };
+
+        const signature = await createPermissionSignature(permission, testUser1);
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, signature);
+
+        // Verify permission is active
+        (await dataPermission.isActivePermission(1)).should.eq(true);
+        (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
+          1,
+        );
+
+        // Revoke the permission
+        const tx = await dataPermission.connect(testUser1).revokePermission(1);
+
+        // Verify event was emitted
+        await expect(tx)
+          .to.emit(dataPermission, "PermissionRevoked")
+          .withArgs(1);
+
+        // Verify permission is no longer active
+        (await dataPermission.isActivePermission(1)).should.eq(false);
+
+        // Verify permission is removed from user's active permissions
+        (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
+          0,
+        );
+
+        // Verify permission data still exists but is marked inactive
+        const revokedPermission = await dataPermission.permission(1);
+        revokedPermission.grantor.should.eq(testUser1.address);
+        revokedPermission.grant.should.eq(permission.grant);
+      });
+
+      it("should reject revocation by non-owner", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        // User1 adds a permission
+        const permission = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [],
+        };
+
+        const signature = await createPermissionSignature(permission, testUser1);
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, signature);
+
+        // User2 tries to revoke testUser1's permission
+        await expect(
+          dataPermission.connect(testUser2).revokePermission(1),
+        ).to.be.revertedWithCustomError(dataPermission, "NotPermissionGrantor");
+
+        // Verify permission is still active
+        (await dataPermission.isActivePermission(1)).should.eq(true);
+      });
+
+      it("should reject revoking already revoked permission", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        // Add and revoke a permission
+        const permission = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [],
+        };
+
+        const signature = await createPermissionSignature(permission, testUser1);
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, signature);
+
+        await dataPermission.connect(testUser1).revokePermission(1);
+
+        // Try to revoke again
+        await expect(dataPermission.connect(testUser1).revokePermission(1))
+          .to.be.revertedWithCustomError(dataPermission, "InactivePermission")
+          .withArgs(1);
+      });
+
+      it("should handle multiple permissions correctly", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        // Add multiple permissions
+        const permissions = [
+          { nonce: 0n, granteeId: 1n, grant: "ipfs://grant1", fileIds: [] },
+          { nonce: 1n, granteeId: 1n, grant: "ipfs://grant2", fileIds: [] },
+          { nonce: 2n, granteeId: 1n, grant: "ipfs://grant3", fileIds: [] },
+        ];
+
+        for (const perm of permissions) {
+          const sig = await createPermissionSignature(perm, testUser1);
+          await dataPermission.connect(sponsor).addPermission(perm, sig);
+        }
+
+        // Verify all are active
+        (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
+          3,
+        );
+
+        // Revoke the middle permission
+        await dataPermission.connect(testUser1).revokePermission(2);
+
+        // Verify correct permission was revoked
+        (await dataPermission.isActivePermission(1)).should.eq(true);
+        (await dataPermission.isActivePermission(2)).should.eq(false);
+        (await dataPermission.isActivePermission(3)).should.eq(true);
+
+        // Verify user now has 2 active permissions
+        (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
+          2,
+        );
+
+        // Verify remaining permissions
+        const remainingPermIds = await dataPermission.userPermissionIdsValues(
+          testUser1.address,
+        );
+        remainingPermIds.should.deep.eq([1n, 3n]);
+      });
+    });
+
+    describe("Signature-based Revocation", () => {
+      it("should revoke permission with valid signature", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        // Add a permission first
+        const permission = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [],
+        };
+
+        const permSignature = await createPermissionSignature(
+          permission,
+          testUser1,
+        );
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, permSignature);
+
+        // User nonce should be 1 after adding permission
+        (await dataPermission.userNonce(testUser1.address)).should.eq(1);
+
+        // Create revoke permission input
+        const revokeInput = {
+          nonce: 1n,
+          permissionId: 1n,
+        };
+
+        const revokeSignature = await createRevokePermissionSignature(
+          revokeInput,
+          testUser1,
+        );
+
+        // Sponsor executes the revocation
+        const tx = await dataPermission
+          .connect(sponsor)
+          .revokePermissionWithSignature(revokeInput, revokeSignature);
+
+        // Verify event
+        await expect(tx)
+          .to.emit(dataPermission, "PermissionRevoked")
+          .withArgs(1);
+
+        // Verify nonce was incremented
+        (await dataPermission.userNonce(testUser1.address)).should.eq(2);
+
+        // Verify permission is inactive
+        (await dataPermission.isActivePermission(1)).should.eq(false);
+      });
+
+      it("should reject revocation with wrong nonce", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        // Add a permission
+        const permission = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [],
+        };
+
+        const permSignature = await createPermissionSignature(
+          permission,
+          testUser1,
+        );
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, permSignature);
+
+        // Try to revoke with wrong nonce
+        const revokeInput = {
+          nonce: 0n, // Wrong - should be 1
+          permissionId: 1n,
+        };
+
+        const revokeSignature = await createRevokePermissionSignature(
+          revokeInput,
+          testUser1,
+        );
+
+        await expect(
+          dataPermission
+            .connect(sponsor)
+            .revokePermissionWithSignature(revokeInput, revokeSignature),
+        )
+          .to.be.revertedWithCustomError(dataPermission, "InvalidNonce")
+          .withArgs(1, 0);
+      });
+
+      it("should reject revocation of non-owned permission", async function () {
+        // First register grantees for both users
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        await granteesContract
+          .connect(testUser2)
+          .registerGrantee(testUser2.address, testUser1.address, "publicKey2");
+
+        // User1 adds a permission
+        const permission1 = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [],
+        };
+
+        const sig1 = await createPermissionSignature(permission1, testUser1);
+        await dataPermission.connect(sponsor).addPermission(permission1, sig1);
+
+        // User2 adds a permission
+        const permission2 = {
+          nonce: 0n,
+          granteeId: 2n,
+          grant: "ipfs://grant2",
+          fileIds: [],
+        };
+
+        const sig2 = await createPermissionSignature(permission2, testUser2);
+        await dataPermission.connect(sponsor).addPermission(permission2, sig2);
+
+        // User2 tries to revoke testUser1's permission (ID 1)
+        const revokeInput = {
+          nonce: 1n, // User2's current nonce
+          permissionId: 1n, // User1's permission
+        };
+
+        const revokeSignature = await createRevokePermissionSignature(
+          revokeInput,
+          testUser2,
+        );
+
+        await expect(
+          dataPermission
+            .connect(sponsor)
+            .revokePermissionWithSignature(revokeInput, revokeSignature),
+        ).to.be.revertedWithCustomError(dataPermission, "NotPermissionGrantor");
+      });
+
+      it("should handle gasless revocation via sponsor", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        // Add permission
+        const permission = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [],
+        };
+
+        const permSignature = await createPermissionSignature(
+          permission,
+          testUser1,
+        );
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, permSignature);
+
+        // Create revocation signature
+        const revokeInput = {
+          nonce: 1n,
+          permissionId: 1n,
+        };
+
+        const revokeSignature = await createRevokePermissionSignature(
+          revokeInput,
+          testUser1,
+        );
+
+        // Sponsor pays for gas
+        const tx = await dataPermission
+          .connect(sponsor)
+          .revokePermissionWithSignature(revokeInput, revokeSignature);
+
+        // Verify it worked
+        await expect(tx)
+          .to.emit(dataPermission, "PermissionRevoked")
+          .withArgs(1);
+
+        // Verify the permission belongs to testUser1, not sponsor
+        const revokedPerm = await dataPermission.permission(1);
+        revokedPerm.grantor.should.eq(testUser1.address);
+      });
+    });
+
+    describe("Edge Cases and State Management", () => {
+      it("should not affect grant hash mapping after revocation", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        const permission = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [],
+        };
+
+        const signature = await createPermissionSignature(permission, testUser1);
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, signature);
+
+        // Revoke the permission
+        await dataPermission.connect(testUser1).revokePermission(1);
+
+        // Grant hash should still map to the permission ID
+        (await dataPermission.permissionIdByGrant(permission.grant)).should.eq(
+          1,
+        );
+
+        // But trying to add same grant again should still fail
+        const permission2 = {
+          nonce: 1n,
+          granteeId: 1n,
+          grant: "ipfs://grant1", // Same grant
+          fileIds: [],
+        };
+
+        const signature2 = await createPermissionSignature(permission2, testUser1);
+
+        await expect(
+          dataPermission
+            .connect(sponsor)
+            .addPermission(permission2, signature2),
+        ).to.be.revertedWithCustomError(dataPermission, "GrantAlreadyUsed");
+      });
+
+      it("should correctly update user permission sets", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        // Add 3 permissions
+        const permissions = [
+          { nonce: 0n, granteeId: 1n, grant: "ipfs://grant1", fileIds: [] },
+          { nonce: 1n, granteeId: 1n, grant: "ipfs://grant2", fileIds: [] },
+          { nonce: 2n, granteeId: 1n, grant: "ipfs://grant3", fileIds: [] },
+        ];
+
+        for (const perm of permissions) {
+          const sig = await createPermissionSignature(perm, testUser1);
+          await dataPermission.connect(sponsor).addPermission(perm, sig);
+        }
+
+        // Initial state
+        let activePerms = await dataPermission.userPermissionIdsValues(
+          testUser1.address,
+        );
+        activePerms.should.deep.eq([1n, 2n, 3n]);
+
+        // Revoke permission 2
+        await dataPermission.connect(testUser1).revokePermission(2);
+
+        // Check updated state
+        activePerms = await dataPermission.userPermissionIdsValues(
+          testUser1.address,
+        );
+        activePerms.should.deep.eq([1n, 3n]);
+
+        // Revoke permission 1
+        await dataPermission.connect(testUser1).revokePermission(1);
+
+        // Check state again
+        activePerms = await dataPermission.userPermissionIdsValues(
+          testUser1.address,
+        );
+        activePerms.should.deep.eq([3n]);
+
+        // Revoke last permission
+        await dataPermission.connect(testUser1).revokePermission(3);
+
+        // Should have no active permissions
+        activePerms = await dataPermission.userPermissionIdsValues(
+          testUser1.address,
+        );
+        activePerms.should.deep.eq([]);
+
+        (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
+          0,
+        );
+      });
+
+      it("should prevent replay attacks on revocation", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        // Add permission
+        const permission = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [],
+        };
+
+        const permSignature = await createPermissionSignature(
+          permission,
+          testUser1,
+        );
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, permSignature);
+
+        // Create revocation signature
+        const revokeInput = {
+          nonce: 1n,
+          permissionId: 1n,
+        };
+
+        const revokeSignature = await createRevokePermissionSignature(
+          revokeInput,
+          testUser1,
+        );
+
+        // First revocation succeeds
+        await dataPermission
+          .connect(sponsor)
+          .revokePermissionWithSignature(revokeInput, revokeSignature);
+
+        // Replay attempt should fail due to incremented nonce
+        await expect(
+          dataPermission
+            .connect(sponsor)
+            .revokePermissionWithSignature(revokeInput, revokeSignature),
+        )
+          .to.be.revertedWithCustomError(dataPermission, "InvalidNonce")
+          .withArgs(2, 1); // Expected nonce 2, provided 1
+      });
+
+      it("should handle revocation of non-existent permission", async function () {
+        // Try to revoke permission that doesn't exist
+        await expect(
+          dataPermission.connect(testUser1).revokePermission(999),
+        ).to.be.revertedWithCustomError(dataPermission, "NotPermissionGrantor");
+      });
+
+      it("should maintain correct state after mixed operations", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        // Add permission 1
+        const perm1 = { nonce: 0n, granteeId: 1n, grant: "ipfs://grant1", fileIds: [] };
+        const sig1 = await createPermissionSignature(perm1, testUser1);
+        await dataPermission.connect(sponsor).addPermission(perm1, sig1);
+
+        // Add permission 2
+        const perm2 = { nonce: 1n, granteeId: 1n, grant: "ipfs://grant2", fileIds: [] };
+        const sig2 = await createPermissionSignature(perm2, testUser1);
+        await dataPermission.connect(sponsor).addPermission(perm2, sig2);
+
+        // Revoke permission 1
+        await dataPermission.connect(testUser1).revokePermission(1);
+
+        // Add permission 3
+        const perm3 = { nonce: 2n, granteeId: 1n, grant: "ipfs://grant3", fileIds: [] };
+        const sig3 = await createPermissionSignature(perm3, testUser1);
+        await dataPermission.connect(sponsor).addPermission(perm3, sig3);
+
+        // Check final state
+        const activePerms = await dataPermission.userPermissionIdsValues(
+          testUser1.address,
+        );
+        activePerms.should.deep.eq([2n, 3n]);
+
+        // Verify individual permission states
+        (await dataPermission.isActivePermission(1)).should.eq(false);
+        (await dataPermission.isActivePermission(2)).should.eq(true);
+        (await dataPermission.isActivePermission(3)).should.eq(true);
+      });
+    });
+
+    describe("Integration with Other Features", () => {
+      it("should work correctly with trusted servers", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        // Add a permission
+        const permission = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [],
+        };
+
+        const permSignature = await createPermissionSignature(
+          permission,
+          testUser1,
+        );
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, permSignature);
+
+        // Add and trust a server
+        await testServersContract
+          .connect(testUser1)
+          .addAndTrustServer({
+            owner: testUser1.address,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: "https://testServer1.com"
+          });
+
+        // Revoke the permission
+        await dataPermission.connect(testUser1).revokePermission(1);
+
+        // Server trust should be unaffected
+        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(1);
+
+        // Permission should be revoked
+        (await dataPermission.isActivePermission(1)).should.eq(false);
+      });
+
+      it("should handle nonce correctly across different operations", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        // Initial nonce
+        (await dataPermission.userNonce(testUser1.address)).should.eq(0);
+
+        // Add permission (increments nonce to 1)
+        const perm1 = { nonce: 0n, granteeId: 1n, grant: "ipfs://grant1", fileIds: [] };
+        const sig1 = await createPermissionSignature(perm1, testUser1);
+        await dataPermission.connect(sponsor).addPermission(perm1, sig1);
+
+        // Add another permission (increments nonce to 2)
+        const perm2 = { nonce: 1n, granteeId: 1n, grant: "ipfs://grant2", fileIds: [] };
+        const sig2 = await createPermissionSignature(perm2, testUser1);
+        await dataPermission.connect(sponsor).addPermission(perm2, sig2);
+
+        // Revoke with signature (increments nonce to 3)
+        const revokeInput = {
+          nonce: 2n,
+          permissionId: 1n,
+        };
+        const revokeSig = await createRevokePermissionSignature(
+          revokeInput,
+          testUser1,
+        );
+        await dataPermission
+          .connect(sponsor)
+          .revokePermissionWithSignature(revokeInput, revokeSig);
+
+        // Final nonce should be 3
+        (await dataPermission.userNonce(testUser1.address)).should.eq(3);
+
+        // Direct revocation should not affect nonce
+        await dataPermission.connect(testUser1).revokePermission(2);
+        (await dataPermission.userNonce(testUser1.address)).should.eq(3);
+      });
+    });
+
+    describe("Pause Functionality", () => {
+      it("should reject revocation when paused", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        // Add a permission
+        const permission = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [],
+        };
+
+        const signature = await createPermissionSignature(permission, testUser1);
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, signature);
+
+        // Pause the contract
+        await dataPermission.connect(maintainer).pause();
+
+        // Try to revoke directly
+        await expect(
+          dataPermission.connect(testUser1).revokePermission(1),
+        ).to.be.revertedWithCustomError(dataPermission, "EnforcedPause");
+
+        // Try to revoke with signature
+        const revokeInput = {
+          nonce: 1n,
+          permissionId: 1n,
+        };
+        const revokeSignature = await createRevokePermissionSignature(
+          revokeInput,
+          testUser1,
+        );
+
+        await expect(
+          dataPermission
+            .connect(sponsor)
+            .revokePermissionWithSignature(revokeInput, revokeSignature),
+        ).to.be.revertedWithCustomError(dataPermission, "EnforcedPause");
+
+        // Unpause
+        await dataPermission.connect(maintainer).unpause();
+
+        // Now revocation should work
+        await dataPermission.connect(testUser1).revokePermission(1);
+        (await dataPermission.isActivePermission(1)).should.eq(false);
+      });
+    });
+
+    describe("Revoked Permission Tracking", () => {
+      it("should track revoked permissions with userRevokedPermissionIdsLength", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        // Initially no revoked permissions
+        (
+          await dataPermission.userRevokedPermissionIdsLength(testUser1.address)
+        ).should.eq(0);
+
+        // Add and revoke a permission
+        const permission = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [],
+        };
+        const signature = await createPermissionSignature(permission, testUser1);
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, signature);
+        await dataPermission.connect(testUser1).revokePermission(1);
+
+        // Should have 1 revoked permission
+        (
+          await dataPermission.userRevokedPermissionIdsLength(testUser1.address)
+        ).should.eq(1);
+      });
+
+      it("should return revoked permission IDs with userRevokedPermissionIdsValues", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        // Add multiple permissions
+        const permissions = [
+          { nonce: 0n, granteeId: 1n, grant: "ipfs://grant1", fileIds: [] },
+          { nonce: 1n, granteeId: 1n, grant: "ipfs://grant2", fileIds: [] },
+          { nonce: 2n, granteeId: 1n, grant: "ipfs://grant3", fileIds: [] },
+          { nonce: 3n, granteeId: 1n, grant: "ipfs://grant4", fileIds: [] },
+        ];
+
+        for (const perm of permissions) {
+          const sig = await createPermissionSignature(perm, testUser1);
+          await dataPermission.connect(sponsor).addPermission(perm, sig);
+        }
+
+        // Initially no revoked permissions
+        let revokedIds = await dataPermission.userRevokedPermissionIdsValues(
+          testUser1.address,
+        );
+        revokedIds.should.deep.eq([]);
+
+        // Revoke permissions 2 and 4
+        await dataPermission.connect(testUser1).revokePermission(2);
+        await dataPermission.connect(testUser1).revokePermission(4);
+
+        // Check revoked IDs
+        revokedIds = await dataPermission.userRevokedPermissionIdsValues(
+          testUser1.address,
+        );
+        revokedIds.should.deep.eq([2n, 4n]);
+
+        // Revoke permission 1
+        await dataPermission.connect(testUser1).revokePermission(1);
+
+        // Check updated revoked IDs
+        revokedIds = await dataPermission.userRevokedPermissionIdsValues(
+          testUser1.address,
+        );
+        revokedIds.should.deep.eq([2n, 4n, 1n]);
+      });
+
+      it("should access revoked permissions by index with userRevokedPermissionIdsAt", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        // Add and revoke multiple permissions
+        const permissions = [
+          { nonce: 0n, granteeId: 1n, grant: "ipfs://grant1", fileIds: [] },
+          { nonce: 1n, granteeId: 1n, grant: "ipfs://grant2", fileIds: [] },
+          { nonce: 2n, granteeId: 1n, grant: "ipfs://grant3", fileIds: [] },
+        ];
+
+        for (const perm of permissions) {
+          const sig = await createPermissionSignature(perm, testUser1);
+          await dataPermission.connect(sponsor).addPermission(perm, sig);
+        }
+
+        // Revoke in specific order: 3, 1, 2
+        await dataPermission.connect(testUser1).revokePermission(3);
+        await dataPermission.connect(testUser1).revokePermission(1);
+        await dataPermission.connect(testUser1).revokePermission(2);
+
+        // Check individual indices
+        (
+          await dataPermission.userRevokedPermissionIdsAt(testUser1.address, 0)
+        ).should.eq(3n);
+        (
+          await dataPermission.userRevokedPermissionIdsAt(testUser1.address, 1)
+        ).should.eq(1n);
+        (
+          await dataPermission.userRevokedPermissionIdsAt(testUser1.address, 2)
+        ).should.eq(2n);
+
+        // Verify length
+        (
+          await dataPermission.userRevokedPermissionIdsLength(testUser1.address)
+        ).should.eq(3);
+      });
+
+      it("should revert when accessing out of bounds revoked permission index", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        // Add and revoke one permission
+        const permission = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [],
+        };
+        const signature = await createPermissionSignature(permission, testUser1);
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, signature);
+        await dataPermission.connect(testUser1).revokePermission(1);
+
+        // Should have 1 revoked permission
+        (
+          await dataPermission.userRevokedPermissionIdsLength(testUser1.address)
+        ).should.eq(1);
+
+        // Accessing index 0 should work
+        (
+          await dataPermission.userRevokedPermissionIdsAt(testUser1.address, 0)
+        ).should.eq(1n);
+
+        // Accessing index 1 should revert
+        await expect(
+          dataPermission.userRevokedPermissionIdsAt(testUser1.address, 1),
+        ).to.be.reverted;
+
+        // User with no revoked permissions should revert on index 0
+        await expect(
+          dataPermission.userRevokedPermissionIdsAt(testUser2.address, 0),
+        ).to.be.reverted;
+      });
+
+      it("should track revoked permissions separately per user", async function () {
+        // First register grantees
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        await granteesContract
+          .connect(testUser2)
+          .registerGrantee(testUser2.address, user3.address, "publicKey2");
+
+        // User1 adds and revokes permissions
+        const testUser1Perms = [
+          { nonce: 0n, granteeId: 1n, grant: "ipfs://testUser1-grant1", fileIds: [] },
+          { nonce: 1n, granteeId: 1n, grant: "ipfs://testUser1-grant2", fileIds: [] },
+        ];
+
+        for (const perm of testUser1Perms) {
+          const sig = await createPermissionSignature(perm, testUser1);
+          await dataPermission.connect(sponsor).addPermission(perm, sig);
+        }
+
+        // User2 adds and revokes permissions
+        const testUser2Perms = [
+          { nonce: 0n, granteeId: 2n, grant: "ipfs://testUser2-grant1", fileIds: [] },
+          { nonce: 1n, granteeId: 2n, grant: "ipfs://testUser2-grant2", fileIds: [] },
+          { nonce: 2n, granteeId: 2n, grant: "ipfs://testUser2-grant3", fileIds: [] },
+        ];
+
+        for (const perm of testUser2Perms) {
+          const sig = await createPermissionSignature(perm, testUser2);
+          await dataPermission.connect(sponsor).addPermission(perm, sig);
+        }
+
+        // User1 revokes their first permission
+        await dataPermission.connect(testUser1).revokePermission(1);
+
+        // User2 revokes all their permissions
+        await dataPermission.connect(testUser2).revokePermission(3);
+        await dataPermission.connect(testUser2).revokePermission(4);
+        await dataPermission.connect(testUser2).revokePermission(5);
+
+        // Check testUser1's revoked permissions
+        (
+          await dataPermission.userRevokedPermissionIdsLength(testUser1.address)
+        ).should.eq(1);
+        const testUser1Revoked =
+          await dataPermission.userRevokedPermissionIdsValues(testUser1.address);
+        testUser1Revoked.should.deep.eq([1n]);
+
+        // Check testUser2's revoked permissions
+        (
+          await dataPermission.userRevokedPermissionIdsLength(testUser2.address)
+        ).should.eq(3);
+        const testUser2Revoked =
+          await dataPermission.userRevokedPermissionIdsValues(testUser2.address);
+        testUser2Revoked.should.deep.eq([3n, 4n, 5n]);
+
+        // User3 should have no revoked permissions
+        (
+          await dataPermission.userRevokedPermissionIdsLength(user3.address)
+        ).should.eq(0);
+        const user3Revoked =
+          await dataPermission.userRevokedPermissionIdsValues(user3.address);
+        user3Revoked.should.deep.eq([]);
+      });
+
+      it("should maintain consistency between active and revoked permissions", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        // Add 5 permissions
+        const permissions = [
+          { nonce: 0n, granteeId: 1n, grant: "ipfs://grant1", fileIds: [] },
+          { nonce: 1n, granteeId: 1n, grant: "ipfs://grant2", fileIds: [] },
+          { nonce: 2n, granteeId: 1n, grant: "ipfs://grant3", fileIds: [] },
+          { nonce: 3n, granteeId: 1n, grant: "ipfs://grant4", fileIds: [] },
+          { nonce: 4n, granteeId: 1n, grant: "ipfs://grant5", fileIds: [] },
+        ];
+
+        for (const perm of permissions) {
+          const sig = await createPermissionSignature(perm, testUser1);
+          await dataPermission.connect(sponsor).addPermission(perm, sig);
+        }
+
+        // Initially all active, none revoked
+        (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
+          5,
+        );
+        (
+          await dataPermission.userRevokedPermissionIdsLength(testUser1.address)
+        ).should.eq(0);
+
+        // Revoke permissions 2, 3, and 5
+        await dataPermission.connect(testUser1).revokePermission(2);
+        await dataPermission.connect(testUser1).revokePermission(3);
+        await dataPermission.connect(testUser1).revokePermission(5);
+
+        // Check active permissions (should be 1 and 4)
+        (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
+          2,
+        );
+        const activeIds = await dataPermission.userPermissionIdsValues(
+          testUser1.address,
+        );
+        activeIds.should.deep.eq([1n, 4n]);
+
+        // Check revoked permissions (should be 2, 3, and 5)
+        (
+          await dataPermission.userRevokedPermissionIdsLength(testUser1.address)
+        ).should.eq(3);
+        const revokedIds = await dataPermission.userRevokedPermissionIdsValues(
+          testUser1.address,
+        );
+        revokedIds.should.deep.eq([2n, 3n, 5n]);
+
+        // Verify individual permission states
+        (await dataPermission.isActivePermission(1)).should.eq(true);
+        (await dataPermission.isActivePermission(2)).should.eq(false);
+        (await dataPermission.isActivePermission(3)).should.eq(false);
+        (await dataPermission.isActivePermission(4)).should.eq(true);
+        (await dataPermission.isActivePermission(5)).should.eq(false);
+      });
+
+      it("should handle signature-based revocation in revoked tracking", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        // Add permissions
+        const perm1 = { nonce: 0n, granteeId: 1n, grant: "ipfs://grant1", fileIds: [] };
+        const perm2 = { nonce: 1n, granteeId: 1n, grant: "ipfs://grant2", fileIds: [] };
+
+        const sig1 = await createPermissionSignature(perm1, testUser1);
+        const sig2 = await createPermissionSignature(perm2, testUser1);
+
+        await dataPermission.connect(sponsor).addPermission(perm1, sig1);
+        await dataPermission.connect(sponsor).addPermission(perm2, sig2);
+
+        // Revoke first permission directly
+        await dataPermission.connect(testUser1).revokePermission(1);
+
+        // Revoke second permission with signature
+        const revokeInput = {
+          nonce: 2n, // Current nonce after adding 2 permissions
+          permissionId: 2n,
+        };
+        const revokeSignature = await createRevokePermissionSignature(
+          revokeInput,
+          testUser1,
+        );
+        await dataPermission
+          .connect(sponsor)
+          .revokePermissionWithSignature(revokeInput, revokeSignature);
+
+        // Both should be in revoked list
+        (
+          await dataPermission.userRevokedPermissionIdsLength(testUser1.address)
+        ).should.eq(2);
+        const revokedIds = await dataPermission.userRevokedPermissionIdsValues(
+          testUser1.address,
+        );
+        revokedIds.should.deep.eq([1n, 2n]);
+
+        // No active permissions left
+        (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
+          0,
+        );
+      });
+
+      it("should not add duplicate entries to revoked permissions", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        // Add a permission
+        const permission = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [],
+        };
+        const signature = await createPermissionSignature(permission, testUser1);
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, signature);
+
+        // Revoke it
+        await dataPermission.connect(testUser1).revokePermission(1);
+
+        // Check revoked count
+        (
+          await dataPermission.userRevokedPermissionIdsLength(testUser1.address)
+        ).should.eq(1);
+
+        // Try to revoke again (should fail)
+        await expect(
+          dataPermission.connect(testUser1).revokePermission(1),
+        ).to.be.revertedWithCustomError(dataPermission, "InactivePermission");
+
+        // Revoked count should still be 1
+        (
+          await dataPermission.userRevokedPermissionIdsLength(testUser1.address)
+        ).should.eq(1);
+      });
+
+      it("should handle empty revoked permissions list", async function () {
+        // User with no permissions at all
+        (
+          await dataPermission.userRevokedPermissionIdsLength(testUser1.address)
+        ).should.eq(0);
+        const revokedIds = await dataPermission.userRevokedPermissionIdsValues(
+          testUser1.address,
+        );
+        revokedIds.should.deep.eq([]);
+
+        // User with active permissions but none revoked
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        const permission = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [],
+        };
+        const signature = await createPermissionSignature(permission, testUser1);
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, signature);
+
+        // Still no revoked permissions
+        (
+          await dataPermission.userRevokedPermissionIdsLength(testUser1.address)
+        ).should.eq(0);
+        const revokedIdsAfter =
+          await dataPermission.userRevokedPermissionIdsValues(testUser1.address);
+        revokedIdsAfter.should.deep.eq([]);
+      });
+    });
+  });
+
+  describe("Edge Cases", () => {
+    beforeEach(async () => {
+      await deploy();
+    });
+
+    const createPermissionSignature = async (
+      permission: {
+        nonce: bigint;
+        granteeId: bigint;
+        grant: string;
+        fileIds: bigint[];
+      },
+      signer: HardhatEthersSigner,
+    ) => {
+      const domain = {
+        name: "VanaDataPortabilityPermissions",
+        version: "1",
+        chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
+        verifyingContract: await dataPermission.getAddress(),
+      };
+
+      const types = {
+        Permission: [
+          { name: "nonce", type: "uint256" },
+          { name: "granteeId", type: "uint256" },
+          { name: "grant", type: "string" },
+          { name: "fileIds", type: "uint256[]" },
+        ],
+      };
+
+      const value = {
+        nonce: permission.nonce,
+        granteeId: permission.granteeId,
+        grant: permission.grant,
+        fileIds: permission.fileIds,
+      };
+
+      return await signer.signTypedData(domain, types, value);
+    };
+
+    it("should handle multiple users with same grant (should fail)", async function () {
+      // First register grantees
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+      await granteesContract
+        .connect(testUser2)
+        .registerGrantee(testUser2.address, user3.address, "publicKey2");
+
+      const permission = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://same-grant",
+        fileIds: [],
+      };
+
+      const signature1 = await createPermissionSignature(permission, testUser1);
+      
+      const permission2 = {
+        nonce: 0n,
+        granteeId: 2n,
+        grant: "ipfs://same-grant",
+        fileIds: [],
+      };
+      const signature2 = await createPermissionSignature(permission2, testUser2);
+
+      // First user should succeed
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission, signature1);
+
+      // Second user should fail (same grant)
+      await expect(
+        dataPermission.connect(sponsor).addPermission(permission2, signature2),
+      ).to.be.revertedWithCustomError(dataPermission, "GrantAlreadyUsed");
+    });
+
+    it("should handle rapid succession of permissions", async function () {
+      // First register a grantee
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+      const permissions = [];
+      const signatures = [];
+
+      // Create 10 permissions rapidly
+      for (let i = 0; i < 10; i++) {
+        const permission = {
+          nonce: BigInt(i),
+          granteeId: 1n,
+          grant: `ipfs://grant${i}`,
+          fileIds: [],
+        };
+        permissions.push(permission);
+        signatures.push(await createPermissionSignature(permission, testUser1));
+      }
+
+      // Add them all
+      for (let i = 0; i < 10; i++) {
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permissions[i], signatures[i]);
+      }
+
+      // Verify all were added
+      (await dataPermission.permissionsCount()).should.eq(10);
+      (await dataPermission.userNonce(testUser1.address)).should.eq(10);
+      (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
+        10,
+      );
+    });
+  });
+
+  describe("Server Functions", () => {
+    beforeEach(async () => {
+      await deploy();
+    });
+
+    const createPermissionSignature = async (
+      permission: {
+        nonce: bigint;
+        granteeId: bigint;
+        grant: string;
+        fileIds: bigint[];
+      },
+      signer: HardhatEthersSigner,
+    ) => {
+      const domain = {
+        name: "VanaDataPortabilityPermissions",
+        version: "1",
+        chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
+        verifyingContract: await dataPermission.getAddress(),
+      };
+
+      const types = {
+        Permission: [
+          { name: "nonce", type: "uint256" },
+          { name: "granteeId", type: "uint256" },
+          { name: "grant", type: "string" },
+          { name: "fileIds", type: "uint256[]" },
+        ],
+      };
+
+      const value = {
+        nonce: permission.nonce,
+        granteeId: permission.granteeId,
+        grant: permission.grant,
+        fileIds: permission.fileIds,
+      };
+
+      return await signer.signTypedData(domain, types, value);
+    };
+
+    const createTrustServerSignature = async (
+      trustServerInput: {
+        nonce: bigint;
+        serverId: bigint;
+      },
+      signer: HardhatEthersSigner,
+    ) => {
+      const domain = {
+        name: "VanaDataPortabilityServers",
+        version: "1",
+        chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
+        verifyingContract: await testServersContract.getAddress(),
+      };
+
+      const types = {
+        TrustServer: [
+          { name: "nonce", type: "uint256" },
+          { name: "serverId", type: "uint256" },
+        ],
+      };
+
+      const value = {
+        nonce: trustServerInput.nonce,
+        serverId: trustServerInput.serverId,
+      };
+
+      return await signer.signTypedData(domain, types, value);
+    };
+
+    const createUntrustServerSignature = async (
+      untrustServerInput: {
+        nonce: bigint;
+        serverId: bigint;
+      },
+      signer: HardhatEthersSigner,
+    ) => {
+      const domain = {
+        name: "VanaDataPortabilityServers",
+        version: "1",
+        chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
+        verifyingContract: await testServersContract.getAddress(),
+      };
+
+      const types = {
+        UntrustServer: [
+          { name: "nonce", type: "uint256" },
+          { name: "serverId", type: "uint256" },
+        ],
+      };
+
+      const value = {
+        nonce: untrustServerInput.nonce,
+        serverId: untrustServerInput.serverId,
+      };
+
+      return await signer.signTypedData(domain, types, value);
+    };
+
+    describe("Server Creation through Trust", () => {
+      it("should create server when first trusted", async function () {
+        const serverUrl = "https://testServer1.example.com";
+
+        // Server should not exist initially
+        const serverIdBefore = await testServersContract.serverAddressToId(testServer1.address);
+        serverIdBefore.should.eq(0);
+
+        // Add and trust server (this will create it)
+        const tx = await testServersContract
+          .connect(testUser1)
+          .addAndTrustServer({
+            owner: testUser1.address,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl
+          });
+
+        // Should emit both ServerRegistered and ServerTrusted events
+        await expect(tx)
+          .to.emit(testServersContract, "ServerRegistered")
+          .withArgs(1, testUser1.address, testServer1.address, "0x1234567890abcdef", serverUrl);
+
+        await expect(tx)
+          .to.emit(testServersContract, "ServerTrusted")
+          .withArgs(testUser1.address, 1);
+
+        // Verify server was created
+        const serverAfter = await testServersContract.serverByAddress(testServer1.address);
+        serverAfter.url.should.eq(serverUrl);
+      });
+
+      it("should reject adding server with empty URL", async function () {
+        await expect(
+          testServersContract.connect(testUser1).addServer({
+            owner: testUser1.address,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: ""
+          }),
+        ).to.be.revertedWithCustomError(testServersContract, "EmptyUrl");
+      });
+
+      it("should reject registering same server twice", async function () {
+        const serverUrl = "https://testServer1.example.com";
+
+        // First user registers server
+        await testServersContract
+          .connect(testUser1)
+          .addServer({
+            owner: testUser1.address,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl
+          });
+
+        // Second user tries to register same server address
+        await expect(
+          testServersContract
+            .connect(testUser2)
+            .addServer({
+              owner: testUser2.address,
+              serverAddress: testServer1.address,
+              publicKey: "0xabcdef1234567890",
+              serverUrl: "https://different.com"
+            }),
+        ).to.be.revertedWithCustomError(testServersContract, "ServerAlreadyRegistered");
+      });
+
+      it("should allow different servers to be created and trusted", async function () {
+        const serverUrl1 = "https://testServer1.example.com";
+        const serverUrl2 = "https://testServer2.example.com";
+
+        // User1 adds and trusts testServer1
+        await testServersContract
+          .connect(testUser1)
+          .addAndTrustServer({
+            owner: testUser1.address,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl1
+          });
+
+        // User2 adds and trusts testServer2
+        await testServersContract
+          .connect(testUser2)
+          .addAndTrustServer({
+            owner: testUser2.address,
+            serverAddress: testServer2.address,
+            publicKey: "0xabcdef1234567890",
+            serverUrl: serverUrl2
+          });
+
+        // Verify both servers exist
+        const serverInfo1 = await testServersContract.serverByAddress(testServer1.address);
+        const serverInfo2 = await testServersContract.serverByAddress(testServer2.address);
+
+        serverInfo1.url.should.eq(serverUrl1);
+        serverInfo2.url.should.eq(serverUrl2);
+      });
+    });
+
+    describe("trustServer", () => {
+      const serverUrl = "https://server.example.com";
+
+      it("should trust a server successfully", async function () {
+        // First register the server
+        await testServersContract
+          .connect(testUser1)
+          .addServer({
+            owner: testUser1.address,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl
+          });
+
+        // Then trust it
+        const tx = await testServersContract
+          .connect(testUser1)
+          .trustServer(1);
+
+        await expect(tx)
+          .to.emit(testServersContract, "ServerTrusted")
+          .withArgs(testUser1.address, 1);
+
+        // Verify server is in user's trusted list
+        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(1);
+        (await testServersContract.userServerIdsAt(testUser1.address, 0)).should.eq(1);
+      });
+
+      it("should add and trust a new server", async function () {
+        const tx = await testServersContract
+          .connect(testUser1)
+          .addAndTrustServer({
+            owner: testUser1.address,
+            serverAddress: testServer2.address,
+            publicKey: "0xabcdef1234567890",
+            serverUrl: "https://newserver.com"
+          });
+
+        await expect(tx)
+          .to.emit(testServersContract, "ServerRegistered")
+          .withArgs(1, testUser1.address, testServer2.address, "0xabcdef1234567890", "https://newserver.com");
+      });
+
+      it("should reject trusting server that doesn't exist", async function () {
+        // Try to trust server that doesn't exist
+        await expect(
+          testServersContract
+            .connect(testUser1)
+            .trustServer(999),
+        ).to.be.revertedWithCustomError(testServersContract, "ServerNotFound");
+      });
+
+      it("should reject trusting server with ID 0", async function () {
+        await expect(
+          testServersContract
+            .connect(testUser1)
+            .trustServer(0),
+        ).to.be.revertedWithCustomError(testServersContract, "ServerNotFound");
+      });
+
+      it("should reject trusting already trusted server", async function () {
+        // First register and trust the server
+        await testServersContract
+          .connect(testUser1)
+          .addAndTrustServer({
+            owner: testUser1.address,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl
+          });
+
+        // Try to trust again
+        await expect(
+          testServersContract.connect(testUser1).trustServer(1),
+        ).to.be.revertedWithCustomError(testServersContract, "ServerAlreadyTrusted");
+      });
+
+      it("should allow trusting multiple servers", async function () {
+        const serverUrl2 = "https://testServer2.example.com";
+
+        // Register and trust both servers
+        await testServersContract
+          .connect(testUser1)
+          .addAndTrustServer({
+            owner: testUser1.address,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl
+          });
+
+        await testServersContract
+          .connect(testUser1)
+          .addAndTrustServer({
+            owner: testUser1.address,
+            serverAddress: testServer2.address,
+            publicKey: "0xabcdef1234567890",
+            serverUrl: serverUrl2
+          });
+
+        // Verify both are trusted
+        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(2);
+
+        const trustedServers = await testServersContract.userServerIdsValues(
+          testUser1.address,
+        );
+        trustedServers.should.deep.eq([1n, 2n]);
+      });
+
+      it("should allow trusting same server multiple times (idempotent)", async function () {
+        // Register server first
+        await testServersContract
+          .connect(testUser1)
+          .addServer({
+            owner: testUser1.address,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl
+          });
+
+        // Trust server
+        await testServersContract
+          .connect(testUser1)
+          .trustServer(1);
+
+        // Trust again - should fail with ServerAlreadyTrusted
+        await expect(
+          testServersContract
+            .connect(testUser1)
+            .trustServer(1)
+        ).to.be.revertedWithCustomError(testServersContract, "ServerAlreadyTrusted");
+
+        // Should still have only one trusted server
+        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(1);
+      });
+    });
+
+    describe("trustServerWithSignature", () => {
+      const serverUrl = "https://server.example.com";
+
+      it("should trust server with valid signature", async function () {
+        // First register the server
+        await testServersContract
+          .connect(testUser1)
+          .addServer({
+            owner: testUser1.address,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl
+          });
+
+        const trustServerInput = {
+          nonce: 0n,
+          serverId: 1n,
+        };
+
+        const signature = await createTrustServerSignature(
+          trustServerInput,
+          testUser1,
+        );
+
+        // User nonce should start at 0
+        (await testServersContract.userNonce(testUser1.address)).should.eq(0);
+
+        const tx = await testServersContract
+          .connect(sponsor)
+          .trustServerWithSignature(trustServerInput, signature);
+
+        await expect(tx)
+          .to.emit(testServersContract, "ServerTrusted")
+          .withArgs(testUser1.address, 1);
+
+        // Verify nonce was incremented
+        (await testServersContract.userNonce(testUser1.address)).should.eq(1);
+
+        // Verify server is trusted
+        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(1);
+      });
+
+      it("should reject with incorrect nonce", async function () {
+        // First register the server
+        await testServersContract
+          .connect(testUser1)
+          .addServer({
+            owner: testUser1.address,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl
+          });
+
+        const trustServerInput = {
+          nonce: 1n, // Wrong nonce
+          serverId: 1n,
+        };
+
+        const signature = await createTrustServerSignature(
+          trustServerInput,
+          testUser1,
+        );
+
+        await expect(
+          testServersContract
+            .connect(sponsor)
+            .trustServerWithSignature(trustServerInput, signature),
+        )
+          .to.be.revertedWithCustomError(testServersContract, "InvalidNonce")
+          .withArgs(0, 1);
+      });
+
+      it("should work when called by sponsor but signed by user", async function () {
+        // First register the server
+        await testServersContract
+          .connect(testUser1)
+          .addServer({
+            owner: testUser1.address,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl
+          });
+
+        const trustServerInput = {
+          nonce: 0n,
+          serverId: 1n,
+        };
+
+        const signature = await createTrustServerSignature(
+          trustServerInput,
+          testUser1,
+        );
+
+        await testServersContract
+          .connect(sponsor)
+          .trustServerWithSignature(trustServerInput, signature);
+
+        // Verify it's indexed by the signer (testUser1), not the caller (sponsor)
+        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(1);
+        (await testServersContract.userServerIdsLength(sponsor.address)).should.eq(
+          0,
+        );
+      });
+    });
+
+    describe("untrustServer", () => {
+      const serverUrl = "https://server.example.com";
+
+      beforeEach(async function () {
+        // Register and trust server
+        await testServersContract
+          .connect(testUser1)
+          .addAndTrustServer({
+            owner: testUser1.address,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl
+          });
+      });
+
+      it("should untrust a server successfully", async function () {
+        // Verify server is trusted
+        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(1);
+
+        const tx = await testServersContract
+          .connect(testUser1)
+          .untrustServer(1);
+
+        await expect(tx)
+          .to.emit(testServersContract, "ServerUntrusted")
+          .withArgs(testUser1.address, 1);
+
+        // Verify server is no longer trusted
+        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(0);
+      });
+
+      it("should reject untrusting non-trusted server", async function () {
+        // Register another server but don't trust it
+        await testServersContract
+          .connect(testUser1)
+          .addServer({
+            owner: testUser1.address,
+            serverAddress: testServer2.address,
+            publicKey: "0xabcdef1234567890",
+            serverUrl: "https://testServer2.example.com"
+          });
+
+        await expect(
+          testServersContract.connect(testUser1).untrustServer(2),
+        ).to.be.revertedWithCustomError(testServersContract, "ServerNotTrusted");
+      });
+
+      it("should reject untrusting server with ID 0", async function () {
+        await expect(
+          testServersContract.connect(testUser1).untrustServer(0),
+        ).to.be.revertedWithCustomError(testServersContract, "ServerNotFound");
+      });
+
+      it("should not affect other users' trust", async function () {
+        // User2 also trusts the server
+        await testServersContract
+          .connect(testUser2)
+          .trustServer(1);
+
+        // User1 untrusts
+        await testServersContract.connect(testUser1).untrustServer(1);
+
+        // User1 should have no trusted servers
+        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(0);
+
+        // User2 should still trust the server
+        (await testServersContract.userServerIdsLength(testUser2.address)).should.eq(1);
+      });
+    });
+
+    describe("untrustServerWithSignature", () => {
+      const serverUrl = "https://server.example.com";
+
+      beforeEach(async function () {
+        // Register and trust server
+        await testServersContract
+          .connect(testUser1)
+          .addAndTrustServer({
+            owner: testUser1.address,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl
+          });
+      });
+
+      it("should untrust server with valid signature", async function () {
+        // Note: nonce should still be 0 since addAndTrustServer doesn't increment nonce
+        const untrustServerInput = {
+          nonce: 0n,
+          serverId: 1n,
+        };
+
+        const signature = await createUntrustServerSignature(
+          untrustServerInput,
+          testUser1,
+        );
+
+        const tx = await testServersContract
+          .connect(sponsor)
+          .untrustServerWithSignature(untrustServerInput, signature);
+
+        await expect(tx)
+          .to.emit(testServersContract, "ServerUntrusted")
+          .withArgs(testUser1.address, 1);
+
+        // Verify nonce was incremented
+        (await testServersContract.userNonce(testUser1.address)).should.eq(1);
+
+        // Verify server is no longer trusted
+        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(0);
+      });
+
+      it("should reject with incorrect nonce", async function () {
+        const untrustServerInput = {
+          nonce: 1n, // Wrong nonce
+          serverId: 1n,
+        };
+
+        const signature = await createUntrustServerSignature(
+          untrustServerInput,
+          testUser1,
+        );
+
+        await expect(
+          testServersContract
+            .connect(sponsor)
+            .untrustServerWithSignature(untrustServerInput, signature),
+        )
+          .to.be.revertedWithCustomError(testServersContract, "InvalidNonce")
+          .withArgs(0, 1);
+      });
+    });
+
+    describe("View Functions", () => {
+      beforeEach(async function () {
+        // Setup: Create 3 servers by having different users trust them
+        const servers = [
+          { serverAddress: testServer1.address, url: "https://testServer1.com" },
+          { serverAddress: testServer2.address, url: "https://testServer2.com" },
+          { serverAddress: maintainer.address, url: "https://server3.com" },
+        ];
+
+        // User1 adds and trusts first two servers
+        await testServersContract
+          .connect(testUser1)
+          .addAndTrustServer({
+            owner: testUser1.address,
+            serverAddress: servers[0].serverAddress,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: servers[0].url
+          });
+
+        await testServersContract
+          .connect(testUser1)
+          .addAndTrustServer({
+            owner: testUser1.address,
+            serverAddress: servers[1].serverAddress,
+            publicKey: "0xabcdef1234567890",
+            serverUrl: servers[1].url
+          });
+
+        // User2 adds and trusts the third server
+        await testServersContract
+          .connect(testUser2)
+          .addAndTrustServer({
+            owner: testUser2.address,
+            serverAddress: servers[2].serverAddress,
+            publicKey: "0x9876543210fedcba",
+            serverUrl: servers[2].url
+          });
+      });
+
+      it("should return correct userServerIdsLength", async function () {
+        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(2);
+        (await testServersContract.userServerIdsLength(testUser2.address)).should.eq(1);
+      });
+
+      it("should return correct userServerIdsAt", async function () {
+        (await testServersContract.userServerIdsAt(testUser1.address, 0)).should.eq(
+          1,
+        );
+        (await testServersContract.userServerIdsAt(testUser1.address, 1)).should.eq(
+          2,
+        );
+      });
+
+      it("should revert on out of bounds userServerIdsAt", async function () {
+        await expect(testServersContract.userServerIdsAt(testUser1.address, 2)).to.be
+          .reverted;
+      });
+
+      it("should return correct userServerIdsValues", async function () {
+        const serverIds = await testServersContract.userServerIdsValues(
+          testUser1.address,
+        );
+        serverIds.should.deep.eq([1n, 2n]);
+
+        const testUser2ServerIds = await testServersContract.userServerIdsValues(
+          testUser2.address,
+        );
+        testUser2ServerIds.should.deep.eq([3n]);
+
+        // Test a user with no trusted servers
+        const emptyServerIds = await testServersContract.userServerIdsValues(
+          user3.address,
+        );
+        emptyServerIds.should.deep.eq([]);
+      });
+
+      it("should return correct server info", async function () {
+        const serverInfo1 = await testServersContract.serverByAddress(testServer1.address);
+        serverInfo1.url.should.eq("https://testServer1.com");
+
+        const serverInfo2 = await testServersContract.serverByAddress(testServer2.address);
+        serverInfo2.url.should.eq("https://testServer2.com");
+
+        // Non-existent server should return empty
+        const nonExistent = await testServersContract.serverByAddress(user3.address);
+        nonExistent.url.should.eq("");
+      });
+    });
+
+    describe("Replay Attack Prevention", () => {
+      const serverUrl = "https://server.example.com";
+
+      it("should prevent replay of trustServerWithSignature", async function () {
+        const trustServerInput = {
+          nonce: 0n,
+          serverId: 1n,
+        };
+
+        const signature = await createTrustServerSignature(
+          trustServerInput,
+          testUser1,
+        );
+
+        // First register the server
+        await testServersContract
+          .connect(testUser1)
+          .addServer({
+            owner: testUser1.address,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl
+          });
+
+        // First call should succeed
+        await testServersContract
+          .connect(sponsor)
+          .trustServerWithSignature(trustServerInput, signature);
+
+        // Verify nonce was incremented
+        (await testServersContract.userNonce(testUser1.address)).should.eq(1);
+
+        // Replay attempt with same signature should fail due to wrong nonce
+        await expect(
+          testServersContract
+            .connect(sponsor)
+            .trustServerWithSignature(trustServerInput, signature),
+        )
+          .to.be.revertedWithCustomError(testServersContract, "InvalidNonce")
+          .withArgs(1, 0); // expects nonce 1, but signature has nonce 0
+      });
+
+      it("should prevent replay of untrustServerWithSignature", async function () {
+        // First register and trust the server
+        await testServersContract
+          .connect(testUser1)
+          .addAndTrustServer({
+            owner: testUser1.address,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl
+          });
+
+        const untrustServerInput = {
+          nonce: 0n,
+          serverId: 1n,
+        };
+
+        const signature = await createUntrustServerSignature(
+          untrustServerInput,
+          testUser1,
+        );
+
+        // First call should succeed
+        await testServersContract
+          .connect(sponsor)
+          .untrustServerWithSignature(untrustServerInput, signature);
+
+        // Verify nonce was incremented
+        (await testServersContract.userNonce(testUser1.address)).should.eq(1);
+
+        // Replay attempt should fail due to wrong nonce
+        await expect(
+          testServersContract
+            .connect(sponsor)
+            .untrustServerWithSignature(untrustServerInput, signature),
+        )
+          .to.be.revertedWithCustomError(testServersContract, "InvalidNonce")
+          .withArgs(1, 0);
+      });
+
+      it("should prevent cross-user replay attacks", async function () {
+        // User1 creates a trust signature
+        const trustServerInput = {
+          nonce: 0n,
+          serverId: 1n,
+        };
+
+        const testUser1Signature = await createTrustServerSignature(
+          trustServerInput,
+          testUser1,
+        );
+
+        // First register the server
+        await testServersContract
+          .connect(testUser1)
+          .addServer({
+            owner: testUser1.address,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl
+          });
+
+        // User1 trusts the server
+        await testServersContract
+          .connect(sponsor)
+          .trustServerWithSignature(trustServerInput, testUser1Signature);
+
+        // User2 tries to replay User1's signature
+        // This should fail because the signature verification will extract testUser1's address
+        // but testUser2's nonce is still 0, so it will try to trust on behalf of testUser1
+        // which will fail due to nonce mismatch (testUser1's nonce is now 1)
+        await expect(
+          testServersContract
+            .connect(sponsor)
+            .trustServerWithSignature(trustServerInput, testUser1Signature),
+        )
+          .to.be.revertedWithCustomError(testServersContract, "InvalidNonce")
+          .withArgs(1, 0);
+
+        // Even if we try with testUser2 signing with the same parameters
+        // it's a different signature and will work for testUser2
+        const testUser2Signature = await createTrustServerSignature(
+          trustServerInput,
+          testUser2,
+        );
+
+        await testServersContract
+          .connect(sponsor)
+          .trustServerWithSignature(trustServerInput, testUser2Signature);
+
+        // Verify each user has their own trust relationship
+        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(1);
+        (await testServersContract.userServerIdsLength(testUser2.address)).should.eq(1);
+      });
+
+      it("should prevent replay attacks across different operations", async function () {
+        // Create signatures for both trust and untrust with same nonce
+        const nonce = 0n;
+
+        const trustInput = {
+          nonce: nonce,
+          serverId: 1n,
+        };
+
+        const untrustInput = {
+          nonce: nonce,
+          serverId: 1n,
+        };
+
+        const trustSignature = await createTrustServerSignature(
+          trustInput,
+          testUser1,
+        );
+        const untrustSignature = await createUntrustServerSignature(
+          untrustInput,
+          testUser1,
+        );
+
+        // First register the server
+        await testServersContract
+          .connect(testUser1)
+          .addServer({
+            owner: testUser1.address,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl
+          });
+
+        // Execute trust operation
+        await testServersContract
+          .connect(sponsor)
+          .trustServerWithSignature(trustInput, trustSignature);
+
+        // Nonce is now 1, so untrust with nonce 0 should fail
+        await expect(
+          testServersContract
+            .connect(sponsor)
+            .untrustServerWithSignature(untrustInput, untrustSignature),
+        )
+          .to.be.revertedWithCustomError(testServersContract, "InvalidNonce")
+          .withArgs(1, 0);
+
+        // Create new untrust signature with correct nonce
+        const newUntrustInput = {
+          nonce: 1n,
+          serverId: 1n,
+        };
+
+        const newUntrustSignature = await createUntrustServerSignature(
+          newUntrustInput,
+          testUser1,
+        );
+
+        // This should succeed
+        await testServersContract
+          .connect(sponsor)
+          .untrustServerWithSignature(newUntrustInput, newUntrustSignature);
+      });
+
+      it("should prevent replay of permission signatures in server context", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        // Add a permission
+        const permission = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [],
+        };
+
+        const permSignature = await createPermissionSignature(
+          permission,
+          testUser1,
+        );
+
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, permSignature);
+
+        // Nonce is now 1
+        (await dataPermission.userNonce(testUser1.address)).should.eq(1);
+
+        // Try to replay the permission - should fail due to nonce mismatch
+        await expect(
+          dataPermission
+            .connect(sponsor)
+            .addPermission(permission, permSignature),
+        )
+          .to.be.revertedWithCustomError(dataPermission, "InvalidNonce")
+          .withArgs(1, 0); // Expected nonce 1, provided 0
+
+        // Now try server operations - they should use the updated nonce
+        // First create a server
+        await testServersContract
+          .connect(testUser1)
+          .addAndTrustServer({
+            owner: testUser1.address,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: "https://testServer1.com"
+          });
+
+        // Untrust the server first, then trust it again to test the signature
+        await testServersContract.connect(testUser1).untrustServer(1n);
+
+        const trustServerInput = {
+          nonce: 0n, // Use nonce 0 as server contract has separate nonce
+          serverId: 1n,
+        };
+
+        const trustSignature = await createTrustServerSignature(
+          trustServerInput,
+          testUser1,
+        );
+
+        await testServersContract
+          .connect(sponsor)
+          .trustServerWithSignature(trustServerInput, trustSignature);
+
+        // Verify nonce incremented again
+        (await testServersContract.userNonce(testUser1.address)).should.eq(1);
+      });
+
+      it("should maintain separate nonces per user preventing cross-contamination", async function () {
+        // Both users start with nonce 0
+        (await testServersContract.userNonce(testUser1.address)).should.eq(0);
+        (await testServersContract.userNonce(testUser2.address)).should.eq(0);
+
+        // Register server first
+        await testServersContract
+          .connect(testUser1)
+          .addServer({
+            owner: testUser1.address,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl
+          });
+
+        // User1 performs operation
+        const testUser1Input = {
+          nonce: 0n,
+          serverId: 1n,
+        };
+
+        const testUser1Signature = await createTrustServerSignature(
+          testUser1Input,
+          testUser1,
+        );
+
+        await testServersContract
+          .connect(sponsor)
+          .trustServerWithSignature(testUser1Input, testUser1Signature);
+
+        // User1's nonce incremented, testUser2's unchanged
+        (await testServersContract.userNonce(testUser1.address)).should.eq(1);
+        (await testServersContract.userNonce(testUser2.address)).should.eq(0);
+
+        // User2 can still use nonce 0
+        const testUser2Input = {
+          nonce: 0n,
+          serverId: 1n,
+        };
+
+        const testUser2Signature = await createTrustServerSignature(
+          testUser2Input,
+          testUser2,
+        );
+
+        await testServersContract
+          .connect(sponsor)
+          .trustServerWithSignature(testUser2Input, testUser2Signature);
+
+        // Both users now have nonce 1
+        (await testServersContract.userNonce(testUser1.address)).should.eq(1);
+        (await testServersContract.userNonce(testUser2.address)).should.eq(1);
+      });
+    });
+
+    describe("AddPermission with FileIds", () => {
+      beforeEach(async () => {
+        await deploy();
+      });
+
+      const createRevokePermissionSignature = async (
+        revokePermissionInput: {
+          nonce: bigint;
+          permissionId: bigint;
+        },
+        signer: HardhatEthersSigner,
+      ) => {
+        const domain = {
+          name: "VanaDataPortabilityPermissions",
+          version: "1",
+          chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
+          verifyingContract: await dataPermission.getAddress(),
+        };
+
+        const types = {
+          RevokePermission: [
+            { name: "nonce", type: "uint256" },
+            { name: "permissionId", type: "uint256" },
+          ],
+        };
+
+        const value = {
+          nonce: revokePermissionInput.nonce,
+          permissionId: revokePermissionInput.permissionId,
+        };
+
+        return await signer.signTypedData(domain, types, value);
+      };
+
+      it("should add permission with file IDs for files owned by user", async function () {
+        // First register grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        // Set up files owned by testUser1
+        await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
+        await dataRegistry.setFile(2, testUser1.address, "ipfs://file2");
+        await dataRegistry.setFile(3, testUser1.address, "ipfs://file3");
+
+        const permission = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [1n, 2n, 3n],
+        };
+
+        const signature = await createPermissionSignature(permission, testUser1);
+
+        const tx = await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, signature);
+
+        // Verify event was emitted
+        await expect(tx).to.emit(dataPermission, "PermissionAdded").withArgs(
+          1, // permissionId
+          testUser1.address, // grantor
+          permission.granteeId, // granteeId
+          permission.grant,
+          [1n, 2n, 3n],
+        );
+
+        // Verify permission was stored with fileIds
+        const permissionInfo = await dataPermission.permission(1);
+        permissionInfo.grantor.should.eq(testUser1.address);
+        permissionInfo.grant.should.eq(permission.grant);
+
+        // Verify file associations
+        const fileIds = await dataPermission.permissionFileIds(1);
+        fileIds.should.deep.eq([1n, 2n, 3n]);
+
+        // Verify reverse mapping (file to permissions)
+        (await dataPermission.filePermissionIds(1)).should.deep.eq([1n]);
+        (await dataPermission.filePermissionIds(2)).should.deep.eq([1n]);
+        (await dataPermission.filePermissionIds(3)).should.deep.eq([1n]);
+
+        // Verify file associations through permissionFileIds
+        const permFileIds = await dataPermission.permissionFileIds(1);
+        permFileIds.should.include(1n);
+        permFileIds.should.include(2n);
+        permFileIds.should.include(3n);
+        permFileIds.should.not.include(4n);
+      });
+
+      it("should reject permission with file IDs not owned by user", async function () {
+        // First register grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        // Set up files owned by different users
+        await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
+        await dataRegistry.setFile(2, testUser2.address, "ipfs://file2"); // Owned by testUser2
+        await dataRegistry.setFile(3, testUser1.address, "ipfs://file3");
+
+        const permission = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [1n, 2n, 3n], // File 2 is not owned by testUser1
+        };
+
+        const signature = await createPermissionSignature(permission, testUser1);
+
+        await expect(
+          dataPermission.connect(sponsor).addPermission(permission, signature),
+        )
+          .to.be.revertedWithCustomError(dataPermission, "NotFileOwner")
+          .withArgs(testUser2.address, testUser1.address);
+      });
+
+      it("should handle empty fileIds array", async function () {
+        // First register grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        const permission = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [], // Empty array
+        };
+
+        const signature = await createPermissionSignature(permission, testUser1);
+
+        const tx = await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, signature);
+
+        await expect(tx).to.emit(dataPermission, "PermissionAdded");
+
+        // Verify no file associations
+        const fileIds = await dataPermission.permissionFileIds(1);
+        fileIds.should.deep.eq([]);
+      });
+
+      it("should handle duplicate fileIds in input", async function () {
+        // First register grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
+        await dataRegistry.setFile(2, testUser1.address, "ipfs://file2");
+
+        const permission = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [1n, 2n, 1n, 2n, 1n], // Duplicates
+        };
+
+        const signature = await createPermissionSignature(permission, testUser1);
+
+        const tx = await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, signature);
+
+        await expect(tx).to.emit(dataPermission, "PermissionAdded");
+
+        // Verify only unique fileIds are stored
+        const fileIds = await dataPermission.permissionFileIds(1);
+        fileIds.should.deep.eq([1n, 2n]);
+
+        // Verify file mappings
+        (await dataPermission.filePermissionIds(1)).should.deep.eq([1n]);
+        (await dataPermission.filePermissionIds(2)).should.deep.eq([1n]);
+      });
+
+      it("should handle multiple permissions for same file", async function () {
+        // First register grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
+
+        // First permission
+        const permission1 = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [1n],
+        };
+
+        const signature1 = await createPermissionSignature(permission1, testUser1);
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission1, signature1);
+
+        // Second permission for same file
+        const permission2 = {
+          nonce: 1n,
+          granteeId: 1n,
+          grant: "ipfs://grant2",
+          fileIds: [1n],
+        };
+
+        const signature2 = await createPermissionSignature(permission2, testUser1);
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission2, signature2);
+
+        // Verify both permissions are associated with file 1
+        const filePermissions = await dataPermission.filePermissionIds(1);
+        filePermissions.should.deep.eq([1n, 2n]);
+
+        // Verify each permission has the file
+        const perm1Files = await dataPermission.permissionFileIds(1);
+        const perm2Files = await dataPermission.permissionFileIds(2);
+        perm1Files.should.include(1n);
+        perm2Files.should.include(1n);
+      });
+
+      it("should handle permissions with overlapping fileIds", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
+        await dataRegistry.setFile(2, testUser1.address, "ipfs://file2");
+        await dataRegistry.setFile(3, testUser1.address, "ipfs://file3");
+        await dataRegistry.setFile(4, testUser1.address, "ipfs://file4");
+
+        // First permission with files 1, 2, 3
+        const permission1 = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [1n, 2n, 3n],
+        };
+
+        const signature1 = await createPermissionSignature(permission1, testUser1);
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission1, signature1);
+
+        // Second permission with files 2, 3, 4
+        const permission2 = {
+          nonce: 1n,
+          granteeId: 1n,
+          grant: "ipfs://grant2",
+          fileIds: [2n, 3n, 4n],
+        };
+
+        const signature2 = await createPermissionSignature(permission2, testUser1);
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission2, signature2);
+
+        // Verify file mappings
+        (await dataPermission.filePermissionIds(1)).should.deep.eq([1n]); // Only permission 1
+        (await dataPermission.filePermissionIds(2)).should.deep.eq([1n, 2n]); // Both permissions
+        (await dataPermission.filePermissionIds(3)).should.deep.eq([1n, 2n]); // Both permissions
+        (await dataPermission.filePermissionIds(4)).should.deep.eq([2n]); // Only permission 2
+      });
+
+      it("should clean up file associations when permission is revoked", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
+        await dataRegistry.setFile(2, testUser1.address, "ipfs://file2");
+
+        const permission = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [1n, 2n],
+        };
+
+        const signature = await createPermissionSignature(permission, testUser1);
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, signature);
+
+        // Verify initial associations
+        (await dataPermission.filePermissionIds(1)).should.deep.eq([1n]);
+        (await dataPermission.filePermissionIds(2)).should.deep.eq([1n]);
+        (await dataPermission.permissionFileIds(1)).should.deep.eq([1n, 2n]);
+
+        // Revoke the permission
+        await dataPermission.connect(testUser1).revokePermission(1);
+
+        // Permission should still have fileIds stored but marked as inactive
+        (await dataPermission.isActivePermission(1)).should.eq(false);
+
+        // File associations should remain for historical tracking
+        (await dataPermission.filePermissionIds(1)).should.deep.eq([1n]);
+        (await dataPermission.filePermissionIds(2)).should.deep.eq([1n]);
+        (await dataPermission.permissionFileIds(1)).should.deep.eq([1n, 2n]);
+      });
+
+      it("should handle large number of fileIds", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        // Set up 100 files owned by testUser1
+        const fileCount = 100;
+        for (let i = 1; i <= fileCount; i++) {
+          await dataRegistry.setFile(i, testUser1.address, `ipfs://file${i}`);
+        }
+
+        const fileIds = [];
+        for (let i = 1; i <= fileCount; i++) {
+          fileIds.push(BigInt(i));
+        }
+
+        const permission = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: fileIds,
+        };
+
+        const signature = await createPermissionSignature(permission, testUser1);
+
+        const tx = await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, signature);
+
+        await expect(tx).to.emit(dataPermission, "PermissionAdded");
+
+        // Verify all fileIds were stored
+        const storedFileIds = await dataPermission.permissionFileIds(1);
+        storedFileIds.length.should.eq(fileCount);
+
+        // Spot check some file associations
+        (await dataPermission.filePermissionIds(1)).should.deep.eq([1n]);
+        (await dataPermission.filePermissionIds(50)).should.deep.eq([1n]);
+        (await dataPermission.filePermissionIds(100)).should.deep.eq([1n]);
+      });
+
+      it("should reject permission for non-existent file", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        // Only set up file 1
+        await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
+
+        const permission = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [1n, 999n], // File 999 doesn't exist
+        };
+
+        const signature = await createPermissionSignature(permission, testUser1);
+
+        await expect(
+          dataPermission.connect(sponsor).addPermission(permission, signature),
+        )
+          .to.be.revertedWithCustomError(dataPermission, "NotFileOwner")
+          .withArgs(ethers.ZeroAddress, testUser1.address);
+      });
+
+      it("should handle revocation with signature for permissions with fileIds", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
+        await dataRegistry.setFile(2, testUser1.address, "ipfs://file2");
+
+        const permission = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [1n, 2n],
+        };
+
+        const permSignature = await createPermissionSignature(
+          permission,
+          testUser1,
+        );
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, permSignature);
+
+        // Create revocation signature
+        const revokeInput = {
+          nonce: 1n,
+          permissionId: 1n,
+        };
+
+        const revokeSignature = await createRevokePermissionSignature(
+          revokeInput,
+          testUser1,
+        );
+
+        const tx = await dataPermission
+          .connect(sponsor)
+          .revokePermissionWithSignature(revokeInput, revokeSignature);
+
+        await expect(tx)
+          .to.emit(dataPermission, "PermissionRevoked")
+          .withArgs(1);
+
+        // File associations remain for historical tracking
+        (await dataPermission.filePermissionIds(1)).should.deep.eq([1n]);
+        (await dataPermission.filePermissionIds(2)).should.deep.eq([1n]);
+      });
+    });
+
+    describe("Integration Tests", () => {
+      it("should handle full server lifecycle", async function () {
+        const serverUrl = "https://lifecycle.example.com";
+
+        // 1. First user adds and trusts the server
+        const tx = await testServersContract
+          .connect(testUser1)
+          .addAndTrustServer({
+            owner: testUser1.address,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl
+          });
+
+        // Should emit ServerRegistered when first added
+        await expect(tx)
+          .to.emit(testServersContract, "ServerRegistered")
+          .withArgs(1, testUser1.address, testServer1.address, "0x1234567890abcdef", serverUrl);
+
+        // 2. Second user trusts the same server
+        await testServersContract
+          .connect(testUser2)
+          .trustServer(1);
+
+        // Verify both users trust the server
+        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(1);
+        (await testServersContract.userServerIdsLength(testUser2.address)).should.eq(1);
+
+        // 3. User1 untrusts the server
+        await testServersContract.connect(testUser1).untrustServer(1);
+
+        // Verify testUser1 no longer trusts, but testUser2 still does
+        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(0);
+        (await testServersContract.userServerIdsLength(testUser2.address)).should.eq(1);
+
+        // 4. Server info should still be available
+        const server = await testServersContract.serverByAddress(testServer1.address);
+        server.url.should.eq(serverUrl);
+      });
+
+      it("should handle permissions and servers together", async function () {
+        // First register a grantee
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+
+        // Add a permission for testUser1
+        const permission = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [],
+        };
+        const permSignature = await createPermissionSignature(
+          permission,
+          testUser1,
+        );
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, permSignature);
+
+        // Trust a server (this will create it)
+        const serverUrl = "https://integrated.example.com";
+        await testServersContract
+          .connect(testUser1)
+          .addAndTrustServer({
+            owner: testUser1.address,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl
+          });
+
+        // Verify user has both permissions and trusted servers
+        (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
+          1,
+        );
+        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(1);
+
+        // Nonce should have been incremented by permission (not by direct trust)
+        (await dataPermission.userNonce(testUser1.address)).should.eq(1);
+      });
+    });
+  });
+
+  describe("DataPortabilityServers Contract", () => {
+    let testServersContract: DataPortabilityServersImplementation;
+    let owner: HardhatEthersSigner;
+    let testUser1: HardhatEthersSigner;
+    let testUser2: HardhatEthersSigner;
+    let testServer1: HardhatEthersSigner;
+    let testServer2: HardhatEthersSigner;
+
+    beforeEach(async () => {
+      await deploy();
+      [owner, testUser1, testUser2, testServer1, testServer2] = await ethers.getSigners();
+      
+      // Use the already deployed and initialized servers contract from the main deployment
+      testServersContract = await ethers.getContractAt(
+        "DataPortabilityServersImplementation",
+        await dataPermission.dataPortabilityServers()
+      );
+    });
+
+    describe("Server Registration", () => {
+      it("should register a new server", async () => {
+        const serverInput = {
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: "https://testServer1.example.com"
+        };
+
+        const tx = await testServersContract.connect(testUser1).addServer(serverInput);
+
+        await expect(tx)
+          .to.emit(testServersContract, "ServerRegistered")
+          .withArgs(1, testUser1.address, testServer1.address, "0x1234567890abcdef", "https://testServer1.example.com");
+
+        // Verify server was registered
+        const serverInfo = await testServersContract.server(1);
+        expect(serverInfo.owner).to.equal(testUser1.address);
+        expect(serverInfo.serverAddress).to.equal(testServer1.address);
+        expect(serverInfo.url).to.equal("https://testServer1.example.com");
+        expect(serverInfo.publicKey).to.equal("0x1234567890abcdef");
+
+        // Verify servers count
+        expect(await testServersContract.serversCount()).to.equal(1);
+      });
+
+      it("should reject server registration with empty URL", async () => {
+        const serverInput = {
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: ""
+        };
+
+        await expect(testServersContract.connect(testUser1).addServer(serverInput))
+          .to.be.revertedWithCustomError(testServersContract, "EmptyUrl");
+      });
+
+      it("should reject server registration with empty public key", async () => {
+        const serverInput = {
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x",
+          serverUrl: "https://testServer1.example.com"
+        };
+
+        await expect(testServersContract.connect(testUser1).addServer(serverInput))
+          .to.be.revertedWithCustomError(testServersContract, "EmptyPublicKey");
+      });
+
+      it("should reject server registration with zero address owner", async () => {
+        const serverInput = {
+          owner: ethers.ZeroAddress,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: "https://testServer1.example.com"
+        };
+
+        await expect(testServersContract.connect(testUser1).addServer(serverInput))
+          .to.be.revertedWithCustomError(testServersContract, "ZeroAddress");
+      });
+
+      it("should reject server registration with zero address server", async () => {
+        const serverInput = {
+          owner: testUser1.address,
+          serverAddress: ethers.ZeroAddress,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: "https://testServer1.example.com"
+        };
+
+        await expect(testServersContract.connect(testUser1).addServer(serverInput))
+          .to.be.revertedWithCustomError(testServersContract, "ZeroAddress");
+      });
+
+      it("should reject duplicate server registration", async () => {
+        const serverInput = {
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: "https://testServer1.example.com"
+        };
+
+        await testServersContract.connect(testUser1).addServer(serverInput);
+
+        await expect(testServersContract.connect(testUser2).addServer(serverInput))
+          .to.be.revertedWithCustomError(testServersContract, "ServerAlreadyRegistered");
+      });
+    });
+
+    describe("Server Updates", () => {
+      beforeEach(async () => {
+        const serverInput = {
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: "https://testServer1.example.com"
+        };
+        await testServersContract.connect(testUser1).addServer(serverInput);
+      });
+
+      it("should update server URL by owner", async () => {
+        const newUrl = "https://updated.example.com";
+        
+        const tx = await testServersContract.connect(testUser1).updateServer(1, newUrl);
+
+        await expect(tx)
+          .to.emit(testServersContract, "ServerUpdated")
+          .withArgs(1, newUrl);
+
+        const serverInfo = await testServersContract.server(1);
+        expect(serverInfo.url).to.equal(newUrl);
+      });
+
+      it("should reject update by non-owner", async () => {
+        const newUrl = "https://updated.example.com";
+        
+        await expect(testServersContract.connect(testUser2).updateServer(1, newUrl))
+          .to.be.revertedWithCustomError(testServersContract, "NotServerOwner");
+      });
+
+      it("should reject update with empty URL", async () => {
+        await expect(testServersContract.connect(testUser1).updateServer(1, ""))
+          .to.be.revertedWithCustomError(testServersContract, "EmptyUrl");
+      });
+
+      it("should reject update for non-existent server", async () => {
+        await expect(testServersContract.connect(testUser1).updateServer(999, "https://test.com"))
+          .to.be.revertedWithCustomError(testServersContract, "ServerNotFound");
+      });
+    });
+
+    describe("Server Trust Management", () => {
+      beforeEach(async () => {
+        const serverInput = {
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: "https://testServer1.example.com"
+        };
+        await testServersContract.connect(testUser1).addServer(serverInput);
+      });
+
+      it("should trust a server", async () => {
+        const tx = await testServersContract.connect(testUser1).trustServer(1);
+
+        await expect(tx)
+          .to.emit(testServersContract, "ServerTrusted")
+          .withArgs(testUser1.address, 1);
+
+        expect(await testServersContract.userServerIdsLength(testUser1.address)).to.equal(1);
+        expect(await testServersContract.isActiveServerForUser(testUser1.address, 1)).to.be.true;
+      });
+
+      it("should reject trusting non-existent server", async () => {
+        await expect(testServersContract.connect(testUser1).trustServer(999))
+          .to.be.revertedWithCustomError(testServersContract, "ServerNotFound");
+      });
+
+      it("should reject trusting already trusted server", async () => {
+        await testServersContract.connect(testUser1).trustServer(1);
+        
+        await expect(testServersContract.connect(testUser1).trustServer(1))
+          .to.be.revertedWithCustomError(testServersContract, "ServerAlreadyTrusted");
+      });
+
+      it("should untrust a server", async () => {
+        await testServersContract.connect(testUser1).trustServer(1);
+        
+        const tx = await testServersContract.connect(testUser1).untrustServer(1);
+
+        await expect(tx)
+          .to.emit(testServersContract, "ServerUntrusted")
+          .withArgs(testUser1.address, 1);
+
+        expect(await testServersContract.userServerIdsLength(testUser1.address)).to.equal(0);
+        expect(await testServersContract.isActiveServerForUser(testUser1.address, 1)).to.be.false;
+      });
+
+      it("should reject untrusting non-trusted server", async () => {
+        await expect(testServersContract.connect(testUser1).untrustServer(1))
+          .to.be.revertedWithCustomError(testServersContract, "ServerNotTrusted");
+      });
+
+      it("should reject untrusting already untrusted server", async () => {
+        await testServersContract.connect(testUser1).trustServer(1);
+        await testServersContract.connect(testUser1).untrustServer(1);
+        
+        await expect(testServersContract.connect(testUser1).untrustServer(1))
+          .to.be.revertedWithCustomError(testServersContract, "ServerNotTrusted");
+      });
+    });
+
+    describe("Add and Trust Server", () => {
+      it("should add and trust server in one transaction", async () => {
+        const serverInput = {
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: "https://testServer1.example.com"
+        };
+
+        const tx = await testServersContract.connect(testUser1).addAndTrustServer(serverInput);
+
+        await expect(tx)
+          .to.emit(testServersContract, "ServerRegistered")
+          .withArgs(1, testUser1.address, testServer1.address, "0x1234567890abcdef", "https://testServer1.example.com");
+
+        await expect(tx)
+          .to.emit(testServersContract, "ServerTrusted")
+          .withArgs(testUser1.address, 1);
+
+        expect(await testServersContract.userServerIdsLength(testUser1.address)).to.equal(1);
+        expect(await testServersContract.isActiveServerForUser(testUser1.address, 1)).to.be.true;
+      });
+    });
+
+    describe("Signature-based Operations", () => {
+      beforeEach(async () => {
+        const serverInput = {
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: "https://testServer1.example.com"
+        };
+        await testServersContract.connect(testUser1).addServer(serverInput);
+      });
+
+      it("should trust server with valid signature", async () => {
+        const trustInput = {
+          nonce: 0n,
+          serverId: 1n
+        };
+
+        const domain = {
+          name: "VanaDataPortabilityServers",
+          version: "1",
+          chainId: await ethers.provider.getNetwork().then(n => n.chainId),
+          verifyingContract: await testServersContract.getAddress()
+        };
+
+        const types = {
+          TrustServer: [
+            { name: "nonce", type: "uint256" },
+            { name: "serverId", type: "uint256" }
+          ]
+        };
+
+        const signature = await testUser1.signTypedData(domain, types, trustInput);
+
+        const tx = await testServersContract.connect(testUser2).trustServerWithSignature(trustInput, signature);
+
+        await expect(tx)
+          .to.emit(testServersContract, "ServerTrusted")
+          .withArgs(testUser1.address, 1);
+
+        expect(await testServersContract.userNonce(testUser1.address)).to.equal(1);
+        expect(await testServersContract.userServerIdsLength(testUser1.address)).to.equal(1);
+      });
+
+      it("should reject trust with invalid nonce", async () => {
+        const trustInput = {
+          nonce: 1n, // Wrong nonce
+          serverId: 1n
+        };
+
+        const domain = {
+          name: "VanaDataPortabilityServers",
+          version: "1",
+          chainId: await ethers.provider.getNetwork().then(n => n.chainId),
+          verifyingContract: await testServersContract.getAddress()
+        };
+
+        const types = {
+          TrustServer: [
+            { name: "nonce", type: "uint256" },
+            { name: "serverId", type: "uint256" }
+          ]
+        };
+
+        const signature = await testUser1.signTypedData(domain, types, trustInput);
+
+        await expect(testServersContract.connect(testUser2).trustServerWithSignature(trustInput, signature))
+          .to.be.revertedWithCustomError(testServersContract, "InvalidNonce");
+      });
+
+      it("should add and trust server with signature", async () => {
+        const addAndTrustInput = {
+          nonce: 0n,
+          owner: testUser1.address,
+          serverAddress: testServer2.address,
+          publicKey: "0xabcdef1234567890",
+          serverUrl: "https://testServer2.example.com"
+        };
+
+        const domain = {
+          name: "VanaDataPortabilityServers",
+          version: "1",
+          chainId: await ethers.provider.getNetwork().then(n => n.chainId),
+          verifyingContract: await testServersContract.getAddress()
+        };
+
+        const types = {
+          AddAndTrustServer: [
+            { name: "nonce", type: "uint256" },
+            { name: "owner", type: "address" },
+            { name: "serverAddress", type: "address" },
+            { name: "publicKey", type: "bytes" },
+            { name: "serverUrl", type: "string" }
+          ]
+        };
+
+        const value = {
+          nonce: addAndTrustInput.nonce,
+          owner: addAndTrustInput.owner,
+          serverAddress: addAndTrustInput.serverAddress,
+          publicKey: ethers.getBytes(addAndTrustInput.publicKey),
+          serverUrl: addAndTrustInput.serverUrl
+        };
+
+        const signature = await testUser1.signTypedData(domain, types, value);
+
+        const tx = await testServersContract.connect(testUser2).addAndTrustServerWithSignature(addAndTrustInput, signature);
+
+        await expect(tx)
+          .to.emit(testServersContract, "ServerRegistered")
+          .withArgs(2, testUser1.address, testServer2.address, "0xabcdef1234567890", "https://testServer2.example.com");
+
+        await expect(tx)
+          .to.emit(testServersContract, "ServerTrusted")
+          .withArgs(testUser1.address, 2);
+
+        expect(await testServersContract.userNonce(testUser1.address)).to.equal(1);
+        expect(await testServersContract.userServerIdsLength(testUser1.address)).to.equal(1);
+      });
+    });
+
+    describe("View Functions", () => {
+      beforeEach(async () => {
+        const serverInput1 = {
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: "https://testServer1.example.com"
+        };
+        
+        const serverInput2 = {
+          owner: testUser2.address,
+          serverAddress: testServer2.address,
+          publicKey: "0xabcdef1234567890",
+          serverUrl: "https://testServer2.example.com"
+        };
+
+        await testServersContract.connect(testUser1).addServer(serverInput1);
+        await testServersContract.connect(testUser2).addServer(serverInput2);
+        await testServersContract.connect(testUser1).trustServer(1);
+        await testServersContract.connect(testUser1).trustServer(2);
+      });
+
+      it("should return correct server info", async () => {
+        const serverInfo = await testServersContract.server(1);
+        expect(serverInfo.id).to.equal(1);
+        expect(serverInfo.owner).to.equal(testUser1.address);
+        expect(serverInfo.serverAddress).to.equal(testServer1.address);
+        expect(serverInfo.url).to.equal("https://testServer1.example.com");
+        expect(serverInfo.publicKey).to.equal("0x1234567890abcdef");
+      });
+
+      it("should return server info by address", async () => {
+        const serverInfo = await testServersContract.serverByAddress(testServer1.address);
+        expect(serverInfo.id).to.equal(1);
+        expect(serverInfo.owner).to.equal(testUser1.address);
+        expect(serverInfo.serverAddress).to.equal(testServer1.address);
+        expect(serverInfo.url).to.equal("https://testServer1.example.com");
+      });
+
+      it("should return user server IDs", async () => {
+        const serverIds = await testServersContract.userServerIdsValues(testUser1.address);
+        expect(serverIds).to.deep.equal([1n, 2n]);
+      });
+
+      it("should return user server ID at index", async () => {
+        const serverId = await testServersContract.userServerIdsAt(testUser1.address, 0);
+        expect(serverId).to.equal(1);
+      });
+
+      it("should return user server IDs length", async () => {
+        const length = await testServersContract.userServerIdsLength(testUser1.address);
+        expect(length).to.equal(2);
+      });
+
+      it("should return user info", async () => {
+        const [nonce, trustedServerIds] = await testServersContract.user(testUser1.address);
+        expect(nonce).to.equal(0);
+        expect(trustedServerIds).to.deep.equal([1n, 2n]);
+      });
+
+      it("should return servers count", async () => {
+        const count = await testServersContract.serversCount();
+        expect(count).to.equal(2);
+      });
+
+      it("should return server address to ID mapping", async () => {
+        const serverId = await testServersContract.serverAddressToId(testServer1.address);
+        expect(serverId).to.equal(1);
+      });
+
+      it("should check if server is active", async () => {
+        expect(await testServersContract.isActiveServer(1)).to.be.true;
+        expect(await testServersContract.isActiveServer(999)).to.be.false;
+      });
+
+      it("should check if server is active for user", async () => {
+        expect(await testServersContract.isActiveServerForUser(testUser1.address, 1)).to.be.true;
+        expect(await testServersContract.isActiveServerForUser(testUser2.address, 1)).to.be.false;
+      });
+    });
+
+    describe("Admin Functions", () => {
+      it("should update trusted forwarder", async () => {
+        const newForwarder = testUser2.address;
+        const [, , deployOwner] = await ethers.getSigners();
+        await testServersContract.connect(deployOwner).updateTrustedForwarder(newForwarder);
+        expect(await testServersContract.trustedForwarder()).to.equal(newForwarder);
+      });
+
+      it("should pause and unpause", async () => {
+        const [, , deployOwner] = await ethers.getSigners();
+        await testServersContract.connect(deployOwner).pause();
+        
+        const serverInput = {
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: "https://testServer1.example.com"
+        };
+
+        await expect(testServersContract.connect(testUser1).addServer(serverInput))
+          .to.be.revertedWithCustomError(testServersContract, "EnforcedPause");
+
+        await testServersContract.connect(deployOwner).unpause();
+        
+        await expect(testServersContract.connect(testUser1).addServer(serverInput))
+          .to.not.be.reverted;
+      });
+
+      it("should set user nonce", async () => {
+        const [, , deployOwner] = await ethers.getSigners();
+        await testServersContract.connect(deployOwner).setUserNonce(testUser1.address, 5);
+        expect(await testServersContract.userNonce(testUser1.address)).to.equal(5);
+      });
+    });
+  });
+
+  describe("DataPortabilityGrantees Contract", () => {
+    let granteesContract: DataPortabilityGranteesImplementation;
+    let owner: HardhatEthersSigner;
+    let testUser1: HardhatEthersSigner;
+    let testUser2: HardhatEthersSigner;
+    let grantee1: HardhatEthersSigner;
+    let grantee2: HardhatEthersSigner;
+
+    beforeEach(async () => {
+      await deploy();
+      [owner, testUser1, testUser2, grantee1, grantee2] = await ethers.getSigners();
+      
+      // Use the already deployed and initialized grantees contract from the main deployment
+      granteesContract = await ethers.getContractAt(
+        "DataPortabilityGranteesImplementation",
+        await dataPermission.dataPortabilityGrantees()
+      );
+    });
+
+    describe("Grantee Registration", () => {
+      it("should register a new grantee", async () => {
+        const tx = await granteesContract.connect(testUser1).registerGrantee(
+          testUser1.address,
+          grantee1.address,
+          "publicKey1"
+        );
+
+        await expect(tx)
+          .to.emit(granteesContract, "GranteeRegistered")
+          .withArgs(1, testUser1.address, grantee1.address, "publicKey1");
+
+        // Verify grantee was registered
+        const granteeInfo = await granteesContract.grantee(1);
+        expect(granteeInfo.owner).to.equal(testUser1.address);
+        expect(granteeInfo.granteeAddress).to.equal(grantee1.address);
+        expect(granteeInfo.publicKey).to.equal("publicKey1");
+        expect(granteeInfo.permissionIds).to.deep.equal([]);
+
+        // Verify grantees count
+        expect(await granteesContract.granteesCount()).to.equal(1);
+      });
+
+      it("should reject grantee registration with empty public key", async () => {
+        await expect(granteesContract.connect(testUser1).registerGrantee(
+          testUser1.address,
+          grantee1.address,
+          ""
+        )).to.be.revertedWithCustomError(granteesContract, "EmptyPublicKey");
+      });
+
+      it("should reject grantee registration with zero address grantee", async () => {
+        await expect(granteesContract.connect(testUser1).registerGrantee(
+          testUser1.address,
+          ethers.ZeroAddress,
+          "publicKey1"
+        )).to.be.revertedWithCustomError(granteesContract, "ZeroAddress");
+      });
+
+      it("should reject grantee registration with zero address owner", async () => {
+        await expect(granteesContract.connect(testUser1).registerGrantee(
+          ethers.ZeroAddress,
+          grantee1.address,
+          "publicKey1"
+        )).to.be.revertedWithCustomError(granteesContract, "ZeroAddress");
+      });
+
+      it("should reject duplicate grantee registration", async () => {
+        await granteesContract.connect(testUser1).registerGrantee(
+          testUser1.address,
+          grantee1.address,
+          "publicKey1"
+        );
+
+        await expect(granteesContract.connect(testUser2).registerGrantee(
+          testUser2.address,
+          grantee1.address,
+          "publicKey2"
+        )).to.be.revertedWithCustomError(granteesContract, "GranteeAlreadyRegistered");
+      });
+
+      it("should register multiple grantees", async () => {
+        await granteesContract.connect(testUser1).registerGrantee(
+          testUser1.address,
+          grantee1.address,
+          "publicKey1"
+        );
+
+        await granteesContract.connect(testUser2).registerGrantee(
+          testUser2.address,
+          grantee2.address,
+          "publicKey2"
+        );
+
+        expect(await granteesContract.granteesCount()).to.equal(2);
+        
+        const grantee1Info = await granteesContract.grantee(1);
+        expect(grantee1Info.owner).to.equal(testUser1.address);
+        expect(grantee1Info.granteeAddress).to.equal(grantee1.address);
+
+        const grantee2Info = await granteesContract.grantee(2);
+        expect(grantee2Info.owner).to.equal(testUser2.address);
+        expect(grantee2Info.granteeAddress).to.equal(grantee2.address);
+      });
+    });
+
+    describe("View Functions", () => {
+      beforeEach(async () => {
+        await granteesContract.connect(testUser1).registerGrantee(
+          testUser1.address,
+          grantee1.address,
+          "publicKey1"
+        );
+        await granteesContract.connect(testUser2).registerGrantee(
+          testUser2.address,
+          grantee2.address,
+          "publicKey2"
+        );
+      });
+
+      it("should return grantee info", async () => {
+        const granteeInfo = await granteesContract.grantee(1);
+        expect(granteeInfo.owner).to.equal(testUser1.address);
+        expect(granteeInfo.granteeAddress).to.equal(grantee1.address);
+        expect(granteeInfo.publicKey).to.equal("publicKey1");
+        expect(granteeInfo.permissionIds).to.deep.equal([]);
+      });
+
+      it("should return grantee info by granteeInfo method", async () => {
+        const granteeInfo = await granteesContract.granteeInfo(1);
+        expect(granteeInfo.owner).to.equal(testUser1.address);
+        expect(granteeInfo.granteeAddress).to.equal(grantee1.address);
+        expect(granteeInfo.publicKey).to.equal("publicKey1");
+      });
+
+      it("should return grantee by address", async () => {
+        const granteeInfo = await granteesContract.granteeByAddress(grantee1.address);
+        expect(granteeInfo.owner).to.equal(testUser1.address);
+        expect(granteeInfo.granteeAddress).to.equal(grantee1.address);
+        expect(granteeInfo.publicKey).to.equal("publicKey1");
+      });
+
+      it("should return grantees count", async () => {
+        const count = await granteesContract.granteesCount();
+        expect(count).to.equal(2);
+      });
+
+      it("should return grantee address to ID mapping", async () => {
+        const granteeId = await granteesContract.granteeAddressToId(grantee1.address);
+        expect(granteeId).to.equal(1);
+      });
+
+      it("should return grantee permission IDs", async () => {
+        const permissionIds = await granteesContract.granteePermissionIds(1);
+        expect(permissionIds).to.deep.equal([]);
+      });
+
+      it("should return grantee permissions", async () => {
+        const permissions = await granteesContract.granteePermissions(1);
+        expect(permissions).to.deep.equal([]);
+      });
+    });
+
+    describe("Permission Management", () => {
+      beforeEach(async () => {
+        await granteesContract.connect(testUser1).registerGrantee(
+          testUser1.address,
+          grantee1.address,
+          "publicKey1"
+        );
+        
+        // Grant permission manager role to deployOwner for testing
+        const PERMISSION_MANAGER_ROLE = await granteesContract.PERMISSION_MANAGER_ROLE();
+        const [, , deployOwner] = await ethers.getSigners();
+        await granteesContract.connect(deployOwner).grantRole(PERMISSION_MANAGER_ROLE, deployOwner.address);
+      });
+
+      it("should add permission to grantee", async () => {
+        const [, , deployOwner] = await ethers.getSigners();
+        await granteesContract.connect(deployOwner).addPermissionToGrantee(1, 100);
+        
+        const permissionIds = await granteesContract.granteePermissionIds(1);
+        expect(permissionIds).to.deep.equal([100n]);
+      });
+
+      it("should remove permission from grantee", async () => {
+        const [, , deployOwner] = await ethers.getSigners();
+        await granteesContract.connect(deployOwner).addPermissionToGrantee(1, 100);
+        await granteesContract.connect(deployOwner).removePermissionFromGrantee(1, 100);
+        
+        const permissionIds = await granteesContract.granteePermissionIds(1);
+        expect(permissionIds).to.deep.equal([]);
+      });
+
+      it("should reject permission management for non-existent grantee", async () => {
+        const [, , deployOwner] = await ethers.getSigners();
+        await expect(granteesContract.connect(deployOwner).addPermissionToGrantee(999, 100))
+          .to.be.revertedWithCustomError(granteesContract, "GranteeNotFound");
+      });
+
+      it("should reject permission management by non-manager", async () => {
+        await expect(granteesContract.connect(testUser1).addPermissionToGrantee(1, 100))
+          .to.be.reverted;
+      });
+
+      it("should handle multiple permissions", async () => {
+        const [, , deployOwner] = await ethers.getSigners();
+        await granteesContract.connect(deployOwner).addPermissionToGrantee(1, 100);
+        await granteesContract.connect(deployOwner).addPermissionToGrantee(1, 200);
+        await granteesContract.connect(deployOwner).addPermissionToGrantee(1, 300);
+        
+        const permissionIds = await granteesContract.granteePermissionIds(1);
+        expect(permissionIds).to.deep.equal([100n, 200n, 300n]);
+      });
+    });
+
+    describe("Admin Functions", () => {
+      it("should update trusted forwarder", async () => {
+        const newForwarder = testUser2.address;
+        const [, , deployOwner] = await ethers.getSigners();
+        await granteesContract.connect(deployOwner).updateTrustedForwarder(newForwarder);
+        expect(await granteesContract.trustedForwarder()).to.equal(newForwarder);
+      });
+
+      it("should pause and unpause", async () => {
+        const [, , deployOwner] = await ethers.getSigners();
+        await granteesContract.connect(deployOwner).pause();
+        
+        await expect(granteesContract.connect(testUser1).registerGrantee(
+          testUser1.address,
+          grantee1.address,
+          "publicKey1"
+        )).to.be.revertedWithCustomError(granteesContract, "EnforcedPause");
+
+        await granteesContract.connect(deployOwner).unpause();
+        
+        await expect(granteesContract.connect(testUser1).registerGrantee(
+          testUser1.address,
+          grantee1.address,
+          "publicKey1"
+        )).to.not.be.reverted;
+      });
+
+      it("should manage roles", async () => {
+        const PERMISSION_MANAGER_ROLE = await granteesContract.PERMISSION_MANAGER_ROLE();
+        const [, , deployOwner] = await ethers.getSigners();
+        
+        await granteesContract.connect(deployOwner).grantRole(PERMISSION_MANAGER_ROLE, testUser1.address);
+        expect(await granteesContract.hasRole(PERMISSION_MANAGER_ROLE, testUser1.address)).to.be.true;
+        
+        await granteesContract.connect(deployOwner).revokeRole(PERMISSION_MANAGER_ROLE, testUser1.address);
+        expect(await granteesContract.hasRole(PERMISSION_MANAGER_ROLE, testUser1.address)).to.be.false;
+      });
+    });
+  });
+});
