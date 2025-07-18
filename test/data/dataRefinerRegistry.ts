@@ -249,7 +249,7 @@ describe("DataRefinerRegistry", () => {
 
       const schema = await dataRefinerRegistry.schemas(1);
       schema.name.should.eq("TestSchema");
-      schema.typ.should.eq("JSON");
+      schema.dialect.should.eq("JSON");
       schema.definitionUrl.should.eq("https://example.com/schema.json");
     });
 
@@ -266,11 +266,11 @@ describe("DataRefinerRegistry", () => {
 
       const schema1 = await dataRefinerRegistry.schemas(1);
       schema1.name.should.eq("Schema1");
-      schema1.typ.should.eq("JSON");
+      schema1.dialect.should.eq("JSON");
 
       const schema2 = await dataRefinerRegistry.schemas(2);
       schema2.name.should.eq("Schema2");
-      schema2.typ.should.eq("AVRO");
+      schema2.dialect.should.eq("AVRO");
     });
 
     it("should revert when querying invalid schema ID", async function () {
