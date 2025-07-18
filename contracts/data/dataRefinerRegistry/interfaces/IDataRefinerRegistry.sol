@@ -4,7 +4,6 @@ pragma solidity 0.8.24;
 import {IDLPRegistry} from "../../interfaces/IDLPRegistry.sol";
 
 interface IDataRefinerRegistry {
-
     error NotDlpOwner();
     error InvalidSchemaId(uint256 schemaId);
 
@@ -73,10 +72,7 @@ interface IDataRefinerRegistry {
         string calldata refinementInstructionUrl
     ) external returns (uint256);
 
-    function updateSchemaId(
-        uint256 refinerId,
-        uint256 newSchemaId
-    ) external;
+    function updateSchemaId(uint256 refinerId, uint256 newSchemaId) external;
 
     /// @notice Updates the owner of a refiner.
     /// @param refinerId The ID of the refiner.
@@ -87,24 +83,13 @@ interface IDataRefinerRegistry {
     /// @dev This function is called when the DLP owner changes.
     function updateDlpRefinersOwner(uint256 dlpId) external;
 
-    function addRefinementService(
-        uint256 dlpId,
-        address refinementService
-    ) external;
+    function addRefinementService(uint256 dlpId, address refinementService) external;
 
-    function removeRefinementService(
-        uint256 dlpId,
-        address refinementService
-    ) external;
+    function removeRefinementService(uint256 dlpId, address refinementService) external;
 
-    function dlpRefinementServices(
-        uint256 dlpId
-    ) external view returns (address[] memory);
+    function dlpRefinementServices(uint256 dlpId) external view returns (address[] memory);
 
-    function isRefinementService(
-        uint256 refinerId,
-        address refinementService
-    ) external view returns (bool);
+    function isRefinementService(uint256 refinerId, address refinementService) external view returns (bool);
 
     function addSchema(
         string calldata name,
