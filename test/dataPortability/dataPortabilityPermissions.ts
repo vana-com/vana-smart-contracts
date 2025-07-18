@@ -6,7 +6,7 @@ import {
   DataPortabilityServersImplementation,
   DataPortabilityGranteesImplementation,
   MockDataRegistry,
-} from "../typechain-types";
+} from "../../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 
 chai.use(chaiAsPromised);
@@ -270,12 +270,12 @@ describe("DataPortabilityPermissions", () => {
       storedPermission.signature.should.eq(signature);
 
       // Verify it's indexed by user
-      (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
-        1,
-      );
-      (await dataPermission.userPermissionIdsAt(testUser1.address, 0)).should.eq(
-        1n,
-      );
+      (
+        await dataPermission.userPermissionIdsLength(testUser1.address)
+      ).should.eq(1);
+      (
+        await dataPermission.userPermissionIdsAt(testUser1.address, 0)
+      ).should.eq(1n);
 
       // Test the userPermissionIdsValues function
       const userPermissionIds = await dataPermission.userPermissionIdsValues(
@@ -355,8 +355,14 @@ describe("DataPortabilityPermissions", () => {
         fileIds: [],
       };
 
-      const signature1 = await createPermissionSignature(permission1, testUser1);
-      const signature2 = await createPermissionSignature(permission2, testUser1);
+      const signature1 = await createPermissionSignature(
+        permission1,
+        testUser1,
+      );
+      const signature2 = await createPermissionSignature(
+        permission2,
+        testUser1,
+      );
 
       // Add first permission
       await dataPermission
@@ -393,8 +399,14 @@ describe("DataPortabilityPermissions", () => {
         fileIds: [],
       };
 
-      const signature1 = await createPermissionSignature(permission1, testUser1);
-      const signature2 = await createPermissionSignature(permission2, testUser1);
+      const signature1 = await createPermissionSignature(
+        permission1,
+        testUser1,
+      );
+      const signature2 = await createPermissionSignature(
+        permission2,
+        testUser1,
+      );
 
       const tx1 = await dataPermission
         .connect(sponsor)
@@ -406,11 +418,23 @@ describe("DataPortabilityPermissions", () => {
       // Verify events were emitted
       await expect(tx1)
         .to.emit(dataPermission, "PermissionAdded")
-        .withArgs(1, testUser1.address, permission1.granteeId, permission1.grant, []);
+        .withArgs(
+          1,
+          testUser1.address,
+          permission1.granteeId,
+          permission1.grant,
+          [],
+        );
 
       await expect(tx2)
         .to.emit(dataPermission, "PermissionAdded")
-        .withArgs(2, testUser1.address, permission2.granteeId, permission2.grant, []);
+        .withArgs(
+          2,
+          testUser1.address,
+          permission2.granteeId,
+          permission2.grant,
+          [],
+        );
 
       // Verify permissions count increased
       (await dataPermission.permissionsCount()).should.eq(2);
@@ -419,15 +443,15 @@ describe("DataPortabilityPermissions", () => {
       (await dataPermission.userNonce(testUser1.address)).should.eq(2);
 
       // Verify both permissions are indexed by user
-      (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
-        2,
-      );
-      (await dataPermission.userPermissionIdsAt(testUser1.address, 0)).should.eq(
-        1n,
-      );
-      (await dataPermission.userPermissionIdsAt(testUser1.address, 1)).should.eq(
-        2n,
-      );
+      (
+        await dataPermission.userPermissionIdsLength(testUser1.address)
+      ).should.eq(2);
+      (
+        await dataPermission.userPermissionIdsAt(testUser1.address, 0)
+      ).should.eq(1n);
+      (
+        await dataPermission.userPermissionIdsAt(testUser1.address, 1)
+      ).should.eq(2n);
 
       // Test userPermissionIdsValues
       const userPermissionIds = await dataPermission.userPermissionIdsValues(
@@ -467,8 +491,14 @@ describe("DataPortabilityPermissions", () => {
         fileIds: [],
       };
 
-      const signature1 = await createPermissionSignature(permission1, testUser1);
-      const signature2 = await createPermissionSignature(permission2, testUser2);
+      const signature1 = await createPermissionSignature(
+        permission1,
+        testUser1,
+      );
+      const signature2 = await createPermissionSignature(
+        permission2,
+        testUser2,
+      );
 
       await dataPermission
         .connect(sponsor)
@@ -482,12 +512,12 @@ describe("DataPortabilityPermissions", () => {
       (await dataPermission.userNonce(testUser2.address)).should.eq(1);
 
       // Verify each user has one permission
-      (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
-        1,
-      );
-      (await dataPermission.userPermissionIdsLength(testUser2.address)).should.eq(
-        1,
-      );
+      (
+        await dataPermission.userPermissionIdsLength(testUser1.address)
+      ).should.eq(1);
+      (
+        await dataPermission.userPermissionIdsLength(testUser2.address)
+      ).should.eq(1);
 
       // Verify stored permissions have correct user fields
       const storedPermission1 = await dataPermission.permission(1);
@@ -570,12 +600,12 @@ describe("DataPortabilityPermissions", () => {
         .addPermission(permission, signature);
 
       // Should revert when accessing index 1 (only index 0 exists)
-      await expect(dataPermission.userPermissionIdsAt(testUser1.address, 1)).to.be
-        .rejected;
+      await expect(dataPermission.userPermissionIdsAt(testUser1.address, 1)).to
+        .be.rejected;
 
       // Should revert for non-existent user
-      await expect(dataPermission.userPermissionIdsAt(testUser2.address, 0)).to.be
-        .rejected;
+      await expect(dataPermission.userPermissionIdsAt(testUser2.address, 0)).to
+        .be.rejected;
     });
 
     it("should track nonces correctly across multiple users", async function () {
@@ -605,8 +635,14 @@ describe("DataPortabilityPermissions", () => {
       (await dataPermission.userNonce(testUser1.address)).should.eq(0);
       (await dataPermission.userNonce(testUser2.address)).should.eq(0);
 
-      const signature1 = await createPermissionSignature(permission1, testUser1);
-      const signature2 = await createPermissionSignature(permission2, testUser2);
+      const signature1 = await createPermissionSignature(
+        permission1,
+        testUser1,
+      );
+      const signature2 = await createPermissionSignature(
+        permission2,
+        testUser2,
+      );
 
       await dataPermission
         .connect(sponsor)
@@ -627,7 +663,10 @@ describe("DataPortabilityPermissions", () => {
         fileIds: [],
       };
 
-      const signature3 = await createPermissionSignature(permission3, testUser1);
+      const signature3 = await createPermissionSignature(
+        permission3,
+        testUser1,
+      );
       await dataPermission
         .connect(sponsor)
         .addPermission(permission3, signature3);
@@ -720,8 +759,14 @@ describe("DataPortabilityPermissions", () => {
         fileIds: [],
       };
 
-      const signature1 = await createPermissionSignature(permission1, testUser1);
-      const signature2 = await createPermissionSignature(permission2, testUser2);
+      const signature1 = await createPermissionSignature(
+        permission1,
+        testUser1,
+      );
+      const signature2 = await createPermissionSignature(
+        permission2,
+        testUser2,
+      );
 
       const tx1 = await dataPermission
         .connect(sponsor)
@@ -733,12 +778,24 @@ describe("DataPortabilityPermissions", () => {
       // Verify first event
       await expect(tx1)
         .to.emit(dataPermission, "PermissionAdded")
-        .withArgs(1, testUser1.address, permission1.granteeId, permission1.grant, []);
+        .withArgs(
+          1,
+          testUser1.address,
+          permission1.granteeId,
+          permission1.grant,
+          [],
+        );
 
       // Verify second event
       await expect(tx2)
         .to.emit(dataPermission, "PermissionAdded")
-        .withArgs(2, testUser2.address, permission2.granteeId, permission2.grant, []);
+        .withArgs(
+          2,
+          testUser2.address,
+          permission2.granteeId,
+          permission2.grant,
+          [],
+        );
     });
 
     it("should work when called by sponsor wallet but signed by actual user", async function () {
@@ -761,12 +818,12 @@ describe("DataPortabilityPermissions", () => {
         .should.be.fulfilled;
 
       // Verify it's indexed by the signer (testUser1), not the caller (sponsor)
-      (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
-        1,
-      );
-      (await dataPermission.userPermissionIdsAt(testUser1.address, 0)).should.eq(
-        1n,
-      );
+      (
+        await dataPermission.userPermissionIdsLength(testUser1.address)
+      ).should.eq(1);
+      (
+        await dataPermission.userPermissionIdsAt(testUser1.address, 0)
+      ).should.eq(1n);
 
       (await dataPermission.userPermissionIdsLength(sponsor.address)).should.eq(
         0,
@@ -790,7 +847,10 @@ describe("DataPortabilityPermissions", () => {
         fileIds: [],
       };
 
-      const signature = await createPermissionSignature(validPermission, testUser1);
+      const signature = await createPermissionSignature(
+        validPermission,
+        testUser1,
+      );
 
       await dataPermission
         .connect(sponsor)
@@ -901,7 +961,10 @@ describe("DataPortabilityPermissions", () => {
         fileIds: [],
       };
 
-      signature = await createPermissionSignature(largeNoncePermission, testUser1);
+      signature = await createPermissionSignature(
+        largeNoncePermission,
+        testUser1,
+      );
 
       await expect(
         dataPermission
@@ -1019,16 +1082,19 @@ describe("DataPortabilityPermissions", () => {
           fileIds: [],
         };
 
-        const signature = await createPermissionSignature(permission, testUser1);
+        const signature = await createPermissionSignature(
+          permission,
+          testUser1,
+        );
         await dataPermission
           .connect(sponsor)
           .addPermission(permission, signature);
 
         // Verify permission is active
         (await dataPermission.isActivePermission(1)).should.eq(true);
-        (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
-          1,
-        );
+        (
+          await dataPermission.userPermissionIdsLength(testUser1.address)
+        ).should.eq(1);
 
         // Revoke the permission
         const tx = await dataPermission.connect(testUser1).revokePermission(1);
@@ -1042,9 +1108,9 @@ describe("DataPortabilityPermissions", () => {
         (await dataPermission.isActivePermission(1)).should.eq(false);
 
         // Verify permission is removed from user's active permissions
-        (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
-          0,
-        );
+        (
+          await dataPermission.userPermissionIdsLength(testUser1.address)
+        ).should.eq(0);
 
         // Verify permission data still exists but is marked inactive
         const revokedPermission = await dataPermission.permission(1);
@@ -1066,7 +1132,10 @@ describe("DataPortabilityPermissions", () => {
           fileIds: [],
         };
 
-        const signature = await createPermissionSignature(permission, testUser1);
+        const signature = await createPermissionSignature(
+          permission,
+          testUser1,
+        );
         await dataPermission
           .connect(sponsor)
           .addPermission(permission, signature);
@@ -1094,7 +1163,10 @@ describe("DataPortabilityPermissions", () => {
           fileIds: [],
         };
 
-        const signature = await createPermissionSignature(permission, testUser1);
+        const signature = await createPermissionSignature(
+          permission,
+          testUser1,
+        );
         await dataPermission
           .connect(sponsor)
           .addPermission(permission, signature);
@@ -1126,9 +1198,9 @@ describe("DataPortabilityPermissions", () => {
         }
 
         // Verify all are active
-        (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
-          3,
-        );
+        (
+          await dataPermission.userPermissionIdsLength(testUser1.address)
+        ).should.eq(3);
 
         // Revoke the middle permission
         await dataPermission.connect(testUser1).revokePermission(2);
@@ -1139,9 +1211,9 @@ describe("DataPortabilityPermissions", () => {
         (await dataPermission.isActivePermission(3)).should.eq(true);
 
         // Verify user now has 2 active permissions
-        (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
-          2,
-        );
+        (
+          await dataPermission.userPermissionIdsLength(testUser1.address)
+        ).should.eq(2);
 
         // Verify remaining permissions
         const remainingPermIds = await dataPermission.userPermissionIdsValues(
@@ -1359,7 +1431,10 @@ describe("DataPortabilityPermissions", () => {
           fileIds: [],
         };
 
-        const signature = await createPermissionSignature(permission, testUser1);
+        const signature = await createPermissionSignature(
+          permission,
+          testUser1,
+        );
         await dataPermission
           .connect(sponsor)
           .addPermission(permission, signature);
@@ -1380,7 +1455,10 @@ describe("DataPortabilityPermissions", () => {
           fileIds: [],
         };
 
-        const signature2 = await createPermissionSignature(permission2, testUser1);
+        const signature2 = await createPermissionSignature(
+          permission2,
+          testUser1,
+        );
 
         await expect(
           dataPermission
@@ -1440,9 +1518,9 @@ describe("DataPortabilityPermissions", () => {
         );
         activePerms.should.deep.eq([]);
 
-        (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
-          0,
-        );
+        (
+          await dataPermission.userPermissionIdsLength(testUser1.address)
+        ).should.eq(0);
       });
 
       it("should prevent replay attacks on revocation", async function () {
@@ -1507,12 +1585,22 @@ describe("DataPortabilityPermissions", () => {
           .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
 
         // Add permission 1
-        const perm1 = { nonce: 0n, granteeId: 1n, grant: "ipfs://grant1", fileIds: [] };
+        const perm1 = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [],
+        };
         const sig1 = await createPermissionSignature(perm1, testUser1);
         await dataPermission.connect(sponsor).addPermission(perm1, sig1);
 
         // Add permission 2
-        const perm2 = { nonce: 1n, granteeId: 1n, grant: "ipfs://grant2", fileIds: [] };
+        const perm2 = {
+          nonce: 1n,
+          granteeId: 1n,
+          grant: "ipfs://grant2",
+          fileIds: [],
+        };
         const sig2 = await createPermissionSignature(perm2, testUser1);
         await dataPermission.connect(sponsor).addPermission(perm2, sig2);
 
@@ -1520,7 +1608,12 @@ describe("DataPortabilityPermissions", () => {
         await dataPermission.connect(testUser1).revokePermission(1);
 
         // Add permission 3
-        const perm3 = { nonce: 2n, granteeId: 1n, grant: "ipfs://grant3", fileIds: [] };
+        const perm3 = {
+          nonce: 2n,
+          granteeId: 1n,
+          grant: "ipfs://grant3",
+          fileIds: [],
+        };
         const sig3 = await createPermissionSignature(perm3, testUser1);
         await dataPermission.connect(sponsor).addPermission(perm3, sig3);
 
@@ -1561,20 +1654,20 @@ describe("DataPortabilityPermissions", () => {
           .addPermission(permission, permSignature);
 
         // Add and trust a server
-        await testServersContract
-          .connect(testUser1)
-          .addAndTrustServer({
-            owner: testUser1.address,
-            serverAddress: testServer1.address,
-            publicKey: "0x1234567890abcdef",
-            serverUrl: "https://testServer1.com"
-          });
+        await testServersContract.connect(testUser1).addAndTrustServer({
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: "https://testServer1.com",
+        });
 
         // Revoke the permission
         await dataPermission.connect(testUser1).revokePermission(1);
 
         // Server trust should be unaffected
-        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(1);
+        (
+          await testServersContract.userServerIdsLength(testUser1.address)
+        ).should.eq(1);
 
         // Permission should be revoked
         (await dataPermission.isActivePermission(1)).should.eq(false);
@@ -1590,12 +1683,22 @@ describe("DataPortabilityPermissions", () => {
         (await dataPermission.userNonce(testUser1.address)).should.eq(0);
 
         // Add permission (increments nonce to 1)
-        const perm1 = { nonce: 0n, granteeId: 1n, grant: "ipfs://grant1", fileIds: [] };
+        const perm1 = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [],
+        };
         const sig1 = await createPermissionSignature(perm1, testUser1);
         await dataPermission.connect(sponsor).addPermission(perm1, sig1);
 
         // Add another permission (increments nonce to 2)
-        const perm2 = { nonce: 1n, granteeId: 1n, grant: "ipfs://grant2", fileIds: [] };
+        const perm2 = {
+          nonce: 1n,
+          granteeId: 1n,
+          grant: "ipfs://grant2",
+          fileIds: [],
+        };
         const sig2 = await createPermissionSignature(perm2, testUser1);
         await dataPermission.connect(sponsor).addPermission(perm2, sig2);
 
@@ -1636,7 +1739,10 @@ describe("DataPortabilityPermissions", () => {
           fileIds: [],
         };
 
-        const signature = await createPermissionSignature(permission, testUser1);
+        const signature = await createPermissionSignature(
+          permission,
+          testUser1,
+        );
         await dataPermission
           .connect(sponsor)
           .addPermission(permission, signature);
@@ -1693,7 +1799,10 @@ describe("DataPortabilityPermissions", () => {
           grant: "ipfs://grant1",
           fileIds: [],
         };
-        const signature = await createPermissionSignature(permission, testUser1);
+        const signature = await createPermissionSignature(
+          permission,
+          testUser1,
+        );
         await dataPermission
           .connect(sponsor)
           .addPermission(permission, signature);
@@ -1803,7 +1912,10 @@ describe("DataPortabilityPermissions", () => {
           grant: "ipfs://grant1",
           fileIds: [],
         };
-        const signature = await createPermissionSignature(permission, testUser1);
+        const signature = await createPermissionSignature(
+          permission,
+          testUser1,
+        );
         await dataPermission
           .connect(sponsor)
           .addPermission(permission, signature);
@@ -1841,8 +1953,18 @@ describe("DataPortabilityPermissions", () => {
 
         // User1 adds and revokes permissions
         const testUser1Perms = [
-          { nonce: 0n, granteeId: 1n, grant: "ipfs://testUser1-grant1", fileIds: [] },
-          { nonce: 1n, granteeId: 1n, grant: "ipfs://testUser1-grant2", fileIds: [] },
+          {
+            nonce: 0n,
+            granteeId: 1n,
+            grant: "ipfs://testUser1-grant1",
+            fileIds: [],
+          },
+          {
+            nonce: 1n,
+            granteeId: 1n,
+            grant: "ipfs://testUser1-grant2",
+            fileIds: [],
+          },
         ];
 
         for (const perm of testUser1Perms) {
@@ -1852,9 +1974,24 @@ describe("DataPortabilityPermissions", () => {
 
         // User2 adds and revokes permissions
         const testUser2Perms = [
-          { nonce: 0n, granteeId: 2n, grant: "ipfs://testUser2-grant1", fileIds: [] },
-          { nonce: 1n, granteeId: 2n, grant: "ipfs://testUser2-grant2", fileIds: [] },
-          { nonce: 2n, granteeId: 2n, grant: "ipfs://testUser2-grant3", fileIds: [] },
+          {
+            nonce: 0n,
+            granteeId: 2n,
+            grant: "ipfs://testUser2-grant1",
+            fileIds: [],
+          },
+          {
+            nonce: 1n,
+            granteeId: 2n,
+            grant: "ipfs://testUser2-grant2",
+            fileIds: [],
+          },
+          {
+            nonce: 2n,
+            granteeId: 2n,
+            grant: "ipfs://testUser2-grant3",
+            fileIds: [],
+          },
         ];
 
         for (const perm of testUser2Perms) {
@@ -1875,7 +2012,9 @@ describe("DataPortabilityPermissions", () => {
           await dataPermission.userRevokedPermissionIdsLength(testUser1.address)
         ).should.eq(1);
         const testUser1Revoked =
-          await dataPermission.userRevokedPermissionIdsValues(testUser1.address);
+          await dataPermission.userRevokedPermissionIdsValues(
+            testUser1.address,
+          );
         testUser1Revoked.should.deep.eq([1n]);
 
         // Check testUser2's revoked permissions
@@ -1883,7 +2022,9 @@ describe("DataPortabilityPermissions", () => {
           await dataPermission.userRevokedPermissionIdsLength(testUser2.address)
         ).should.eq(3);
         const testUser2Revoked =
-          await dataPermission.userRevokedPermissionIdsValues(testUser2.address);
+          await dataPermission.userRevokedPermissionIdsValues(
+            testUser2.address,
+          );
         testUser2Revoked.should.deep.eq([3n, 4n, 5n]);
 
         // User3 should have no revoked permissions
@@ -1916,9 +2057,9 @@ describe("DataPortabilityPermissions", () => {
         }
 
         // Initially all active, none revoked
-        (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
-          5,
-        );
+        (
+          await dataPermission.userPermissionIdsLength(testUser1.address)
+        ).should.eq(5);
         (
           await dataPermission.userRevokedPermissionIdsLength(testUser1.address)
         ).should.eq(0);
@@ -1929,9 +2070,9 @@ describe("DataPortabilityPermissions", () => {
         await dataPermission.connect(testUser1).revokePermission(5);
 
         // Check active permissions (should be 1 and 4)
-        (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
-          2,
-        );
+        (
+          await dataPermission.userPermissionIdsLength(testUser1.address)
+        ).should.eq(2);
         const activeIds = await dataPermission.userPermissionIdsValues(
           testUser1.address,
         );
@@ -1961,8 +2102,18 @@ describe("DataPortabilityPermissions", () => {
           .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
 
         // Add permissions
-        const perm1 = { nonce: 0n, granteeId: 1n, grant: "ipfs://grant1", fileIds: [] };
-        const perm2 = { nonce: 1n, granteeId: 1n, grant: "ipfs://grant2", fileIds: [] };
+        const perm1 = {
+          nonce: 0n,
+          granteeId: 1n,
+          grant: "ipfs://grant1",
+          fileIds: [],
+        };
+        const perm2 = {
+          nonce: 1n,
+          granteeId: 1n,
+          grant: "ipfs://grant2",
+          fileIds: [],
+        };
 
         const sig1 = await createPermissionSignature(perm1, testUser1);
         const sig2 = await createPermissionSignature(perm2, testUser1);
@@ -1996,9 +2147,9 @@ describe("DataPortabilityPermissions", () => {
         revokedIds.should.deep.eq([1n, 2n]);
 
         // No active permissions left
-        (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
-          0,
-        );
+        (
+          await dataPermission.userPermissionIdsLength(testUser1.address)
+        ).should.eq(0);
       });
 
       it("should not add duplicate entries to revoked permissions", async function () {
@@ -2014,7 +2165,10 @@ describe("DataPortabilityPermissions", () => {
           grant: "ipfs://grant1",
           fileIds: [],
         };
-        const signature = await createPermissionSignature(permission, testUser1);
+        const signature = await createPermissionSignature(
+          permission,
+          testUser1,
+        );
         await dataPermission
           .connect(sponsor)
           .addPermission(permission, signature);
@@ -2060,7 +2214,10 @@ describe("DataPortabilityPermissions", () => {
           grant: "ipfs://grant1",
           fileIds: [],
         };
-        const signature = await createPermissionSignature(permission, testUser1);
+        const signature = await createPermissionSignature(
+          permission,
+          testUser1,
+        );
         await dataPermission
           .connect(sponsor)
           .addPermission(permission, signature);
@@ -2070,7 +2227,9 @@ describe("DataPortabilityPermissions", () => {
           await dataPermission.userRevokedPermissionIdsLength(testUser1.address)
         ).should.eq(0);
         const revokedIdsAfter =
-          await dataPermission.userRevokedPermissionIdsValues(testUser1.address);
+          await dataPermission.userRevokedPermissionIdsValues(
+            testUser1.address,
+          );
         revokedIdsAfter.should.deep.eq([]);
       });
     });
@@ -2133,14 +2292,17 @@ describe("DataPortabilityPermissions", () => {
       };
 
       const signature1 = await createPermissionSignature(permission, testUser1);
-      
+
       const permission2 = {
         nonce: 0n,
         granteeId: 2n,
         grant: "ipfs://same-grant",
         fileIds: [],
       };
-      const signature2 = await createPermissionSignature(permission2, testUser2);
+      const signature2 = await createPermissionSignature(
+        permission2,
+        testUser2,
+      );
 
       // First user should succeed
       await dataPermission
@@ -2184,9 +2346,9 @@ describe("DataPortabilityPermissions", () => {
       // Verify all were added
       (await dataPermission.permissionsCount()).should.eq(10);
       (await dataPermission.userNonce(testUser1.address)).should.eq(10);
-      (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
-        10,
-      );
+      (
+        await dataPermission.userPermissionIdsLength(testUser1.address)
+      ).should.eq(10);
     });
   });
 
@@ -2293,7 +2455,9 @@ describe("DataPortabilityPermissions", () => {
         const serverUrl = "https://testServer1.example.com";
 
         // Server should not exist initially
-        const serverIdBefore = await testServersContract.serverAddressToId(testServer1.address);
+        const serverIdBefore = await testServersContract.serverAddressToId(
+          testServer1.address,
+        );
         serverIdBefore.should.eq(0);
 
         // Add and trust server (this will create it)
@@ -2303,20 +2467,28 @@ describe("DataPortabilityPermissions", () => {
             owner: testUser1.address,
             serverAddress: testServer1.address,
             publicKey: "0x1234567890abcdef",
-            serverUrl: serverUrl
+            serverUrl: serverUrl,
           });
 
         // Should emit both ServerRegistered and ServerTrusted events
         await expect(tx)
           .to.emit(testServersContract, "ServerRegistered")
-          .withArgs(1, testUser1.address, testServer1.address, "0x1234567890abcdef", serverUrl);
+          .withArgs(
+            1,
+            testUser1.address,
+            testServer1.address,
+            "0x1234567890abcdef",
+            serverUrl,
+          );
 
         await expect(tx)
           .to.emit(testServersContract, "ServerTrusted")
           .withArgs(testUser1.address, 1);
 
         // Verify server was created
-        const serverAfter = await testServersContract.serverByAddress(testServer1.address);
+        const serverAfter = await testServersContract.serverByAddress(
+          testServer1.address,
+        );
         serverAfter.url.should.eq(serverUrl);
       });
 
@@ -2326,7 +2498,7 @@ describe("DataPortabilityPermissions", () => {
             owner: testUser1.address,
             serverAddress: testServer1.address,
             publicKey: "0x1234567890abcdef",
-            serverUrl: ""
+            serverUrl: "",
           }),
         ).to.be.revertedWithCustomError(testServersContract, "EmptyUrl");
       });
@@ -2335,26 +2507,25 @@ describe("DataPortabilityPermissions", () => {
         const serverUrl = "https://testServer1.example.com";
 
         // First user registers server
-        await testServersContract
-          .connect(testUser1)
-          .addServer({
-            owner: testUser1.address,
-            serverAddress: testServer1.address,
-            publicKey: "0x1234567890abcdef",
-            serverUrl: serverUrl
-          });
+        await testServersContract.connect(testUser1).addServer({
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: serverUrl,
+        });
 
         // Second user tries to register same server address
         await expect(
-          testServersContract
-            .connect(testUser2)
-            .addServer({
-              owner: testUser2.address,
-              serverAddress: testServer1.address,
-              publicKey: "0xabcdef1234567890",
-              serverUrl: "https://different.com"
-            }),
-        ).to.be.revertedWithCustomError(testServersContract, "ServerAlreadyRegistered");
+          testServersContract.connect(testUser2).addServer({
+            owner: testUser2.address,
+            serverAddress: testServer1.address,
+            publicKey: "0xabcdef1234567890",
+            serverUrl: "https://different.com",
+          }),
+        ).to.be.revertedWithCustomError(
+          testServersContract,
+          "ServerAlreadyRegistered",
+        );
       });
 
       it("should allow different servers to be created and trusted", async function () {
@@ -2362,28 +2533,28 @@ describe("DataPortabilityPermissions", () => {
         const serverUrl2 = "https://testServer2.example.com";
 
         // User1 adds and trusts testServer1
-        await testServersContract
-          .connect(testUser1)
-          .addAndTrustServer({
-            owner: testUser1.address,
-            serverAddress: testServer1.address,
-            publicKey: "0x1234567890abcdef",
-            serverUrl: serverUrl1
-          });
+        await testServersContract.connect(testUser1).addAndTrustServer({
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: serverUrl1,
+        });
 
         // User2 adds and trusts testServer2
-        await testServersContract
-          .connect(testUser2)
-          .addAndTrustServer({
-            owner: testUser2.address,
-            serverAddress: testServer2.address,
-            publicKey: "0xabcdef1234567890",
-            serverUrl: serverUrl2
-          });
+        await testServersContract.connect(testUser2).addAndTrustServer({
+          owner: testUser2.address,
+          serverAddress: testServer2.address,
+          publicKey: "0xabcdef1234567890",
+          serverUrl: serverUrl2,
+        });
 
         // Verify both servers exist
-        const serverInfo1 = await testServersContract.serverByAddress(testServer1.address);
-        const serverInfo2 = await testServersContract.serverByAddress(testServer2.address);
+        const serverInfo1 = await testServersContract.serverByAddress(
+          testServer1.address,
+        );
+        const serverInfo2 = await testServersContract.serverByAddress(
+          testServer2.address,
+        );
 
         serverInfo1.url.should.eq(serverUrl1);
         serverInfo2.url.should.eq(serverUrl2);
@@ -2395,27 +2566,27 @@ describe("DataPortabilityPermissions", () => {
 
       it("should trust a server successfully", async function () {
         // First register the server
-        await testServersContract
-          .connect(testUser1)
-          .addServer({
-            owner: testUser1.address,
-            serverAddress: testServer1.address,
-            publicKey: "0x1234567890abcdef",
-            serverUrl: serverUrl
-          });
+        await testServersContract.connect(testUser1).addServer({
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: serverUrl,
+        });
 
         // Then trust it
-        const tx = await testServersContract
-          .connect(testUser1)
-          .trustServer(1);
+        const tx = await testServersContract.connect(testUser1).trustServer(1);
 
         await expect(tx)
           .to.emit(testServersContract, "ServerTrusted")
           .withArgs(testUser1.address, 1);
 
         // Verify server is in user's trusted list
-        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(1);
-        (await testServersContract.userServerIdsAt(testUser1.address, 0)).should.eq(1);
+        (
+          await testServersContract.userServerIdsLength(testUser1.address)
+        ).should.eq(1);
+        (
+          await testServersContract.userServerIdsAt(testUser1.address, 0)
+        ).should.eq(1);
       });
 
       it("should add and trust a new server", async function () {
@@ -2425,72 +2596,73 @@ describe("DataPortabilityPermissions", () => {
             owner: testUser1.address,
             serverAddress: testServer2.address,
             publicKey: "0xabcdef1234567890",
-            serverUrl: "https://newserver.com"
+            serverUrl: "https://newserver.com",
           });
 
         await expect(tx)
           .to.emit(testServersContract, "ServerRegistered")
-          .withArgs(1, testUser1.address, testServer2.address, "0xabcdef1234567890", "https://newserver.com");
+          .withArgs(
+            1,
+            testUser1.address,
+            testServer2.address,
+            "0xabcdef1234567890",
+            "https://newserver.com",
+          );
       });
 
       it("should reject trusting server that doesn't exist", async function () {
         // Try to trust server that doesn't exist
         await expect(
-          testServersContract
-            .connect(testUser1)
-            .trustServer(999),
+          testServersContract.connect(testUser1).trustServer(999),
         ).to.be.revertedWithCustomError(testServersContract, "ServerNotFound");
       });
 
       it("should reject trusting server with ID 0", async function () {
         await expect(
-          testServersContract
-            .connect(testUser1)
-            .trustServer(0),
+          testServersContract.connect(testUser1).trustServer(0),
         ).to.be.revertedWithCustomError(testServersContract, "ServerNotFound");
       });
 
       it("should reject trusting already trusted server", async function () {
         // First register and trust the server
-        await testServersContract
-          .connect(testUser1)
-          .addAndTrustServer({
-            owner: testUser1.address,
-            serverAddress: testServer1.address,
-            publicKey: "0x1234567890abcdef",
-            serverUrl: serverUrl
-          });
+        await testServersContract.connect(testUser1).addAndTrustServer({
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: serverUrl,
+        });
 
         // Try to trust again
         await expect(
           testServersContract.connect(testUser1).trustServer(1),
-        ).to.be.revertedWithCustomError(testServersContract, "ServerAlreadyTrusted");
+        ).to.be.revertedWithCustomError(
+          testServersContract,
+          "ServerAlreadyTrusted",
+        );
       });
 
       it("should allow trusting multiple servers", async function () {
         const serverUrl2 = "https://testServer2.example.com";
 
         // Register and trust both servers
-        await testServersContract
-          .connect(testUser1)
-          .addAndTrustServer({
-            owner: testUser1.address,
-            serverAddress: testServer1.address,
-            publicKey: "0x1234567890abcdef",
-            serverUrl: serverUrl
-          });
+        await testServersContract.connect(testUser1).addAndTrustServer({
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: serverUrl,
+        });
 
-        await testServersContract
-          .connect(testUser1)
-          .addAndTrustServer({
-            owner: testUser1.address,
-            serverAddress: testServer2.address,
-            publicKey: "0xabcdef1234567890",
-            serverUrl: serverUrl2
-          });
+        await testServersContract.connect(testUser1).addAndTrustServer({
+          owner: testUser1.address,
+          serverAddress: testServer2.address,
+          publicKey: "0xabcdef1234567890",
+          serverUrl: serverUrl2,
+        });
 
         // Verify both are trusted
-        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(2);
+        (
+          await testServersContract.userServerIdsLength(testUser1.address)
+        ).should.eq(2);
 
         const trustedServers = await testServersContract.userServerIdsValues(
           testUser1.address,
@@ -2500,29 +2672,28 @@ describe("DataPortabilityPermissions", () => {
 
       it("should allow trusting same server multiple times (idempotent)", async function () {
         // Register server first
-        await testServersContract
-          .connect(testUser1)
-          .addServer({
-            owner: testUser1.address,
-            serverAddress: testServer1.address,
-            publicKey: "0x1234567890abcdef",
-            serverUrl: serverUrl
-          });
+        await testServersContract.connect(testUser1).addServer({
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: serverUrl,
+        });
 
         // Trust server
-        await testServersContract
-          .connect(testUser1)
-          .trustServer(1);
+        await testServersContract.connect(testUser1).trustServer(1);
 
         // Trust again - should fail with ServerAlreadyTrusted
         await expect(
-          testServersContract
-            .connect(testUser1)
-            .trustServer(1)
-        ).to.be.revertedWithCustomError(testServersContract, "ServerAlreadyTrusted");
+          testServersContract.connect(testUser1).trustServer(1),
+        ).to.be.revertedWithCustomError(
+          testServersContract,
+          "ServerAlreadyTrusted",
+        );
 
         // Should still have only one trusted server
-        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(1);
+        (
+          await testServersContract.userServerIdsLength(testUser1.address)
+        ).should.eq(1);
       });
     });
 
@@ -2531,14 +2702,12 @@ describe("DataPortabilityPermissions", () => {
 
       it("should trust server with valid signature", async function () {
         // First register the server
-        await testServersContract
-          .connect(testUser1)
-          .addServer({
-            owner: testUser1.address,
-            serverAddress: testServer1.address,
-            publicKey: "0x1234567890abcdef",
-            serverUrl: serverUrl
-          });
+        await testServersContract.connect(testUser1).addServer({
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: serverUrl,
+        });
 
         const trustServerInput = {
           nonce: 0n,
@@ -2565,19 +2734,19 @@ describe("DataPortabilityPermissions", () => {
         (await testServersContract.userNonce(testUser1.address)).should.eq(1);
 
         // Verify server is trusted
-        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(1);
+        (
+          await testServersContract.userServerIdsLength(testUser1.address)
+        ).should.eq(1);
       });
 
       it("should reject with incorrect nonce", async function () {
         // First register the server
-        await testServersContract
-          .connect(testUser1)
-          .addServer({
-            owner: testUser1.address,
-            serverAddress: testServer1.address,
-            publicKey: "0x1234567890abcdef",
-            serverUrl: serverUrl
-          });
+        await testServersContract.connect(testUser1).addServer({
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: serverUrl,
+        });
 
         const trustServerInput = {
           nonce: 1n, // Wrong nonce
@@ -2600,14 +2769,12 @@ describe("DataPortabilityPermissions", () => {
 
       it("should work when called by sponsor but signed by user", async function () {
         // First register the server
-        await testServersContract
-          .connect(testUser1)
-          .addServer({
-            owner: testUser1.address,
-            serverAddress: testServer1.address,
-            publicKey: "0x1234567890abcdef",
-            serverUrl: serverUrl
-          });
+        await testServersContract.connect(testUser1).addServer({
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: serverUrl,
+        });
 
         const trustServerInput = {
           nonce: 0n,
@@ -2624,10 +2791,12 @@ describe("DataPortabilityPermissions", () => {
           .trustServerWithSignature(trustServerInput, signature);
 
         // Verify it's indexed by the signer (testUser1), not the caller (sponsor)
-        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(1);
-        (await testServersContract.userServerIdsLength(sponsor.address)).should.eq(
-          0,
-        );
+        (
+          await testServersContract.userServerIdsLength(testUser1.address)
+        ).should.eq(1);
+        (
+          await testServersContract.userServerIdsLength(sponsor.address)
+        ).should.eq(0);
       });
     });
 
@@ -2636,19 +2805,19 @@ describe("DataPortabilityPermissions", () => {
 
       beforeEach(async function () {
         // Register and trust server
-        await testServersContract
-          .connect(testUser1)
-          .addAndTrustServer({
-            owner: testUser1.address,
-            serverAddress: testServer1.address,
-            publicKey: "0x1234567890abcdef",
-            serverUrl: serverUrl
-          });
+        await testServersContract.connect(testUser1).addAndTrustServer({
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: serverUrl,
+        });
       });
 
       it("should untrust a server successfully", async function () {
         // Verify server is trusted
-        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(1);
+        (
+          await testServersContract.userServerIdsLength(testUser1.address)
+        ).should.eq(1);
 
         const tx = await testServersContract
           .connect(testUser1)
@@ -2659,23 +2828,26 @@ describe("DataPortabilityPermissions", () => {
           .withArgs(testUser1.address, 1);
 
         // Verify server is no longer trusted
-        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(0);
+        (
+          await testServersContract.userServerIdsLength(testUser1.address)
+        ).should.eq(0);
       });
 
       it("should reject untrusting non-trusted server", async function () {
         // Register another server but don't trust it
-        await testServersContract
-          .connect(testUser1)
-          .addServer({
-            owner: testUser1.address,
-            serverAddress: testServer2.address,
-            publicKey: "0xabcdef1234567890",
-            serverUrl: "https://testServer2.example.com"
-          });
+        await testServersContract.connect(testUser1).addServer({
+          owner: testUser1.address,
+          serverAddress: testServer2.address,
+          publicKey: "0xabcdef1234567890",
+          serverUrl: "https://testServer2.example.com",
+        });
 
         await expect(
           testServersContract.connect(testUser1).untrustServer(2),
-        ).to.be.revertedWithCustomError(testServersContract, "ServerNotTrusted");
+        ).to.be.revertedWithCustomError(
+          testServersContract,
+          "ServerNotTrusted",
+        );
       });
 
       it("should reject untrusting server with ID 0", async function () {
@@ -2686,18 +2858,20 @@ describe("DataPortabilityPermissions", () => {
 
       it("should not affect other users' trust", async function () {
         // User2 also trusts the server
-        await testServersContract
-          .connect(testUser2)
-          .trustServer(1);
+        await testServersContract.connect(testUser2).trustServer(1);
 
         // User1 untrusts
         await testServersContract.connect(testUser1).untrustServer(1);
 
         // User1 should have no trusted servers
-        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(0);
+        (
+          await testServersContract.userServerIdsLength(testUser1.address)
+        ).should.eq(0);
 
         // User2 should still trust the server
-        (await testServersContract.userServerIdsLength(testUser2.address)).should.eq(1);
+        (
+          await testServersContract.userServerIdsLength(testUser2.address)
+        ).should.eq(1);
       });
     });
 
@@ -2706,14 +2880,12 @@ describe("DataPortabilityPermissions", () => {
 
       beforeEach(async function () {
         // Register and trust server
-        await testServersContract
-          .connect(testUser1)
-          .addAndTrustServer({
-            owner: testUser1.address,
-            serverAddress: testServer1.address,
-            publicKey: "0x1234567890abcdef",
-            serverUrl: serverUrl
-          });
+        await testServersContract.connect(testUser1).addAndTrustServer({
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: serverUrl,
+        });
       });
 
       it("should untrust server with valid signature", async function () {
@@ -2740,7 +2912,9 @@ describe("DataPortabilityPermissions", () => {
         (await testServersContract.userNonce(testUser1.address)).should.eq(1);
 
         // Verify server is no longer trusted
-        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(0);
+        (
+          await testServersContract.userServerIdsLength(testUser1.address)
+        ).should.eq(0);
       });
 
       it("should reject with incorrect nonce", async function () {
@@ -2768,58 +2942,62 @@ describe("DataPortabilityPermissions", () => {
       beforeEach(async function () {
         // Setup: Create 3 servers by having different users trust them
         const servers = [
-          { serverAddress: testServer1.address, url: "https://testServer1.com" },
-          { serverAddress: testServer2.address, url: "https://testServer2.com" },
+          {
+            serverAddress: testServer1.address,
+            url: "https://testServer1.com",
+          },
+          {
+            serverAddress: testServer2.address,
+            url: "https://testServer2.com",
+          },
           { serverAddress: maintainer.address, url: "https://server3.com" },
         ];
 
         // User1 adds and trusts first two servers
-        await testServersContract
-          .connect(testUser1)
-          .addAndTrustServer({
-            owner: testUser1.address,
-            serverAddress: servers[0].serverAddress,
-            publicKey: "0x1234567890abcdef",
-            serverUrl: servers[0].url
-          });
+        await testServersContract.connect(testUser1).addAndTrustServer({
+          owner: testUser1.address,
+          serverAddress: servers[0].serverAddress,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: servers[0].url,
+        });
 
-        await testServersContract
-          .connect(testUser1)
-          .addAndTrustServer({
-            owner: testUser1.address,
-            serverAddress: servers[1].serverAddress,
-            publicKey: "0xabcdef1234567890",
-            serverUrl: servers[1].url
-          });
+        await testServersContract.connect(testUser1).addAndTrustServer({
+          owner: testUser1.address,
+          serverAddress: servers[1].serverAddress,
+          publicKey: "0xabcdef1234567890",
+          serverUrl: servers[1].url,
+        });
 
         // User2 adds and trusts the third server
-        await testServersContract
-          .connect(testUser2)
-          .addAndTrustServer({
-            owner: testUser2.address,
-            serverAddress: servers[2].serverAddress,
-            publicKey: "0x9876543210fedcba",
-            serverUrl: servers[2].url
-          });
+        await testServersContract.connect(testUser2).addAndTrustServer({
+          owner: testUser2.address,
+          serverAddress: servers[2].serverAddress,
+          publicKey: "0x9876543210fedcba",
+          serverUrl: servers[2].url,
+        });
       });
 
       it("should return correct userServerIdsLength", async function () {
-        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(2);
-        (await testServersContract.userServerIdsLength(testUser2.address)).should.eq(1);
+        (
+          await testServersContract.userServerIdsLength(testUser1.address)
+        ).should.eq(2);
+        (
+          await testServersContract.userServerIdsLength(testUser2.address)
+        ).should.eq(1);
       });
 
       it("should return correct userServerIdsAt", async function () {
-        (await testServersContract.userServerIdsAt(testUser1.address, 0)).should.eq(
-          1,
-        );
-        (await testServersContract.userServerIdsAt(testUser1.address, 1)).should.eq(
-          2,
-        );
+        (
+          await testServersContract.userServerIdsAt(testUser1.address, 0)
+        ).should.eq(1);
+        (
+          await testServersContract.userServerIdsAt(testUser1.address, 1)
+        ).should.eq(2);
       });
 
       it("should revert on out of bounds userServerIdsAt", async function () {
-        await expect(testServersContract.userServerIdsAt(testUser1.address, 2)).to.be
-          .reverted;
+        await expect(testServersContract.userServerIdsAt(testUser1.address, 2))
+          .to.be.reverted;
       });
 
       it("should return correct userServerIdsValues", async function () {
@@ -2828,9 +3006,8 @@ describe("DataPortabilityPermissions", () => {
         );
         serverIds.should.deep.eq([1n, 2n]);
 
-        const testUser2ServerIds = await testServersContract.userServerIdsValues(
-          testUser2.address,
-        );
+        const testUser2ServerIds =
+          await testServersContract.userServerIdsValues(testUser2.address);
         testUser2ServerIds.should.deep.eq([3n]);
 
         // Test a user with no trusted servers
@@ -2841,14 +3018,20 @@ describe("DataPortabilityPermissions", () => {
       });
 
       it("should return correct server info", async function () {
-        const serverInfo1 = await testServersContract.serverByAddress(testServer1.address);
+        const serverInfo1 = await testServersContract.serverByAddress(
+          testServer1.address,
+        );
         serverInfo1.url.should.eq("https://testServer1.com");
 
-        const serverInfo2 = await testServersContract.serverByAddress(testServer2.address);
+        const serverInfo2 = await testServersContract.serverByAddress(
+          testServer2.address,
+        );
         serverInfo2.url.should.eq("https://testServer2.com");
 
         // Non-existent server should return empty
-        const nonExistent = await testServersContract.serverByAddress(user3.address);
+        const nonExistent = await testServersContract.serverByAddress(
+          user3.address,
+        );
         nonExistent.url.should.eq("");
       });
     });
@@ -2868,14 +3051,12 @@ describe("DataPortabilityPermissions", () => {
         );
 
         // First register the server
-        await testServersContract
-          .connect(testUser1)
-          .addServer({
-            owner: testUser1.address,
-            serverAddress: testServer1.address,
-            publicKey: "0x1234567890abcdef",
-            serverUrl: serverUrl
-          });
+        await testServersContract.connect(testUser1).addServer({
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: serverUrl,
+        });
 
         // First call should succeed
         await testServersContract
@@ -2897,14 +3078,12 @@ describe("DataPortabilityPermissions", () => {
 
       it("should prevent replay of untrustServerWithSignature", async function () {
         // First register and trust the server
-        await testServersContract
-          .connect(testUser1)
-          .addAndTrustServer({
-            owner: testUser1.address,
-            serverAddress: testServer1.address,
-            publicKey: "0x1234567890abcdef",
-            serverUrl: serverUrl
-          });
+        await testServersContract.connect(testUser1).addAndTrustServer({
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: serverUrl,
+        });
 
         const untrustServerInput = {
           nonce: 0n,
@@ -2947,14 +3126,12 @@ describe("DataPortabilityPermissions", () => {
         );
 
         // First register the server
-        await testServersContract
-          .connect(testUser1)
-          .addServer({
-            owner: testUser1.address,
-            serverAddress: testServer1.address,
-            publicKey: "0x1234567890abcdef",
-            serverUrl: serverUrl
-          });
+        await testServersContract.connect(testUser1).addServer({
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: serverUrl,
+        });
 
         // User1 trusts the server
         await testServersContract
@@ -2985,8 +3162,12 @@ describe("DataPortabilityPermissions", () => {
           .trustServerWithSignature(trustServerInput, testUser2Signature);
 
         // Verify each user has their own trust relationship
-        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(1);
-        (await testServersContract.userServerIdsLength(testUser2.address)).should.eq(1);
+        (
+          await testServersContract.userServerIdsLength(testUser1.address)
+        ).should.eq(1);
+        (
+          await testServersContract.userServerIdsLength(testUser2.address)
+        ).should.eq(1);
       });
 
       it("should prevent replay attacks across different operations", async function () {
@@ -3013,14 +3194,12 @@ describe("DataPortabilityPermissions", () => {
         );
 
         // First register the server
-        await testServersContract
-          .connect(testUser1)
-          .addServer({
-            owner: testUser1.address,
-            serverAddress: testServer1.address,
-            publicKey: "0x1234567890abcdef",
-            serverUrl: serverUrl
-          });
+        await testServersContract.connect(testUser1).addServer({
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: serverUrl,
+        });
 
         // Execute trust operation
         await testServersContract
@@ -3090,14 +3269,12 @@ describe("DataPortabilityPermissions", () => {
 
         // Now try server operations - they should use the updated nonce
         // First create a server
-        await testServersContract
-          .connect(testUser1)
-          .addAndTrustServer({
-            owner: testUser1.address,
-            serverAddress: testServer1.address,
-            publicKey: "0x1234567890abcdef",
-            serverUrl: "https://testServer1.com"
-          });
+        await testServersContract.connect(testUser1).addAndTrustServer({
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: "https://testServer1.com",
+        });
 
         // Untrust the server first, then trust it again to test the signature
         await testServersContract.connect(testUser1).untrustServer(1n);
@@ -3126,14 +3303,12 @@ describe("DataPortabilityPermissions", () => {
         (await testServersContract.userNonce(testUser2.address)).should.eq(0);
 
         // Register server first
-        await testServersContract
-          .connect(testUser1)
-          .addServer({
-            owner: testUser1.address,
-            serverAddress: testServer1.address,
-            publicKey: "0x1234567890abcdef",
-            serverUrl: serverUrl
-          });
+        await testServersContract.connect(testUser1).addServer({
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: serverUrl,
+        });
 
         // User1 performs operation
         const testUser1Input = {
@@ -3227,7 +3402,10 @@ describe("DataPortabilityPermissions", () => {
           fileIds: [1n, 2n, 3n],
         };
 
-        const signature = await createPermissionSignature(permission, testUser1);
+        const signature = await createPermissionSignature(
+          permission,
+          testUser1,
+        );
 
         const tx = await dataPermission
           .connect(sponsor)
@@ -3282,7 +3460,10 @@ describe("DataPortabilityPermissions", () => {
           fileIds: [1n, 2n, 3n], // File 2 is not owned by testUser1
         };
 
-        const signature = await createPermissionSignature(permission, testUser1);
+        const signature = await createPermissionSignature(
+          permission,
+          testUser1,
+        );
 
         await expect(
           dataPermission.connect(sponsor).addPermission(permission, signature),
@@ -3304,7 +3485,10 @@ describe("DataPortabilityPermissions", () => {
           fileIds: [], // Empty array
         };
 
-        const signature = await createPermissionSignature(permission, testUser1);
+        const signature = await createPermissionSignature(
+          permission,
+          testUser1,
+        );
 
         const tx = await dataPermission
           .connect(sponsor)
@@ -3333,7 +3517,10 @@ describe("DataPortabilityPermissions", () => {
           fileIds: [1n, 2n, 1n, 2n, 1n], // Duplicates
         };
 
-        const signature = await createPermissionSignature(permission, testUser1);
+        const signature = await createPermissionSignature(
+          permission,
+          testUser1,
+        );
 
         const tx = await dataPermission
           .connect(sponsor)
@@ -3366,7 +3553,10 @@ describe("DataPortabilityPermissions", () => {
           fileIds: [1n],
         };
 
-        const signature1 = await createPermissionSignature(permission1, testUser1);
+        const signature1 = await createPermissionSignature(
+          permission1,
+          testUser1,
+        );
         await dataPermission
           .connect(sponsor)
           .addPermission(permission1, signature1);
@@ -3379,7 +3569,10 @@ describe("DataPortabilityPermissions", () => {
           fileIds: [1n],
         };
 
-        const signature2 = await createPermissionSignature(permission2, testUser1);
+        const signature2 = await createPermissionSignature(
+          permission2,
+          testUser1,
+        );
         await dataPermission
           .connect(sponsor)
           .addPermission(permission2, signature2);
@@ -3414,7 +3607,10 @@ describe("DataPortabilityPermissions", () => {
           fileIds: [1n, 2n, 3n],
         };
 
-        const signature1 = await createPermissionSignature(permission1, testUser1);
+        const signature1 = await createPermissionSignature(
+          permission1,
+          testUser1,
+        );
         await dataPermission
           .connect(sponsor)
           .addPermission(permission1, signature1);
@@ -3427,7 +3623,10 @@ describe("DataPortabilityPermissions", () => {
           fileIds: [2n, 3n, 4n],
         };
 
-        const signature2 = await createPermissionSignature(permission2, testUser1);
+        const signature2 = await createPermissionSignature(
+          permission2,
+          testUser1,
+        );
         await dataPermission
           .connect(sponsor)
           .addPermission(permission2, signature2);
@@ -3455,7 +3654,10 @@ describe("DataPortabilityPermissions", () => {
           fileIds: [1n, 2n],
         };
 
-        const signature = await createPermissionSignature(permission, testUser1);
+        const signature = await createPermissionSignature(
+          permission,
+          testUser1,
+        );
         await dataPermission
           .connect(sponsor)
           .addPermission(permission, signature);
@@ -3501,7 +3703,10 @@ describe("DataPortabilityPermissions", () => {
           fileIds: fileIds,
         };
 
-        const signature = await createPermissionSignature(permission, testUser1);
+        const signature = await createPermissionSignature(
+          permission,
+          testUser1,
+        );
 
         const tx = await dataPermission
           .connect(sponsor)
@@ -3535,7 +3740,10 @@ describe("DataPortabilityPermissions", () => {
           fileIds: [1n, 999n], // File 999 doesn't exist
         };
 
-        const signature = await createPermissionSignature(permission, testUser1);
+        const signature = await createPermissionSignature(
+          permission,
+          testUser1,
+        );
 
         await expect(
           dataPermission.connect(sponsor).addPermission(permission, signature),
@@ -3604,32 +3812,46 @@ describe("DataPortabilityPermissions", () => {
             owner: testUser1.address,
             serverAddress: testServer1.address,
             publicKey: "0x1234567890abcdef",
-            serverUrl: serverUrl
+            serverUrl: serverUrl,
           });
 
         // Should emit ServerRegistered when first added
         await expect(tx)
           .to.emit(testServersContract, "ServerRegistered")
-          .withArgs(1, testUser1.address, testServer1.address, "0x1234567890abcdef", serverUrl);
+          .withArgs(
+            1,
+            testUser1.address,
+            testServer1.address,
+            "0x1234567890abcdef",
+            serverUrl,
+          );
 
         // 2. Second user trusts the same server
-        await testServersContract
-          .connect(testUser2)
-          .trustServer(1);
+        await testServersContract.connect(testUser2).trustServer(1);
 
         // Verify both users trust the server
-        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(1);
-        (await testServersContract.userServerIdsLength(testUser2.address)).should.eq(1);
+        (
+          await testServersContract.userServerIdsLength(testUser1.address)
+        ).should.eq(1);
+        (
+          await testServersContract.userServerIdsLength(testUser2.address)
+        ).should.eq(1);
 
         // 3. User1 untrusts the server
         await testServersContract.connect(testUser1).untrustServer(1);
 
         // Verify testUser1 no longer trusts, but testUser2 still does
-        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(0);
-        (await testServersContract.userServerIdsLength(testUser2.address)).should.eq(1);
+        (
+          await testServersContract.userServerIdsLength(testUser1.address)
+        ).should.eq(0);
+        (
+          await testServersContract.userServerIdsLength(testUser2.address)
+        ).should.eq(1);
 
         // 4. Server info should still be available
-        const server = await testServersContract.serverByAddress(testServer1.address);
+        const server = await testServersContract.serverByAddress(
+          testServer1.address,
+        );
         server.url.should.eq(serverUrl);
       });
 
@@ -3656,20 +3878,20 @@ describe("DataPortabilityPermissions", () => {
 
         // Trust a server (this will create it)
         const serverUrl = "https://integrated.example.com";
-        await testServersContract
-          .connect(testUser1)
-          .addAndTrustServer({
-            owner: testUser1.address,
-            serverAddress: testServer1.address,
-            publicKey: "0x1234567890abcdef",
-            serverUrl: serverUrl
-          });
+        await testServersContract.connect(testUser1).addAndTrustServer({
+          owner: testUser1.address,
+          serverAddress: testServer1.address,
+          publicKey: "0x1234567890abcdef",
+          serverUrl: serverUrl,
+        });
 
         // Verify user has both permissions and trusted servers
-        (await dataPermission.userPermissionIdsLength(testUser1.address)).should.eq(
-          1,
-        );
-        (await testServersContract.userServerIdsLength(testUser1.address)).should.eq(1);
+        (
+          await dataPermission.userPermissionIdsLength(testUser1.address)
+        ).should.eq(1);
+        (
+          await testServersContract.userServerIdsLength(testUser1.address)
+        ).should.eq(1);
 
         // Nonce should have been incremented by permission (not by direct trust)
         (await dataPermission.userNonce(testUser1.address)).should.eq(1);
@@ -3687,12 +3909,13 @@ describe("DataPortabilityPermissions", () => {
 
     beforeEach(async () => {
       await deploy();
-      [owner, testUser1, testUser2, testServer1, testServer2] = await ethers.getSigners();
-      
+      [owner, testUser1, testUser2, testServer1, testServer2] =
+        await ethers.getSigners();
+
       // Use the already deployed and initialized servers contract from the main deployment
       testServersContract = await ethers.getContractAt(
         "DataPortabilityServersImplementation",
-        await dataPermission.dataPortabilityServers()
+        await dataPermission.dataPortabilityServers(),
       );
     });
 
@@ -3702,14 +3925,22 @@ describe("DataPortabilityPermissions", () => {
           owner: testUser1.address,
           serverAddress: testServer1.address,
           publicKey: "0x1234567890abcdef",
-          serverUrl: "https://testServer1.example.com"
+          serverUrl: "https://testServer1.example.com",
         };
 
-        const tx = await testServersContract.connect(testUser1).addServer(serverInput);
+        const tx = await testServersContract
+          .connect(testUser1)
+          .addServer(serverInput);
 
         await expect(tx)
           .to.emit(testServersContract, "ServerRegistered")
-          .withArgs(1, testUser1.address, testServer1.address, "0x1234567890abcdef", "https://testServer1.example.com");
+          .withArgs(
+            1,
+            testUser1.address,
+            testServer1.address,
+            "0x1234567890abcdef",
+            "https://testServer1.example.com",
+          );
 
         // Verify server was registered
         const serverInfo = await testServersContract.server(1);
@@ -3727,11 +3958,12 @@ describe("DataPortabilityPermissions", () => {
           owner: testUser1.address,
           serverAddress: testServer1.address,
           publicKey: "0x1234567890abcdef",
-          serverUrl: ""
+          serverUrl: "",
         };
 
-        await expect(testServersContract.connect(testUser1).addServer(serverInput))
-          .to.be.revertedWithCustomError(testServersContract, "EmptyUrl");
+        await expect(
+          testServersContract.connect(testUser1).addServer(serverInput),
+        ).to.be.revertedWithCustomError(testServersContract, "EmptyUrl");
       });
 
       it("should reject server registration with empty public key", async () => {
@@ -3739,11 +3971,12 @@ describe("DataPortabilityPermissions", () => {
           owner: testUser1.address,
           serverAddress: testServer1.address,
           publicKey: "0x",
-          serverUrl: "https://testServer1.example.com"
+          serverUrl: "https://testServer1.example.com",
         };
 
-        await expect(testServersContract.connect(testUser1).addServer(serverInput))
-          .to.be.revertedWithCustomError(testServersContract, "EmptyPublicKey");
+        await expect(
+          testServersContract.connect(testUser1).addServer(serverInput),
+        ).to.be.revertedWithCustomError(testServersContract, "EmptyPublicKey");
       });
 
       it("should reject server registration with zero address owner", async () => {
@@ -3751,11 +3984,12 @@ describe("DataPortabilityPermissions", () => {
           owner: ethers.ZeroAddress,
           serverAddress: testServer1.address,
           publicKey: "0x1234567890abcdef",
-          serverUrl: "https://testServer1.example.com"
+          serverUrl: "https://testServer1.example.com",
         };
 
-        await expect(testServersContract.connect(testUser1).addServer(serverInput))
-          .to.be.revertedWithCustomError(testServersContract, "ZeroAddress");
+        await expect(
+          testServersContract.connect(testUser1).addServer(serverInput),
+        ).to.be.revertedWithCustomError(testServersContract, "ZeroAddress");
       });
 
       it("should reject server registration with zero address server", async () => {
@@ -3763,11 +3997,12 @@ describe("DataPortabilityPermissions", () => {
           owner: testUser1.address,
           serverAddress: ethers.ZeroAddress,
           publicKey: "0x1234567890abcdef",
-          serverUrl: "https://testServer1.example.com"
+          serverUrl: "https://testServer1.example.com",
         };
 
-        await expect(testServersContract.connect(testUser1).addServer(serverInput))
-          .to.be.revertedWithCustomError(testServersContract, "ZeroAddress");
+        await expect(
+          testServersContract.connect(testUser1).addServer(serverInput),
+        ).to.be.revertedWithCustomError(testServersContract, "ZeroAddress");
       });
 
       it("should reject duplicate server registration", async () => {
@@ -3775,13 +4010,17 @@ describe("DataPortabilityPermissions", () => {
           owner: testUser1.address,
           serverAddress: testServer1.address,
           publicKey: "0x1234567890abcdef",
-          serverUrl: "https://testServer1.example.com"
+          serverUrl: "https://testServer1.example.com",
         };
 
         await testServersContract.connect(testUser1).addServer(serverInput);
 
-        await expect(testServersContract.connect(testUser2).addServer(serverInput))
-          .to.be.revertedWithCustomError(testServersContract, "ServerAlreadyRegistered");
+        await expect(
+          testServersContract.connect(testUser2).addServer(serverInput),
+        ).to.be.revertedWithCustomError(
+          testServersContract,
+          "ServerAlreadyRegistered",
+        );
       });
     });
 
@@ -3791,15 +4030,17 @@ describe("DataPortabilityPermissions", () => {
           owner: testUser1.address,
           serverAddress: testServer1.address,
           publicKey: "0x1234567890abcdef",
-          serverUrl: "https://testServer1.example.com"
+          serverUrl: "https://testServer1.example.com",
         };
         await testServersContract.connect(testUser1).addServer(serverInput);
       });
 
       it("should update server URL by owner", async () => {
         const newUrl = "https://updated.example.com";
-        
-        const tx = await testServersContract.connect(testUser1).updateServer(1, newUrl);
+
+        const tx = await testServersContract
+          .connect(testUser1)
+          .updateServer(1, newUrl);
 
         await expect(tx)
           .to.emit(testServersContract, "ServerUpdated")
@@ -3811,19 +4052,24 @@ describe("DataPortabilityPermissions", () => {
 
       it("should reject update by non-owner", async () => {
         const newUrl = "https://updated.example.com";
-        
-        await expect(testServersContract.connect(testUser2).updateServer(1, newUrl))
-          .to.be.revertedWithCustomError(testServersContract, "NotServerOwner");
+
+        await expect(
+          testServersContract.connect(testUser2).updateServer(1, newUrl),
+        ).to.be.revertedWithCustomError(testServersContract, "NotServerOwner");
       });
 
       it("should reject update with empty URL", async () => {
-        await expect(testServersContract.connect(testUser1).updateServer(1, ""))
-          .to.be.revertedWithCustomError(testServersContract, "EmptyUrl");
+        await expect(
+          testServersContract.connect(testUser1).updateServer(1, ""),
+        ).to.be.revertedWithCustomError(testServersContract, "EmptyUrl");
       });
 
       it("should reject update for non-existent server", async () => {
-        await expect(testServersContract.connect(testUser1).updateServer(999, "https://test.com"))
-          .to.be.revertedWithCustomError(testServersContract, "ServerNotFound");
+        await expect(
+          testServersContract
+            .connect(testUser1)
+            .updateServer(999, "https://test.com"),
+        ).to.be.revertedWithCustomError(testServersContract, "ServerNotFound");
       });
     });
 
@@ -3833,7 +4079,7 @@ describe("DataPortabilityPermissions", () => {
           owner: testUser1.address,
           serverAddress: testServer1.address,
           publicKey: "0x1234567890abcdef",
-          serverUrl: "https://testServer1.example.com"
+          serverUrl: "https://testServer1.example.com",
         };
         await testServersContract.connect(testUser1).addServer(serverInput);
       });
@@ -3845,46 +4091,69 @@ describe("DataPortabilityPermissions", () => {
           .to.emit(testServersContract, "ServerTrusted")
           .withArgs(testUser1.address, 1);
 
-        expect(await testServersContract.userServerIdsLength(testUser1.address)).to.equal(1);
-        expect(await testServersContract.isActiveServerForUser(testUser1.address, 1)).to.be.true;
+        expect(
+          await testServersContract.userServerIdsLength(testUser1.address),
+        ).to.equal(1);
+        expect(
+          await testServersContract.isActiveServerForUser(testUser1.address, 1),
+        ).to.be.true;
       });
 
       it("should reject trusting non-existent server", async () => {
-        await expect(testServersContract.connect(testUser1).trustServer(999))
-          .to.be.revertedWithCustomError(testServersContract, "ServerNotFound");
+        await expect(
+          testServersContract.connect(testUser1).trustServer(999),
+        ).to.be.revertedWithCustomError(testServersContract, "ServerNotFound");
       });
 
       it("should reject trusting already trusted server", async () => {
         await testServersContract.connect(testUser1).trustServer(1);
-        
-        await expect(testServersContract.connect(testUser1).trustServer(1))
-          .to.be.revertedWithCustomError(testServersContract, "ServerAlreadyTrusted");
+
+        await expect(
+          testServersContract.connect(testUser1).trustServer(1),
+        ).to.be.revertedWithCustomError(
+          testServersContract,
+          "ServerAlreadyTrusted",
+        );
       });
 
       it("should untrust a server", async () => {
         await testServersContract.connect(testUser1).trustServer(1);
-        
-        const tx = await testServersContract.connect(testUser1).untrustServer(1);
+
+        const tx = await testServersContract
+          .connect(testUser1)
+          .untrustServer(1);
 
         await expect(tx)
           .to.emit(testServersContract, "ServerUntrusted")
           .withArgs(testUser1.address, 1);
 
-        expect(await testServersContract.userServerIdsLength(testUser1.address)).to.equal(0);
-        expect(await testServersContract.isActiveServerForUser(testUser1.address, 1)).to.be.false;
+        expect(
+          await testServersContract.userServerIdsLength(testUser1.address),
+        ).to.equal(0);
+        expect(
+          await testServersContract.isActiveServerForUser(testUser1.address, 1),
+        ).to.be.false;
       });
 
       it("should reject untrusting non-trusted server", async () => {
-        await expect(testServersContract.connect(testUser1).untrustServer(1))
-          .to.be.revertedWithCustomError(testServersContract, "ServerNotTrusted");
+        await expect(
+          testServersContract.connect(testUser1).untrustServer(1),
+        ).to.be.revertedWithCustomError(
+          testServersContract,
+          "ServerNotTrusted",
+        );
       });
 
       it("should reject untrusting already untrusted server", async () => {
         await testServersContract.connect(testUser1).trustServer(1);
         await testServersContract.connect(testUser1).untrustServer(1);
-        
-        await expect(testServersContract.connect(testUser1).untrustServer(1))
-          .to.be.revertedWithCustomError(testServersContract, "ServerNotTrusted");
+
+        await expect(
+          testServersContract.connect(testUser1).untrustServer(1),
+        ).to.be.revertedWithCustomError(
+          testServersContract,
+          "ServerNotTrusted",
+        );
       });
     });
 
@@ -3894,21 +4163,33 @@ describe("DataPortabilityPermissions", () => {
           owner: testUser1.address,
           serverAddress: testServer1.address,
           publicKey: "0x1234567890abcdef",
-          serverUrl: "https://testServer1.example.com"
+          serverUrl: "https://testServer1.example.com",
         };
 
-        const tx = await testServersContract.connect(testUser1).addAndTrustServer(serverInput);
+        const tx = await testServersContract
+          .connect(testUser1)
+          .addAndTrustServer(serverInput);
 
         await expect(tx)
           .to.emit(testServersContract, "ServerRegistered")
-          .withArgs(1, testUser1.address, testServer1.address, "0x1234567890abcdef", "https://testServer1.example.com");
+          .withArgs(
+            1,
+            testUser1.address,
+            testServer1.address,
+            "0x1234567890abcdef",
+            "https://testServer1.example.com",
+          );
 
         await expect(tx)
           .to.emit(testServersContract, "ServerTrusted")
           .withArgs(testUser1.address, 1);
 
-        expect(await testServersContract.userServerIdsLength(testUser1.address)).to.equal(1);
-        expect(await testServersContract.isActiveServerForUser(testUser1.address, 1)).to.be.true;
+        expect(
+          await testServersContract.userServerIdsLength(testUser1.address),
+        ).to.equal(1);
+        expect(
+          await testServersContract.isActiveServerForUser(testUser1.address, 1),
+        ).to.be.true;
       });
     });
 
@@ -3918,7 +4199,7 @@ describe("DataPortabilityPermissions", () => {
           owner: testUser1.address,
           serverAddress: testServer1.address,
           publicKey: "0x1234567890abcdef",
-          serverUrl: "https://testServer1.example.com"
+          serverUrl: "https://testServer1.example.com",
         };
         await testServersContract.connect(testUser1).addServer(serverInput);
       });
@@ -3926,59 +4207,76 @@ describe("DataPortabilityPermissions", () => {
       it("should trust server with valid signature", async () => {
         const trustInput = {
           nonce: 0n,
-          serverId: 1n
+          serverId: 1n,
         };
 
         const domain = {
           name: "VanaDataPortabilityServers",
           version: "1",
-          chainId: await ethers.provider.getNetwork().then(n => n.chainId),
-          verifyingContract: await testServersContract.getAddress()
+          chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
+          verifyingContract: await testServersContract.getAddress(),
         };
 
         const types = {
           TrustServer: [
             { name: "nonce", type: "uint256" },
-            { name: "serverId", type: "uint256" }
-          ]
+            { name: "serverId", type: "uint256" },
+          ],
         };
 
-        const signature = await testUser1.signTypedData(domain, types, trustInput);
+        const signature = await testUser1.signTypedData(
+          domain,
+          types,
+          trustInput,
+        );
 
-        const tx = await testServersContract.connect(testUser2).trustServerWithSignature(trustInput, signature);
+        const tx = await testServersContract
+          .connect(testUser2)
+          .trustServerWithSignature(trustInput, signature);
 
         await expect(tx)
           .to.emit(testServersContract, "ServerTrusted")
           .withArgs(testUser1.address, 1);
 
-        expect(await testServersContract.userNonce(testUser1.address)).to.equal(1);
-        expect(await testServersContract.userServerIdsLength(testUser1.address)).to.equal(1);
+        expect(await testServersContract.userNonce(testUser1.address)).to.equal(
+          1,
+        );
+        expect(
+          await testServersContract.userServerIdsLength(testUser1.address),
+        ).to.equal(1);
       });
 
       it("should reject trust with invalid nonce", async () => {
         const trustInput = {
           nonce: 1n, // Wrong nonce
-          serverId: 1n
+          serverId: 1n,
         };
 
         const domain = {
           name: "VanaDataPortabilityServers",
           version: "1",
-          chainId: await ethers.provider.getNetwork().then(n => n.chainId),
-          verifyingContract: await testServersContract.getAddress()
+          chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
+          verifyingContract: await testServersContract.getAddress(),
         };
 
         const types = {
           TrustServer: [
             { name: "nonce", type: "uint256" },
-            { name: "serverId", type: "uint256" }
-          ]
+            { name: "serverId", type: "uint256" },
+          ],
         };
 
-        const signature = await testUser1.signTypedData(domain, types, trustInput);
+        const signature = await testUser1.signTypedData(
+          domain,
+          types,
+          trustInput,
+        );
 
-        await expect(testServersContract.connect(testUser2).trustServerWithSignature(trustInput, signature))
-          .to.be.revertedWithCustomError(testServersContract, "InvalidNonce");
+        await expect(
+          testServersContract
+            .connect(testUser2)
+            .trustServerWithSignature(trustInput, signature),
+        ).to.be.revertedWithCustomError(testServersContract, "InvalidNonce");
       });
 
       it("should add and trust server with signature", async () => {
@@ -3987,14 +4285,14 @@ describe("DataPortabilityPermissions", () => {
           owner: testUser1.address,
           serverAddress: testServer2.address,
           publicKey: "0xabcdef1234567890",
-          serverUrl: "https://testServer2.example.com"
+          serverUrl: "https://testServer2.example.com",
         };
 
         const domain = {
           name: "VanaDataPortabilityServers",
           version: "1",
-          chainId: await ethers.provider.getNetwork().then(n => n.chainId),
-          verifyingContract: await testServersContract.getAddress()
+          chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
+          verifyingContract: await testServersContract.getAddress(),
         };
 
         const types = {
@@ -4003,8 +4301,8 @@ describe("DataPortabilityPermissions", () => {
             { name: "owner", type: "address" },
             { name: "serverAddress", type: "address" },
             { name: "publicKey", type: "bytes" },
-            { name: "serverUrl", type: "string" }
-          ]
+            { name: "serverUrl", type: "string" },
+          ],
         };
 
         const value = {
@@ -4012,23 +4310,35 @@ describe("DataPortabilityPermissions", () => {
           owner: addAndTrustInput.owner,
           serverAddress: addAndTrustInput.serverAddress,
           publicKey: ethers.getBytes(addAndTrustInput.publicKey),
-          serverUrl: addAndTrustInput.serverUrl
+          serverUrl: addAndTrustInput.serverUrl,
         };
 
         const signature = await testUser1.signTypedData(domain, types, value);
 
-        const tx = await testServersContract.connect(testUser2).addAndTrustServerWithSignature(addAndTrustInput, signature);
+        const tx = await testServersContract
+          .connect(testUser2)
+          .addAndTrustServerWithSignature(addAndTrustInput, signature);
 
         await expect(tx)
           .to.emit(testServersContract, "ServerRegistered")
-          .withArgs(2, testUser1.address, testServer2.address, "0xabcdef1234567890", "https://testServer2.example.com");
+          .withArgs(
+            2,
+            testUser1.address,
+            testServer2.address,
+            "0xabcdef1234567890",
+            "https://testServer2.example.com",
+          );
 
         await expect(tx)
           .to.emit(testServersContract, "ServerTrusted")
           .withArgs(testUser1.address, 2);
 
-        expect(await testServersContract.userNonce(testUser1.address)).to.equal(1);
-        expect(await testServersContract.userServerIdsLength(testUser1.address)).to.equal(1);
+        expect(await testServersContract.userNonce(testUser1.address)).to.equal(
+          1,
+        );
+        expect(
+          await testServersContract.userServerIdsLength(testUser1.address),
+        ).to.equal(1);
       });
     });
 
@@ -4038,14 +4348,14 @@ describe("DataPortabilityPermissions", () => {
           owner: testUser1.address,
           serverAddress: testServer1.address,
           publicKey: "0x1234567890abcdef",
-          serverUrl: "https://testServer1.example.com"
+          serverUrl: "https://testServer1.example.com",
         };
-        
+
         const serverInput2 = {
           owner: testUser2.address,
           serverAddress: testServer2.address,
           publicKey: "0xabcdef1234567890",
-          serverUrl: "https://testServer2.example.com"
+          serverUrl: "https://testServer2.example.com",
         };
 
         await testServersContract.connect(testUser1).addServer(serverInput1);
@@ -4064,7 +4374,9 @@ describe("DataPortabilityPermissions", () => {
       });
 
       it("should return server info by address", async () => {
-        const serverInfo = await testServersContract.serverByAddress(testServer1.address);
+        const serverInfo = await testServersContract.serverByAddress(
+          testServer1.address,
+        );
         expect(serverInfo.id).to.equal(1);
         expect(serverInfo.owner).to.equal(testUser1.address);
         expect(serverInfo.serverAddress).to.equal(testServer1.address);
@@ -4072,22 +4384,31 @@ describe("DataPortabilityPermissions", () => {
       });
 
       it("should return user server IDs", async () => {
-        const serverIds = await testServersContract.userServerIdsValues(testUser1.address);
+        const serverIds = await testServersContract.userServerIdsValues(
+          testUser1.address,
+        );
         expect(serverIds).to.deep.equal([1n, 2n]);
       });
 
       it("should return user server ID at index", async () => {
-        const serverId = await testServersContract.userServerIdsAt(testUser1.address, 0);
+        const serverId = await testServersContract.userServerIdsAt(
+          testUser1.address,
+          0,
+        );
         expect(serverId).to.equal(1);
       });
 
       it("should return user server IDs length", async () => {
-        const length = await testServersContract.userServerIdsLength(testUser1.address);
+        const length = await testServersContract.userServerIdsLength(
+          testUser1.address,
+        );
         expect(length).to.equal(2);
       });
 
       it("should return user info", async () => {
-        const [nonce, trustedServerIds] = await testServersContract.user(testUser1.address);
+        const [nonce, trustedServerIds] = await testServersContract.user(
+          testUser1.address,
+        );
         expect(nonce).to.equal(0);
         expect(trustedServerIds).to.deep.equal([1n, 2n]);
       });
@@ -4098,7 +4419,9 @@ describe("DataPortabilityPermissions", () => {
       });
 
       it("should return server address to ID mapping", async () => {
-        const serverId = await testServersContract.serverAddressToId(testServer1.address);
+        const serverId = await testServersContract.serverAddressToId(
+          testServer1.address,
+        );
         expect(serverId).to.equal(1);
       });
 
@@ -4108,8 +4431,12 @@ describe("DataPortabilityPermissions", () => {
       });
 
       it("should check if server is active for user", async () => {
-        expect(await testServersContract.isActiveServerForUser(testUser1.address, 1)).to.be.true;
-        expect(await testServersContract.isActiveServerForUser(testUser2.address, 1)).to.be.false;
+        expect(
+          await testServersContract.isActiveServerForUser(testUser1.address, 1),
+        ).to.be.true;
+        expect(
+          await testServersContract.isActiveServerForUser(testUser2.address, 1),
+        ).to.be.false;
       });
     });
 
@@ -4117,34 +4444,44 @@ describe("DataPortabilityPermissions", () => {
       it("should update trusted forwarder", async () => {
         const newForwarder = testUser2.address;
         const [, , deployOwner] = await ethers.getSigners();
-        await testServersContract.connect(deployOwner).updateTrustedForwarder(newForwarder);
-        expect(await testServersContract.trustedForwarder()).to.equal(newForwarder);
+        await testServersContract
+          .connect(deployOwner)
+          .updateTrustedForwarder(newForwarder);
+        expect(await testServersContract.trustedForwarder()).to.equal(
+          newForwarder,
+        );
       });
 
       it("should pause and unpause", async () => {
         const [, , deployOwner] = await ethers.getSigners();
         await testServersContract.connect(deployOwner).pause();
-        
+
         const serverInput = {
           owner: testUser1.address,
           serverAddress: testServer1.address,
           publicKey: "0x1234567890abcdef",
-          serverUrl: "https://testServer1.example.com"
+          serverUrl: "https://testServer1.example.com",
         };
 
-        await expect(testServersContract.connect(testUser1).addServer(serverInput))
-          .to.be.revertedWithCustomError(testServersContract, "EnforcedPause");
+        await expect(
+          testServersContract.connect(testUser1).addServer(serverInput),
+        ).to.be.revertedWithCustomError(testServersContract, "EnforcedPause");
 
         await testServersContract.connect(deployOwner).unpause();
-        
-        await expect(testServersContract.connect(testUser1).addServer(serverInput))
-          .to.not.be.reverted;
+
+        await expect(
+          testServersContract.connect(testUser1).addServer(serverInput),
+        ).to.not.be.reverted;
       });
 
       it("should set user nonce", async () => {
         const [, , deployOwner] = await ethers.getSigners();
-        await testServersContract.connect(deployOwner).setUserNonce(testUser1.address, 5);
-        expect(await testServersContract.userNonce(testUser1.address)).to.equal(5);
+        await testServersContract
+          .connect(deployOwner)
+          .setUserNonce(testUser1.address, 5);
+        expect(await testServersContract.userNonce(testUser1.address)).to.equal(
+          5,
+        );
       });
     });
   });
@@ -4159,22 +4496,21 @@ describe("DataPortabilityPermissions", () => {
 
     beforeEach(async () => {
       await deploy();
-      [owner, testUser1, testUser2, grantee1, grantee2] = await ethers.getSigners();
-      
+      [owner, testUser1, testUser2, grantee1, grantee2] =
+        await ethers.getSigners();
+
       // Use the already deployed and initialized grantees contract from the main deployment
       granteesContract = await ethers.getContractAt(
         "DataPortabilityGranteesImplementation",
-        await dataPermission.dataPortabilityGrantees()
+        await dataPermission.dataPortabilityGrantees(),
       );
     });
 
     describe("Grantee Registration", () => {
       it("should register a new grantee", async () => {
-        const tx = await granteesContract.connect(testUser1).registerGrantee(
-          testUser1.address,
-          grantee1.address,
-          "publicKey1"
-        );
+        const tx = await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, grantee1.address, "publicKey1");
 
         await expect(tx)
           .to.emit(granteesContract, "GranteeRegistered")
@@ -4192,58 +4528,63 @@ describe("DataPortabilityPermissions", () => {
       });
 
       it("should reject grantee registration with empty public key", async () => {
-        await expect(granteesContract.connect(testUser1).registerGrantee(
-          testUser1.address,
-          grantee1.address,
-          ""
-        )).to.be.revertedWithCustomError(granteesContract, "EmptyPublicKey");
+        await expect(
+          granteesContract
+            .connect(testUser1)
+            .registerGrantee(testUser1.address, grantee1.address, ""),
+        ).to.be.revertedWithCustomError(granteesContract, "EmptyPublicKey");
       });
 
       it("should reject grantee registration with zero address grantee", async () => {
-        await expect(granteesContract.connect(testUser1).registerGrantee(
-          testUser1.address,
-          ethers.ZeroAddress,
-          "publicKey1"
-        )).to.be.revertedWithCustomError(granteesContract, "ZeroAddress");
+        await expect(
+          granteesContract
+            .connect(testUser1)
+            .registerGrantee(
+              testUser1.address,
+              ethers.ZeroAddress,
+              "publicKey1",
+            ),
+        ).to.be.revertedWithCustomError(granteesContract, "ZeroAddress");
       });
 
       it("should reject grantee registration with zero address owner", async () => {
-        await expect(granteesContract.connect(testUser1).registerGrantee(
-          ethers.ZeroAddress,
-          grantee1.address,
-          "publicKey1"
-        )).to.be.revertedWithCustomError(granteesContract, "ZeroAddress");
+        await expect(
+          granteesContract
+            .connect(testUser1)
+            .registerGrantee(
+              ethers.ZeroAddress,
+              grantee1.address,
+              "publicKey1",
+            ),
+        ).to.be.revertedWithCustomError(granteesContract, "ZeroAddress");
       });
 
       it("should reject duplicate grantee registration", async () => {
-        await granteesContract.connect(testUser1).registerGrantee(
-          testUser1.address,
-          grantee1.address,
-          "publicKey1"
-        );
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, grantee1.address, "publicKey1");
 
-        await expect(granteesContract.connect(testUser2).registerGrantee(
-          testUser2.address,
-          grantee1.address,
-          "publicKey2"
-        )).to.be.revertedWithCustomError(granteesContract, "GranteeAlreadyRegistered");
+        await expect(
+          granteesContract
+            .connect(testUser2)
+            .registerGrantee(testUser2.address, grantee1.address, "publicKey2"),
+        ).to.be.revertedWithCustomError(
+          granteesContract,
+          "GranteeAlreadyRegistered",
+        );
       });
 
       it("should register multiple grantees", async () => {
-        await granteesContract.connect(testUser1).registerGrantee(
-          testUser1.address,
-          grantee1.address,
-          "publicKey1"
-        );
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, grantee1.address, "publicKey1");
 
-        await granteesContract.connect(testUser2).registerGrantee(
-          testUser2.address,
-          grantee2.address,
-          "publicKey2"
-        );
+        await granteesContract
+          .connect(testUser2)
+          .registerGrantee(testUser2.address, grantee2.address, "publicKey2");
 
         expect(await granteesContract.granteesCount()).to.equal(2);
-        
+
         const grantee1Info = await granteesContract.grantee(1);
         expect(grantee1Info.owner).to.equal(testUser1.address);
         expect(grantee1Info.granteeAddress).to.equal(grantee1.address);
@@ -4256,16 +4597,12 @@ describe("DataPortabilityPermissions", () => {
 
     describe("View Functions", () => {
       beforeEach(async () => {
-        await granteesContract.connect(testUser1).registerGrantee(
-          testUser1.address,
-          grantee1.address,
-          "publicKey1"
-        );
-        await granteesContract.connect(testUser2).registerGrantee(
-          testUser2.address,
-          grantee2.address,
-          "publicKey2"
-        );
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, grantee1.address, "publicKey1");
+        await granteesContract
+          .connect(testUser2)
+          .registerGrantee(testUser2.address, grantee2.address, "publicKey2");
       });
 
       it("should return grantee info", async () => {
@@ -4284,7 +4621,9 @@ describe("DataPortabilityPermissions", () => {
       });
 
       it("should return grantee by address", async () => {
-        const granteeInfo = await granteesContract.granteeByAddress(grantee1.address);
+        const granteeInfo = await granteesContract.granteeByAddress(
+          grantee1.address,
+        );
         expect(granteeInfo.owner).to.equal(testUser1.address);
         expect(granteeInfo.granteeAddress).to.equal(grantee1.address);
         expect(granteeInfo.publicKey).to.equal("publicKey1");
@@ -4296,7 +4635,9 @@ describe("DataPortabilityPermissions", () => {
       });
 
       it("should return grantee address to ID mapping", async () => {
-        const granteeId = await granteesContract.granteeAddressToId(grantee1.address);
+        const granteeId = await granteesContract.granteeAddressToId(
+          grantee1.address,
+        );
         expect(granteeId).to.equal(1);
       });
 
@@ -4313,52 +4654,69 @@ describe("DataPortabilityPermissions", () => {
 
     describe("Permission Management", () => {
       beforeEach(async () => {
-        await granteesContract.connect(testUser1).registerGrantee(
-          testUser1.address,
-          grantee1.address,
-          "publicKey1"
-        );
-        
+        await granteesContract
+          .connect(testUser1)
+          .registerGrantee(testUser1.address, grantee1.address, "publicKey1");
+
         // Grant permission manager role to deployOwner for testing
-        const PERMISSION_MANAGER_ROLE = await granteesContract.PERMISSION_MANAGER_ROLE();
+        const PERMISSION_MANAGER_ROLE =
+          await granteesContract.PERMISSION_MANAGER_ROLE();
         const [, , deployOwner] = await ethers.getSigners();
-        await granteesContract.connect(deployOwner).grantRole(PERMISSION_MANAGER_ROLE, deployOwner.address);
+        await granteesContract
+          .connect(deployOwner)
+          .grantRole(PERMISSION_MANAGER_ROLE, deployOwner.address);
       });
 
       it("should add permission to grantee", async () => {
         const [, , deployOwner] = await ethers.getSigners();
-        await granteesContract.connect(deployOwner).addPermissionToGrantee(1, 100);
-        
+        await granteesContract
+          .connect(deployOwner)
+          .addPermissionToGrantee(1, 100);
+
         const permissionIds = await granteesContract.granteePermissionIds(1);
         expect(permissionIds).to.deep.equal([100n]);
       });
 
       it("should remove permission from grantee", async () => {
         const [, , deployOwner] = await ethers.getSigners();
-        await granteesContract.connect(deployOwner).addPermissionToGrantee(1, 100);
-        await granteesContract.connect(deployOwner).removePermissionFromGrantee(1, 100);
-        
+        await granteesContract
+          .connect(deployOwner)
+          .addPermissionToGrantee(1, 100);
+        await granteesContract
+          .connect(deployOwner)
+          .removePermissionFromGrantee(1, 100);
+
         const permissionIds = await granteesContract.granteePermissionIds(1);
         expect(permissionIds).to.deep.equal([]);
       });
 
       it("should reject permission management for non-existent grantee", async () => {
         const [, , deployOwner] = await ethers.getSigners();
-        await expect(granteesContract.connect(deployOwner).addPermissionToGrantee(999, 100))
-          .to.be.revertedWithCustomError(granteesContract, "GranteeNotFound");
+        await expect(
+          granteesContract
+            .connect(deployOwner)
+            .addPermissionToGrantee(999, 100),
+        ).to.be.revertedWithCustomError(granteesContract, "GranteeNotFound");
       });
 
       it("should reject permission management by non-manager", async () => {
-        await expect(granteesContract.connect(testUser1).addPermissionToGrantee(1, 100))
-          .to.be.reverted;
+        await expect(
+          granteesContract.connect(testUser1).addPermissionToGrantee(1, 100),
+        ).to.be.reverted;
       });
 
       it("should handle multiple permissions", async () => {
         const [, , deployOwner] = await ethers.getSigners();
-        await granteesContract.connect(deployOwner).addPermissionToGrantee(1, 100);
-        await granteesContract.connect(deployOwner).addPermissionToGrantee(1, 200);
-        await granteesContract.connect(deployOwner).addPermissionToGrantee(1, 300);
-        
+        await granteesContract
+          .connect(deployOwner)
+          .addPermissionToGrantee(1, 100);
+        await granteesContract
+          .connect(deployOwner)
+          .addPermissionToGrantee(1, 200);
+        await granteesContract
+          .connect(deployOwner)
+          .addPermissionToGrantee(1, 300);
+
         const permissionIds = await granteesContract.granteePermissionIds(1);
         expect(permissionIds).to.deep.equal([100n, 200n, 300n]);
       });
@@ -4368,38 +4726,57 @@ describe("DataPortabilityPermissions", () => {
       it("should update trusted forwarder", async () => {
         const newForwarder = testUser2.address;
         const [, , deployOwner] = await ethers.getSigners();
-        await granteesContract.connect(deployOwner).updateTrustedForwarder(newForwarder);
-        expect(await granteesContract.trustedForwarder()).to.equal(newForwarder);
+        await granteesContract
+          .connect(deployOwner)
+          .updateTrustedForwarder(newForwarder);
+        expect(await granteesContract.trustedForwarder()).to.equal(
+          newForwarder,
+        );
       });
 
       it("should pause and unpause", async () => {
         const [, , deployOwner] = await ethers.getSigners();
         await granteesContract.connect(deployOwner).pause();
-        
-        await expect(granteesContract.connect(testUser1).registerGrantee(
-          testUser1.address,
-          grantee1.address,
-          "publicKey1"
-        )).to.be.revertedWithCustomError(granteesContract, "EnforcedPause");
+
+        await expect(
+          granteesContract
+            .connect(testUser1)
+            .registerGrantee(testUser1.address, grantee1.address, "publicKey1"),
+        ).to.be.revertedWithCustomError(granteesContract, "EnforcedPause");
 
         await granteesContract.connect(deployOwner).unpause();
-        
-        await expect(granteesContract.connect(testUser1).registerGrantee(
-          testUser1.address,
-          grantee1.address,
-          "publicKey1"
-        )).to.not.be.reverted;
+
+        await expect(
+          granteesContract
+            .connect(testUser1)
+            .registerGrantee(testUser1.address, grantee1.address, "publicKey1"),
+        ).to.not.be.reverted;
       });
 
       it("should manage roles", async () => {
-        const PERMISSION_MANAGER_ROLE = await granteesContract.PERMISSION_MANAGER_ROLE();
+        const PERMISSION_MANAGER_ROLE =
+          await granteesContract.PERMISSION_MANAGER_ROLE();
         const [, , deployOwner] = await ethers.getSigners();
-        
-        await granteesContract.connect(deployOwner).grantRole(PERMISSION_MANAGER_ROLE, testUser1.address);
-        expect(await granteesContract.hasRole(PERMISSION_MANAGER_ROLE, testUser1.address)).to.be.true;
-        
-        await granteesContract.connect(deployOwner).revokeRole(PERMISSION_MANAGER_ROLE, testUser1.address);
-        expect(await granteesContract.hasRole(PERMISSION_MANAGER_ROLE, testUser1.address)).to.be.false;
+
+        await granteesContract
+          .connect(deployOwner)
+          .grantRole(PERMISSION_MANAGER_ROLE, testUser1.address);
+        expect(
+          await granteesContract.hasRole(
+            PERMISSION_MANAGER_ROLE,
+            testUser1.address,
+          ),
+        ).to.be.true;
+
+        await granteesContract
+          .connect(deployOwner)
+          .revokeRole(PERMISSION_MANAGER_ROLE, testUser1.address);
+        expect(
+          await granteesContract.hasRole(
+            PERMISSION_MANAGER_ROLE,
+            testUser1.address,
+          ),
+        ).to.be.false;
       });
     });
   });
