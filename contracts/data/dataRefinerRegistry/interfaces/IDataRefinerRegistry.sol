@@ -10,7 +10,7 @@ interface IDataRefinerRegistry {
 
     struct Schema {
         string name;
-        string typ;
+        string dialect;
         string definitionUrl;
     }
 
@@ -108,7 +108,7 @@ interface IDataRefinerRegistry {
 
     function addSchema(
         string calldata name,
-        string calldata typ,
+        string calldata dialect,
         string calldata definitionUrl
     ) external returns (uint256);
 

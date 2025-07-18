@@ -27,7 +27,7 @@ contract DataRefinerRegistryImplementation is
         string refinementInstructionUrl
     );
 
-    event SchemaAdded(uint256 indexed schemaId, string name, string typ, string definitionUrl);
+    event SchemaAdded(uint256 indexed schemaId, string name, string dialect, string definitionUrl);
 
     /// @notice Reverts if the caller is not the owner of the DLP
     /// @param dlpId The ID of the DLP
@@ -223,17 +223,17 @@ contract DataRefinerRegistryImplementation is
 
     function addSchema(
         string calldata name,
-        string calldata typ,
+        string calldata dialect,
         string calldata definitionUrl
     ) external override whenNotPaused returns (uint256) {
         uint256 newSchemaId = ++schemasCount;
 
         Schema storage newSchema = _schemas[newSchemaId];
         newSchema.name = name;
-        newSchema.typ = typ;
+        newSchema.dialect = dialect;
         newSchema.definitionUrl = definitionUrl;
 
-        emit SchemaAdded(newSchemaId, name, typ, definitionUrl);
+        emit SchemaAdded(newSchemaId, name, dialect, definitionUrl);
 
         return newSchemaId;
     }
