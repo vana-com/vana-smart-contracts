@@ -100,10 +100,43 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   console.log("DataPortabilityPermissions deployed at:", permissionsProxyDeploy.proxyAddress);
 
-  console.log("\n=== All DataPortability contracts deployed successfully! ===");
+  // Grant necessary roles between contracts
+  console.log("\n=== Granting cross-contract roles ===");
+  
+  // Grant PERMISSION_MANAGER_ROLE to DataPortabilityPermissions contract on DataPortabilityGrantees
+  const granteesContract = await ethers.getContractAt(
+    "DataPortabilityGranteesImplementation",
+    granteesProxyDeploy.proxyAddress
+  );
+  
+  const PERMISSION_MANAGER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("PERMISSION_MANAGER_ROLE"));
+  
+  console.log("Granting PERMISSION_MANAGER_ROLE to DataPortabilityPermissions on DataPortabilityGrantees...");
+  const grantRoleTx = await granteesContract.connect(deployer).grantRole(
+    PERMISSION_MANAGER_ROLE,
+    permissionsProxyDeploy.proxyAddress
+  );
+  await grantRoleTx.wait();
+  
+  console.log("PERMISSION_MANAGER_ROLE granted successfully!");
+
+  // Verify the role was granted
+  const hasRole = await granteesContract.hasRole(
+    PERMISSION_MANAGER_ROLE,
+    permissionsProxyDeploy.proxyAddress
+  );
+  
+  if (!hasRole) {
+    throw new Error("Failed to grant PERMISSION_MANAGER_ROLE to DataPortabilityPermissions");
+  }
+  
+  console.log("Role grant verification: SUCCESS");
+
+  console.log("\n=== All DataPortability contracts deployed and configured successfully! ===");
   console.log("DataPortabilityServers:", serversProxyDeploy.proxyAddress);
   console.log("DataPortabilityGrantees:", granteesProxyDeploy.proxyAddress);
   console.log("DataPortabilityPermissions:", permissionsProxyDeploy.proxyAddress);
+  console.log("✅ DataPortabilityPermissions has PERMISSION_MANAGER_ROLE on DataPortabilityGrantees");
 
   return;
 };
