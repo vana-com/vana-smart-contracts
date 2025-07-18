@@ -1,0 +1,45 @@
+{
+  "address": "0x0000000000000000000000000000000000000000",
+  "abi": [],
+  "transactionHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+  "receipt": {
+    "to": null,
+    "from": "0x0000000000000000000000000000000000000000",
+    "contractAddress": "0x0000000000000000000000000000000000000000",
+    "transactionIndex": 0,
+    "gasUsed": "0",
+    "logsBloom": "0x00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "blockHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "transactionHash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+    "logs": [],
+    "blockNumber": 0,
+    "cumulativeGasUsed": "0",
+    "status": 1,
+    "byzantium": true
+  },
+  "args": [],
+  "numDeployments": 1,
+  "solcInputHash": "0000000000000000000000000000000000000000000000000000000000000000",
+  "metadata": "{\"compiler\":{\"version\":\"0.8.24+commit.e11b9ed9\"},\"language\":\"Solidity\",\"output\":{\"abi\":[],\"devdoc\":{\"kind\":\"dev\",\"methods\":{},\"version\":1},\"userdoc\":{\"kind\":\"user\",\"methods\":{},\"version\":1}},\"settings\":{\"compilationTarget\":{\"contracts/dataPortability/dataPortabilityServers/DataPortabilityServersImplementation.sol\":\"DataPortabilityServersImplementation\"},\"evmVersion\":\"paris\",\"libraries\":{},\"metadata\":{\"bytecodeHash\":\"ipfs\"},\"optimizer\":{\"enabled\":true,\"runs\":1},\"remappings\":[]},\"sources\":{},\"version\":1}",
+  "bytecode": "0x",
+  "deployedBytecode": "0x",
+  "libraries": {},
+  "facets": [],
+  "diamondCut": [],
+  "execute": {},
+  "implementation": "0x0000000000000000000000000000000000000000",
+  "devdoc": {
+    "kind": "dev",
+    "methods": {},
+    "version": 1
+  },
+  "userdoc": {
+    "kind": "user",
+    "methods": {},
+    "version": 1
+  },
+  "storageLayout": {
+    "storage": [],
+    "types": {}
+  }
+}
