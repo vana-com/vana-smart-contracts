@@ -596,11 +596,11 @@ describe("QueryEngine", () => {
 
       await dataRefinerRegistry
         .connect(dlp1Owner)
-        .addRefiner(1, "refiner1", 1, "instruction1");
+        .addRefinerWithSchemaId(1, "refiner1", 1, "instruction1");
 
       await dataRefinerRegistry
         .connect(dlp2Owner)
-        .addRefiner(2, "refiner2", 2, "instruction2");
+        .addRefinerWithSchemaId(2, "refiner2", 2, "instruction2");
     });
 
     it("should addPermission only when DLP owner", async function () {
@@ -883,7 +883,7 @@ describe("QueryEngine", () => {
       // DLP adds a refiner -> refinerId
       await dataRefinerRegistry
         .connect(dlp1Owner)
-        .addRefiner(
+        .addRefinerWithSchemaId(
           dlpId1,
           "refiner1",
           1, // schemaId
@@ -1174,12 +1174,12 @@ describe("QueryEngine", () => {
 
       await dataRefinerRegistry
         .connect(dlp1Owner)
-        .addRefiner(dlpId1, "refiner2", 2, "instruction2")
+        .addRefinerWithSchemaId(dlpId1, "refiner2", 2, "instruction2")
         .should.be.fulfilled;
 
       await dataRefinerRegistry
         .connect(dlp2Owner)
-        .addRefiner(dlpId2, "refiner3", 3, "instruction3")
+        .addRefinerWithSchemaId(dlpId2, "refiner3", 3, "instruction3")
         .should.be.fulfilled;
 
       await computeEngine
