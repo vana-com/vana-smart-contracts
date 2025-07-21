@@ -23,6 +23,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
       from: deployer.address,
       args: [],
       log: true,
+      // maxFeePerGas:  ethers.parseUnits("200", "gwei").toString(),
+      // maxPriorityFeePerGas: ethers.parseUnits("200", "gwei").toString(),
     },
   );
 

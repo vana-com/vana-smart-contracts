@@ -1186,9 +1186,9 @@ describe("DataRegistry", () => {
 
       await dataRefinerRegistry
         .connect(dlp1)
-        .addRefiner(1, "refiner1", 1, "instruction1")
+        .addRefinerWithSchemaId(1, "refiner1", 1, "instruction1")
         .should.emit(dataRefinerRegistry, "RefinerAdded")
-        .withArgs(1, 1, "refiner1", 1, "instruction1");
+        .withArgs(1, 1, "refiner1", 1, "https://example.com/schema1.json", "instruction1");
 
       (await dataRefinerRegistry.isRefinementService(1, dlpRefinementService.address)).should.be.true;
 
