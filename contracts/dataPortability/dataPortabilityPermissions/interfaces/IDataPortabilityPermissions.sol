@@ -10,7 +10,6 @@ interface IDataPortabilityPermissions {
     struct User {
         uint256 nonce;
         EnumerableSet.UintSet permissionIds;
-        EnumerableSet.UintSet revokedPermissionIds;
     }
 
     struct Permission {
@@ -66,12 +65,11 @@ interface IDataPortabilityPermissions {
     // Public storage getters
     function trustedForwarder() external view returns (address);
     function permissionsCount() external view returns (uint256);
-    function grantHashToPermissionId(bytes32 grantHash) external view returns (uint256);
     function dataRegistry() external view returns (IDataRegistry);
     function dataPortabilityServers() external view returns (IDataPortabilityServers);
     function dataPortabilityGrantees() external view returns (IDataPortabilityGrantees);
-    function user(address userAddress) external view returns (uint256 nonce, uint256[] memory permissionIds, uint256[] memory revokedPermissionIds);
-    function permission(uint256 permissionId) external view returns (PermissionInfo memory);
+    function users(address userAddress) external view returns (uint256 nonce, uint256[] memory permissionIds);
+    function permissions(uint256 permissionId) external view returns (PermissionInfo memory);
     function filePermissions(uint256 fileId) external view returns (uint256[] memory);
 
     // Data Registry
@@ -86,7 +84,6 @@ interface IDataPortabilityPermissions {
 
     // Permission management
     function addPermission(PermissionInput calldata permission, bytes calldata signature) external returns (uint256);
-    function permissionIdByGrant(string memory grant) external view returns (uint256);
     function isActivePermission(uint256 permissionId) external view returns (bool);
     function revokePermission(uint256 permissionId) external;
     function revokePermissionWithSignature(
@@ -101,7 +98,4 @@ interface IDataPortabilityPermissions {
     function userPermissionIdsValues(address user) external view returns (uint256[] memory);
     function userPermissionIdsAt(address user, uint256 permissionIndex) external view returns (uint256);
     function userPermissionIdsLength(address user) external view returns (uint256);
-    function userRevokedPermissionIdsValues(address user) external view returns (uint256[] memory);
-    function userRevokedPermissionIdsAt(address user, uint256 permissionIndex) external view returns (uint256);
-    function userRevokedPermissionIdsLength(address user) external view returns (uint256);
 }

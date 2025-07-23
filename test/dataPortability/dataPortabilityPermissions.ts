@@ -262,7 +262,7 @@ describe("DataPortabilityPermissions", () => {
       (await dataPermission.userNonce(testUser1.address)).should.eq(1);
 
       // Verify permission was stored
-      const storedPermission = await dataPermission.permission(1);
+      const storedPermission = await dataPermission.permissions(1);
       storedPermission.grantor.should.eq(testUser1.address);
       storedPermission.nonce.should.eq(0);
       storedPermission.granteeId.should.eq(1);
@@ -283,8 +283,6 @@ describe("DataPortabilityPermissions", () => {
       );
       userPermissionIds.should.deep.eq([1n]);
 
-      // Verify grant hash mapping
-      (await dataPermission.permissionIdByGrant(permission.grant)).should.eq(1);
     });
 
     it("should reject permission with incorrect nonce", async function () {
@@ -335,7 +333,7 @@ describe("DataPortabilityPermissions", () => {
       (await dataPermission.userNonce(testUser1.address)).should.eq(0);
     });
 
-    it("should reject permission with already used grant", async function () {
+    it("should allow multiple permissions with the same grant", async function () {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
@@ -344,14 +342,14 @@ describe("DataPortabilityPermissions", () => {
       const permission1 = {
         nonce: 0n,
         granteeId: 1n,
-        grant: "ipfs://grant1",
+        grant: "ipfs://samegrant",
         fileIds: [],
       };
 
       const permission2 = {
         nonce: 1n,
         granteeId: 1n,
-        grant: "ipfs://grant1", // Same grant
+        grant: "ipfs://samegrant", // Same grant - should be allowed now
         fileIds: [],
       };
 
@@ -369,14 +367,20 @@ describe("DataPortabilityPermissions", () => {
         .connect(sponsor)
         .addPermission(permission1, signature1);
 
-      // Try to reuse same grant - should fail
-      await expect(
-        dataPermission.connect(sponsor).addPermission(permission2, signature2),
-      ).to.be.revertedWithCustomError(dataPermission, "GrantAlreadyUsed");
+      // Add second permission with same grant - should succeed
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission2, signature2);
 
-      // Verify only one permission was added
-      (await dataPermission.permissionsCount()).should.eq(1);
-      (await dataPermission.userNonce(testUser1.address)).should.eq(1);
+      // Verify both permissions were added
+      (await dataPermission.permissionsCount()).should.eq(2);
+      (await dataPermission.userNonce(testUser1.address)).should.eq(2);
+
+      // Verify both permissions have the same grant
+      const storedPermission1 = await dataPermission.permissions(1);
+      const storedPermission2 = await dataPermission.permissions(2);
+      storedPermission1.grant.should.eq("ipfs://samegrant");
+      storedPermission2.grant.should.eq("ipfs://samegrant");
     });
 
     it("should add multiple permissions for the same user with sequential nonces", async function () {
@@ -459,13 +463,6 @@ describe("DataPortabilityPermissions", () => {
       );
       userPermissionIds.should.deep.eq([1n, 2n]);
 
-      // Verify grant hash mappings
-      (await dataPermission.permissionIdByGrant(permission1.grant)).should.eq(
-        1,
-      );
-      (await dataPermission.permissionIdByGrant(permission2.grant)).should.eq(
-        2,
-      );
     });
 
     it("should add permissions for different users independently", async function () {
@@ -520,8 +517,8 @@ describe("DataPortabilityPermissions", () => {
       ).should.eq(1);
 
       // Verify stored permissions have correct user fields
-      const storedPermission1 = await dataPermission.permission(1);
-      const storedPermission2 = await dataPermission.permission(2);
+      const storedPermission1 = await dataPermission.permissions(1);
+      const storedPermission2 = await dataPermission.permissions(2);
       storedPermission1.grantor.should.eq(testUser1.address);
       storedPermission2.grantor.should.eq(testUser2.address);
     });
@@ -561,25 +558,20 @@ describe("DataPortabilityPermissions", () => {
 
       // Verify all permissions are stored with correct IDs (starting from 1)
       for (let i = 0; i < permissions.length; i++) {
-        const storedPermission = await dataPermission.permission(i + 1);
+        const storedPermission = await dataPermission.permissions(i + 1);
         storedPermission.grantor.should.eq(users[i].address);
         storedPermission.grant.should.eq(permissions[i].grant);
       }
     });
 
     it("should return empty permission for non-existent ID", async function () {
-      const permission = await dataPermission.permission(999);
+      const permission = await dataPermission.permissions(999);
       permission.grantor.should.eq(ethers.ZeroAddress);
       permission.nonce.should.eq(0);
       permission.grant.should.eq("");
       permission.signature.should.eq("0x");
     });
 
-    it("should return 0 for non-existent grant", async function () {
-      const permissionId =
-        await dataPermission.permissionIdByGrant("ipfs://nonexistent");
-      permissionId.should.eq(0);
-    });
 
     it("should revert when accessing out of bounds permission indices", async function () {
       // First register a grantee
@@ -694,11 +686,9 @@ describe("DataPortabilityPermissions", () => {
       await dataPermission.connect(sponsor).addPermission(permission, signature)
         .should.be.fulfilled;
 
-      const storedPermission = await dataPermission.permission(1);
+      const storedPermission = await dataPermission.permissions(1);
       storedPermission.grant.should.eq(permission.grant);
 
-      // Verify grant hash mapping works with special characters
-      (await dataPermission.permissionIdByGrant(permission.grant)).should.eq(1);
     });
 
     it("should test userPermissionIdsValues function with multiple permissions", async function () {
@@ -830,7 +820,7 @@ describe("DataPortabilityPermissions", () => {
       );
 
       // Verify stored permission has correct user field
-      const storedPermission = await dataPermission.permission(1);
+      const storedPermission = await dataPermission.permissions(1);
       storedPermission.grantor.should.eq(testUser1.address);
     });
 
@@ -856,7 +846,7 @@ describe("DataPortabilityPermissions", () => {
         .connect(sponsor)
         .addPermission(validPermission, signature).should.be.fulfilled;
 
-      const storedPermission = await dataPermission.permission(1);
+      const storedPermission = await dataPermission.permissions(1);
       storedPermission.grant.should.eq(validPermission.grant);
     });
 
@@ -879,7 +869,7 @@ describe("DataPortabilityPermissions", () => {
       await dataPermission.connect(sponsor).addPermission(permission, signature)
         .should.be.fulfilled;
 
-      const storedPermission = await dataPermission.permission(1);
+      const storedPermission = await dataPermission.permissions(1);
       storedPermission.grant.should.eq(longGrant);
     });
 
@@ -901,11 +891,9 @@ describe("DataPortabilityPermissions", () => {
       await dataPermission.connect(sponsor).addPermission(permission, signature)
         .should.be.fulfilled;
 
-      const storedPermission = await dataPermission.permission(1);
+      const storedPermission = await dataPermission.permissions(1);
       storedPermission.grant.should.eq(permission.grant);
 
-      // Verify grant hash mapping works with unicode
-      (await dataPermission.permissionIdByGrant(permission.grant)).should.eq(1);
     });
 
     it("should store exact signature bytes", async function () {
@@ -927,7 +915,7 @@ describe("DataPortabilityPermissions", () => {
         .connect(sponsor)
         .addPermission(permission, signature);
 
-      const storedPermission = await dataPermission.permission(1);
+      const storedPermission = await dataPermission.permissions(1);
       storedPermission.signature.should.eq(signature);
 
       // Verify signature length (should be 65 bytes for ECDSA)
@@ -1113,7 +1101,7 @@ describe("DataPortabilityPermissions", () => {
         ).should.eq(0);
 
         // Verify permission data still exists but is marked inactive
-        const revokedPermission = await dataPermission.permission(1);
+        const revokedPermission = await dataPermission.permissions(1);
         revokedPermission.grantor.should.eq(testUser1.address);
         revokedPermission.grant.should.eq(permission.grant);
       });
@@ -1412,60 +1400,12 @@ describe("DataPortabilityPermissions", () => {
           .withArgs(1);
 
         // Verify the permission belongs to testUser1, not sponsor
-        const revokedPerm = await dataPermission.permission(1);
+        const revokedPerm = await dataPermission.permissions(1);
         revokedPerm.grantor.should.eq(testUser1.address);
       });
     });
 
     describe("Edge Cases and State Management", () => {
-      it("should not affect grant hash mapping after revocation", async function () {
-        // First register a grantee
-        await granteesContract
-          .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
-
-        const permission = {
-          nonce: 0n,
-          granteeId: 1n,
-          grant: "ipfs://grant1",
-          fileIds: [],
-        };
-
-        const signature = await createPermissionSignature(
-          permission,
-          testUser1,
-        );
-        await dataPermission
-          .connect(sponsor)
-          .addPermission(permission, signature);
-
-        // Revoke the permission
-        await dataPermission.connect(testUser1).revokePermission(1);
-
-        // Grant hash should still map to the permission ID
-        (await dataPermission.permissionIdByGrant(permission.grant)).should.eq(
-          1,
-        );
-
-        // But trying to add same grant again should still fail
-        const permission2 = {
-          nonce: 1n,
-          granteeId: 1n,
-          grant: "ipfs://grant1", // Same grant
-          fileIds: [],
-        };
-
-        const signature2 = await createPermissionSignature(
-          permission2,
-          testUser1,
-        );
-
-        await expect(
-          dataPermission
-            .connect(sponsor)
-            .addPermission(permission2, signature2),
-        ).to.be.revertedWithCustomError(dataPermission, "GrantAlreadyUsed");
-      });
 
       it("should correctly update user permission sets", async function () {
         // First register a grantee
@@ -1780,459 +1720,6 @@ describe("DataPortabilityPermissions", () => {
       });
     });
 
-    describe("Revoked Permission Tracking", () => {
-      it("should track revoked permissions with userRevokedPermissionIdsLength", async function () {
-        // First register a grantee
-        await granteesContract
-          .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
-
-        // Initially no revoked permissions
-        (
-          await dataPermission.userRevokedPermissionIdsLength(testUser1.address)
-        ).should.eq(0);
-
-        // Add and revoke a permission
-        const permission = {
-          nonce: 0n,
-          granteeId: 1n,
-          grant: "ipfs://grant1",
-          fileIds: [],
-        };
-        const signature = await createPermissionSignature(
-          permission,
-          testUser1,
-        );
-        await dataPermission
-          .connect(sponsor)
-          .addPermission(permission, signature);
-        await dataPermission.connect(testUser1).revokePermission(1);
-
-        // Should have 1 revoked permission
-        (
-          await dataPermission.userRevokedPermissionIdsLength(testUser1.address)
-        ).should.eq(1);
-      });
-
-      it("should return revoked permission IDs with userRevokedPermissionIdsValues", async function () {
-        // First register a grantee
-        await granteesContract
-          .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
-
-        // Add multiple permissions
-        const permissions = [
-          { nonce: 0n, granteeId: 1n, grant: "ipfs://grant1", fileIds: [] },
-          { nonce: 1n, granteeId: 1n, grant: "ipfs://grant2", fileIds: [] },
-          { nonce: 2n, granteeId: 1n, grant: "ipfs://grant3", fileIds: [] },
-          { nonce: 3n, granteeId: 1n, grant: "ipfs://grant4", fileIds: [] },
-        ];
-
-        for (const perm of permissions) {
-          const sig = await createPermissionSignature(perm, testUser1);
-          await dataPermission.connect(sponsor).addPermission(perm, sig);
-        }
-
-        // Initially no revoked permissions
-        let revokedIds = await dataPermission.userRevokedPermissionIdsValues(
-          testUser1.address,
-        );
-        revokedIds.should.deep.eq([]);
-
-        // Revoke permissions 2 and 4
-        await dataPermission.connect(testUser1).revokePermission(2);
-        await dataPermission.connect(testUser1).revokePermission(4);
-
-        // Check revoked IDs
-        revokedIds = await dataPermission.userRevokedPermissionIdsValues(
-          testUser1.address,
-        );
-        revokedIds.should.deep.eq([2n, 4n]);
-
-        // Revoke permission 1
-        await dataPermission.connect(testUser1).revokePermission(1);
-
-        // Check updated revoked IDs
-        revokedIds = await dataPermission.userRevokedPermissionIdsValues(
-          testUser1.address,
-        );
-        revokedIds.should.deep.eq([2n, 4n, 1n]);
-      });
-
-      it("should access revoked permissions by index with userRevokedPermissionIdsAt", async function () {
-        // First register a grantee
-        await granteesContract
-          .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
-
-        // Add and revoke multiple permissions
-        const permissions = [
-          { nonce: 0n, granteeId: 1n, grant: "ipfs://grant1", fileIds: [] },
-          { nonce: 1n, granteeId: 1n, grant: "ipfs://grant2", fileIds: [] },
-          { nonce: 2n, granteeId: 1n, grant: "ipfs://grant3", fileIds: [] },
-        ];
-
-        for (const perm of permissions) {
-          const sig = await createPermissionSignature(perm, testUser1);
-          await dataPermission.connect(sponsor).addPermission(perm, sig);
-        }
-
-        // Revoke in specific order: 3, 1, 2
-        await dataPermission.connect(testUser1).revokePermission(3);
-        await dataPermission.connect(testUser1).revokePermission(1);
-        await dataPermission.connect(testUser1).revokePermission(2);
-
-        // Check individual indices
-        (
-          await dataPermission.userRevokedPermissionIdsAt(testUser1.address, 0)
-        ).should.eq(3n);
-        (
-          await dataPermission.userRevokedPermissionIdsAt(testUser1.address, 1)
-        ).should.eq(1n);
-        (
-          await dataPermission.userRevokedPermissionIdsAt(testUser1.address, 2)
-        ).should.eq(2n);
-
-        // Verify length
-        (
-          await dataPermission.userRevokedPermissionIdsLength(testUser1.address)
-        ).should.eq(3);
-      });
-
-      it("should revert when accessing out of bounds revoked permission index", async function () {
-        // First register a grantee
-        await granteesContract
-          .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
-
-        // Add and revoke one permission
-        const permission = {
-          nonce: 0n,
-          granteeId: 1n,
-          grant: "ipfs://grant1",
-          fileIds: [],
-        };
-        const signature = await createPermissionSignature(
-          permission,
-          testUser1,
-        );
-        await dataPermission
-          .connect(sponsor)
-          .addPermission(permission, signature);
-        await dataPermission.connect(testUser1).revokePermission(1);
-
-        // Should have 1 revoked permission
-        (
-          await dataPermission.userRevokedPermissionIdsLength(testUser1.address)
-        ).should.eq(1);
-
-        // Accessing index 0 should work
-        (
-          await dataPermission.userRevokedPermissionIdsAt(testUser1.address, 0)
-        ).should.eq(1n);
-
-        // Accessing index 1 should revert
-        await expect(
-          dataPermission.userRevokedPermissionIdsAt(testUser1.address, 1),
-        ).to.be.reverted;
-
-        // User with no revoked permissions should revert on index 0
-        await expect(
-          dataPermission.userRevokedPermissionIdsAt(testUser2.address, 0),
-        ).to.be.reverted;
-      });
-
-      it("should track revoked permissions separately per user", async function () {
-        // First register grantees
-        await granteesContract
-          .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
-        await granteesContract
-          .connect(testUser2)
-          .registerGrantee(testUser2.address, user3.address, "publicKey2");
-
-        // User1 adds and revokes permissions
-        const testUser1Perms = [
-          {
-            nonce: 0n,
-            granteeId: 1n,
-            grant: "ipfs://testUser1-grant1",
-            fileIds: [],
-          },
-          {
-            nonce: 1n,
-            granteeId: 1n,
-            grant: "ipfs://testUser1-grant2",
-            fileIds: [],
-          },
-        ];
-
-        for (const perm of testUser1Perms) {
-          const sig = await createPermissionSignature(perm, testUser1);
-          await dataPermission.connect(sponsor).addPermission(perm, sig);
-        }
-
-        // User2 adds and revokes permissions
-        const testUser2Perms = [
-          {
-            nonce: 0n,
-            granteeId: 2n,
-            grant: "ipfs://testUser2-grant1",
-            fileIds: [],
-          },
-          {
-            nonce: 1n,
-            granteeId: 2n,
-            grant: "ipfs://testUser2-grant2",
-            fileIds: [],
-          },
-          {
-            nonce: 2n,
-            granteeId: 2n,
-            grant: "ipfs://testUser2-grant3",
-            fileIds: [],
-          },
-        ];
-
-        for (const perm of testUser2Perms) {
-          const sig = await createPermissionSignature(perm, testUser2);
-          await dataPermission.connect(sponsor).addPermission(perm, sig);
-        }
-
-        // User1 revokes their first permission
-        await dataPermission.connect(testUser1).revokePermission(1);
-
-        // User2 revokes all their permissions
-        await dataPermission.connect(testUser2).revokePermission(3);
-        await dataPermission.connect(testUser2).revokePermission(4);
-        await dataPermission.connect(testUser2).revokePermission(5);
-
-        // Check testUser1's revoked permissions
-        (
-          await dataPermission.userRevokedPermissionIdsLength(testUser1.address)
-        ).should.eq(1);
-        const testUser1Revoked =
-          await dataPermission.userRevokedPermissionIdsValues(
-            testUser1.address,
-          );
-        testUser1Revoked.should.deep.eq([1n]);
-
-        // Check testUser2's revoked permissions
-        (
-          await dataPermission.userRevokedPermissionIdsLength(testUser2.address)
-        ).should.eq(3);
-        const testUser2Revoked =
-          await dataPermission.userRevokedPermissionIdsValues(
-            testUser2.address,
-          );
-        testUser2Revoked.should.deep.eq([3n, 4n, 5n]);
-
-        // User3 should have no revoked permissions
-        (
-          await dataPermission.userRevokedPermissionIdsLength(user3.address)
-        ).should.eq(0);
-        const user3Revoked =
-          await dataPermission.userRevokedPermissionIdsValues(user3.address);
-        user3Revoked.should.deep.eq([]);
-      });
-
-      it("should maintain consistency between active and revoked permissions", async function () {
-        // First register a grantee
-        await granteesContract
-          .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
-
-        // Add 5 permissions
-        const permissions = [
-          { nonce: 0n, granteeId: 1n, grant: "ipfs://grant1", fileIds: [] },
-          { nonce: 1n, granteeId: 1n, grant: "ipfs://grant2", fileIds: [] },
-          { nonce: 2n, granteeId: 1n, grant: "ipfs://grant3", fileIds: [] },
-          { nonce: 3n, granteeId: 1n, grant: "ipfs://grant4", fileIds: [] },
-          { nonce: 4n, granteeId: 1n, grant: "ipfs://grant5", fileIds: [] },
-        ];
-
-        for (const perm of permissions) {
-          const sig = await createPermissionSignature(perm, testUser1);
-          await dataPermission.connect(sponsor).addPermission(perm, sig);
-        }
-
-        // Initially all active, none revoked
-        (
-          await dataPermission.userPermissionIdsLength(testUser1.address)
-        ).should.eq(5);
-        (
-          await dataPermission.userRevokedPermissionIdsLength(testUser1.address)
-        ).should.eq(0);
-
-        // Revoke permissions 2, 3, and 5
-        await dataPermission.connect(testUser1).revokePermission(2);
-        await dataPermission.connect(testUser1).revokePermission(3);
-        await dataPermission.connect(testUser1).revokePermission(5);
-
-        // Check active permissions (should be 1 and 4)
-        (
-          await dataPermission.userPermissionIdsLength(testUser1.address)
-        ).should.eq(2);
-        const activeIds = await dataPermission.userPermissionIdsValues(
-          testUser1.address,
-        );
-        activeIds.should.deep.eq([1n, 4n]);
-
-        // Check revoked permissions (should be 2, 3, and 5)
-        (
-          await dataPermission.userRevokedPermissionIdsLength(testUser1.address)
-        ).should.eq(3);
-        const revokedIds = await dataPermission.userRevokedPermissionIdsValues(
-          testUser1.address,
-        );
-        revokedIds.should.deep.eq([2n, 3n, 5n]);
-
-        // Verify individual permission states
-        (await dataPermission.isActivePermission(1)).should.eq(true);
-        (await dataPermission.isActivePermission(2)).should.eq(false);
-        (await dataPermission.isActivePermission(3)).should.eq(false);
-        (await dataPermission.isActivePermission(4)).should.eq(true);
-        (await dataPermission.isActivePermission(5)).should.eq(false);
-      });
-
-      it("should handle signature-based revocation in revoked tracking", async function () {
-        // First register a grantee
-        await granteesContract
-          .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
-
-        // Add permissions
-        const perm1 = {
-          nonce: 0n,
-          granteeId: 1n,
-          grant: "ipfs://grant1",
-          fileIds: [],
-        };
-        const perm2 = {
-          nonce: 1n,
-          granteeId: 1n,
-          grant: "ipfs://grant2",
-          fileIds: [],
-        };
-
-        const sig1 = await createPermissionSignature(perm1, testUser1);
-        const sig2 = await createPermissionSignature(perm2, testUser1);
-
-        await dataPermission.connect(sponsor).addPermission(perm1, sig1);
-        await dataPermission.connect(sponsor).addPermission(perm2, sig2);
-
-        // Revoke first permission directly
-        await dataPermission.connect(testUser1).revokePermission(1);
-
-        // Revoke second permission with signature
-        const revokeInput = {
-          nonce: 2n, // Current nonce after adding 2 permissions
-          permissionId: 2n,
-        };
-        const revokeSignature = await createRevokePermissionSignature(
-          revokeInput,
-          testUser1,
-        );
-        await dataPermission
-          .connect(sponsor)
-          .revokePermissionWithSignature(revokeInput, revokeSignature);
-
-        // Both should be in revoked list
-        (
-          await dataPermission.userRevokedPermissionIdsLength(testUser1.address)
-        ).should.eq(2);
-        const revokedIds = await dataPermission.userRevokedPermissionIdsValues(
-          testUser1.address,
-        );
-        revokedIds.should.deep.eq([1n, 2n]);
-
-        // No active permissions left
-        (
-          await dataPermission.userPermissionIdsLength(testUser1.address)
-        ).should.eq(0);
-      });
-
-      it("should not add duplicate entries to revoked permissions", async function () {
-        // First register a grantee
-        await granteesContract
-          .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
-
-        // Add a permission
-        const permission = {
-          nonce: 0n,
-          granteeId: 1n,
-          grant: "ipfs://grant1",
-          fileIds: [],
-        };
-        const signature = await createPermissionSignature(
-          permission,
-          testUser1,
-        );
-        await dataPermission
-          .connect(sponsor)
-          .addPermission(permission, signature);
-
-        // Revoke it
-        await dataPermission.connect(testUser1).revokePermission(1);
-
-        // Check revoked count
-        (
-          await dataPermission.userRevokedPermissionIdsLength(testUser1.address)
-        ).should.eq(1);
-
-        // Try to revoke again (should fail)
-        await expect(
-          dataPermission.connect(testUser1).revokePermission(1),
-        ).to.be.revertedWithCustomError(dataPermission, "InactivePermission");
-
-        // Revoked count should still be 1
-        (
-          await dataPermission.userRevokedPermissionIdsLength(testUser1.address)
-        ).should.eq(1);
-      });
-
-      it("should handle empty revoked permissions list", async function () {
-        // User with no permissions at all
-        (
-          await dataPermission.userRevokedPermissionIdsLength(testUser1.address)
-        ).should.eq(0);
-        const revokedIds = await dataPermission.userRevokedPermissionIdsValues(
-          testUser1.address,
-        );
-        revokedIds.should.deep.eq([]);
-
-        // User with active permissions but none revoked
-        // First register a grantee
-        await granteesContract
-          .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
-
-        const permission = {
-          nonce: 0n,
-          granteeId: 1n,
-          grant: "ipfs://grant1",
-          fileIds: [],
-        };
-        const signature = await createPermissionSignature(
-          permission,
-          testUser1,
-        );
-        await dataPermission
-          .connect(sponsor)
-          .addPermission(permission, signature);
-
-        // Still no revoked permissions
-        (
-          await dataPermission.userRevokedPermissionIdsLength(testUser1.address)
-        ).should.eq(0);
-        const revokedIdsAfter =
-          await dataPermission.userRevokedPermissionIdsValues(
-            testUser1.address,
-          );
-        revokedIdsAfter.should.deep.eq([]);
-      });
-    });
   });
 
   describe("Edge Cases", () => {
@@ -2275,7 +1762,7 @@ describe("DataPortabilityPermissions", () => {
       return await signer.signTypedData(domain, types, value);
     };
 
-    it("should handle multiple users with same grant (should fail)", async function () {
+    it("should handle multiple users with same grant (should succeed)", async function () {
       // First register grantees
       await granteesContract
         .connect(testUser1)
@@ -2309,10 +1796,23 @@ describe("DataPortabilityPermissions", () => {
         .connect(sponsor)
         .addPermission(permission, signature1);
 
-      // Second user should fail (same grant)
-      await expect(
-        dataPermission.connect(sponsor).addPermission(permission2, signature2),
-      ).to.be.revertedWithCustomError(dataPermission, "GrantAlreadyUsed");
+      // Second user should also succeed (same grant is now allowed)
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission2, signature2);
+
+      // Verify both permissions were created
+      (await dataPermission.permissionsCount()).should.eq(2);
+      
+      // Verify both have the same grant
+      const storedPermission1 = await dataPermission.permissions(1);
+      const storedPermission2 = await dataPermission.permissions(2);
+      storedPermission1.grant.should.eq("ipfs://same-grant");
+      storedPermission2.grant.should.eq("ipfs://same-grant");
+      
+      // Verify they have different grantors
+      storedPermission1.grantor.should.eq(testUser1.address);
+      storedPermission2.grantor.should.eq(testUser2.address);
     });
 
     it("should handle rapid succession of permissions", async function () {
@@ -2827,10 +2327,13 @@ describe("DataPortabilityPermissions", () => {
           .to.emit(testServersContract, "ServerUntrusted")
           .withArgs(testUser1.address, 1);
 
-        // Verify server is no longer trusted
+        // Verify server remains in list but is not active
         (
           await testServersContract.userServerIdsLength(testUser1.address)
-        ).should.eq(0);
+        ).should.eq(1);
+        (
+          await testServersContract.isActiveServerForUser(testUser1.address, 1)
+        ).should.eq(false);
       });
 
       it("should reject untrusting non-trusted server", async function () {
@@ -2863,10 +2366,13 @@ describe("DataPortabilityPermissions", () => {
         // User1 untrusts
         await testServersContract.connect(testUser1).untrustServer(1);
 
-        // User1 should have no trusted servers
+        // User1 should still have the server in list but inactive
         (
           await testServersContract.userServerIdsLength(testUser1.address)
-        ).should.eq(0);
+        ).should.eq(1);
+        (
+          await testServersContract.isActiveServerForUser(testUser1.address, 1)
+        ).should.eq(false);
 
         // User2 should still trust the server
         (
@@ -2911,10 +2417,13 @@ describe("DataPortabilityPermissions", () => {
         // Verify nonce was incremented
         (await testServersContract.userNonce(testUser1.address)).should.eq(1);
 
-        // Verify server is no longer trusted
+        // Verify server remains in list but is not active
         (
           await testServersContract.userServerIdsLength(testUser1.address)
-        ).should.eq(0);
+        ).should.eq(1);
+        (
+          await testServersContract.isActiveServerForUser(testUser1.address, 1)
+        ).should.eq(false);
       });
 
       it("should reject with incorrect nonce", async function () {
@@ -3421,7 +2930,7 @@ describe("DataPortabilityPermissions", () => {
         );
 
         // Verify permission was stored with fileIds
-        const permissionInfo = await dataPermission.permission(1);
+        const permissionInfo = await dataPermission.permissions(1);
         permissionInfo.grantor.should.eq(testUser1.address);
         permissionInfo.grant.should.eq(permission.grant);
 
@@ -3840,10 +3349,13 @@ describe("DataPortabilityPermissions", () => {
         // 3. User1 untrusts the server
         await testServersContract.connect(testUser1).untrustServer(1);
 
-        // Verify testUser1 no longer trusts, but testUser2 still does
+        // Verify testUser1 server is inactive but remains in list, testUser2 still active
         (
           await testServersContract.userServerIdsLength(testUser1.address)
-        ).should.eq(0);
+        ).should.eq(1);
+        (
+          await testServersContract.isActiveServerForUser(testUser1.address, 1)
+        ).should.eq(false);
         (
           await testServersContract.userServerIdsLength(testUser2.address)
         ).should.eq(1);
@@ -3943,7 +3455,7 @@ describe("DataPortabilityPermissions", () => {
           );
 
         // Verify server was registered
-        const serverInfo = await testServersContract.server(1);
+        const serverInfo = await testServersContract.servers(1);
         expect(serverInfo.owner).to.equal(testUser1.address);
         expect(serverInfo.serverAddress).to.equal(testServer1.address);
         expect(serverInfo.url).to.equal("https://testServer1.example.com");
@@ -4046,7 +3558,7 @@ describe("DataPortabilityPermissions", () => {
           .to.emit(testServersContract, "ServerUpdated")
           .withArgs(1, newUrl);
 
-        const serverInfo = await testServersContract.server(1);
+        const serverInfo = await testServersContract.servers(1);
         expect(serverInfo.url).to.equal(newUrl);
       });
 
@@ -4129,7 +3641,10 @@ describe("DataPortabilityPermissions", () => {
 
         expect(
           await testServersContract.userServerIdsLength(testUser1.address),
-        ).to.equal(0);
+        ).to.equal(1);
+        expect(
+          await testServersContract.isActiveServerForUser(testUser1.address, 1),
+        ).to.equal(false);
         expect(
           await testServersContract.isActiveServerForUser(testUser1.address, 1),
         ).to.be.false;
@@ -4152,7 +3667,7 @@ describe("DataPortabilityPermissions", () => {
           testServersContract.connect(testUser1).untrustServer(1),
         ).to.be.revertedWithCustomError(
           testServersContract,
-          "ServerNotTrusted",
+          "ServerAlreadyUntrusted",
         );
       });
     });
@@ -4365,7 +3880,7 @@ describe("DataPortabilityPermissions", () => {
       });
 
       it("should return correct server info", async () => {
-        const serverInfo = await testServersContract.server(1);
+        const serverInfo = await testServersContract.servers(1);
         expect(serverInfo.id).to.equal(1);
         expect(serverInfo.owner).to.equal(testUser1.address);
         expect(serverInfo.serverAddress).to.equal(testServer1.address);
@@ -4406,7 +3921,7 @@ describe("DataPortabilityPermissions", () => {
       });
 
       it("should return user info", async () => {
-        const [nonce, trustedServerIds] = await testServersContract.user(
+        const [nonce, trustedServerIds] = await testServersContract.users(
           testUser1.address,
         );
         expect(nonce).to.equal(0);
@@ -4517,7 +4032,7 @@ describe("DataPortabilityPermissions", () => {
           .withArgs(1, testUser1.address, grantee1.address, "publicKey1");
 
         // Verify grantee was registered
-        const granteeInfo = await granteesContract.grantee(1);
+        const granteeInfo = await granteesContract.grantees(1);
         expect(granteeInfo.owner).to.equal(testUser1.address);
         expect(granteeInfo.granteeAddress).to.equal(grantee1.address);
         expect(granteeInfo.publicKey).to.equal("publicKey1");
@@ -4585,11 +4100,11 @@ describe("DataPortabilityPermissions", () => {
 
         expect(await granteesContract.granteesCount()).to.equal(2);
 
-        const grantee1Info = await granteesContract.grantee(1);
+        const grantee1Info = await granteesContract.grantees(1);
         expect(grantee1Info.owner).to.equal(testUser1.address);
         expect(grantee1Info.granteeAddress).to.equal(grantee1.address);
 
-        const grantee2Info = await granteesContract.grantee(2);
+        const grantee2Info = await granteesContract.grantees(2);
         expect(grantee2Info.owner).to.equal(testUser2.address);
         expect(grantee2Info.granteeAddress).to.equal(grantee2.address);
       });
@@ -4606,7 +4121,7 @@ describe("DataPortabilityPermissions", () => {
       });
 
       it("should return grantee info", async () => {
-        const granteeInfo = await granteesContract.grantee(1);
+        const granteeInfo = await granteesContract.grantees(1);
         expect(granteeInfo.owner).to.equal(testUser1.address);
         expect(granteeInfo.granteeAddress).to.equal(grantee1.address);
         expect(granteeInfo.publicKey).to.equal("publicKey1");

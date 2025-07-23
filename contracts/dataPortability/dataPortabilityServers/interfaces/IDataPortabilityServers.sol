@@ -41,7 +41,7 @@ interface IDataPortabilityServers {
         uint256 endBlock;
     }
 
-    struct AndServerInput {
+    struct AddServerInput {
         address owner;
         address serverAddress;
         bytes publicKey;
@@ -79,11 +79,11 @@ interface IDataPortabilityServers {
     event ServerUntrusted(address indexed user, uint256 indexed serverId);
 
     // Server management functions
-    function addServer(AndServerInput memory addServerInput) external;
+    function addServer(AddServerInput memory addServerInput) external;
     function updateServer(uint256 serverId, string memory url) external;
     function trustServer(uint256 serverId) external;
     function trustServerWithSignature(TrustServerInput calldata trustServerInput, bytes calldata signature) external;
-    function addAndTrustServer(AndServerInput memory addAndTrustServerInput) external;
+    function addAndTrustServer(AddServerInput memory addAndTrustServerInput) external;
     function addAndTrustServerWithSignature(
         AddAndTrustServerInput calldata addAndTrustServerInput,
         bytes calldata signature
@@ -106,8 +106,8 @@ interface IDataPortabilityServers {
     function trustedForwarder() external view returns (address);
     function serversCount() external view returns (uint256);
     function serverAddressToId(address serverAddress) external view returns (uint256);
-    function server(uint256 serverId) external view returns (ServerInfo memory);
-    function user(address userAddress) external view returns (uint256 nonce, uint256[] memory trustedServerIds);
+    function servers(uint256 serverId) external view returns (ServerInfo memory);
+    function users(address userAddress) external view returns (uint256 nonce, uint256[] memory trustedServerIds);
 
     // User management functions
     function userNonce(address user) external view returns (uint256);
