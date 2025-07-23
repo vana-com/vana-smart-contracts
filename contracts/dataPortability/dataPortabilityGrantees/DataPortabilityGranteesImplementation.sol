@@ -31,10 +31,7 @@ contract DataPortabilityGranteesImplementation is
         _disableInitializers();
     }
 
-    function initialize(
-        address trustedForwarderAddress,
-        address ownerAddress
-    ) external initializer {
+    function initialize(address trustedForwarderAddress, address ownerAddress) external initializer {
         __AccessControl_init();
         __UUPSUpgradeable_init();
         __Pausable_init();
@@ -78,7 +75,13 @@ contract DataPortabilityGranteesImplementation is
         _setRoleAdmin(role, adminRole);
     }
 
-    function trustedForwarder() public view virtual override(ERC2771ContextUpgradeable, IDataPortabilityGrantees) returns (address) {
+    function trustedForwarder()
+        public
+        view
+        virtual
+        override(ERC2771ContextUpgradeable, IDataPortabilityGrantees)
+        returns (address)
+    {
         return _trustedForwarder;
     }
 
@@ -129,7 +132,7 @@ contract DataPortabilityGranteesImplementation is
         return granteeId;
     }
 
-    function grantee(uint256 granteeId) external view override returns (GranteeInfo memory) {
+    function grantees(uint256 granteeId) external view override returns (GranteeInfo memory) {
         Grantee storage granteeData = _grantees[granteeId];
         return
             GranteeInfo({
@@ -140,7 +143,7 @@ contract DataPortabilityGranteesImplementation is
             });
     }
 
-    function granteeInfo(uint256 granteeId) public view override returns (GranteeInfo memory) {
+    function granteeInfo(uint256 granteeId) external view override returns (GranteeInfo memory) {
         Grantee storage granteeData = _grantees[granteeId];
         return
             GranteeInfo({
@@ -152,7 +155,15 @@ contract DataPortabilityGranteesImplementation is
     }
 
     function granteeByAddress(address granteeAddress) external view override returns (GranteeInfo memory) {
-        return granteeInfo(granteeAddressToId[granteeAddress]);
+        uint256 granteeId = granteeAddressToId[granteeAddress];
+        Grantee storage granteeData = _grantees[granteeId];
+        return
+            GranteeInfo({
+                owner: granteeData.owner,
+                granteeAddress: granteeData.granteeAddress,
+                publicKey: granteeData.publicKey,
+                permissionIds: _granteePermissions[granteeId].values()
+            });
     }
 
     function granteePermissionIds(uint256 granteeId) external view override returns (uint256[] memory) {
@@ -163,14 +174,20 @@ contract DataPortabilityGranteesImplementation is
         return _granteePermissions[granteeId].values();
     }
 
-    function addPermissionToGrantee(uint256 granteeId, uint256 permissionId) external override onlyRole(PERMISSION_MANAGER_ROLE) {
+    function addPermissionToGrantee(
+        uint256 granteeId,
+        uint256 permissionId
+    ) external override onlyRole(PERMISSION_MANAGER_ROLE) {
         if (granteeId == 0 || granteeId > granteesCount) {
             revert GranteeNotFound();
         }
         _granteePermissions[granteeId].add(permissionId);
     }
 
-    function removePermissionFromGrantee(uint256 granteeId, uint256 permissionId) external override onlyRole(PERMISSION_MANAGER_ROLE) {
+    function removePermissionFromGrantee(
+        uint256 granteeId,
+        uint256 permissionId
+    ) external override onlyRole(PERMISSION_MANAGER_ROLE) {
         if (granteeId == 0 || granteeId > granteesCount) {
             revert GranteeNotFound();
         }

@@ -11,8 +11,6 @@ abstract contract DataPortabilityPermissionsStorage is IDataPortabilityPermissio
     uint256 public override permissionsCount;
     mapping(uint256 permissionId => Permission) internal _permissions;
 
-    mapping(bytes32 grantHash => uint256 permissionId) public override grantHashToPermissionId;
-
     IDataRegistry public override dataRegistry;
 
     mapping(uint256 fileId => EnumerableSet.UintSet permissionIds) internal _filePermissions;

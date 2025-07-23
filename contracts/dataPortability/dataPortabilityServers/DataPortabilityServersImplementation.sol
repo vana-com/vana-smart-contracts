@@ -181,7 +181,7 @@ contract DataPortabilityServersImplementation is
         return digest.recover(signature);
     }
 
-    function _addServer(AndServerInput memory addServerInput) internal returns (uint256 serverId) {
+    function _addServer(AddServerInput memory addServerInput) internal returns (uint256 serverId) {
         if (bytes(addServerInput.publicKey).length == 0) {
             revert EmptyPublicKey();
         }
@@ -245,7 +245,7 @@ contract DataPortabilityServersImplementation is
         emit ServerTrusted(signer, serverId);
     }
 
-    function addServer(AndServerInput memory addServerInput) external override whenNotPaused {
+    function addServer(AddServerInput memory addServerInput) external override whenNotPaused {
         _addServer(addServerInput);
     }
 
@@ -281,7 +281,7 @@ contract DataPortabilityServersImplementation is
         ++_users[signer].nonce;
 
         uint256 serverId = _addServer(
-            AndServerInput({
+            AddServerInput({
                 owner: addAndTrustServerInput.owner,
                 serverAddress: addAndTrustServerInput.serverAddress,
                 publicKey: addAndTrustServerInput.publicKey,
@@ -292,9 +292,9 @@ contract DataPortabilityServersImplementation is
         _trustServer(serverId, signer);
     }
 
-    function addAndTrustServer(AndServerInput memory addAndTrustServerInput) external override whenNotPaused {
+    function addAndTrustServer(AddServerInput memory addAndTrustServerInput) external override whenNotPaused {
         uint256 serverId = _addServer(
-            AndServerInput({
+            AddServerInput({
                 owner: addAndTrustServerInput.owner,
                 serverAddress: addAndTrustServerInput.serverAddress,
                 publicKey: addAndTrustServerInput.publicKey,
@@ -324,7 +324,6 @@ contract DataPortabilityServersImplementation is
 
         // Set end block to current block to deactivate the server for this user
         trustedServer.endBlock = block.number;
-        userData.trustedServerIds.remove(serverId);
 
         emit ServerUntrusted(signer, serverId);
     }
@@ -372,10 +371,10 @@ contract DataPortabilityServersImplementation is
             return false;
         }
         TrustedServer storage trustedServer = _users[userAddress].trustedServers[serverId];
-        return block.number >= trustedServer.startBlock && block.number <= trustedServer.endBlock;
+        return block.number >= trustedServer.startBlock && block.number < trustedServer.endBlock;
     }
 
-    function server(uint256 serverId) external view override returns (ServerInfo memory) {
+    function servers(uint256 serverId) external view override returns (ServerInfo memory) {
         Server storage serverData = _servers[serverId];
         return
             ServerInfo({
@@ -405,7 +404,7 @@ contract DataPortabilityServersImplementation is
         return _users[userAddress].nonce;
     }
 
-    function user(
+    function users(
         address userAddress
     ) external view override returns (uint256 nonce, uint256[] memory trustedServerIds) {
         User storage userData = _users[userAddress];

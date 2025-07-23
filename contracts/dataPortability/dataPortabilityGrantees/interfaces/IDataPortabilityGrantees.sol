@@ -30,7 +30,7 @@ interface IDataPortabilityGrantees {
     function trustedForwarder() external view returns (address);
     function granteesCount() external view returns (uint256);
     function granteeAddressToId(address granteeAddress) external view returns (uint256);
-    function grantee(uint256 granteeId) external view returns (GranteeInfo memory);
+    function grantees(uint256 granteeId) external view returns (GranteeInfo memory);
     function granteePermissions(uint256 granteeId) external view returns (uint256[] memory);
     
     // Grantee management functions

@@ -33,7 +33,6 @@ contract DataPortabilityPermissionsImplementation is
         keccak256("RevokePermission(uint256 nonce,uint256 permissionId)");
 
     error InvalidNonce(uint256 expectedNonce, uint256 providedNonce);
-    error GrantAlreadyUsed();
     error InvalidSignature();
     error EmptyGrant();
     error ZeroAddress();
@@ -198,22 +197,10 @@ contract DataPortabilityPermissionsImplementation is
         return _users[userAddress].permissionIds.length();
     }
 
-    function userRevokedPermissionIdsValues(address userAddress) external view override returns (uint256[] memory) {
-        return _users[userAddress].revokedPermissionIds.values();
-    }
 
-    function userRevokedPermissionIdsAt(
-        address userAddress,
-        uint256 permissionIndex
-    ) external view override returns (uint256) {
-        return _users[userAddress].revokedPermissionIds.at(permissionIndex);
-    }
 
-    function userRevokedPermissionIdsLength(address userAddress) external view override returns (uint256) {
-        return _users[userAddress].revokedPermissionIds.length();
-    }
 
-    function permission(uint256 permissionId) external view override returns (PermissionInfo memory) {
+    function permissions(uint256 permissionId) external view override returns (PermissionInfo memory) {
         Permission storage permissionData = _permissions[permissionId];
         return
             PermissionInfo({
@@ -233,9 +220,6 @@ contract DataPortabilityPermissionsImplementation is
         return _users[userAddress].nonce;
     }
 
-    function permissionIdByGrant(string memory grant) external view override returns (uint256) {
-        return grantHashToPermissionId[keccak256(abi.encodePacked(grant))];
-    }
 
     function addPermission(
         PermissionInput calldata permissionInput,
@@ -266,10 +250,6 @@ contract DataPortabilityPermissionsImplementation is
             revert GranteeNotFound();
         }
 
-        bytes32 grantHash = keccak256(abi.encodePacked(permissionInput.grant));
-        if (grantHashToPermissionId[grantHash] != 0) {
-            revert GrantAlreadyUsed();
-        }
 
         uint256 permissionId = ++permissionsCount;
 
@@ -296,7 +276,6 @@ contract DataPortabilityPermissionsImplementation is
             }
         }
 
-        grantHashToPermissionId[grantHash] = permissionId;
 
         _users[signer].permissionIds.add(permissionId);
 
@@ -356,7 +335,6 @@ contract DataPortabilityPermissionsImplementation is
             revert InactivePermission(permissionId);
         }
 
-        userData.revokedPermissionIds.add(permissionId);
 
         dataPortabilityGrantees.removePermissionFromGrantee(permissionData.granteeId, permissionId);
 
@@ -371,16 +349,16 @@ contract DataPortabilityPermissionsImplementation is
         return _permissions[permissionId].fileIds.values();
     }
 
-    function user(
+    function users(
         address userAddress
     )
         external
         view
         override
-        returns (uint256 nonce, uint256[] memory permissionIds, uint256[] memory revokedPermissionIds)
+        returns (uint256 nonce, uint256[] memory permissionIds)
     {
         User storage userData = _users[userAddress];
-        return (userData.nonce, userData.permissionIds.values(), userData.revokedPermissionIds.values());
+        return (userData.nonce, userData.permissionIds.values());
     }
 
     function filePermissions(uint256 fileId) external view override returns (uint256[] memory) {
