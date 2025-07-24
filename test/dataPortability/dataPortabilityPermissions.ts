@@ -3482,7 +3482,7 @@ describe("DataPortabilityPermissions", () => {
         const serverInput = {
           owner: testUser1.address,
           serverAddress: testServer1.address,
-          publicKey: "0x",
+          publicKey: "",
           serverUrl: "https://testServer1.example.com",
         };
 
@@ -3815,7 +3815,7 @@ describe("DataPortabilityPermissions", () => {
             { name: "nonce", type: "uint256" },
             { name: "owner", type: "address" },
             { name: "serverAddress", type: "address" },
-            { name: "publicKey", type: "bytes" },
+            { name: "publicKey", type: "string" },
             { name: "serverUrl", type: "string" },
           ],
         };
@@ -3824,7 +3824,7 @@ describe("DataPortabilityPermissions", () => {
           nonce: addAndTrustInput.nonce,
           owner: addAndTrustInput.owner,
           serverAddress: addAndTrustInput.serverAddress,
-          publicKey: ethers.getBytes(addAndTrustInput.publicKey),
+          publicKey: addAndTrustInput.publicKey,
           serverUrl: addAndTrustInput.serverUrl,
         };
 

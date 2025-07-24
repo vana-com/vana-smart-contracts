@@ -14,7 +14,7 @@ interface IDataPortabilityServers {
     struct Server {
         address owner;
         address serverAddress;
-        bytes publicKey;
+        string publicKey;
         string url;
     }
 
@@ -27,7 +27,7 @@ interface IDataPortabilityServers {
         uint256 id;
         address owner;
         address serverAddress;
-        bytes publicKey;
+        string publicKey;
         string url;
     }
 
@@ -35,7 +35,7 @@ interface IDataPortabilityServers {
         address user;
         address owner;
         address serverAddress;
-        bytes publicKey;
+        string publicKey;
         string url;
         uint256 startBlock;
         uint256 endBlock;
@@ -44,7 +44,7 @@ interface IDataPortabilityServers {
     struct AddServerInput {
         address owner;
         address serverAddress;
-        bytes publicKey;
+        string publicKey;
         string serverUrl;
     }
 
@@ -52,7 +52,7 @@ interface IDataPortabilityServers {
         uint256 nonce;
         address owner;
         address serverAddress;
-        bytes publicKey;
+        string publicKey;
         string serverUrl;
     }
 
@@ -71,7 +71,7 @@ interface IDataPortabilityServers {
         uint256 indexed serverId,
         address indexed owner,
         address indexed serverAddress,
-        bytes publicKey,
+        string publicKey,
         string url
     );
     event ServerUpdated(uint256 indexed serverId, string url);
