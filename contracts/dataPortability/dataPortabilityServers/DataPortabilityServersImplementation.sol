@@ -31,7 +31,7 @@ contract DataPortabilityServersImplementation is
     bytes32 private constant UNTRUST_SERVER_TYPEHASH = keccak256("UntrustServer(uint256 nonce,uint256 serverId)");
     bytes32 private constant ADD_AND_TRUST_SERVER_TYPEHASH =
         keccak256(
-            "AddAndTrustServer(uint256 nonce,address owner,address serverAddress,bytes publicKey,string serverUrl)"
+            "AddAndTrustServer(uint256 nonce,address owner,address serverAddress,string publicKey,string serverUrl)"
         );
 
     error InvalidNonce(uint256 expectedNonce, uint256 providedNonce);
@@ -168,7 +168,7 @@ contract DataPortabilityServersImplementation is
                 addAndTrustServerInput.nonce,
                 addAndTrustServerInput.owner,
                 addAndTrustServerInput.serverAddress,
-                keccak256(addAndTrustServerInput.publicKey),
+                keccak256(bytes(addAndTrustServerInput.publicKey)),
                 keccak256(bytes(addAndTrustServerInput.serverUrl))
             )
         );

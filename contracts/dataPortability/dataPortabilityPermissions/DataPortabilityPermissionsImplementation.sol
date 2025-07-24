@@ -117,14 +117,12 @@ contract DataPortabilityPermissionsImplementation is
         _trustedForwarder = trustedForwarderAddress;
     }
 
-
     function updateDataRegistry(IDataRegistry newDataRegistry) external override onlyRole(MAINTAINER_ROLE) {
         if (address(newDataRegistry) == address(0)) {
             revert ZeroAddress();
         }
         dataRegistry = newDataRegistry;
     }
-
 
     function updateServersContract(
         IDataPortabilityServers newServersContract
@@ -189,16 +187,16 @@ contract DataPortabilityPermissionsImplementation is
         return _users[userAddress].permissionIds.values();
     }
 
-    function userPermissionIdsAt(address userAddress, uint256 permissionIndex) external view override returns (uint256) {
+    function userPermissionIdsAt(
+        address userAddress,
+        uint256 permissionIndex
+    ) external view override returns (uint256) {
         return _users[userAddress].permissionIds.at(permissionIndex);
     }
 
     function userPermissionIdsLength(address userAddress) external view override returns (uint256) {
         return _users[userAddress].permissionIds.length();
     }
-
-
-
 
     function permissions(uint256 permissionId) external view override returns (PermissionInfo memory) {
         Permission storage permissionData = _permissions[permissionId];
@@ -219,7 +217,6 @@ contract DataPortabilityPermissionsImplementation is
     function userNonce(address userAddress) external view override returns (uint256) {
         return _users[userAddress].nonce;
     }
-
 
     function addPermission(
         PermissionInput calldata permissionInput,
@@ -250,7 +247,6 @@ contract DataPortabilityPermissionsImplementation is
             revert GranteeNotFound();
         }
 
-
         uint256 permissionId = ++permissionsCount;
 
         Permission storage permissionData = _permissions[permissionId];
@@ -275,7 +271,6 @@ contract DataPortabilityPermissionsImplementation is
                 ++i;
             }
         }
-
 
         _users[signer].permissionIds.add(permissionId);
 
@@ -335,7 +330,6 @@ contract DataPortabilityPermissionsImplementation is
             revert InactivePermission(permissionId);
         }
 
-
         dataPortabilityGrantees.removePermissionFromGrantee(permissionData.granteeId, permissionId);
 
         emit PermissionRevoked(permissionId);
@@ -349,14 +343,7 @@ contract DataPortabilityPermissionsImplementation is
         return _permissions[permissionId].fileIds.values();
     }
 
-    function users(
-        address userAddress
-    )
-        external
-        view
-        override
-        returns (uint256 nonce, uint256[] memory permissionIds)
-    {
+    function users(address userAddress) external view override returns (uint256 nonce, uint256[] memory permissionIds) {
         User storage userData = _users[userAddress];
         return (userData.nonce, userData.permissionIds.values());
     }
