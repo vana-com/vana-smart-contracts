@@ -10,6 +10,12 @@ import "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "./interfaces/DataPortabilityServersStorageV1.sol";
 
+/**
+ * @title DataPortabilityServersImplementation
+ * @notice Implementation contract for data portability server management
+ * @dev Implements IDataPortabilityServers interface with UUPS upgradeability
+ * @custom:see IDataPortabilityServers For complete interface documentation
+ */
 contract DataPortabilityServersImplementation is
     UUPSUpgradeable,
     PausableUpgradeable,
@@ -309,6 +315,7 @@ contract DataPortabilityServersImplementation is
         _trustServer(serverId, signer);
     }
 
+    /// @inheritdoc IDataPortabilityServers
     function addAndTrustServerOnBehalf(
         address ownerAddress,
         AddServerInput calldata addServerInput

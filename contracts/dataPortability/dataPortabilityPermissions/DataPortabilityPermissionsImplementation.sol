@@ -10,6 +10,12 @@ import "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "./interfaces/DataPortabilityPermissionsStorage.sol";
 
+/**
+ * @title DataPortabilityPermissionsImplementation
+ * @notice Implementation contract for data portability permission management
+ * @dev Implements IDataPortabilityPermissions interface with UUPS upgradeability
+ * @custom:see IDataPortabilityPermissions For complete interface documentation
+ */
 contract DataPortabilityPermissionsImplementation is
     UUPSUpgradeable,
     PausableUpgradeable,
@@ -182,6 +188,13 @@ contract DataPortabilityPermissionsImplementation is
         return _extractSigner(structHash, signature);
     }
 
+    /**
+     * @notice Extracts signer from ServerFilesAndPermission EIP-712 signature
+     * @dev Uses domain separator and type hash to verify signature authenticity
+     * @param serverFilesAndPermissionInput The signed input data
+     * @param signature The EIP-712 signature to verify
+     * @return address The recovered signer address
+     */
     function _extractSignerFromServerFilesAndPermission(
         ServerFilesAndPermissionInput calldata serverFilesAndPermissionInput,
         bytes calldata signature
@@ -207,6 +220,12 @@ contract DataPortabilityPermissionsImplementation is
         return digest.recover(signature);
     }
 
+    /**
+     * @notice Hashes an array of strings for EIP-712 signature verification
+     * @dev Creates deterministic hash by hashing each string individually then packing results
+     * @param stringArray Array of strings to hash
+     * @return bytes32 Keccak256 hash of the packed individual string hashes
+     */
     function _hashStringArray(string[] calldata stringArray) internal pure returns (bytes32) {
         bytes32[] memory hashes = new bytes32[](stringArray.length);
         for (uint256 i = 0; i < stringArray.length; ) {
@@ -370,6 +389,11 @@ contract DataPortabilityPermissionsImplementation is
         emit PermissionRevoked(permissionId);
     }
 
+    /// @inheritdoc IDataPortabilityPermissions
+    /// @dev Implementation combines three operations atomically:
+    ///      1. Server registration via DataPortabilityServers.addAndTrustServerOnBehalf
+    ///      2. File registration via DataRegistry.addFileWithPermissions (for new files)
+    ///      3. Permission creation via internal _addPermissionFromServerFiles method
     function addServerFilesAndPermissions(
         ServerFilesAndPermissionInput calldata serverFilesAndPermissionInput,
         bytes calldata signature
@@ -421,6 +445,15 @@ contract DataPortabilityPermissionsImplementation is
         return _addPermissionFromServerFiles(serverFilesAndPermissionInput, fileIds, signature, signer);
     }
 
+    /**
+     * @notice Internal function to create permission from server files operation
+     * @dev Specialized permission creation for the combined server/files/permission flow
+     * @param serverFilesAndPermissionInput The server files and permission input data
+     * @param fileIds Array of file IDs to associate with the permission
+     * @param signature The original signature for the operation
+     * @param signer The verified signer address
+     * @return uint256 The unique ID of the created permission
+     */
     function _addPermissionFromServerFiles(
         ServerFilesAndPermissionInput calldata serverFilesAndPermissionInput,
         uint256[] memory fileIds,
