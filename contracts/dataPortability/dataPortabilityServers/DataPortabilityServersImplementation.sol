@@ -29,10 +29,8 @@ contract DataPortabilityServersImplementation is
 
     bytes32 private constant TRUST_SERVER_TYPEHASH = keccak256("TrustServer(uint256 nonce,uint256 serverId)");
     bytes32 private constant UNTRUST_SERVER_TYPEHASH = keccak256("UntrustServer(uint256 nonce,uint256 serverId)");
-    bytes32 private constant ADD_AND_TRUST_SERVER_TYPEHASH =
-        keccak256(
-            "AddAndTrustServer(uint256 nonce,address owner,address serverAddress,string publicKey,string serverUrl)"
-        );
+    bytes32 private constant ADD_SERVER_TYPEHASH =
+        keccak256("AddServer(uint256 nonce,address serverAddress,string publicKey,string serverUrl)");
 
     error InvalidNonce(uint256 expectedNonce, uint256 providedNonce);
     error EmptyUrl();
@@ -158,18 +156,17 @@ contract DataPortabilityServersImplementation is
         return _extractSigner(structHash, signature);
     }
 
-    function _extractSignerFromAddAndTrustServer(
-        AddAndTrustServerInput calldata addAndTrustServerInput,
+    function _extractSignerFromAddServer(
+        AddServerWithSignatureInput calldata addServerInput,
         bytes calldata signature
     ) internal view returns (address) {
         bytes32 structHash = keccak256(
             abi.encode(
-                ADD_AND_TRUST_SERVER_TYPEHASH,
-                addAndTrustServerInput.nonce,
-                addAndTrustServerInput.owner,
-                addAndTrustServerInput.serverAddress,
-                keccak256(bytes(addAndTrustServerInput.publicKey)),
-                keccak256(bytes(addAndTrustServerInput.serverUrl))
+                ADD_SERVER_TYPEHASH,
+                addServerInput.nonce,
+                addServerInput.serverAddress,
+                keccak256(bytes(addServerInput.publicKey)),
+                keccak256(bytes(addServerInput.serverUrl))
             )
         );
 
@@ -181,7 +178,7 @@ contract DataPortabilityServersImplementation is
         return digest.recover(signature);
     }
 
-    function _addServer(AddServerInput memory addServerInput) internal returns (uint256 serverId) {
+    function _addServer(AddServerInput memory addServerInput, address owner) internal returns (uint256 serverId) {
         if (bytes(addServerInput.publicKey).length == 0) {
             revert EmptyPublicKey();
         }
@@ -190,7 +187,7 @@ contract DataPortabilityServersImplementation is
             revert EmptyUrl();
         }
 
-        if (addServerInput.owner == address(0)) {
+        if (owner == address(0)) {
             revert ZeroAddress();
         }
 
@@ -206,7 +203,7 @@ contract DataPortabilityServersImplementation is
         serverId = ++serversCount;
 
         Server storage serverData = _servers[serverId];
-        serverData.owner = addServerInput.owner;
+        serverData.owner = owner;
         serverData.serverAddress = addServerInput.serverAddress;
         serverData.publicKey = addServerInput.publicKey;
         serverData.url = addServerInput.serverUrl;
@@ -215,7 +212,7 @@ contract DataPortabilityServersImplementation is
 
         emit ServerRegistered(
             serverId,
-            addServerInput.owner,
+            owner,
             addServerInput.serverAddress,
             addServerInput.publicKey,
             addServerInput.serverUrl
@@ -245,10 +242,6 @@ contract DataPortabilityServersImplementation is
         emit ServerTrusted(signer, serverId);
     }
 
-    function addServer(AddServerInput memory addServerInput) external override whenNotPaused {
-        _addServer(addServerInput);
-    }
-
     function trustServer(uint256 serverId) external override whenNotPaused {
         _trustServer(serverId, _msgSender());
     }
@@ -268,41 +261,50 @@ contract DataPortabilityServersImplementation is
         _trustServer(trustServerInput.serverId, signer);
     }
 
-    function addAndTrustServerWithSignature(
-        AddAndTrustServerInput calldata addAndTrustServerInput,
+    function addServerWithSignature(
+        AddServerWithSignatureInput calldata addServerInput,
         bytes calldata signature
     ) external override whenNotPaused {
-        address signer = _extractSignerFromAddAndTrustServer(addAndTrustServerInput, signature);
+        address signer = _extractSignerFromAddServer(addServerInput, signature);
 
-        if (addAndTrustServerInput.nonce != _users[signer].nonce) {
-            revert InvalidNonce(_users[signer].nonce, addAndTrustServerInput.nonce);
+        if (addServerInput.nonce != _users[signer].nonce) {
+            revert InvalidNonce(_users[signer].nonce, addServerInput.nonce);
+        }
+
+        ++_users[signer].nonce;
+
+        _addServer(
+            AddServerInput({
+                serverAddress: addServerInput.serverAddress,
+                publicKey: addServerInput.publicKey,
+                serverUrl: addServerInput.serverUrl
+            }),
+            signer
+        );
+    }
+
+    function addAndTrustServerWithSignature(
+        AddServerWithSignatureInput calldata addServerInput,
+        bytes calldata signature
+    ) external override whenNotPaused {
+        address signer = _extractSignerFromAddServer(addServerInput, signature);
+
+        if (addServerInput.nonce != _users[signer].nonce) {
+            revert InvalidNonce(_users[signer].nonce, addServerInput.nonce);
         }
 
         ++_users[signer].nonce;
 
         uint256 serverId = _addServer(
             AddServerInput({
-                owner: addAndTrustServerInput.owner,
-                serverAddress: addAndTrustServerInput.serverAddress,
-                publicKey: addAndTrustServerInput.publicKey,
-                serverUrl: addAndTrustServerInput.serverUrl
-            })
+                serverAddress: addServerInput.serverAddress,
+                publicKey: addServerInput.publicKey,
+                serverUrl: addServerInput.serverUrl
+            }),
+            signer
         );
 
         _trustServer(serverId, signer);
-    }
-
-    function addAndTrustServer(AddServerInput memory addAndTrustServerInput) external override whenNotPaused {
-        uint256 serverId = _addServer(
-            AddServerInput({
-                owner: addAndTrustServerInput.owner,
-                serverAddress: addAndTrustServerInput.serverAddress,
-                publicKey: addAndTrustServerInput.publicKey,
-                serverUrl: addAndTrustServerInput.serverUrl
-            })
-        );
-
-        _trustServer(serverId, _msgSender());
     }
 
     function _untrustServer(uint256 serverId, address signer) internal {

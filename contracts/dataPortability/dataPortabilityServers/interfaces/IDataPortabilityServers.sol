@@ -31,26 +31,14 @@ interface IDataPortabilityServers {
         string url;
     }
 
-    struct TrustedServerInfo {
-        address user;
-        address owner;
-        address serverAddress;
-        string publicKey;
-        string url;
-        uint256 startBlock;
-        uint256 endBlock;
-    }
-
     struct AddServerInput {
-        address owner;
         address serverAddress;
         string publicKey;
         string serverUrl;
     }
 
-    struct AddAndTrustServerInput {
+    struct AddServerWithSignatureInput {
         uint256 nonce;
-        address owner;
         address serverAddress;
         string publicKey;
         string serverUrl;
@@ -79,15 +67,17 @@ interface IDataPortabilityServers {
     event ServerUntrusted(address indexed user, uint256 indexed serverId);
 
     // Server management functions
-    function addServer(AddServerInput memory addServerInput) external;
+    function addServerWithSignature(
+        AddServerWithSignatureInput calldata addServerInput,
+        bytes calldata signature
+    ) external;
+    function addAndTrustServerWithSignature(
+        AddServerWithSignatureInput calldata addServerInput,
+        bytes calldata signature
+    ) external;
     function updateServer(uint256 serverId, string memory url) external;
     function trustServer(uint256 serverId) external;
     function trustServerWithSignature(TrustServerInput calldata trustServerInput, bytes calldata signature) external;
-    function addAndTrustServer(AddServerInput memory addAndTrustServerInput) external;
-    function addAndTrustServerWithSignature(
-        AddAndTrustServerInput calldata addAndTrustServerInput,
-        bytes calldata signature
-    ) external;
     function untrustServer(uint256 serverId) external;
     function untrustServerWithSignature(
         UntrustServerInput calldata untrustServerInput,
