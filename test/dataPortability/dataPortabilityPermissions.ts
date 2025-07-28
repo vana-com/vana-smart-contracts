@@ -186,6 +186,11 @@ describe("DataPortabilityPermissions", () => {
     await granteesContract
       .connect(owner)
       .grantRole(PERMISSION_MANAGER_ROLE, await dataPermission.getAddress());
+    
+    // Grant PERMISSION_MANAGER_ROLE to DataPortabilityPermissions contract on DataPortabilityServers
+    await testServersContract
+      .connect(owner)
+      .grantRole(PERMISSION_MANAGER_ROLE, await dataPermission.getAddress());
   };
 
   describe("Setup", () => {
@@ -4832,6 +4837,520 @@ describe("DataPortabilityPermissions", () => {
           ),
         ).to.be.false;
       });
+    });
+  });
+
+  describe("addAndTrustServerOnBehalf", () => {
+    beforeEach(async () => {
+      await deploy();
+    });
+
+    it("should add and trust server on behalf of user", async function () {
+      const serverInput = {
+        serverAddress: testServer1.address,
+        publicKey: "publicKey1",
+        serverUrl: "https://server1.example.com"
+      };
+
+      // Call addAndTrustServerOnBehalf from an account with PERMISSION_MANAGER_ROLE
+      // Grant role to maintainer for testing
+      const PERMISSION_MANAGER_ROLE = ethers.keccak256(
+        ethers.toUtf8Bytes("PERMISSION_MANAGER_ROLE"),
+      );
+      await testServersContract
+        .connect(owner)
+        .grantRole(PERMISSION_MANAGER_ROLE, maintainer.address);
+
+      const tx = await testServersContract
+        .connect(maintainer)
+        .addAndTrustServerOnBehalf(testUser1.address, serverInput);
+
+      // Verify server was added
+      const serverId = await testServersContract.serverAddressToId(testServer1.address);
+      expect(serverId).to.be.greaterThan(0);
+
+      // Verify server details
+      const serverInfo = await testServersContract.servers(serverId);
+      expect(serverInfo.owner).to.equal(testUser1.address);
+      expect(serverInfo.serverAddress).to.equal(testServer1.address);
+      expect(serverInfo.publicKey).to.equal("publicKey1");
+      expect(serverInfo.url).to.equal("https://server1.example.com");
+
+      // Verify server is trusted by the user
+      const isActive = await testServersContract.isActiveServerForUser(testUser1.address, serverId);
+      expect(isActive).to.be.true;
+
+      // Verify server count increased
+      expect(await testServersContract.serversCount()).to.equal(1);
+
+      // Verify events were emitted
+      await expect(tx).to.emit(testServersContract, "ServerRegistered");
+      await expect(tx).to.emit(testServersContract, "ServerTrusted");
+    });
+
+    it("should reject call from non-PERMISSION_MANAGER_ROLE", async function () {
+      const serverInput = {
+        serverAddress: testServer1.address,
+        publicKey: "publicKey1",
+        serverUrl: "https://server1.example.com"
+      };
+
+      const PERMISSION_MANAGER_ROLE = ethers.keccak256(
+        ethers.toUtf8Bytes("PERMISSION_MANAGER_ROLE"),
+      );
+
+      // Should reject when called by testUser1 (who doesn't have PERMISSION_MANAGER_ROLE)
+      await expect(
+        testServersContract
+          .connect(testUser1)
+          .addAndTrustServerOnBehalf(testUser1.address, serverInput)
+      ).to.be.revertedWithCustomError(testServersContract, "AccessControlUnauthorizedAccount")
+        .withArgs(testUser1.address, PERMISSION_MANAGER_ROLE);
+    });
+
+    it("should reject with zero server address", async function () {
+      const serverInput = {
+        serverAddress: ethers.ZeroAddress,
+        publicKey: "publicKey1",
+        serverUrl: "https://server1.example.com"
+      };
+
+      // Grant role to maintainer for testing
+      const PERMISSION_MANAGER_ROLE = ethers.keccak256(
+        ethers.toUtf8Bytes("PERMISSION_MANAGER_ROLE"),
+      );
+      await testServersContract
+        .connect(owner)
+        .grantRole(PERMISSION_MANAGER_ROLE, maintainer.address);
+
+      await expect(
+        testServersContract
+          .connect(maintainer)
+          .addAndTrustServerOnBehalf(testUser1.address, serverInput)
+      ).to.be.revertedWithCustomError(testServersContract, "ZeroAddress");
+    });
+
+    it("should reject with empty public key", async function () {
+      const serverInput = {
+        serverAddress: testServer1.address,
+        publicKey: "",
+        serverUrl: "https://server1.example.com"
+      };
+
+      // Grant role to maintainer for testing
+      const PERMISSION_MANAGER_ROLE = ethers.keccak256(
+        ethers.toUtf8Bytes("PERMISSION_MANAGER_ROLE"),
+      );
+      await testServersContract
+        .connect(owner)
+        .grantRole(PERMISSION_MANAGER_ROLE, maintainer.address);
+
+      await expect(
+        testServersContract
+          .connect(maintainer)
+          .addAndTrustServerOnBehalf(testUser1.address, serverInput)
+      ).to.be.revertedWithCustomError(testServersContract, "EmptyPublicKey");
+    });
+
+    it("should reject with empty server URL", async function () {
+      const serverInput = {
+        serverAddress: testServer1.address,
+        publicKey: "publicKey1",
+        serverUrl: ""
+      };
+
+      // Grant role to maintainer for testing
+      const PERMISSION_MANAGER_ROLE = ethers.keccak256(
+        ethers.toUtf8Bytes("PERMISSION_MANAGER_ROLE"),
+      );
+      await testServersContract
+        .connect(owner)
+        .grantRole(PERMISSION_MANAGER_ROLE, maintainer.address);
+
+      await expect(
+        testServersContract
+          .connect(maintainer)
+          .addAndTrustServerOnBehalf(testUser1.address, serverInput)
+      ).to.be.revertedWithCustomError(testServersContract, "EmptyUrl");
+    });
+
+    it("should reject duplicate server address", async function () {
+      const serverInput = {
+        serverAddress: testServer1.address,
+        publicKey: "publicKey1",
+        serverUrl: "https://server1.example.com"
+      };
+
+      // Grant role to maintainer for testing
+      const PERMISSION_MANAGER_ROLE = ethers.keccak256(
+        ethers.toUtf8Bytes("PERMISSION_MANAGER_ROLE"),
+      );
+      await testServersContract
+        .connect(owner)
+        .grantRole(PERMISSION_MANAGER_ROLE, maintainer.address);
+
+      // Add server first time
+      await testServersContract
+        .connect(maintainer)
+        .addAndTrustServerOnBehalf(testUser1.address, serverInput);
+
+      // Try to add same server address again
+      await expect(
+        testServersContract
+          .connect(maintainer)
+          .addAndTrustServerOnBehalf(testUser2.address, serverInput)
+      ).to.be.revertedWithCustomError(testServersContract, "ServerAlreadyRegistered");
+    });
+  });
+
+  describe("addServerFilesAndPermissions", () => {
+    beforeEach(async () => {
+      await deploy();
+      // Register a grantee for testing
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+    });
+
+    // Helper function to create signature for addServerFilesAndPermissions
+    const createServerFilesAndPermissionSignature = async (
+      serverFilesAndPermissionInput: {
+        nonce: bigint;
+        granteeId: bigint;
+        grant: string;
+        fileUrls: string[];
+        serverAddress: string;
+        serverUrl: string;
+        serverPublicKey: string;
+      },
+      signer: HardhatEthersSigner,
+    ) => {
+      const domain = {
+        name: "VanaDataPortabilityPermissions",
+        version: "1",
+        chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
+        verifyingContract: await dataPermission.getAddress(),
+      };
+
+      const types = {
+        ServerFilesAndPermission: [
+          { name: "nonce", type: "uint256" },
+          { name: "granteeId", type: "uint256" },
+          { name: "grant", type: "string" },
+          { name: "fileUrls", type: "string[]" },
+          { name: "serverAddress", type: "address" },
+          { name: "serverUrl", type: "string" },
+          { name: "serverPublicKey", type: "string" },
+        ],
+      };
+
+      const value = {
+        nonce: serverFilesAndPermissionInput.nonce,
+        granteeId: serverFilesAndPermissionInput.granteeId,
+        grant: serverFilesAndPermissionInput.grant,
+        fileUrls: serverFilesAndPermissionInput.fileUrls,
+        serverAddress: serverFilesAndPermissionInput.serverAddress,
+        serverUrl: serverFilesAndPermissionInput.serverUrl,
+        serverPublicKey: serverFilesAndPermissionInput.serverPublicKey,
+      };
+
+      return await signer.signTypedData(domain, types, value);
+    };
+
+    it("should add server, files, and permissions in one transaction", async function () {
+      const serverFilesAndPermissionInput = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant1",
+        fileUrls: ["https://file1.example.com", "https://file2.example.com"],
+        serverAddress: testServer1.address,
+        serverUrl: "https://server1.example.com",
+        serverPublicKey: "publicKey1"
+      };
+
+      const signature = await createServerFilesAndPermissionSignature(
+        serverFilesAndPermissionInput,
+        testUser1
+      );
+
+      const tx = await dataPermission
+        .connect(testUser1)
+        .addServerFilesAndPermissions(serverFilesAndPermissionInput, signature);
+
+      // Verify server was added and trusted
+      const serverId = await testServersContract.serverAddressToId(testServer1.address);
+      expect(serverId).to.be.greaterThan(0);
+      const isServerActive = await testServersContract.isActiveServerForUser(testUser1.address, serverId);
+      expect(isServerActive).to.be.true;
+
+      // Verify files were added
+      const file1Id = await dataRegistry.fileIdByUrl("https://file1.example.com");
+      const file2Id = await dataRegistry.fileIdByUrl("https://file2.example.com");
+      expect(file1Id).to.be.greaterThan(0);
+      expect(file2Id).to.be.greaterThan(0);
+
+      // Verify files are owned by the signer
+      const file1Info = await dataRegistry.files(file1Id);
+      const file2Info = await dataRegistry.files(file2Id);
+      expect(file1Info.ownerAddress).to.equal(testUser1.address);
+      expect(file2Info.ownerAddress).to.equal(testUser1.address);
+
+      // Verify permission was created
+      expect(await dataPermission.permissionsCount()).to.equal(1);
+      const permission = await dataPermission.permissions(1);
+      expect(permission.grantor).to.equal(testUser1.address);
+      expect(permission.granteeId).to.equal(1n);
+      expect(permission.grant).to.equal("ipfs://grant1");
+
+      // Verify permission includes both files
+      const permissionFileIds = await dataPermission.permissionFileIds(1);
+      expect(permissionFileIds).to.include(file1Id);
+      expect(permissionFileIds).to.include(file2Id);
+
+      // Verify nonce was incremented
+      expect(await dataPermission.userNonce(testUser1.address)).to.equal(1);
+
+      // Verify events were emitted
+      await expect(tx).to.emit(testServersContract, "ServerRegistered");
+      await expect(tx).to.emit(testServersContract, "ServerTrusted");
+      await expect(tx).to.emit(dataPermission, "PermissionAdded");
+    });
+
+    it("should handle existing files correctly", async function () {
+      // Pre-add one file
+      await dataRegistry.connect(testUser1).addFile("https://existing-file.example.com");
+      const existingFileId = await dataRegistry.fileIdByUrl("https://existing-file.example.com");
+
+      const serverFilesAndPermissionInput = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant1",
+        fileUrls: ["https://existing-file.example.com", "https://new-file.example.com"],
+        serverAddress: testServer1.address,
+        serverUrl: "https://server1.example.com",
+        serverPublicKey: "publicKey1"
+      };
+
+      const signature = await createServerFilesAndPermissionSignature(
+        serverFilesAndPermissionInput,
+        testUser1
+      );
+
+      await dataPermission
+        .connect(testUser1)
+        .addServerFilesAndPermissions(serverFilesAndPermissionInput, signature);
+
+      // Verify both files are in the permission
+      const permissionFileIds = await dataPermission.permissionFileIds(1);
+      expect(permissionFileIds.length).to.equal(2);
+      expect(permissionFileIds).to.include(existingFileId);
+
+      const newFileId = await dataRegistry.fileIdByUrl("https://new-file.example.com");
+      expect(permissionFileIds).to.include(newFileId);
+    });
+
+    it("should reject if existing file is not owned by signer", async function () {
+      // Pre-add file with different owner
+      await dataRegistry.connect(testUser2).addFile("https://other-user-file.example.com");
+
+      const serverFilesAndPermissionInput = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant1",
+        fileUrls: ["https://other-user-file.example.com"],
+        serverAddress: testServer1.address,
+        serverUrl: "https://server1.example.com",
+        serverPublicKey: "publicKey1"
+      };
+
+      const signature = await createServerFilesAndPermissionSignature(
+        serverFilesAndPermissionInput,
+        testUser1
+      );
+
+      await expect(
+        dataPermission
+          .connect(testUser1)
+          .addServerFilesAndPermissions(serverFilesAndPermissionInput, signature)
+      ).to.be.revertedWithCustomError(dataPermission, "NotFileOwner");
+    });
+
+    it("should reject with invalid nonce", async function () {
+      const serverFilesAndPermissionInput = {
+        nonce: 1n, // Wrong nonce, should be 0
+        granteeId: 1n,
+        grant: "ipfs://grant1",
+        fileUrls: ["https://file1.example.com"],
+        serverAddress: testServer1.address,
+        serverUrl: "https://server1.example.com",
+        serverPublicKey: "publicKey1"
+      };
+
+      const signature = await createServerFilesAndPermissionSignature(
+        serverFilesAndPermissionInput,
+        testUser1
+      );
+
+      await expect(
+        dataPermission
+          .connect(testUser1)
+          .addServerFilesAndPermissions(serverFilesAndPermissionInput, signature)
+      ).to.be.revertedWithCustomError(dataPermission, "InvalidNonce")
+        .withArgs(0, 1);
+    });
+
+    it("should reject with empty grant", async function () {
+      const serverFilesAndPermissionInput = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "",
+        fileUrls: ["https://file1.example.com"],
+        serverAddress: testServer1.address,
+        serverUrl: "https://server1.example.com",
+        serverPublicKey: "publicKey1"
+      };
+
+      const signature = await createServerFilesAndPermissionSignature(
+        serverFilesAndPermissionInput,
+        testUser1
+      );
+
+      await expect(
+        dataPermission
+          .connect(testUser1)
+          .addServerFilesAndPermissions(serverFilesAndPermissionInput, signature)
+      ).to.be.revertedWithCustomError(dataPermission, "EmptyGrant");
+    });
+
+    it("should reject with invalid grantee ID", async function () {
+      const serverFilesAndPermissionInput = {
+        nonce: 0n,
+        granteeId: 999n, // Non-existent grantee
+        grant: "ipfs://grant1",
+        fileUrls: ["https://file1.example.com"],
+        serverAddress: testServer1.address,
+        serverUrl: "https://server1.example.com",
+        serverPublicKey: "publicKey1"
+      };
+
+      const signature = await createServerFilesAndPermissionSignature(
+        serverFilesAndPermissionInput,
+        testUser1
+      );
+
+      await expect(
+        dataPermission
+          .connect(testUser1)
+          .addServerFilesAndPermissions(serverFilesAndPermissionInput, signature)
+      ).to.be.revertedWithCustomError(dataPermission, "GranteeNotFound");
+    });
+
+    it("should reject with empty server public key", async function () {
+      const serverFilesAndPermissionInput = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant1",
+        fileUrls: ["https://file1.example.com"],
+        serverAddress: testServer1.address,
+        serverUrl: "https://server1.example.com",
+        serverPublicKey: ""
+      };
+
+      const signature = await createServerFilesAndPermissionSignature(
+        serverFilesAndPermissionInput,
+        testUser1
+      );
+
+      await expect(
+        dataPermission
+          .connect(testUser1)
+          .addServerFilesAndPermissions(serverFilesAndPermissionInput, signature)
+      ).to.be.revertedWithCustomError(testServersContract, "EmptyPublicKey");
+    });
+
+    it("should reject with empty server URL", async function () {
+      const serverFilesAndPermissionInput = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant1",
+        fileUrls: ["https://file1.example.com"],
+        serverAddress: testServer1.address,
+        serverUrl: "",
+        serverPublicKey: "publicKey1"
+      };
+
+      const signature = await createServerFilesAndPermissionSignature(
+        serverFilesAndPermissionInput,
+        testUser1
+      );
+
+      await expect(
+        dataPermission
+          .connect(testUser1)
+          .addServerFilesAndPermissions(serverFilesAndPermissionInput, signature)
+      ).to.be.revertedWithCustomError(testServersContract, "EmptyUrl");
+    });
+
+    it("should handle empty fileUrls array", async function () {
+      const serverFilesAndPermissionInput = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant1",
+        fileUrls: [], // Empty array
+        serverAddress: testServer1.address,
+        serverUrl: "https://server1.example.com",
+        serverPublicKey: "publicKey1"
+      };
+
+      const signature = await createServerFilesAndPermissionSignature(
+        serverFilesAndPermissionInput,
+        testUser1
+      );
+
+      const tx = await dataPermission
+        .connect(testUser1)
+        .addServerFilesAndPermissions(serverFilesAndPermissionInput, signature);
+
+      // Should still create server and permission, just with no files
+      const serverId = await testServersContract.serverAddressToId(testServer1.address);
+      expect(serverId).to.be.greaterThan(0);
+
+      const permission = await dataPermission.permissions(1);
+      expect(permission.grantor).to.equal(testUser1.address);
+
+      const permissionFileIds = await dataPermission.permissionFileIds(1);
+      expect(permissionFileIds.length).to.equal(0);
+
+      await expect(tx).to.emit(dataPermission, "PermissionAdded");
+    });
+
+    it("should work when called by different user than signer", async function () {
+      const serverFilesAndPermissionInput = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant1",  
+        fileUrls: ["https://file1.example.com"],
+        serverAddress: testServer1.address,
+        serverUrl: "https://server1.example.com",
+        serverPublicKey: "publicKey1"
+      };
+
+      const signature = await createServerFilesAndPermissionSignature(
+        serverFilesAndPermissionInput,
+        testUser1
+      );
+
+      // Call from different user (sponsor) but signature is from testUser1
+      await dataPermission
+        .connect(sponsor)
+        .addServerFilesAndPermissions(serverFilesAndPermissionInput, signature);
+
+      // Should be attributed to the signer (testUser1), not the caller (sponsor)
+      const permission = await dataPermission.permissions(1);
+      expect(permission.grantor).to.equal(testUser1.address);
+
+      expect(await dataPermission.userNonce(testUser1.address)).to.equal(1);
+      expect(await dataPermission.userNonce(sponsor.address)).to.equal(0);
     });
   });
 });

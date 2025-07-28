@@ -75,6 +75,7 @@ interface IDataPortabilityServers {
         AddServerWithSignatureInput calldata addServerInput,
         bytes calldata signature
     ) external;
+    function addAndTrustServerOnBehalf(address ownerAddress, AddServerInput calldata addServerInput) external;
     function updateServer(uint256 serverId, string memory url) external;
     function trustServer(uint256 serverId) external;
     function trustServerWithSignature(TrustServerInput calldata trustServerInput, bytes calldata signature) external;

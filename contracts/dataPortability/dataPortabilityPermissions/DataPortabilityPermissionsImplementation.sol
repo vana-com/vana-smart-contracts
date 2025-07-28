@@ -31,6 +31,10 @@ contract DataPortabilityPermissionsImplementation is
         keccak256("Permission(uint256 nonce,uint256 granteeId,string grant,uint256[] fileIds)");
     bytes32 private constant REVOKE_PERMISSION_TYPEHASH =
         keccak256("RevokePermission(uint256 nonce,uint256 permissionId)");
+    bytes32 private constant SERVER_FILES_AND_PERMISSION_TYPEHASH =
+        keccak256(
+            "ServerFilesAndPermission(uint256 nonce,uint256 granteeId,string grant,string[] fileUrls,address serverAddress,string serverUrl,string serverPublicKey)"
+        );
 
     error InvalidNonce(uint256 expectedNonce, uint256 providedNonce);
     error InvalidSignature();
@@ -178,9 +182,40 @@ contract DataPortabilityPermissionsImplementation is
         return _extractSigner(structHash, signature);
     }
 
+    function _extractSignerFromServerFilesAndPermission(
+        ServerFilesAndPermissionInput calldata serverFilesAndPermissionInput,
+        bytes calldata signature
+    ) internal view returns (address) {
+        bytes32 structHash = keccak256(
+            abi.encode(
+                SERVER_FILES_AND_PERMISSION_TYPEHASH,
+                serverFilesAndPermissionInput.nonce,
+                serverFilesAndPermissionInput.granteeId,
+                keccak256(bytes(serverFilesAndPermissionInput.grant)),
+                _hashStringArray(serverFilesAndPermissionInput.fileUrls),
+                serverFilesAndPermissionInput.serverAddress,
+                keccak256(bytes(serverFilesAndPermissionInput.serverUrl)),
+                keccak256(bytes(serverFilesAndPermissionInput.serverPublicKey))
+            )
+        );
+
+        return _extractSigner(structHash, signature);
+    }
+
     function _extractSigner(bytes32 structHash, bytes calldata signature) internal view returns (address) {
         bytes32 digest = _hashTypedDataV4(structHash);
         return digest.recover(signature);
+    }
+
+    function _hashStringArray(string[] calldata stringArray) internal pure returns (bytes32) {
+        bytes32[] memory hashes = new bytes32[](stringArray.length);
+        for (uint256 i = 0; i < stringArray.length; ) {
+            hashes[i] = keccak256(bytes(stringArray[i]));
+            unchecked {
+                ++i;
+            }
+        }
+        return keccak256(abi.encodePacked(hashes));
     }
 
     function userPermissionIdsValues(address userAddress) external view override returns (uint256[] memory) {
@@ -333,6 +368,105 @@ contract DataPortabilityPermissionsImplementation is
         dataPortabilityGrantees.removePermissionFromGrantee(permissionData.granteeId, permissionId);
 
         emit PermissionRevoked(permissionId);
+    }
+
+    function addServerFilesAndPermissions(
+        ServerFilesAndPermissionInput calldata serverFilesAndPermissionInput,
+        bytes calldata signature
+    ) external override whenNotPaused returns (uint256) {
+        address signer = _extractSignerFromServerFilesAndPermission(serverFilesAndPermissionInput, signature);
+        User storage userData = _users[signer];
+
+        if (serverFilesAndPermissionInput.nonce != userData.nonce) {
+            revert InvalidNonce(userData.nonce, serverFilesAndPermissionInput.nonce);
+        }
+
+        ++userData.nonce;
+
+        // 1. Add and trust server using DataPortabilityServers contract
+        dataPortabilityServers.addAndTrustServerOnBehalf(
+            signer,
+            IDataPortabilityServers.AddServerInput({
+                serverAddress: serverFilesAndPermissionInput.serverAddress,
+                publicKey: serverFilesAndPermissionInput.serverPublicKey,
+                serverUrl: serverFilesAndPermissionInput.serverUrl
+            })
+        );
+
+        // 2. Add files to DataRegistry (without specific permissions at DataRegistry level)
+        uint256[] memory fileIds = new uint256[](serverFilesAndPermissionInput.fileUrls.length);
+        for (uint256 i = 0; i < serverFilesAndPermissionInput.fileUrls.length; ) {
+            // Check if file already exists
+            uint256 existingFileId = dataRegistry.fileIdByUrl(serverFilesAndPermissionInput.fileUrls[i]);
+            if (existingFileId != 0) {
+                // File exists, verify ownership
+                if (dataRegistry.files(existingFileId).ownerAddress != signer) {
+                    revert NotFileOwner(dataRegistry.files(existingFileId).ownerAddress, signer);
+                }
+                fileIds[i] = existingFileId;
+            } else {
+                // Add new file
+                fileIds[i] = dataRegistry.addFileWithPermissions(
+                    serverFilesAndPermissionInput.fileUrls[i],
+                    signer,
+                    new IDataRegistry.Permission[](0) // No permissions at DataRegistry level
+                );
+            }
+            unchecked {
+                ++i;
+            }
+        }
+
+        // 3. Add permission directly using internal logic
+        return _addPermissionFromServerFiles(serverFilesAndPermissionInput, fileIds, signature, signer);
+    }
+
+    function _addPermissionFromServerFiles(
+        ServerFilesAndPermissionInput calldata serverFilesAndPermissionInput,
+        uint256[] memory fileIds,
+        bytes calldata signature,
+        address signer
+    ) internal returns (uint256) {
+        if (bytes(serverFilesAndPermissionInput.grant).length == 0) {
+            revert EmptyGrant();
+        }
+
+        if (serverFilesAndPermissionInput.granteeId == 0 || serverFilesAndPermissionInput.granteeId > dataPortabilityGrantees.granteesCount()) {
+            revert GranteeNotFound();
+        }
+
+        uint256 permissionId = ++permissionsCount;
+
+        Permission storage permissionData = _permissions[permissionId];
+        permissionData.grantor = signer;
+        permissionData.nonce = serverFilesAndPermissionInput.nonce;
+        permissionData.granteeId = serverFilesAndPermissionInput.granteeId;
+        permissionData.grant = serverFilesAndPermissionInput.grant;
+        permissionData.signature = signature;
+        permissionData.startBlock = block.number;
+        permissionData.endBlock = type(uint256).max; // Default to no expiration
+
+        for (uint256 i = 0; i < fileIds.length; ) {
+            permissionData.fileIds.add(fileIds[i]);
+            _filePermissions[fileIds[i]].add(permissionId);
+            unchecked {
+                ++i;
+            }
+        }
+
+        _users[signer].permissionIds.add(permissionId);
+
+        dataPortabilityGrantees.addPermissionToGrantee(serverFilesAndPermissionInput.granteeId, permissionId);
+
+        emit PermissionAdded(
+            permissionId,
+            signer,
+            serverFilesAndPermissionInput.granteeId,
+            serverFilesAndPermissionInput.grant,
+            fileIds
+        );
+
+        return permissionId;
     }
 
     function filePermissionIds(uint256 fileId) external view override returns (uint256[] memory) {

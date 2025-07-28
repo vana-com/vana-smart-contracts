@@ -23,6 +23,7 @@ contract DataPortabilityServersImplementation is
     using EnumerableSet for EnumerableSet.UintSet;
 
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
+    bytes32 public constant PERMISSION_MANAGER_ROLE = keccak256("PERMISSION_MANAGER_ROLE");
 
     string private constant SIGNING_DOMAIN = "VanaDataPortabilityServers";
     string private constant SIGNATURE_VERSION = "1";
@@ -59,6 +60,7 @@ contract DataPortabilityServersImplementation is
 
         _grantRole(DEFAULT_ADMIN_ROLE, ownerAddress);
         _grantRole(MAINTAINER_ROLE, ownerAddress);
+        _setRoleAdmin(PERMISSION_MANAGER_ROLE, DEFAULT_ADMIN_ROLE);
     }
 
     function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
@@ -305,6 +307,14 @@ contract DataPortabilityServersImplementation is
         );
 
         _trustServer(serverId, signer);
+    }
+
+    function addAndTrustServerOnBehalf(
+        address ownerAddress,
+        AddServerInput calldata addServerInput
+    ) external override whenNotPaused onlyRole(PERMISSION_MANAGER_ROLE) {
+        uint256 serverId = _addServer(addServerInput, ownerAddress);
+        _trustServer(serverId, ownerAddress);
     }
 
     function _untrustServer(uint256 serverId, address signer) internal {

@@ -42,6 +42,16 @@ interface IDataPortabilityPermissions {
         uint256[] fileIds;
     }
 
+    struct ServerFilesAndPermissionInput {
+        uint256 nonce;
+        uint256 granteeId;
+        string grant;
+        string[] fileUrls;
+        address serverAddress;
+        string serverUrl;
+        string serverPublicKey;
+    }
+
     struct RevokePermissionInput {
         uint256 nonce;
         uint256 permissionId;
@@ -84,6 +94,7 @@ interface IDataPortabilityPermissions {
 
     // Permission management
     function addPermission(PermissionInput calldata permission, bytes calldata signature) external returns (uint256);
+    function addServerFilesAndPermissions(ServerFilesAndPermissionInput calldata serverFilesAndPermissionInput, bytes calldata signature) external returns (uint256);
     function isActivePermission(uint256 permissionId) external view returns (bool);
     function revokePermission(uint256 permissionId) external;
     function revokePermissionWithSignature(
