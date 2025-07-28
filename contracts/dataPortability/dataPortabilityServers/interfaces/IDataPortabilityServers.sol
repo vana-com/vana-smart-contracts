@@ -10,19 +10,19 @@ import "../../../data/dataRegistry/interfaces/IDataRegistry.sol";
  * @notice Interface for managing data portability servers in the Vana ecosystem
  * @dev This contract manages server registration, trust relationships, and user-server associations
  *      for data portability operations. Servers are used to facilitate secure data transfer and processing.
- * 
+ *
  * Key Features:
  * - Server registration with public key and URL
  * - User-based server trust management with time-bounded trust periods
  * - Role-based access control for administrative operations
  * - EIP-712 signature-based operations for secure off-chain interactions
- * 
+ *
  * Security Considerations:
  * - All user operations use nonce-based replay protection
  * - Server trust relationships are time-bounded with start and end blocks
  * - Administrative operations require appropriate role permissions
  * - Server addresses are unique across the system
- * 
+ *
  * @custom:security-contact security@vana.org
  */
 interface IDataPortabilityServers {
@@ -80,6 +80,27 @@ interface IDataPortabilityServers {
         address serverAddress;
         string publicKey;
         string url;
+    }
+
+    /**
+     * @notice Trusted server information for external consumption
+     * @dev Read-only structure combining server ID with trust details
+     * @param id Unique numerical identifier for the trusted server
+     * @param owner Address that owns and controls this server
+     * @param serverAddress Unique blockchain address representing this server
+     * @param publicKey Public key for encrypting communications with this server
+     * @param url HTTP/HTTPS endpoint where the server can be reached
+     * @param startBlock Block number when trust relationship becomes active
+     * @param endBlock Block number when trust relationship expires (type(uint256).max for indefinite)
+     */
+    struct TrustedServerInfo {
+        uint256 id;
+        address owner;
+        address serverAddress;
+        string publicKey;
+        string url;
+        uint256 startBlock;
+        uint256 endBlock;
     }
 
     /**
@@ -182,19 +203,19 @@ interface IDataPortabilityServers {
      * @dev Verifies signature against AddServer type hash and increments user nonce
      * @param addServerInput Server registration details including nonce for replay protection
      * @param signature EIP-712 signature proving authorization from the server owner
-     * 
+     *
      * Requirements:
      * - Signature must be valid for the provided input
      * - Nonce must match the current user nonce
      * - Server address must not be already registered
      * - Public key and URL must not be empty
      * - Contract must not be paused
-     * 
+     *
      * Effects:
      * - Increments the signer's nonce
      * - Registers the server with a new unique ID
      * - Emits ServerRegistered event
-     * 
+     *
      * @custom:signature-format AddServer(uint256 nonce,address serverAddress,string publicKey,string serverUrl)
      */
     function addServerWithSignature(
@@ -207,16 +228,16 @@ interface IDataPortabilityServers {
      * @dev Combines server registration and trust establishment in a single atomic operation
      * @param addServerInput Server registration details including nonce for replay protection
      * @param signature EIP-712 signature proving authorization from the server owner
-     * 
+     *
      * Requirements:
      * - All requirements from addServerWithSignature
      * - Trust establishment requirements (server must exist after registration)
-     * 
+     *
      * Effects:
      * - All effects from addServerWithSignature
      * - Establishes trust relationship between signer and new server
      * - Emits ServerTrusted event in addition to ServerRegistered
-     * 
+     *
      * @custom:signature-format AddServer(uint256 nonce,address serverAddress,string publicKey,string serverUrl)
      */
     function addAndTrustServerWithSignature(
@@ -229,19 +250,19 @@ interface IDataPortabilityServers {
      * @dev Administrative function for authorized roles to manage servers for users
      * @param ownerAddress Address that will own the registered server
      * @param addServerInput Server registration details (no nonce required)
-     * 
+     *
      * Requirements:
      * - Caller must have PERMISSION_MANAGER_ROLE
      * - Server address must not be already registered
      * - Public key and URL must not be empty
      * - Owner address must not be zero
      * - Contract must not be paused
-     * 
+     *
      * Effects:
      * - Registers the server with the specified owner
      * - Establishes trust relationship between owner and new server
      * - Emits ServerRegistered and ServerTrusted events
-     * 
+     *
      * @custom:access-control Requires PERMISSION_MANAGER_ROLE
      */
     function addAndTrustServerOnBehalf(address ownerAddress, AddServerInput calldata addServerInput) external;
@@ -251,13 +272,13 @@ interface IDataPortabilityServers {
      * @dev Only the server owner can update the URL
      * @param serverId Unique identifier of the server to update
      * @param url New HTTP/HTTPS endpoint for the server
-     * 
+     *
      * Requirements:
      * - Caller must be the server owner
      * - Server must exist
      * - URL must not be empty
      * - Contract must not be paused
-     * 
+     *
      * Effects:
      * - Updates the server's URL
      * - Emits ServerUpdated event
@@ -268,12 +289,12 @@ interface IDataPortabilityServers {
      * @notice Establishes trust with a server
      * @dev Creates a time-bounded trust relationship starting from current block
      * @param serverId Unique identifier of the server to trust
-     * 
+     *
      * Requirements:
      * - Server must exist
      * - Server must not already be trusted and active
      * - Contract must not be paused
-     * 
+     *
      * Effects:
      * - Creates or reactivates trust relationship
      * - Sets start block to current block and end block to max uint256
@@ -287,16 +308,16 @@ interface IDataPortabilityServers {
      * @dev Same as trustServer but with signature-based authorization
      * @param trustServerInput Trust operation details including nonce
      * @param signature EIP-712 signature proving authorization
-     * 
+     *
      * Requirements:
      * - All requirements from trustServer
      * - Signature must be valid for the provided input
      * - Nonce must match the current user nonce
-     * 
+     *
      * Effects:
      * - All effects from trustServer
      * - Increments the signer's nonce
-     * 
+     *
      * @custom:signature-format TrustServer(uint256 nonce,uint256 serverId)
      */
     function trustServerWithSignature(TrustServerInput calldata trustServerInput, bytes calldata signature) external;
@@ -305,11 +326,11 @@ interface IDataPortabilityServers {
      * @notice Revokes trust from a server
      * @dev Immediately terminates the trust relationship by setting end block to current block
      * @param serverId Unique identifier of the server to untrust
-     * 
+     *
      * Requirements:
      * - Server must be currently trusted and active
      * - Contract must not be paused
-     * 
+     *
      * Effects:
      * - Sets trust end block to current block
      * - Emits ServerUntrusted event
@@ -321,16 +342,16 @@ interface IDataPortabilityServers {
      * @dev Same as untrustServer but with signature-based authorization
      * @param untrustServerInput Untrust operation details including nonce
      * @param signature EIP-712 signature proving authorization
-     * 
+     *
      * Requirements:
      * - All requirements from untrustServer
      * - Signature must be valid for the provided input
      * - Nonce must match the current user nonce
-     * 
+     *
      * Effects:
      * - All effects from untrustServer
      * - Increments the signer's nonce
-     * 
+     *
      * @custom:signature-format UntrustServer(uint256 nonce,uint256 serverId)
      */
     function untrustServerWithSignature(
@@ -339,23 +360,6 @@ interface IDataPortabilityServers {
     ) external;
 
     // ==================== VIEW FUNCTIONS ====================
-
-    /**
-     * @notice Checks if a server is registered and active in the system
-     * @dev A server is active if it exists (serverId > 0 and <= serversCount)
-     * @param serverId Unique identifier of the server to check
-     * @return bool True if the server is registered and active, false otherwise
-     */
-    function isActiveServer(uint256 serverId) external view returns (bool);
-
-    /**
-     * @notice Checks if a server is currently trusted by a specific user
-     * @dev Checks both server existence and active trust relationship within time bounds
-     * @param userAddress Address of the user to check trust relationship for
-     * @param serverId Unique identifier of the server to check
-     * @return bool True if user currently trusts the server (within start/end block range)
-     */
-    function isActiveServerForUser(address userAddress, uint256 serverId) external view returns (bool);
 
     /**
      * @notice Retrieves server information by server address
@@ -389,6 +393,23 @@ interface IDataPortabilityServers {
      * @return uint256 Number of trusted servers for the user
      */
     function userServerIdsLength(address user) external view returns (uint256);
+
+    /**
+     * @notice Gets all trusted server information for a user
+     * @dev Returns complete server information for all servers trusted by the user
+     * @param userAddress Address of the user to query trusted servers for
+     * @return TrustedServerInfo[] Array of complete trusted server information
+     */
+    function userServerValues(address userAddress) external view returns (TrustedServerInfo[] memory);
+
+    /**
+     * @notice Gets specific trusted server information for a user
+     * @dev Returns complete server information for a specific trusted server
+     * @param userAddress Address of the user to query
+     * @param serverId ID of the specific server to get information for
+     * @return TrustedServerInfo Complete trusted server information
+     */
+    function userServers(address userAddress, uint256 serverId) external view returns (TrustedServerInfo memory);
 
     // ==================== PUBLIC STORAGE GETTERS ====================
 
@@ -446,10 +467,10 @@ interface IDataPortabilityServers {
      * @dev Used for administrative nonce management, requires MAINTAINER_ROLE
      * @param user Address of the user to modify
      * @param nonce New nonce value to set
-     * 
+     *
      * Requirements:
      * - Caller must have MAINTAINER_ROLE
-     * 
+     *
      * @custom:access-control Requires MAINTAINER_ROLE
      */
     function setUserNonce(address user, uint256 nonce) external;
@@ -460,10 +481,10 @@ interface IDataPortabilityServers {
      * @notice Updates the trusted forwarder address for meta-transactions
      * @dev Used to change the EIP-2771 trusted forwarder for meta-transaction support
      * @param trustedForwarderAddress New trusted forwarder address
-     * 
+     *
      * Requirements:
      * - Caller must have MAINTAINER_ROLE
-     * 
+     *
      * @custom:access-control Requires MAINTAINER_ROLE
      */
     function updateTrustedForwarder(address trustedForwarderAddress) external;
@@ -471,15 +492,15 @@ interface IDataPortabilityServers {
     /**
      * @notice Pauses the contract, disabling most functions
      * @dev Emergency function to halt contract operations
-     * 
+     *
      * Requirements:
      * - Caller must have MAINTAINER_ROLE
      * - Contract must not already be paused
-     * 
+     *
      * Effects:
      * - Pauses the contract
      * - Most functions will revert with "Pausable: paused"
-     * 
+     *
      * @custom:access-control Requires MAINTAINER_ROLE
      */
     function pause() external;
@@ -487,15 +508,15 @@ interface IDataPortabilityServers {
     /**
      * @notice Unpauses the contract, re-enabling functions
      * @dev Restores normal contract operations after pause
-     * 
+     *
      * Requirements:
      * - Caller must have MAINTAINER_ROLE
      * - Contract must be currently paused
-     * 
+     *
      * Effects:
      * - Unpauses the contract
      * - All functions return to normal operation
-     * 
+     *
      * @custom:access-control Requires MAINTAINER_ROLE
      */
     function unpause() external;

@@ -341,11 +341,6 @@ contract DataPortabilityPermissionsImplementation is
         return permissionId;
     }
 
-    function isActivePermission(uint256 permissionId) external view override returns (bool) {
-        Permission storage permissionData = _permissions[permissionId];
-        return block.number >= permissionData.startBlock && block.number < permissionData.endBlock;
-    }
-
     function revokePermission(uint256 permissionId) external override whenNotPaused {
         _revokePermission(permissionId, _msgSender());
     }
@@ -464,7 +459,10 @@ contract DataPortabilityPermissionsImplementation is
             revert EmptyGrant();
         }
 
-        if (serverFilesAndPermissionInput.granteeId == 0 || serverFilesAndPermissionInput.granteeId > dataPortabilityGrantees.granteesCount()) {
+        if (
+            serverFilesAndPermissionInput.granteeId == 0 ||
+            serverFilesAndPermissionInput.granteeId > dataPortabilityGrantees.granteesCount()
+        ) {
             revert GranteeNotFound();
         }
 

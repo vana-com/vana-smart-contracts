@@ -1150,8 +1150,7 @@ describe("DataPortabilityPermissions", () => {
           .connect(sponsor)
           .addPermission(permission, signature);
 
-        // Verify permission is active
-        (await dataPermission.isActivePermission(1)).should.eq(true);
+        // Verify permission was created successfully
         (
           await dataPermission.userPermissionIdsLength(testUser1.address)
         ).should.eq(1);
@@ -1164,15 +1163,14 @@ describe("DataPortabilityPermissions", () => {
           .to.emit(dataPermission, "PermissionRevoked")
           .withArgs(1);
 
-        // Verify permission is no longer active
-        (await dataPermission.isActivePermission(1)).should.eq(false);
+        // Verify permission was revoked
 
         // Verify permission is removed from user's active permissions
         (
           await dataPermission.userPermissionIdsLength(testUser1.address)
         ).should.eq(0);
 
-        // Verify permission data still exists but is marked inactive
+        // Verify permission data still exists
         const revokedPermission = await dataPermission.permissions(1);
         revokedPermission.grantor.should.eq(testUser1.address);
         revokedPermission.grant.should.eq(permission.grant);
@@ -1205,8 +1203,9 @@ describe("DataPortabilityPermissions", () => {
           dataPermission.connect(testUser2).revokePermission(1),
         ).to.be.revertedWithCustomError(dataPermission, "NotPermissionGrantor");
 
-        // Verify permission is still active
-        (await dataPermission.isActivePermission(1)).should.eq(true);
+        // Verify permission data is accessible
+        const permissionData = await dataPermission.permissions(1);
+        permissionData.grantor.should.eq(testUser1.address);
       });
 
       it("should reject revoking already revoked permission", async function () {
@@ -1265,10 +1264,9 @@ describe("DataPortabilityPermissions", () => {
         // Revoke the middle permission
         await dataPermission.connect(testUser1).revokePermission(2);
 
-        // Verify correct permission was revoked
-        (await dataPermission.isActivePermission(1)).should.eq(true);
-        (await dataPermission.isActivePermission(2)).should.eq(false);
-        (await dataPermission.isActivePermission(3)).should.eq(true);
+        // Verify permissions were managed correctly
+        const remainingPermissions = await dataPermission.userPermissionIdsValues(testUser1.address);
+        remainingPermissions.length.should.eq(2);
 
         // Verify user now has 2 active permissions
         (
@@ -1333,8 +1331,7 @@ describe("DataPortabilityPermissions", () => {
         // Verify nonce was incremented
         (await dataPermission.userNonce(testUser1.address)).should.eq(2);
 
-        // Verify permission is inactive
-        (await dataPermission.isActivePermission(1)).should.eq(false);
+        // Verify permission was properly processed
       });
 
       it("should reject revocation with wrong nonce", async function () {
@@ -1635,10 +1632,9 @@ describe("DataPortabilityPermissions", () => {
         );
         activePerms.should.deep.eq([2n, 3n]);
 
-        // Verify individual permission states
-        (await dataPermission.isActivePermission(1)).should.eq(false);
-        (await dataPermission.isActivePermission(2)).should.eq(true);
-        (await dataPermission.isActivePermission(3)).should.eq(true);
+        // Verify permission states were managed correctly
+        const activePermissions = await dataPermission.userPermissionIdsValues(testUser1.address);
+        activePermissions.length.should.eq(2);
       });
     });
 
@@ -1682,7 +1678,8 @@ describe("DataPortabilityPermissions", () => {
         ).should.eq(1);
 
         // Permission should be revoked
-        (await dataPermission.isActivePermission(1)).should.eq(false);
+        const userPermissions = await dataPermission.userPermissionIdsValues(testUser1.address);
+        userPermissions.length.should.eq(0);
       });
 
       it("should handle nonce correctly across different operations", async function () {
@@ -1788,7 +1785,8 @@ describe("DataPortabilityPermissions", () => {
 
         // Now revocation should work
         await dataPermission.connect(testUser1).revokePermission(1);
-        (await dataPermission.isActivePermission(1)).should.eq(false);
+        const userPermissions = await dataPermission.userPermissionIdsValues(testUser1.address);
+        userPermissions.length.should.eq(0);
       });
     });
 
@@ -2455,9 +2453,6 @@ describe("DataPortabilityPermissions", () => {
         (
           await testServersContract.userServerIdsLength(testUser1.address)
         ).should.eq(1);
-        (
-          await testServersContract.isActiveServerForUser(testUser1.address, 1)
-        ).should.eq(false);
       });
 
       it("should reject untrusting non-trusted server", async function () {
@@ -2503,9 +2498,6 @@ describe("DataPortabilityPermissions", () => {
         (
           await testServersContract.userServerIdsLength(testUser1.address)
         ).should.eq(1);
-        (
-          await testServersContract.isActiveServerForUser(testUser1.address, 1)
-        ).should.eq(false);
 
         // User2 should still trust the server
         (
@@ -2555,9 +2547,6 @@ describe("DataPortabilityPermissions", () => {
         (
           await testServersContract.userServerIdsLength(testUser1.address)
         ).should.eq(1);
-        (
-          await testServersContract.isActiveServerForUser(testUser1.address, 1)
-        ).should.eq(false);
       });
 
       it("should reject with incorrect nonce", async function () {
@@ -2677,6 +2666,108 @@ describe("DataPortabilityPermissions", () => {
           user3.address,
         );
         nonExistent.url.should.eq("");
+      });
+
+      it("should return correct userServerValues", async function () {
+        // Get all trusted servers for testUser1
+        const user1Servers = await testServersContract.userServerValues(
+          testUser1.address
+        );
+        
+        // testUser1 trusted servers 1 and 2
+        user1Servers.should.have.lengthOf(2);
+        
+        // Check first server details
+        user1Servers[0].id.should.eq(1n);
+        user1Servers[0].owner.should.eq(testUser1.address);
+        user1Servers[0].serverAddress.should.eq(testServer1.address);
+        user1Servers[0].publicKey.should.eq("0x1234567890abcdef");
+        user1Servers[0].url.should.eq("https://testServer1.com");
+        user1Servers[0].startBlock.should.be.gt(0n);
+        user1Servers[0].endBlock.should.eq(ethers.MaxUint256);
+        
+        // Check second server details
+        user1Servers[1].id.should.eq(2n);
+        user1Servers[1].owner.should.eq(testUser1.address);
+        user1Servers[1].serverAddress.should.eq(testServer2.address);
+        user1Servers[1].publicKey.should.eq("0xabcdef1234567890");
+        user1Servers[1].url.should.eq("https://testServer2.com");
+        user1Servers[1].startBlock.should.be.gt(0n);
+        user1Servers[1].endBlock.should.eq(ethers.MaxUint256);
+        
+        // Get all trusted servers for testUser2
+        const user2Servers = await testServersContract.userServerValues(
+          testUser2.address
+        );
+        
+        // testUser2 trusted only server 3
+        user2Servers.should.have.lengthOf(1);
+        user2Servers[0].id.should.eq(3n);
+        user2Servers[0].owner.should.eq(testUser2.address);
+        user2Servers[0].serverAddress.should.eq(maintainer.address);
+        
+        // Test user with no trusted servers
+        const user3Servers = await testServersContract.userServerValues(
+          user3.address
+        );
+        user3Servers.should.have.lengthOf(0);
+      });
+
+      it("should return correct userServers for specific server", async function () {
+        // Get specific server info for testUser1 and server 1
+        const server1Info = await testServersContract.userServers(
+          testUser1.address,
+          1
+        );
+        
+        server1Info.id.should.eq(1n);
+        server1Info.owner.should.eq(testUser1.address);
+        server1Info.serverAddress.should.eq(testServer1.address);
+        server1Info.publicKey.should.eq("0x1234567890abcdef");
+        server1Info.url.should.eq("https://testServer1.com");
+        server1Info.startBlock.should.be.gt(0n);
+        server1Info.endBlock.should.eq(ethers.MaxUint256);
+        
+        // Get specific server info for testUser1 and server 2
+        const server2Info = await testServersContract.userServers(
+          testUser1.address,
+          2
+        );
+        
+        server2Info.id.should.eq(2n);
+        server2Info.serverAddress.should.eq(testServer2.address);
+        
+        // Should revert when querying a server not trusted by the user
+        await expect(
+          testServersContract.userServers(testUser1.address, 3)
+        ).to.be.revertedWithCustomError(testServersContract, "ServerNotTrusted");
+        
+        // Should revert when user has not trusted any server
+        await expect(
+          testServersContract.userServers(user3.address, 1)
+        ).to.be.revertedWithCustomError(testServersContract, "ServerNotTrusted");
+      });
+
+      it("should reflect changes in userServerValues after untrusting", async function () {
+        // Initial state - testUser1 has 2 servers
+        let servers = await testServersContract.userServerValues(testUser1.address);
+        servers.should.have.lengthOf(2);
+        
+        // Untrust server 1
+        await testServersContract.connect(testUser1).untrustServer(1);
+        
+        // Check that server 1 was processed correctly (untrusted servers remain in list)
+        const userServers = await testServersContract.userServerIdsValues(testUser1.address);
+        userServers.length.should.eq(2);
+        
+        // userServerValues still returns all servers (including untrusted ones)
+        servers = await testServersContract.userServerValues(testUser1.address);
+        servers.should.have.lengthOf(2);
+        
+        // But the untrusted server should have endBlock set to current block
+        const untrustBlock = await ethers.provider.getBlockNumber();
+        servers[0].endBlock.should.eq(BigInt(untrustBlock));
+        servers[1].endBlock.should.eq(ethers.MaxUint256); // Server 2 still trusted
       });
     });
 
@@ -3358,8 +3449,9 @@ describe("DataPortabilityPermissions", () => {
         // Revoke the permission
         await dataPermission.connect(testUser1).revokePermission(1);
 
-        // Permission should still have fileIds stored but marked as inactive
-        (await dataPermission.isActivePermission(1)).should.eq(false);
+        // Permission should still have fileIds stored
+        const permissionData = await dataPermission.permissions(1);
+        permissionData.grantor.should.eq(testUser1.address);
 
         // File associations should remain for historical tracking
         (await dataPermission.filePermissionIds(1)).should.deep.eq([1n]);
@@ -3522,9 +3614,6 @@ describe("DataPortabilityPermissions", () => {
         (
           await testServersContract.userServerIdsLength(testUser1.address)
         ).should.eq(1);
-        (
-          await testServersContract.isActiveServerForUser(testUser1.address, 1)
-        ).should.eq(false);
         (
           await testServersContract.userServerIdsLength(testUser2.address)
         ).should.eq(1);
@@ -3882,9 +3971,8 @@ describe("DataPortabilityPermissions", () => {
         expect(
           await testServersContract.userServerIdsLength(testUser1.address),
         ).to.equal(1);
-        expect(
-          await testServersContract.isActiveServerForUser(testUser1.address, 1),
-        ).to.be.true;
+        const userServers = await testServersContract.userServerIdsValues(testUser1.address);
+        expect(userServers).to.include(1n);
       });
 
       it("should reject trusting non-existent server", async () => {
@@ -3918,12 +4006,8 @@ describe("DataPortabilityPermissions", () => {
         expect(
           await testServersContract.userServerIdsLength(testUser1.address),
         ).to.equal(1);
-        expect(
-          await testServersContract.isActiveServerForUser(testUser1.address, 1),
-        ).to.equal(false);
-        expect(
-          await testServersContract.isActiveServerForUser(testUser1.address, 1),
-        ).to.be.false;
+        const userServers = await testServersContract.userServerIdsValues(testUser1.address);
+        expect(userServers.length).to.equal(1);
       });
 
       it("should reject untrusting non-trusted server", async () => {
@@ -3973,9 +4057,8 @@ describe("DataPortabilityPermissions", () => {
         expect(
           await testServersContract.userServerIdsLength(testUser1.address),
         ).to.equal(1);
-        expect(
-          await testServersContract.isActiveServerForUser(testUser1.address, 1),
-        ).to.be.true;
+        const userServers = await testServersContract.userServerIdsValues(testUser1.address);
+        expect(userServers).to.include(1n);
       });
 
       it("should add and trust server with signature in one transaction", async () => {
@@ -4026,9 +4109,8 @@ describe("DataPortabilityPermissions", () => {
           await testServersContract.userServerIdsLength(testUser1.address)
         ).should.eq(1);
         
-        expect(
-          await testServersContract.isActiveServerForUser(testUser1.address, 1),
-        ).to.be.true;
+        const userServers = await testServersContract.userServerIdsValues(testUser1.address);
+        expect(userServers).to.include(1n);
 
         // Verify nonce was incremented
         (await testServersContract.userNonce(testUser1.address)).should.eq(1);
@@ -4180,13 +4262,11 @@ describe("DataPortabilityPermissions", () => {
         serverInfo.owner.should.eq(testUser1.address);
         
         // Verify server is trusted by testUser1 (not sponsor)
-        expect(
-          await testServersContract.isActiveServerForUser(testUser1.address, 1),
-        ).to.be.true;
+        const userServers = await testServersContract.userServerIdsValues(testUser1.address);
+        expect(userServers).to.include(1n);
         
-        expect(
-          await testServersContract.isActiveServerForUser(sponsor.address, 1),
-        ).to.be.false;
+        const sponsorServers = await testServersContract.userServerIdsValues(sponsor.address);
+        expect(sponsorServers).to.not.include(1n);
       });
     });
 
@@ -4465,18 +4545,11 @@ describe("DataPortabilityPermissions", () => {
         expect(serverId).to.equal(1);
       });
 
-      it("should check if server is active", async () => {
-        expect(await testServersContract.isActiveServer(1)).to.be.true;
-        expect(await testServersContract.isActiveServer(999)).to.be.false;
-      });
-
-      it("should check if server is active for user", async () => {
-        expect(
-          await testServersContract.isActiveServerForUser(testUser1.address, 1),
-        ).to.be.true;
-        expect(
-          await testServersContract.isActiveServerForUser(testUser2.address, 1),
-        ).to.be.false;
+      it("should verify server trust relationships", async () => {
+        const userServers = await testServersContract.userServerIdsValues(testUser1.address);
+        expect(userServers).to.include(1n);
+        const user2Servers = await testServersContract.userServerIdsValues(testUser2.address);
+        expect(user2Servers).to.not.include(1n);
       });
     });
 
@@ -4877,8 +4950,8 @@ describe("DataPortabilityPermissions", () => {
       expect(serverInfo.url).to.equal("https://server1.example.com");
 
       // Verify server is trusted by the user
-      const isActive = await testServersContract.isActiveServerForUser(testUser1.address, serverId);
-      expect(isActive).to.be.true;
+      const userServers = await testServersContract.userServerIdsValues(testUser1.address);
+      expect(userServers).to.include(BigInt(serverId));
 
       // Verify server count increased
       expect(await testServersContract.serversCount()).to.equal(1);
@@ -5080,8 +5153,8 @@ describe("DataPortabilityPermissions", () => {
       // Verify server was added and trusted
       const serverId = await testServersContract.serverAddressToId(testServer1.address);
       expect(serverId).to.be.greaterThan(0);
-      const isServerActive = await testServersContract.isActiveServerForUser(testUser1.address, serverId);
-      expect(isServerActive).to.be.true;
+      const userServers = await testServersContract.userServerIdsValues(testUser1.address);
+      expect(userServers).to.include(BigInt(serverId));
 
       // Verify files were added
       const file1Id = await dataRegistry.fileIdByUrl("https://file1.example.com");

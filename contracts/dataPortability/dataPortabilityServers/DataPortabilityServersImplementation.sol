@@ -378,19 +378,52 @@ contract DataPortabilityServersImplementation is
         return _users[userAddress].trustedServerIds.length();
     }
 
-    function isActiveServer(uint256 serverId) external view override returns (bool) {
-        if (serverId == 0 || serverId > serversCount) {
-            return false;
+    function userServerValues(
+        address userAddress
+    ) external view override returns (TrustedServerInfo[] memory serversInfo) {
+        User storage userData = _users[userAddress];
+        uint256 count = userData.trustedServerIds.length();
+        serversInfo = new TrustedServerInfo[](count);
+
+        for (uint256 i = 0; i < count; i++) {
+            uint256 serverId = userData.trustedServerIds.at(i);
+            Server storage serverData = _servers[serverId];
+            TrustedServer storage trustedServer = userData.trustedServers[serverId];
+
+            serversInfo[i] = TrustedServerInfo({
+                id: serverId,
+                owner: serverData.owner,
+                serverAddress: serverData.serverAddress,
+                publicKey: serverData.publicKey,
+                url: serverData.url,
+                startBlock: trustedServer.startBlock,
+                endBlock: trustedServer.endBlock
+            });
         }
-        return true; // Server is active if it exists
     }
 
-    function isActiveServerForUser(address userAddress, uint256 serverId) external view returns (bool) {
-        if (!_users[userAddress].trustedServerIds.contains(serverId)) {
-            return false;
+    function userServers(
+        address userAddress,
+        uint256 serverId
+    ) external view override returns (TrustedServerInfo memory) {
+        User storage userData = _users[userAddress];
+        if (!userData.trustedServerIds.contains(serverId)) {
+            revert ServerNotTrusted();
         }
-        TrustedServer storage trustedServer = _users[userAddress].trustedServers[serverId];
-        return block.number >= trustedServer.startBlock && block.number < trustedServer.endBlock;
+
+        Server storage serverData = _servers[serverId];
+        TrustedServer storage trustedServer = userData.trustedServers[serverId];
+
+        return
+            TrustedServerInfo({
+                id: serverId,
+                owner: serverData.owner,
+                serverAddress: serverData.serverAddress,
+                publicKey: serverData.publicKey,
+                url: serverData.url,
+                startBlock: trustedServer.startBlock,
+                endBlock: trustedServer.endBlock
+            });
     }
 
     function servers(uint256 serverId) external view override returns (ServerInfo memory) {

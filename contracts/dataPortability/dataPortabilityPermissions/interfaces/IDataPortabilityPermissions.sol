@@ -13,27 +13,27 @@ import "../../dataPortabilityGrantees/interfaces/IDataPortabilityGrantees.sol";
  * @dev This contract manages permissions that grant data access rights to authorized grantees.
  *      It integrates with DataRegistry for file management, DataPortabilityServers for server
  *      management, and DataPortabilityGrantees for grantee management.
- * 
+ *
  * Key Features:
  * - EIP-712 signature-based permission granting for secure off-chain authorization
  * - Time-bounded permissions with automatic expiration support
  * - Integration with file registry for ownership verification
  * - Batch operations for server registration, file addition, and permission granting
  * - Role-based access control for administrative operations
- * 
+ *
  * Permission Lifecycle:
  * 1. Files are registered in DataRegistry with proper ownership
  * 2. Grantees are registered in DataPortabilityGrantees system
  * 3. Permissions are created linking files to grantees with specific grants
  * 4. Permissions can be revoked by the grantor before expiration
- * 
+ *
  * Security Considerations:
  * - All user operations use nonce-based replay protection via EIP-712
  * - File ownership is verified before granting permissions
  * - Permissions are time-bounded with block-based start/end times
  * - Only file owners can grant permissions for their files
  * - Grantee existence is verified before permission creation
- * 
+ *
  * @custom:security-contact security@vana.org
  */
 interface IDataPortabilityPermissions {
@@ -181,15 +181,15 @@ interface IDataPortabilityPermissions {
     /**
      * @notice Pauses the contract, disabling most functions
      * @dev Emergency function to halt contract operations
-     * 
+     *
      * Requirements:
      * - Caller must have MAINTAINER_ROLE
      * - Contract must not already be paused
-     * 
+     *
      * Effects:
      * - Pauses the contract
      * - Most functions will revert with "Pausable: paused"
-     * 
+     *
      * @custom:access-control Requires MAINTAINER_ROLE
      */
     function pause() external;
@@ -197,15 +197,15 @@ interface IDataPortabilityPermissions {
     /**
      * @notice Unpauses the contract, re-enabling functions
      * @dev Restores normal contract operations after pause
-     * 
+     *
      * Requirements:
      * - Caller must have MAINTAINER_ROLE
      * - Contract must be currently paused
-     * 
+     *
      * Effects:
      * - Unpauses the contract
      * - All functions return to normal operation
-     * 
+     *
      * @custom:access-control Requires MAINTAINER_ROLE
      */
     function unpause() external;
@@ -278,11 +278,11 @@ interface IDataPortabilityPermissions {
      * @notice Updates the DataRegistry contract address
      * @dev Administrative function to change the file registry integration
      * @param newDataRegistry New DataRegistry contract interface
-     * 
+     *
      * Requirements:
      * - Caller must have MAINTAINER_ROLE
      * - New address must not be zero
-     * 
+     *
      * @custom:access-control Requires MAINTAINER_ROLE
      */
     function updateDataRegistry(IDataRegistry newDataRegistry) external;
@@ -291,10 +291,10 @@ interface IDataPortabilityPermissions {
      * @notice Updates the trusted forwarder address for meta-transactions
      * @dev Used to change the EIP-2771 trusted forwarder for meta-transaction support
      * @param trustedForwarderAddress New trusted forwarder address
-     * 
+     *
      * Requirements:
      * - Caller must have MAINTAINER_ROLE
-     * 
+     *
      * @custom:access-control Requires MAINTAINER_ROLE
      */
     function updateTrustedForwarder(address trustedForwarderAddress) external;
@@ -303,11 +303,11 @@ interface IDataPortabilityPermissions {
      * @notice Updates the DataPortabilityServers contract address
      * @dev Administrative function to change the server registry integration
      * @param newServersContract New DataPortabilityServers contract interface
-     * 
+     *
      * Requirements:
      * - Caller must have MAINTAINER_ROLE
      * - New address must not be zero
-     * 
+     *
      * @custom:access-control Requires MAINTAINER_ROLE
      */
     function updateServersContract(IDataPortabilityServers newServersContract) external;
@@ -316,11 +316,11 @@ interface IDataPortabilityPermissions {
      * @notice Updates the DataPortabilityGrantees contract address
      * @dev Administrative function to change the grantee registry integration
      * @param newGranteesContract New DataPortabilityGrantees contract interface
-     * 
+     *
      * Requirements:
      * - Caller must have MAINTAINER_ROLE
      * - New address must not be zero
-     * 
+     *
      * @custom:access-control Requires MAINTAINER_ROLE
      */
     function updateGranteesContract(IDataPortabilityGrantees newGranteesContract) external;
@@ -333,7 +333,7 @@ interface IDataPortabilityPermissions {
      * @param permission Permission details including nonce, grantee, grant description, and file IDs
      * @param signature EIP-712 signature proving authorization from the file owner
      * @return uint256 Unique identifier of the created permission
-     * 
+     *
      * Requirements:
      * - Signature must be valid for the provided input
      * - Nonce must match the current user nonce
@@ -341,7 +341,7 @@ interface IDataPortabilityPermissions {
      * - Grantee must exist in the grantees registry
      * - Signer must own all specified files
      * - Contract must not be paused
-     * 
+     *
      * Effects:
      * - Increments the signer's nonce
      * - Creates a new permission with unique ID
@@ -349,7 +349,7 @@ interface IDataPortabilityPermissions {
      * - Adds permission to user's permission list
      * - Notifies grantees contract of new permission
      * - Emits PermissionAdded event
-     * 
+     *
      * @custom:signature-format Permission(uint256 nonce,uint256 granteeId,string grant,uint256[] fileIds)
      */
     function addPermission(PermissionInput calldata permission, bytes calldata signature) external returns (uint256);
@@ -360,41 +360,36 @@ interface IDataPortabilityPermissions {
      * @param serverFilesAndPermissionInput Combined input for server, files, and permission details
      * @param signature EIP-712 signature proving authorization from the user
      * @return uint256 Unique identifier of the created permission
-     * 
+     *
      * Requirements:
      * - All requirements from addPermission
      * - Server registration requirements (unique address, valid URL, non-empty public key)
      * - File URLs must be valid (new files will be created, existing files must be owned by signer)
-     * 
+     *
      * Effects:
      * - All effects from addPermission
      * - Registers and trusts new server for the user
      * - Creates new files in DataRegistry for non-existing URLs
      * - Validates ownership of existing files
      * - Emits ServerRegistered, ServerTrusted, and PermissionAdded events
-     * 
+     *
      * @custom:signature-format ServerFilesAndPermission(uint256 nonce,uint256 granteeId,string grant,string[] fileUrls,address serverAddress,string serverUrl,string serverPublicKey)
      */
-    function addServerFilesAndPermissions(ServerFilesAndPermissionInput calldata serverFilesAndPermissionInput, bytes calldata signature) external returns (uint256);
-
-    /**
-     * @notice Checks if a permission is currently active
-     * @dev A permission is active if current block is within its start/end block range
-     * @param permissionId Unique identifier of the permission to check
-     * @return bool True if the permission is currently active, false otherwise
-     */
-    function isActivePermission(uint256 permissionId) external view returns (bool);
+    function addServerFilesAndPermissions(
+        ServerFilesAndPermissionInput calldata serverFilesAndPermissionInput,
+        bytes calldata signature
+    ) external returns (uint256);
 
     /**
      * @notice Revokes a permission immediately
      * @dev Sets the permission's end block to current block, terminating access
      * @param permissionId Unique identifier of the permission to revoke
-     * 
+     *
      * Requirements:
      * - Caller must be the permission grantor
      * - Permission must be currently active
      * - Contract must not be paused
-     * 
+     *
      * Effects:
      * - Sets permission end block to current block
      * - Removes permission from user's active permissions
@@ -408,16 +403,16 @@ interface IDataPortabilityPermissions {
      * @dev Same as revokePermission but with signature-based authorization
      * @param revokePermissionInput Revocation details including nonce and permission ID
      * @param signature EIP-712 signature proving authorization from the grantor
-     * 
+     *
      * Requirements:
      * - All requirements from revokePermission
      * - Signature must be valid for the provided input
      * - Nonce must match the current user nonce
-     * 
+     *
      * Effects:
      * - All effects from revokePermission
      * - Increments the signer's nonce
-     * 
+     *
      * @custom:signature-format RevokePermission(uint256 nonce,uint256 permissionId)
      */
     function revokePermissionWithSignature(
