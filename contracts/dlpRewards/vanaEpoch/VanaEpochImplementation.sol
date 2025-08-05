@@ -33,6 +33,7 @@ contract VanaEpochImplementation is
 
     error EpochNotEnded();
     error EpochAlreadyFinalized();
+    error EpochNotFinalized();
     error InvalidEpoch();
     error EpochRewardExceeded(uint256 totalRewardAmount, uint256 epochRewardAmount);
     error EpochRewardNotDistributed();
@@ -219,7 +220,7 @@ contract VanaEpochImplementation is
         Epoch storage epoch = _epochs[epochId];
 
         if (!epoch.isFinalized) {
-            revert EpochAlreadyFinalized();
+            revert EpochNotFinalized();
         }
 
         epoch.dlps[dlpId].rewardAmount = rewardAmount;
