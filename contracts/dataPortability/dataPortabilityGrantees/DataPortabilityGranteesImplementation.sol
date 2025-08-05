@@ -8,6 +8,12 @@ import "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "./interfaces/DataPortabilityGranteesStorageV1.sol";
 
+/**
+ * @title DataPortabilityGranteesImplementation
+ * @notice Implementation contract for data portability grantee management
+ * @dev Implements IDataPortabilityGrantees interface with UUPS upgradeability
+ * @custom:see IDataPortabilityGrantees For complete interface documentation
+ */
 contract DataPortabilityGranteesImplementation is
     UUPSUpgradeable,
     PausableUpgradeable,

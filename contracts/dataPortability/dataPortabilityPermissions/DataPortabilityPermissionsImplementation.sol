@@ -10,6 +10,12 @@ import "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "./interfaces/DataPortabilityPermissionsStorage.sol";
 
+/**
+ * @title DataPortabilityPermissionsImplementation
+ * @notice Implementation contract for data portability permission management
+ * @dev Implements IDataPortabilityPermissions interface with UUPS upgradeability
+ * @custom:see IDataPortabilityPermissions For complete interface documentation
+ */
 contract DataPortabilityPermissionsImplementation is
     UUPSUpgradeable,
     PausableUpgradeable,
@@ -31,6 +37,10 @@ contract DataPortabilityPermissionsImplementation is
         keccak256("Permission(uint256 nonce,uint256 granteeId,string grant,uint256[] fileIds)");
     bytes32 private constant REVOKE_PERMISSION_TYPEHASH =
         keccak256("RevokePermission(uint256 nonce,uint256 permissionId)");
+    bytes32 private constant SERVER_FILES_AND_PERMISSION_TYPEHASH =
+        keccak256(
+            "ServerFilesAndPermission(uint256 nonce,uint256 granteeId,string grant,string[] fileUrls,address serverAddress,string serverUrl,string serverPublicKey,Permission[][] filePermissions)Permission(address account,string key)"
+        );
 
     error InvalidNonce(uint256 expectedNonce, uint256 providedNonce);
     error InvalidSignature();
@@ -40,6 +50,7 @@ contract DataPortabilityPermissionsImplementation is
     error InactivePermission(uint256 permissionId);
     error NotPermissionGrantor(address permissionOwner, address requestor);
     error NotFileOwner(address fileOwner, address requestor);
+    error InvalidPermissionsLength(uint256 filesLength, uint256 permissionsLength);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() ERC2771ContextUpgradeable(address(0)) {
@@ -178,9 +189,122 @@ contract DataPortabilityPermissionsImplementation is
         return _extractSigner(structHash, signature);
     }
 
+    /**
+     * @notice Extracts signer from ServerFilesAndPermission EIP-712 signature
+     * @dev Uses domain separator and type hash to verify signature authenticity
+     * @param serverFilesAndPermissionInput The signed input data
+     * @param signature The EIP-712 signature to verify
+     * @return address The recovered signer address
+     */
+    function _extractSignerFromServerFilesAndPermission(
+        ServerFilesAndPermissionInput calldata serverFilesAndPermissionInput,
+        bytes calldata signature
+    ) internal view returns (address) {
+        bytes32 structHash = keccak256(
+            abi.encode(
+                SERVER_FILES_AND_PERMISSION_TYPEHASH,
+                serverFilesAndPermissionInput.nonce,
+                serverFilesAndPermissionInput.granteeId,
+                keccak256(bytes(serverFilesAndPermissionInput.grant)),
+                _hashStringArray(serverFilesAndPermissionInput.fileUrls),
+                serverFilesAndPermissionInput.serverAddress,
+                keccak256(bytes(serverFilesAndPermissionInput.serverUrl)),
+                keccak256(bytes(serverFilesAndPermissionInput.serverPublicKey)),
+                _hashPermissionsArray(serverFilesAndPermissionInput.filePermissions)
+            )
+        );
+
+        return _extractSigner(structHash, signature);
+    }
+
     function _extractSigner(bytes32 structHash, bytes calldata signature) internal view returns (address) {
         bytes32 digest = _hashTypedDataV4(structHash);
         return digest.recover(signature);
+    }
+
+    /**
+     * @notice Hashes an array of strings for EIP-712 signature verification
+     * @dev Creates deterministic hash by hashing each string individually then packing results
+     * @param stringArray Array of strings to hash
+     * @return bytes32 Keccak256 hash of the packed individual string hashes
+     */
+    function _hashStringArray(string[] calldata stringArray) internal pure returns (bytes32) {
+        bytes32[] memory hashes = new bytes32[](stringArray.length);
+        for (uint256 i = 0; i < stringArray.length; ) {
+            hashes[i] = keccak256(bytes(stringArray[i]));
+            unchecked {
+                ++i;
+            }
+        }
+        return keccak256(abi.encodePacked(hashes));
+    }
+
+    // In DataPortabilityPermissionsImplementation contract
+
+    // Define the typehash for the inner Permission struct
+    bytes32 private constant INNER_PERMISSION_TYPEHASH = keccak256("Permission(address account,string key)"); // This typehash must match the JS side
+
+    /**
+     * @notice Hashes a 2D array of permissions for EIP-712 signature verification
+     * @dev Creates deterministic hash by hashing each permission array then packing results
+     * @param permissionsArray 2D array of permissions to hash
+     * @return bytes32 Keccak256 hash of the packed permission array hashes
+     */
+    function _hashPermissionsArray(
+        IDataRegistry.Permission[][] calldata permissionsArray
+    ) internal pure returns (bytes32) {
+        bytes32[] memory hashes = new bytes32[](permissionsArray.length);
+        for (uint256 i = 0; i < permissionsArray.length; ) {
+            bytes32[] memory permissionHashes = new bytes32[](permissionsArray[i].length);
+            for (uint256 j = 0; j < permissionsArray[i].length; ) {
+                // Correct EIP-712 struct hashing for each Permission
+                permissionHashes[j] = keccak256(
+                    abi.encode(
+                        INNER_PERMISSION_TYPEHASH, // Include the typehash for the struct
+                        permissionsArray[i][j].account,
+                        keccak256(bytes(permissionsArray[i][j].key))
+                    )
+                );
+                unchecked {
+                    ++j;
+                }
+            }
+            // This part (packing the hashes of inner arrays) is standard EIP-712 for arrays of structs
+            hashes[i] = keccak256(abi.encodePacked(permissionHashes));
+            unchecked {
+                ++i;
+            }
+        }
+        // This part (packing the hashes of outer arrays) is also standard EIP-712 for arrays of arrays
+        return keccak256(abi.encodePacked(hashes));
+    }
+
+    /**
+     * @notice Hashes a 2D array of permissions for EIP-712 signature verification
+     * @dev Creates deterministic hash by hashing each permission array then packing results
+     * @param permissionsArray 2D array of permissions to hash
+     * @return bytes32 Keccak256 hash of the packed permission array hashes
+     */
+    function _hashPermissionsArray2(
+        IDataRegistry.Permission[][] calldata permissionsArray
+    ) internal pure returns (bytes32) {
+        bytes32[] memory hashes = new bytes32[](permissionsArray.length);
+        for (uint256 i = 0; i < permissionsArray.length; ) {
+            bytes32[] memory permissionHashes = new bytes32[](permissionsArray[i].length);
+            for (uint256 j = 0; j < permissionsArray[i].length; ) {
+                permissionHashes[j] = keccak256(
+                    abi.encode(permissionsArray[i][j].account, keccak256(bytes(permissionsArray[i][j].key)))
+                );
+                unchecked {
+                    ++j;
+                }
+            }
+            hashes[i] = keccak256(abi.encodePacked(permissionHashes));
+            unchecked {
+                ++i;
+            }
+        }
+        return keccak256(abi.encodePacked(hashes));
     }
 
     function userPermissionIdsValues(address userAddress) external view override returns (uint256[] memory) {
@@ -207,7 +331,6 @@ contract DataPortabilityPermissionsImplementation is
                 nonce: permissionData.nonce,
                 granteeId: permissionData.granteeId,
                 grant: permissionData.grant,
-                signature: permissionData.signature,
                 startBlock: permissionData.startBlock,
                 endBlock: permissionData.endBlock,
                 fileIds: permissionData.fileIds.values()
@@ -231,14 +354,10 @@ contract DataPortabilityPermissionsImplementation is
 
         ++userData.nonce;
 
-        return _addPermission(permissionInput, signature, signer);
+        return _addPermission(permissionInput, signer);
     }
 
-    function _addPermission(
-        PermissionInput calldata permissionInput,
-        bytes calldata signature,
-        address signer
-    ) internal returns (uint256) {
+    function _addPermission(PermissionInput calldata permissionInput, address signer) internal returns (uint256) {
         if (bytes(permissionInput.grant).length == 0) {
             revert EmptyGrant();
         }
@@ -254,7 +373,6 @@ contract DataPortabilityPermissionsImplementation is
         permissionData.nonce = permissionInput.nonce;
         permissionData.granteeId = permissionInput.granteeId;
         permissionData.grant = permissionInput.grant;
-        permissionData.signature = signature;
         permissionData.startBlock = block.number;
         permissionData.endBlock = type(uint256).max; // Default to no expiration
 
@@ -285,11 +403,6 @@ contract DataPortabilityPermissionsImplementation is
         );
 
         return permissionId;
-    }
-
-    function isActivePermission(uint256 permissionId) external view override returns (bool) {
-        Permission storage permissionData = _permissions[permissionId];
-        return block.number >= permissionData.startBlock && block.number < permissionData.endBlock;
     }
 
     function revokePermission(uint256 permissionId) external override whenNotPaused {
@@ -333,6 +446,140 @@ contract DataPortabilityPermissionsImplementation is
         dataPortabilityGrantees.removePermissionFromGrantee(permissionData.granteeId, permissionId);
 
         emit PermissionRevoked(permissionId);
+    }
+
+    /// @inheritdoc IDataPortabilityPermissions
+    /// @dev Implementation combines three operations atomically:
+    ///      1. Server registration via DataPortabilityServers.addAndTrustServerOnBehalf
+    ///      2. File registration via DataRegistry.addFileWithPermissions (for new files)
+    ///      3. Permission creation via internal _addPermissionFromServerFiles method
+    function addServerFilesAndPermissions(
+        ServerFilesAndPermissionInput calldata serverFilesAndPermissionInput,
+        bytes calldata signature
+    ) external override whenNotPaused returns (uint256) {
+        address signer = _extractSignerFromServerFilesAndPermission(serverFilesAndPermissionInput, signature);
+        User storage userData = _users[signer];
+
+        if (serverFilesAndPermissionInput.nonce != userData.nonce) {
+            revert InvalidNonce(userData.nonce, serverFilesAndPermissionInput.nonce);
+        }
+
+        ++userData.nonce;
+
+        // Validate filePermissions array length matches fileUrls
+        if (serverFilesAndPermissionInput.filePermissions.length != serverFilesAndPermissionInput.fileUrls.length) {
+            revert InvalidPermissionsLength(
+                serverFilesAndPermissionInput.fileUrls.length,
+                serverFilesAndPermissionInput.filePermissions.length
+            );
+        }
+
+        // 1. Add and trust server using DataPortabilityServers contract
+        dataPortabilityServers.addAndTrustServerOnBehalf(
+            signer,
+            IDataPortabilityServers.AddServerInput({
+                serverAddress: serverFilesAndPermissionInput.serverAddress,
+                publicKey: serverFilesAndPermissionInput.serverPublicKey,
+                serverUrl: serverFilesAndPermissionInput.serverUrl
+            })
+        );
+
+        // 2. Add files to DataRegistry with specific permissions for each file
+        uint256[] memory fileIds = new uint256[](serverFilesAndPermissionInput.fileUrls.length);
+        for (uint256 i = 0; i < serverFilesAndPermissionInput.fileUrls.length; ) {
+            // Check if file already exists
+            uint256 existingFileId = dataRegistry.fileIdByUrl(serverFilesAndPermissionInput.fileUrls[i]);
+            if (existingFileId != 0) {
+                // File exists, verify ownership
+                if (dataRegistry.files(existingFileId).ownerAddress != signer) {
+                    revert NotFileOwner(dataRegistry.files(existingFileId).ownerAddress, signer);
+                }
+                fileIds[i] = existingFileId;
+                // Add permissions to existing file
+                for (uint256 j = 0; j < serverFilesAndPermissionInput.filePermissions[i].length; ) {
+                    dataRegistry.addFilePermission(
+                        existingFileId,
+                        serverFilesAndPermissionInput.filePermissions[i][j].account,
+                        serverFilesAndPermissionInput.filePermissions[i][j].key
+                    );
+                    unchecked {
+                        ++j;
+                    }
+                }
+            } else {
+                // Add new file with permissions
+                fileIds[i] = dataRegistry.addFileWithPermissions(
+                    serverFilesAndPermissionInput.fileUrls[i],
+                    signer,
+                    serverFilesAndPermissionInput.filePermissions[i]
+                );
+            }
+            unchecked {
+                ++i;
+            }
+        }
+
+        // 3. Add permission directly using internal logic
+        return _addPermissionFromServerFiles(serverFilesAndPermissionInput, fileIds, signature, signer);
+    }
+
+    /**
+     * @notice Internal function to create permission from server files operation
+     * @dev Specialized permission creation for the combined server/files/permission flow
+     * @param serverFilesAndPermissionInput The server files and permission input data
+     * @param fileIds Array of file IDs to associate with the permission
+     * @param signature The original signature for the operation
+     * @param signer The verified signer address
+     * @return uint256 The unique ID of the created permission
+     */
+    function _addPermissionFromServerFiles(
+        ServerFilesAndPermissionInput calldata serverFilesAndPermissionInput,
+        uint256[] memory fileIds,
+        bytes calldata signature,
+        address signer
+    ) internal returns (uint256) {
+        if (bytes(serverFilesAndPermissionInput.grant).length == 0) {
+            revert EmptyGrant();
+        }
+
+        if (
+            serverFilesAndPermissionInput.granteeId == 0 ||
+            serverFilesAndPermissionInput.granteeId > dataPortabilityGrantees.granteesCount()
+        ) {
+            revert GranteeNotFound();
+        }
+
+        uint256 permissionId = ++permissionsCount;
+
+        Permission storage permissionData = _permissions[permissionId];
+        permissionData.grantor = signer;
+        permissionData.nonce = serverFilesAndPermissionInput.nonce;
+        permissionData.granteeId = serverFilesAndPermissionInput.granteeId;
+        permissionData.grant = serverFilesAndPermissionInput.grant;
+        permissionData.startBlock = block.number;
+        permissionData.endBlock = type(uint256).max; // Default to no expiration
+
+        for (uint256 i = 0; i < fileIds.length; ) {
+            permissionData.fileIds.add(fileIds[i]);
+            _filePermissions[fileIds[i]].add(permissionId);
+            unchecked {
+                ++i;
+            }
+        }
+
+        _users[signer].permissionIds.add(permissionId);
+
+        dataPortabilityGrantees.addPermissionToGrantee(serverFilesAndPermissionInput.granteeId, permissionId);
+
+        emit PermissionAdded(
+            permissionId,
+            signer,
+            serverFilesAndPermissionInput.granteeId,
+            serverFilesAndPermissionInput.grant,
+            fileIds
+        );
+
+        return permissionId;
     }
 
     function filePermissionIds(uint256 fileId) external view override returns (uint256[] memory) {

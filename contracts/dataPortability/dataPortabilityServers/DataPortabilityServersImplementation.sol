@@ -10,6 +10,12 @@ import "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "./interfaces/DataPortabilityServersStorageV1.sol";
 
+/**
+ * @title DataPortabilityServersImplementation
+ * @notice Implementation contract for data portability server management
+ * @dev Implements IDataPortabilityServers interface with UUPS upgradeability
+ * @custom:see IDataPortabilityServers For complete interface documentation
+ */
 contract DataPortabilityServersImplementation is
     UUPSUpgradeable,
     PausableUpgradeable,
@@ -23,16 +29,15 @@ contract DataPortabilityServersImplementation is
     using EnumerableSet for EnumerableSet.UintSet;
 
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
+    bytes32 public constant PERMISSION_MANAGER_ROLE = keccak256("PERMISSION_MANAGER_ROLE");
 
     string private constant SIGNING_DOMAIN = "VanaDataPortabilityServers";
     string private constant SIGNATURE_VERSION = "1";
 
     bytes32 private constant TRUST_SERVER_TYPEHASH = keccak256("TrustServer(uint256 nonce,uint256 serverId)");
     bytes32 private constant UNTRUST_SERVER_TYPEHASH = keccak256("UntrustServer(uint256 nonce,uint256 serverId)");
-    bytes32 private constant ADD_AND_TRUST_SERVER_TYPEHASH =
-        keccak256(
-            "AddAndTrustServer(uint256 nonce,address owner,address serverAddress,string publicKey,string serverUrl)"
-        );
+    bytes32 private constant ADD_SERVER_TYPEHASH =
+        keccak256("AddServer(uint256 nonce,address serverAddress,string publicKey,string serverUrl)");
 
     error InvalidNonce(uint256 expectedNonce, uint256 providedNonce);
     error EmptyUrl();
@@ -61,6 +66,7 @@ contract DataPortabilityServersImplementation is
 
         _grantRole(DEFAULT_ADMIN_ROLE, ownerAddress);
         _grantRole(MAINTAINER_ROLE, ownerAddress);
+        _setRoleAdmin(PERMISSION_MANAGER_ROLE, DEFAULT_ADMIN_ROLE);
     }
 
     function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
@@ -158,18 +164,17 @@ contract DataPortabilityServersImplementation is
         return _extractSigner(structHash, signature);
     }
 
-    function _extractSignerFromAddAndTrustServer(
-        AddAndTrustServerInput calldata addAndTrustServerInput,
+    function _extractSignerFromAddServer(
+        AddServerWithSignatureInput calldata addServerInput,
         bytes calldata signature
     ) internal view returns (address) {
         bytes32 structHash = keccak256(
             abi.encode(
-                ADD_AND_TRUST_SERVER_TYPEHASH,
-                addAndTrustServerInput.nonce,
-                addAndTrustServerInput.owner,
-                addAndTrustServerInput.serverAddress,
-                keccak256(bytes(addAndTrustServerInput.publicKey)),
-                keccak256(bytes(addAndTrustServerInput.serverUrl))
+                ADD_SERVER_TYPEHASH,
+                addServerInput.nonce,
+                addServerInput.serverAddress,
+                keccak256(bytes(addServerInput.publicKey)),
+                keccak256(bytes(addServerInput.serverUrl))
             )
         );
 
@@ -181,7 +186,7 @@ contract DataPortabilityServersImplementation is
         return digest.recover(signature);
     }
 
-    function _addServer(AddServerInput memory addServerInput) internal returns (uint256 serverId) {
+    function _addServer(AddServerInput memory addServerInput, address owner) internal returns (uint256 serverId) {
         if (bytes(addServerInput.publicKey).length == 0) {
             revert EmptyPublicKey();
         }
@@ -190,7 +195,7 @@ contract DataPortabilityServersImplementation is
             revert EmptyUrl();
         }
 
-        if (addServerInput.owner == address(0)) {
+        if (owner == address(0)) {
             revert ZeroAddress();
         }
 
@@ -206,7 +211,7 @@ contract DataPortabilityServersImplementation is
         serverId = ++serversCount;
 
         Server storage serverData = _servers[serverId];
-        serverData.owner = addServerInput.owner;
+        serverData.owner = owner;
         serverData.serverAddress = addServerInput.serverAddress;
         serverData.publicKey = addServerInput.publicKey;
         serverData.url = addServerInput.serverUrl;
@@ -215,7 +220,7 @@ contract DataPortabilityServersImplementation is
 
         emit ServerRegistered(
             serverId,
-            addServerInput.owner,
+            owner,
             addServerInput.serverAddress,
             addServerInput.publicKey,
             addServerInput.serverUrl
@@ -245,10 +250,6 @@ contract DataPortabilityServersImplementation is
         emit ServerTrusted(signer, serverId);
     }
 
-    function addServer(AddServerInput memory addServerInput) external override whenNotPaused {
-        _addServer(addServerInput);
-    }
-
     function trustServer(uint256 serverId) external override whenNotPaused {
         _trustServer(serverId, _msgSender());
     }
@@ -268,41 +269,59 @@ contract DataPortabilityServersImplementation is
         _trustServer(trustServerInput.serverId, signer);
     }
 
-    function addAndTrustServerWithSignature(
-        AddAndTrustServerInput calldata addAndTrustServerInput,
+    function addServerWithSignature(
+        AddServerWithSignatureInput calldata addServerInput,
         bytes calldata signature
     ) external override whenNotPaused {
-        address signer = _extractSignerFromAddAndTrustServer(addAndTrustServerInput, signature);
+        address signer = _extractSignerFromAddServer(addServerInput, signature);
 
-        if (addAndTrustServerInput.nonce != _users[signer].nonce) {
-            revert InvalidNonce(_users[signer].nonce, addAndTrustServerInput.nonce);
+        if (addServerInput.nonce != _users[signer].nonce) {
+            revert InvalidNonce(_users[signer].nonce, addServerInput.nonce);
+        }
+
+        ++_users[signer].nonce;
+
+        _addServer(
+            AddServerInput({
+                serverAddress: addServerInput.serverAddress,
+                publicKey: addServerInput.publicKey,
+                serverUrl: addServerInput.serverUrl
+            }),
+            signer
+        );
+    }
+
+    function addAndTrustServerWithSignature(
+        AddServerWithSignatureInput calldata addServerInput,
+        bytes calldata signature
+    ) external override whenNotPaused {
+        address signer = _extractSignerFromAddServer(addServerInput, signature);
+
+        if (addServerInput.nonce != _users[signer].nonce) {
+            revert InvalidNonce(_users[signer].nonce, addServerInput.nonce);
         }
 
         ++_users[signer].nonce;
 
         uint256 serverId = _addServer(
             AddServerInput({
-                owner: addAndTrustServerInput.owner,
-                serverAddress: addAndTrustServerInput.serverAddress,
-                publicKey: addAndTrustServerInput.publicKey,
-                serverUrl: addAndTrustServerInput.serverUrl
-            })
+                serverAddress: addServerInput.serverAddress,
+                publicKey: addServerInput.publicKey,
+                serverUrl: addServerInput.serverUrl
+            }),
+            signer
         );
 
         _trustServer(serverId, signer);
     }
 
-    function addAndTrustServer(AddServerInput memory addAndTrustServerInput) external override whenNotPaused {
-        uint256 serverId = _addServer(
-            AddServerInput({
-                owner: addAndTrustServerInput.owner,
-                serverAddress: addAndTrustServerInput.serverAddress,
-                publicKey: addAndTrustServerInput.publicKey,
-                serverUrl: addAndTrustServerInput.serverUrl
-            })
-        );
-
-        _trustServer(serverId, _msgSender());
+    /// @inheritdoc IDataPortabilityServers
+    function addAndTrustServerOnBehalf(
+        address ownerAddress,
+        AddServerInput calldata addServerInput
+    ) external override whenNotPaused onlyRole(PERMISSION_MANAGER_ROLE) {
+        uint256 serverId = _addServer(addServerInput, ownerAddress);
+        _trustServer(serverId, ownerAddress);
     }
 
     function _untrustServer(uint256 serverId, address signer) internal {
@@ -359,19 +378,52 @@ contract DataPortabilityServersImplementation is
         return _users[userAddress].trustedServerIds.length();
     }
 
-    function isActiveServer(uint256 serverId) external view override returns (bool) {
-        if (serverId == 0 || serverId > serversCount) {
-            return false;
+    function userServerValues(
+        address userAddress
+    ) external view override returns (TrustedServerInfo[] memory serversInfo) {
+        User storage userData = _users[userAddress];
+        uint256 count = userData.trustedServerIds.length();
+        serversInfo = new TrustedServerInfo[](count);
+
+        for (uint256 i = 0; i < count; i++) {
+            uint256 serverId = userData.trustedServerIds.at(i);
+            Server storage serverData = _servers[serverId];
+            TrustedServer storage trustedServer = userData.trustedServers[serverId];
+
+            serversInfo[i] = TrustedServerInfo({
+                id: serverId,
+                owner: serverData.owner,
+                serverAddress: serverData.serverAddress,
+                publicKey: serverData.publicKey,
+                url: serverData.url,
+                startBlock: trustedServer.startBlock,
+                endBlock: trustedServer.endBlock
+            });
         }
-        return true; // Server is active if it exists
     }
 
-    function isActiveServerForUser(address userAddress, uint256 serverId) external view returns (bool) {
-        if (!_users[userAddress].trustedServerIds.contains(serverId)) {
-            return false;
+    function userServers(
+        address userAddress,
+        uint256 serverId
+    ) external view override returns (TrustedServerInfo memory) {
+        User storage userData = _users[userAddress];
+        if (!userData.trustedServerIds.contains(serverId)) {
+            revert ServerNotTrusted();
         }
-        TrustedServer storage trustedServer = _users[userAddress].trustedServers[serverId];
-        return block.number >= trustedServer.startBlock && block.number < trustedServer.endBlock;
+
+        Server storage serverData = _servers[serverId];
+        TrustedServer storage trustedServer = userData.trustedServers[serverId];
+
+        return
+            TrustedServerInfo({
+                id: serverId,
+                owner: serverData.owner,
+                serverAddress: serverData.serverAddress,
+                publicKey: serverData.publicKey,
+                url: serverData.url,
+                startBlock: trustedServer.startBlock,
+                endBlock: trustedServer.endBlock
+            });
     }
 
     function servers(uint256 serverId) external view override returns (ServerInfo memory) {
