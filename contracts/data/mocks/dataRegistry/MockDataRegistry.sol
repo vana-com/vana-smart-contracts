@@ -8,6 +8,7 @@ contract MockDataRegistry is IDataRegistry {
     IDataRefinerRegistry public dataRefinerRegistry;
     mapping(uint256 => FileResponse) private _files;
     mapping(string => uint256) private _urlToFileId;
+    mapping(uint256 => mapping(address => string)) private _filePermissions;
     uint256 public filesCount;
 
     function version() external pure override returns (uint256) {
@@ -38,8 +39,8 @@ contract MockDataRegistry is IDataRegistry {
         });
     }
 
-    function filePermissions(uint256, address) external pure override returns (string memory) {
-        return "";
+    function filePermissions(uint256 fileId, address account) external view override returns (string memory) {
+        return _filePermissions[fileId][account];
     }
 
     function addFile(string memory url) external override returns (uint256) {
@@ -53,9 +54,16 @@ contract MockDataRegistry is IDataRegistry {
     function addFileWithPermissions(
         string memory url,
         address ownerAddress,
-        Permission[] memory
+        Permission[] memory permissions
     ) external override returns (uint256) {
-        return _addFile(url, ownerAddress);
+        uint256 fileId = _addFile(url, ownerAddress);
+        
+        // Add permissions
+        for (uint256 i = 0; i < permissions.length; i++) {
+            _filePermissions[fileId][permissions[i].account] = permissions[i].key;
+        }
+        
+        return fileId;
     }
 
     function addFileWithPermissionsAndSchema(
@@ -69,7 +77,9 @@ contract MockDataRegistry is IDataRegistry {
 
     function addProof(uint256, Proof memory) external override {}
 
-    function addFilePermission(uint256, address, string memory) external override {}
+    function addFilePermission(uint256 fileId, address account, string memory key) external override {
+        _filePermissions[fileId][account] = key;
+    }
 
     function addRefinementWithPermission(
         uint256,

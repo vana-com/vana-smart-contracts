@@ -175,3 +175,94 @@ export async function createUntrustServerSignature(
 
   return await signer.signTypedData(domain, types, value);
 }
+
+export async function createAddAndTrustServerSignature(
+  trustServerInput: TrustServerData,
+  contractAddress: string,
+  signer: HardhatEthersSigner,
+): Promise<string> {
+  const domain = {
+    name: "VanaDataPortabilityPermissions",
+    version: "1",
+    chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
+    verifyingContract: contractAddress,
+  };
+
+  const types = {
+    TrustServer: [
+      { name: "nonce", type: "uint256" },
+      { name: "serverId", type: "uint256" },
+    ],
+  };
+
+  const value = {
+    nonce: trustServerInput.nonce,
+    serverId: trustServerInput.serverId,
+  };
+
+  return await signer.signTypedData(domain, types, value);
+}
+
+/**
+ * Interface for ServerFilesAndPermission data structure
+ */
+export interface ServerFilesAndPermissionData {
+  nonce: bigint;
+  granteeId: bigint;
+  grant: string;
+  fileUrls: string[];
+  serverAddress: string;
+  serverUrl: string;
+  serverPublicKey: string;
+  filePermissions: Array<Array<{ account: string; key: string }>>;
+}
+
+/**
+ * Creates EIP-712 signature for ServerFilesAndPermission
+ * @param serverFilesAndPermissionInput - ServerFilesAndPermission data to sign
+ * @param contractAddress - Address of the DataPortabilityPermissions contract
+ * @param signer - Wallet or signer to create signature with
+ * @returns Promise<string> - The signature
+ */
+export async function createServerFilesAndPermissionSignature(
+  serverFilesAndPermissionInput: ServerFilesAndPermissionData,
+  contractAddress: string,
+  signer: HardhatEthersSigner,
+): Promise<string> {
+  const domain = {
+    name: "VanaDataPortabilityPermissions",
+    version: "1",
+    chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
+    verifyingContract: contractAddress,
+  };
+
+  const types = {
+    ServerFilesAndPermission: [
+      { name: "nonce", type: "uint256" },
+      { name: "granteeId", type: "uint256" },
+      { name: "grant", type: "string" },
+      { name: "fileUrls", type: "string[]" },
+      { name: "serverAddress", type: "address" },
+      { name: "serverUrl", type: "string" },
+      { name: "serverPublicKey", type: "string" },
+      { name: "filePermissions", type: "Permission[][]" },
+    ],
+    Permission: [
+      { name: "account", type: "address" },
+      { name: "key", type: "string" },
+    ],
+  };
+
+  const value = {
+    nonce: serverFilesAndPermissionInput.nonce,
+    granteeId: serverFilesAndPermissionInput.granteeId,
+    grant: serverFilesAndPermissionInput.grant,
+    fileUrls: serverFilesAndPermissionInput.fileUrls,
+    serverAddress: serverFilesAndPermissionInput.serverAddress,
+    serverUrl: serverFilesAndPermissionInput.serverUrl,
+    serverPublicKey: serverFilesAndPermissionInput.serverPublicKey,
+    filePermissions: serverFilesAndPermissionInput.filePermissions,
+  };
+
+  return await signer.signTypedData(domain, types, value);
+}

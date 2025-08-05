@@ -55,7 +55,6 @@ interface IDataPortabilityPermissions {
      * @param nonce Nonce value from the grantor at time of permission creation
      * @param granteeId Unique identifier of the grantee receiving access rights
      * @param grant IPFS or other URI describing the granted permissions and access rights
-     * @param signature EIP-712 signature proving authorization from the grantor
      * @param startBlock Block number when permission becomes active
      * @param endBlock Block number when permission expires (type(uint256).max for indefinite)
      * @param fileIds Set of file IDs covered by this permission
@@ -65,7 +64,6 @@ interface IDataPortabilityPermissions {
         uint256 nonce;
         uint256 granteeId;
         string grant;
-        bytes signature;
         uint256 startBlock;
         uint256 endBlock;
         EnumerableSet.UintSet fileIds;
@@ -79,7 +77,6 @@ interface IDataPortabilityPermissions {
      * @param nonce Nonce value from the grantor at time of creation
      * @param granteeId Unique identifier of the grantee
      * @param grant IPFS or other URI describing the granted permissions
-     * @param signature EIP-712 signature proving grantor authorization
      * @param startBlock Block number when permission becomes active
      * @param endBlock Block number when permission expires
      * @param fileIds Array of file IDs covered by this permission
@@ -90,7 +87,6 @@ interface IDataPortabilityPermissions {
         uint256 nonce;
         uint256 granteeId;
         string grant;
-        bytes signature;
         uint256 startBlock;
         uint256 endBlock;
         uint256[] fileIds;
@@ -121,6 +117,7 @@ interface IDataPortabilityPermissions {
      * @param serverAddress Blockchain address for the data portability server
      * @param serverUrl HTTP/HTTPS endpoint where the server can be reached
      * @param serverPublicKey Public key for encrypting communications with the server
+     * @param filePermissions Array of DataRegistry permissions (one per file in fileUrls)
      */
     struct ServerFilesAndPermissionInput {
         uint256 nonce;
@@ -130,6 +127,7 @@ interface IDataPortabilityPermissions {
         address serverAddress;
         string serverUrl;
         string serverPublicKey;
+        IDataRegistry.Permission[][] filePermissions;
     }
 
     /**

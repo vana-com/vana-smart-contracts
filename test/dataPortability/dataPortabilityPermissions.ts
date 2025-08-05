@@ -8,6 +8,7 @@ import {
   MockDataRegistry,
 } from "../../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { createServerFilesAndPermissionSignature } from "./signatureUtils";
 
 chai.use(chaiAsPromised);
 should();
@@ -41,7 +42,7 @@ describe("DataPortabilityPermissions", () => {
     nonce: bigint,
     serverAddress: string,
     publicKey: string,
-    serverUrl: string
+    serverUrl: string,
   ) => {
     const domain = {
       name: "VanaDataPortabilityServers",
@@ -74,7 +75,7 @@ describe("DataPortabilityPermissions", () => {
     signer: HardhatEthersSigner,
     serverAddress: string,
     publicKey: string,
-    serverUrl: string
+    serverUrl: string,
   ) => {
     // First add the server
     const nonce = await testServersContract.userNonce(signer.address);
@@ -83,22 +84,25 @@ describe("DataPortabilityPermissions", () => {
       nonce,
       serverAddress,
       publicKey,
-      serverUrl
+      serverUrl,
     );
-    
-    await testServersContract.connect(signer).addServerWithSignature({
-      nonce: nonce,
-      serverAddress: serverAddress,
-      publicKey: publicKey,
-      serverUrl: serverUrl,
-    }, signature);
-    
+
+    await testServersContract.connect(signer).addServerWithSignature(
+      {
+        nonce: nonce,
+        serverAddress: serverAddress,
+        publicKey: publicKey,
+        serverUrl: serverUrl,
+      },
+      signature,
+    );
+
     // Get the server ID
     const serverId = await testServersContract.serverAddressToId(serverAddress);
-    
+
     // Trust the server
     await testServersContract.connect(signer).trustServer(serverId);
-    
+
     return serverId;
   };
 
@@ -186,7 +190,7 @@ describe("DataPortabilityPermissions", () => {
     await granteesContract
       .connect(owner)
       .grantRole(PERMISSION_MANAGER_ROLE, await dataPermission.getAddress());
-    
+
     // Grant PERMISSION_MANAGER_ROLE to DataPortabilityPermissions contract on DataPortabilityServers
     await testServersContract
       .connect(owner)
@@ -339,7 +343,6 @@ describe("DataPortabilityPermissions", () => {
       storedPermission.nonce.should.eq(0);
       storedPermission.granteeId.should.eq(1);
       storedPermission.grant.should.eq(permission.grant);
-      storedPermission.signature.should.eq(signature);
 
       // Verify it's indexed by user
       (
@@ -354,7 +357,6 @@ describe("DataPortabilityPermissions", () => {
         testUser1.address,
       );
       userPermissionIds.should.deep.eq([1n]);
-
     });
 
     it("should reject permission with incorrect nonce", async function () {
@@ -534,7 +536,6 @@ describe("DataPortabilityPermissions", () => {
         testUser1.address,
       );
       userPermissionIds.should.deep.eq([1n, 2n]);
-
     });
 
     it("should add permissions for different users independently", async function () {
@@ -641,9 +642,7 @@ describe("DataPortabilityPermissions", () => {
       permission.grantor.should.eq(ethers.ZeroAddress);
       permission.nonce.should.eq(0);
       permission.grant.should.eq("");
-      permission.signature.should.eq("0x");
     });
-
 
     it("should revert when accessing out of bounds permission indices", async function () {
       // First register a grantee
@@ -760,7 +759,6 @@ describe("DataPortabilityPermissions", () => {
 
       const storedPermission = await dataPermission.permissions(1);
       storedPermission.grant.should.eq(permission.grant);
-
     });
 
     it("should test userPermissionIdsValues function with multiple permissions", async function () {
@@ -965,10 +963,9 @@ describe("DataPortabilityPermissions", () => {
 
       const storedPermission = await dataPermission.permissions(1);
       storedPermission.grant.should.eq(permission.grant);
-
     });
 
-    it("should store exact signature bytes", async function () {
+    it("should verify signature but not store it", async function () {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
@@ -983,15 +980,21 @@ describe("DataPortabilityPermissions", () => {
 
       const signature = await createPermissionSignature(permission, testUser1);
 
-      await dataPermission
-        .connect(sponsor)
-        .addPermission(permission, signature);
+      // Create an invalid signature by modifying the valid one
+      const invalidSignature = signature.slice(0, -2) + "00";
 
-      const storedPermission = await dataPermission.permissions(1);
-      storedPermission.signature.should.eq(signature);
+      // Should accept valid signature
+      await expect(
+        dataPermission.connect(sponsor).addPermission(permission, signature),
+      ).to.not.be.reverted;
 
-      // Verify signature length (should be 65 bytes for ECDSA)
-      ethers.getBytes(storedPermission.signature).length.should.eq(65);
+      // Should reject invalid signature (using incremented nonce)
+      permission.nonce = 1n;
+      await expect(
+        dataPermission
+          .connect(sponsor)
+          .addPermission(permission, invalidSignature),
+      ).to.be.reverted;
     });
 
     it("should handle max nonce values", async function () {
@@ -1265,7 +1268,8 @@ describe("DataPortabilityPermissions", () => {
         await dataPermission.connect(testUser1).revokePermission(2);
 
         // Verify permissions were managed correctly
-        const remainingPermissions = await dataPermission.userPermissionIdsValues(testUser1.address);
+        const remainingPermissions =
+          await dataPermission.userPermissionIdsValues(testUser1.address);
         remainingPermissions.length.should.eq(2);
 
         // Verify user now has 2 active permissions
@@ -1475,7 +1479,6 @@ describe("DataPortabilityPermissions", () => {
     });
 
     describe("Edge Cases and State Management", () => {
-
       it("should correctly update user permission sets", async function () {
         // First register a grantee
         await granteesContract
@@ -1633,7 +1636,9 @@ describe("DataPortabilityPermissions", () => {
         activePerms.should.deep.eq([2n, 3n]);
 
         // Verify permission states were managed correctly
-        const activePermissions = await dataPermission.userPermissionIdsValues(testUser1.address);
+        const activePermissions = await dataPermission.userPermissionIdsValues(
+          testUser1.address,
+        );
         activePermissions.length.should.eq(2);
       });
     });
@@ -1666,7 +1671,7 @@ describe("DataPortabilityPermissions", () => {
           testUser1,
           testServer1.address,
           "0x1234567890abcdef",
-          "https://testServer1.com"
+          "https://testServer1.com",
         );
 
         // Revoke the permission
@@ -1678,7 +1683,9 @@ describe("DataPortabilityPermissions", () => {
         ).should.eq(1);
 
         // Permission should be revoked
-        const userPermissions = await dataPermission.userPermissionIdsValues(testUser1.address);
+        const userPermissions = await dataPermission.userPermissionIdsValues(
+          testUser1.address,
+        );
         userPermissions.length.should.eq(0);
       });
 
@@ -1785,11 +1792,12 @@ describe("DataPortabilityPermissions", () => {
 
         // Now revocation should work
         await dataPermission.connect(testUser1).revokePermission(1);
-        const userPermissions = await dataPermission.userPermissionIdsValues(testUser1.address);
+        const userPermissions = await dataPermission.userPermissionIdsValues(
+          testUser1.address,
+        );
         userPermissions.length.should.eq(0);
       });
     });
-
   });
 
   describe("Edge Cases", () => {
@@ -1873,13 +1881,13 @@ describe("DataPortabilityPermissions", () => {
 
       // Verify both permissions were created
       (await dataPermission.permissionsCount()).should.eq(2);
-      
+
       // Verify both have the same grant
       const storedPermission1 = await dataPermission.permissions(1);
       const storedPermission2 = await dataPermission.permissions(2);
       storedPermission1.grant.should.eq("ipfs://same-grant");
       storedPermission2.grant.should.eq("ipfs://same-grant");
-      
+
       // Verify they have different grantors
       storedPermission1.grantor.should.eq(testUser1.address);
       storedPermission2.grantor.should.eq(testUser2.address);
@@ -2035,7 +2043,7 @@ describe("DataPortabilityPermissions", () => {
           testUser1,
           testServer1.address,
           "0x1234567890abcdef",
-          serverUrl
+          serverUrl,
         );
 
         // Verify server was created
@@ -2047,22 +2055,27 @@ describe("DataPortabilityPermissions", () => {
       });
 
       it("should reject adding server with empty URL", async function () {
-        const serverNonce = await testServersContract.userNonce(testUser1.address);
+        const serverNonce = await testServersContract.userNonce(
+          testUser1.address,
+        );
         const serverSignature = await createAddServerSignature(
           testUser1,
           serverNonce,
           testServer1.address,
           "0x1234567890abcdef",
-          ""
+          "",
         );
 
         await expect(
-          testServersContract.connect(testUser1).addServerWithSignature({
-            nonce: serverNonce,
-            serverAddress: testServer1.address,
-            publicKey: "0x1234567890abcdef",
-            serverUrl: "",
-          }, serverSignature),
+          testServersContract.connect(testUser1).addServerWithSignature(
+            {
+              nonce: serverNonce,
+              serverAddress: testServer1.address,
+              publicKey: "0x1234567890abcdef",
+              serverUrl: "",
+            },
+            serverSignature,
+          ),
         ).to.be.revertedWithCustomError(testServersContract, "EmptyUrl");
       });
 
@@ -2076,14 +2089,17 @@ describe("DataPortabilityPermissions", () => {
           nonce1,
           testServer1.address,
           "0x1234567890abcdef",
-          serverUrl
+          serverUrl,
         );
-        await testServersContract.connect(testUser1).addServerWithSignature({
-          nonce: nonce1,
-          serverAddress: testServer1.address,
-          publicKey: "0x1234567890abcdef",
-          serverUrl: serverUrl,
-        }, signature1);
+        await testServersContract.connect(testUser1).addServerWithSignature(
+          {
+            nonce: nonce1,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl,
+          },
+          signature1,
+        );
 
         // Second user tries to register same server address
         const nonce2 = await testServersContract.userNonce(testUser2.address);
@@ -2092,15 +2108,18 @@ describe("DataPortabilityPermissions", () => {
           nonce2,
           testServer1.address,
           "0xabcdef1234567890",
-          "https://different.com"
+          "https://different.com",
         );
         await expect(
-          testServersContract.connect(testUser2).addServerWithSignature({
-            nonce: nonce2,
-            serverAddress: testServer1.address,
-            publicKey: "0xabcdef1234567890",
-            serverUrl: "https://different.com",
-          }, signature2),
+          testServersContract.connect(testUser2).addServerWithSignature(
+            {
+              nonce: nonce2,
+              serverAddress: testServer1.address,
+              publicKey: "0xabcdef1234567890",
+              serverUrl: "https://different.com",
+            },
+            signature2,
+          ),
         ).to.be.revertedWithCustomError(
           testServersContract,
           "ServerAlreadyRegistered",
@@ -2116,7 +2135,7 @@ describe("DataPortabilityPermissions", () => {
           testUser1,
           testServer1.address,
           "0x1234567890abcdef",
-          serverUrl1
+          serverUrl1,
         );
 
         // User2 adds and trusts testServer2
@@ -2124,7 +2143,7 @@ describe("DataPortabilityPermissions", () => {
           testUser2,
           testServer2.address,
           "0xabcdef1234567890",
-          serverUrl2
+          serverUrl2,
         );
 
         // Verify both servers exist
@@ -2145,20 +2164,25 @@ describe("DataPortabilityPermissions", () => {
 
       it("should trust a server successfully", async function () {
         // First register the server
-        const serverNonce = await testServersContract.userNonce(testUser1.address);
+        const serverNonce = await testServersContract.userNonce(
+          testUser1.address,
+        );
         const serverSignature = await createAddServerSignature(
           testUser1,
           serverNonce,
           testServer1.address,
           "0x1234567890abcdef",
-          serverUrl
+          serverUrl,
         );
-        await testServersContract.connect(testUser1).addServerWithSignature({
-          nonce: serverNonce,
-          serverAddress: testServer1.address,
-          publicKey: "0x1234567890abcdef",
-          serverUrl: serverUrl,
-        }, serverSignature);
+        await testServersContract.connect(testUser1).addServerWithSignature(
+          {
+            nonce: serverNonce,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl,
+          },
+          serverSignature,
+        );
 
         // Then trust it
         const tx = await testServersContract.connect(testUser1).trustServer(1);
@@ -2181,7 +2205,7 @@ describe("DataPortabilityPermissions", () => {
           testUser1,
           testServer2.address,
           "0xabcdef1234567890",
-          "https://newserver.com"
+          "https://newserver.com",
         );
 
         // Verify server was created with ID 1
@@ -2215,7 +2239,7 @@ describe("DataPortabilityPermissions", () => {
           testUser1,
           testServer1.address,
           "0x1234567890abcdef",
-          serverUrl
+          serverUrl,
         );
 
         // Try to trust again
@@ -2235,14 +2259,14 @@ describe("DataPortabilityPermissions", () => {
           testUser1,
           testServer1.address,
           "0x1234567890abcdef",
-          serverUrl
+          serverUrl,
         );
 
         await addAndTrustServer(
           testUser1,
           testServer2.address,
           "0xabcdef1234567890",
-          serverUrl2
+          serverUrl2,
         );
 
         // Verify both are trusted
@@ -2258,20 +2282,25 @@ describe("DataPortabilityPermissions", () => {
 
       it("should allow trusting same server multiple times (idempotent)", async function () {
         // Register server first
-        const serverNonce = await testServersContract.userNonce(testUser1.address);
+        const serverNonce = await testServersContract.userNonce(
+          testUser1.address,
+        );
         const serverSignature = await createAddServerSignature(
           testUser1,
           serverNonce,
           testServer1.address,
           "0x1234567890abcdef",
-          serverUrl
+          serverUrl,
         );
-        await testServersContract.connect(testUser1).addServerWithSignature({
-          nonce: serverNonce,
-          serverAddress: testServer1.address,
-          publicKey: "0x1234567890abcdef",
-          serverUrl: serverUrl,
-        }, serverSignature);
+        await testServersContract.connect(testUser1).addServerWithSignature(
+          {
+            nonce: serverNonce,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl,
+          },
+          serverSignature,
+        );
 
         // Trust server
         await testServersContract.connect(testUser1).trustServer(1);
@@ -2302,16 +2331,21 @@ describe("DataPortabilityPermissions", () => {
           nonce,
           testServer1.address,
           "0x1234567890abcdef",
-          serverUrl
+          serverUrl,
         );
-        await testServersContract.connect(testUser1).addServerWithSignature({
-          nonce: nonce,
-          serverAddress: testServer1.address,
-          publicKey: "0x1234567890abcdef",
-          serverUrl: serverUrl,
-        }, addSignature);
+        await testServersContract.connect(testUser1).addServerWithSignature(
+          {
+            nonce: nonce,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl,
+          },
+          addSignature,
+        );
 
-        const currentNonce = await testServersContract.userNonce(testUser1.address);
+        const currentNonce = await testServersContract.userNonce(
+          testUser1.address,
+        );
         const trustServerInput = {
           nonce: currentNonce,
           serverId: 1n,
@@ -2350,17 +2384,22 @@ describe("DataPortabilityPermissions", () => {
           nonce,
           testServer1.address,
           "0x1234567890abcdef",
-          serverUrl
+          serverUrl,
         );
-        await testServersContract.connect(testUser1).addServerWithSignature({
-          nonce: nonce,
-          serverAddress: testServer1.address,
-          publicKey: "0x1234567890abcdef",
-          serverUrl: serverUrl,
-        }, addSignature);
+        await testServersContract.connect(testUser1).addServerWithSignature(
+          {
+            nonce: nonce,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl,
+          },
+          addSignature,
+        );
 
         // After adding server, nonce should be incremented by 1
-        const currentNonce = await testServersContract.userNonce(testUser1.address);
+        const currentNonce = await testServersContract.userNonce(
+          testUser1.address,
+        );
         const trustServerInput = {
           nonce: currentNonce + 1n, // Wrong nonce (should be currentNonce)
           serverId: 1n,
@@ -2388,16 +2427,21 @@ describe("DataPortabilityPermissions", () => {
           nonce,
           testServer1.address,
           "0x1234567890abcdef",
-          serverUrl
+          serverUrl,
         );
-        await testServersContract.connect(testUser1).addServerWithSignature({
-          nonce: nonce,
-          serverAddress: testServer1.address,
-          publicKey: "0x1234567890abcdef",
-          serverUrl: serverUrl,
-        }, addSignature);
+        await testServersContract.connect(testUser1).addServerWithSignature(
+          {
+            nonce: nonce,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl,
+          },
+          addSignature,
+        );
 
-        const currentNonce = await testServersContract.userNonce(testUser1.address);
+        const currentNonce = await testServersContract.userNonce(
+          testUser1.address,
+        );
         const trustServerInput = {
           nonce: currentNonce,
           serverId: 1n,
@@ -2431,7 +2475,7 @@ describe("DataPortabilityPermissions", () => {
           testUser1,
           testServer1.address,
           "0x1234567890abcdef",
-          serverUrl
+          serverUrl,
         );
       });
 
@@ -2463,15 +2507,18 @@ describe("DataPortabilityPermissions", () => {
           nonce,
           testServer2.address,
           "0xabcdef1234567890",
-          "https://testServer2.example.com"
+          "https://testServer2.example.com",
         );
-        
-        await testServersContract.connect(testUser1).addServerWithSignature({
-          nonce: nonce,
-          serverAddress: testServer2.address,
-          publicKey: "0xabcdef1234567890",
-          serverUrl: "https://testServer2.example.com",
-        }, signature);
+
+        await testServersContract.connect(testUser1).addServerWithSignature(
+          {
+            nonce: nonce,
+            serverAddress: testServer2.address,
+            publicKey: "0xabcdef1234567890",
+            serverUrl: "https://testServer2.example.com",
+          },
+          signature,
+        );
 
         await expect(
           testServersContract.connect(testUser1).untrustServer(2),
@@ -2515,13 +2562,15 @@ describe("DataPortabilityPermissions", () => {
           testUser1,
           testServer1.address,
           "0x1234567890abcdef",
-          serverUrl
+          serverUrl,
         );
       });
 
       it("should untrust server with valid signature", async function () {
         // After addAndTrustServer helper, nonce should be 1 (from addServerWithSignature)
-        const currentNonce = await testServersContract.userNonce(testUser1.address);
+        const currentNonce = await testServersContract.userNonce(
+          testUser1.address,
+        );
         const untrustServerInput = {
           nonce: currentNonce,
           serverId: 1n,
@@ -2550,7 +2599,9 @@ describe("DataPortabilityPermissions", () => {
       });
 
       it("should reject with incorrect nonce", async function () {
-        const currentNonce = await testServersContract.userNonce(testUser1.address);
+        const currentNonce = await testServersContract.userNonce(
+          testUser1.address,
+        );
         const untrustServerInput = {
           nonce: currentNonce + 1n, // Wrong nonce (should be currentNonce)
           serverId: 1n,
@@ -2591,14 +2642,14 @@ describe("DataPortabilityPermissions", () => {
           testUser1,
           servers[0].serverAddress,
           "0x1234567890abcdef",
-          servers[0].url
+          servers[0].url,
         );
 
         await addAndTrustServer(
           testUser1,
           servers[1].serverAddress,
           "0xabcdef1234567890",
-          servers[1].url
+          servers[1].url,
         );
 
         // User2 adds and trusts the third server
@@ -2606,7 +2657,7 @@ describe("DataPortabilityPermissions", () => {
           testUser2,
           servers[2].serverAddress,
           "0x9876543210fedcba",
-          servers[2].url
+          servers[2].url,
         );
       });
 
@@ -2671,12 +2722,12 @@ describe("DataPortabilityPermissions", () => {
       it("should return correct userServerValues", async function () {
         // Get all trusted servers for testUser1
         const user1Servers = await testServersContract.userServerValues(
-          testUser1.address
+          testUser1.address,
         );
-        
+
         // testUser1 trusted servers 1 and 2
         user1Servers.should.have.lengthOf(2);
-        
+
         // Check first server details
         user1Servers[0].id.should.eq(1n);
         user1Servers[0].owner.should.eq(testUser1.address);
@@ -2685,7 +2736,7 @@ describe("DataPortabilityPermissions", () => {
         user1Servers[0].url.should.eq("https://testServer1.com");
         user1Servers[0].startBlock.should.be.gt(0n);
         user1Servers[0].endBlock.should.eq(ethers.MaxUint256);
-        
+
         // Check second server details
         user1Servers[1].id.should.eq(2n);
         user1Servers[1].owner.should.eq(testUser1.address);
@@ -2694,21 +2745,21 @@ describe("DataPortabilityPermissions", () => {
         user1Servers[1].url.should.eq("https://testServer2.com");
         user1Servers[1].startBlock.should.be.gt(0n);
         user1Servers[1].endBlock.should.eq(ethers.MaxUint256);
-        
+
         // Get all trusted servers for testUser2
         const user2Servers = await testServersContract.userServerValues(
-          testUser2.address
+          testUser2.address,
         );
-        
+
         // testUser2 trusted only server 3
         user2Servers.should.have.lengthOf(1);
         user2Servers[0].id.should.eq(3n);
         user2Servers[0].owner.should.eq(testUser2.address);
         user2Servers[0].serverAddress.should.eq(maintainer.address);
-        
+
         // Test user with no trusted servers
         const user3Servers = await testServersContract.userServerValues(
-          user3.address
+          user3.address,
         );
         user3Servers.should.have.lengthOf(0);
       });
@@ -2717,9 +2768,9 @@ describe("DataPortabilityPermissions", () => {
         // Get specific server info for testUser1 and server 1
         const server1Info = await testServersContract.userServers(
           testUser1.address,
-          1
+          1,
         );
-        
+
         server1Info.id.should.eq(1n);
         server1Info.owner.should.eq(testUser1.address);
         server1Info.serverAddress.should.eq(testServer1.address);
@@ -2727,43 +2778,53 @@ describe("DataPortabilityPermissions", () => {
         server1Info.url.should.eq("https://testServer1.com");
         server1Info.startBlock.should.be.gt(0n);
         server1Info.endBlock.should.eq(ethers.MaxUint256);
-        
+
         // Get specific server info for testUser1 and server 2
         const server2Info = await testServersContract.userServers(
           testUser1.address,
-          2
+          2,
         );
-        
+
         server2Info.id.should.eq(2n);
         server2Info.serverAddress.should.eq(testServer2.address);
-        
+
         // Should revert when querying a server not trusted by the user
         await expect(
-          testServersContract.userServers(testUser1.address, 3)
-        ).to.be.revertedWithCustomError(testServersContract, "ServerNotTrusted");
-        
+          testServersContract.userServers(testUser1.address, 3),
+        ).to.be.revertedWithCustomError(
+          testServersContract,
+          "ServerNotTrusted",
+        );
+
         // Should revert when user has not trusted any server
         await expect(
-          testServersContract.userServers(user3.address, 1)
-        ).to.be.revertedWithCustomError(testServersContract, "ServerNotTrusted");
+          testServersContract.userServers(user3.address, 1),
+        ).to.be.revertedWithCustomError(
+          testServersContract,
+          "ServerNotTrusted",
+        );
       });
 
       it("should reflect changes in userServerValues after untrusting", async function () {
         // Initial state - testUser1 has 2 servers
-        let servers = await testServersContract.userServerValues(testUser1.address);
+        let servers = await testServersContract.userServerValues(
+          testUser1.address,
+        );
         servers.should.have.lengthOf(2);
-        
+
         // Untrust server 1
         await testServersContract.connect(testUser1).untrustServer(1);
-        
+
         // Check that server 1 was processed correctly (untrusted servers remain in list)
-        const userServers = await testServersContract.userServerIdsValues(testUser1.address);
+        const userServers = await testServersContract.userServerIdsValues(
+          testUser1.address,
+        );
         userServers.length.should.eq(2);
-        
+
         // userServerValues still returns all servers (including untrusted ones)
         servers = await testServersContract.userServerValues(testUser1.address);
         servers.should.have.lengthOf(2);
-        
+
         // But the untrusted server should have endBlock set to current block
         const untrustBlock = await ethers.provider.getBlockNumber();
         servers[0].endBlock.should.eq(BigInt(untrustBlock));
@@ -2782,17 +2843,22 @@ describe("DataPortabilityPermissions", () => {
           nonce,
           testServer1.address,
           "0x1234567890abcdef",
-          serverUrl
+          serverUrl,
         );
-        await testServersContract.connect(testUser1).addServerWithSignature({
-          nonce: nonce,
-          serverAddress: testServer1.address,
-          publicKey: "0x1234567890abcdef",
-          serverUrl: serverUrl,
-        }, addSignature);
+        await testServersContract.connect(testUser1).addServerWithSignature(
+          {
+            nonce: nonce,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl,
+          },
+          addSignature,
+        );
 
         // Create trust signature with correct nonce
-        const currentNonce = await testServersContract.userNonce(testUser1.address);
+        const currentNonce = await testServersContract.userNonce(
+          testUser1.address,
+        );
         const trustServerInput = {
           nonce: currentNonce,
           serverId: 1n,
@@ -2827,10 +2893,12 @@ describe("DataPortabilityPermissions", () => {
           testUser1,
           testServer1.address,
           "0x1234567890abcdef",
-          serverUrl
+          serverUrl,
         );
 
-        const currentNonce = await testServersContract.userNonce(testUser1.address);
+        const currentNonce = await testServersContract.userNonce(
+          testUser1.address,
+        );
         const untrustServerInput = {
           nonce: currentNonce,
           serverId: 1n,
@@ -2861,23 +2929,30 @@ describe("DataPortabilityPermissions", () => {
 
       it("should prevent cross-user replay attacks", async function () {
         // First register the server
-        const serverNonce = await testServersContract.userNonce(testUser1.address);
+        const serverNonce = await testServersContract.userNonce(
+          testUser1.address,
+        );
         const serverSignature = await createAddServerSignature(
           testUser1,
           serverNonce,
           testServer1.address,
           "0x1234567890abcdef",
-          serverUrl
+          serverUrl,
         );
-        await testServersContract.connect(testUser1).addServerWithSignature({
-          nonce: serverNonce,
-          serverAddress: testServer1.address,
-          publicKey: "0x1234567890abcdef",
-          serverUrl: serverUrl,
-        }, serverSignature);
+        await testServersContract.connect(testUser1).addServerWithSignature(
+          {
+            nonce: serverNonce,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl,
+          },
+          serverSignature,
+        );
 
         // User1 creates a trust signature with correct nonce
-        const currentNonce = await testServersContract.userNonce(testUser1.address);
+        const currentNonce = await testServersContract.userNonce(
+          testUser1.address,
+        );
         const trustServerInput = {
           nonce: currentNonce,
           serverId: 1n,
@@ -2907,7 +2982,9 @@ describe("DataPortabilityPermissions", () => {
 
         // Even if we try with testUser2 signing with the same parameters
         // it's a different signature and will work for testUser2
-        const testUser2Nonce = await testServersContract.userNonce(testUser2.address);
+        const testUser2Nonce = await testServersContract.userNonce(
+          testUser2.address,
+        );
         const testUser2TrustInput = {
           nonce: testUser2Nonce,
           serverId: 1n,
@@ -2932,23 +3009,30 @@ describe("DataPortabilityPermissions", () => {
 
       it("should prevent replay attacks across different operations", async function () {
         // First register the server
-        const serverNonce = await testServersContract.userNonce(testUser1.address);
+        const serverNonce = await testServersContract.userNonce(
+          testUser1.address,
+        );
         const serverSignature = await createAddServerSignature(
           testUser1,
           serverNonce,
           testServer1.address,
           "0x1234567890abcdef",
-          serverUrl
+          serverUrl,
         );
-        await testServersContract.connect(testUser1).addServerWithSignature({
-          nonce: serverNonce,
-          serverAddress: testServer1.address,
-          publicKey: "0x1234567890abcdef",
-          serverUrl: serverUrl,
-        }, serverSignature);
+        await testServersContract.connect(testUser1).addServerWithSignature(
+          {
+            nonce: serverNonce,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl,
+          },
+          serverSignature,
+        );
 
         // Create signatures for both trust and untrust with same nonce
-        const currentNonce = await testServersContract.userNonce(testUser1.address);
+        const currentNonce = await testServersContract.userNonce(
+          testUser1.address,
+        );
 
         const trustInput = {
           nonce: currentNonce,
@@ -3041,13 +3125,15 @@ describe("DataPortabilityPermissions", () => {
           testUser1,
           testServer1.address,
           "0x1234567890abcdef",
-          "https://testServer1.com"
+          "https://testServer1.com",
         );
 
         // Untrust the server first, then trust it again to test the signature
         await testServersContract.connect(testUser1).untrustServer(1n);
 
-        const currentNonce = await testServersContract.userNonce(testUser1.address);
+        const currentNonce = await testServersContract.userNonce(
+          testUser1.address,
+        );
         const trustServerInput = {
           nonce: currentNonce, // Use current nonce from server contract
           serverId: 1n,
@@ -3072,23 +3158,30 @@ describe("DataPortabilityPermissions", () => {
         (await testServersContract.userNonce(testUser2.address)).should.eq(0);
 
         // Register server first
-        const serverNonce = await testServersContract.userNonce(testUser1.address);
+        const serverNonce = await testServersContract.userNonce(
+          testUser1.address,
+        );
         const serverSignature = await createAddServerSignature(
           testUser1,
           serverNonce,
           testServer1.address,
           "0x1234567890abcdef",
-          serverUrl
+          serverUrl,
         );
-        await testServersContract.connect(testUser1).addServerWithSignature({
-          nonce: serverNonce,
-          serverAddress: testServer1.address,
-          publicKey: "0x1234567890abcdef",
-          serverUrl: serverUrl,
-        }, serverSignature);
+        await testServersContract.connect(testUser1).addServerWithSignature(
+          {
+            nonce: serverNonce,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: serverUrl,
+          },
+          serverSignature,
+        );
 
         // User1 performs operation
-        const testUser1CurrentNonce = await testServersContract.userNonce(testUser1.address);
+        const testUser1CurrentNonce = await testServersContract.userNonce(
+          testUser1.address,
+        );
         const testUser1Input = {
           nonce: testUser1CurrentNonce,
           serverId: 1n,
@@ -3108,7 +3201,9 @@ describe("DataPortabilityPermissions", () => {
         (await testServersContract.userNonce(testUser2.address)).should.eq(0);
 
         // User2 can still use nonce 0
-        const testUser2CurrentNonce = await testServersContract.userNonce(testUser2.address);
+        const testUser2CurrentNonce = await testServersContract.userNonce(
+          testUser2.address,
+        );
         const testUser2Input = {
           nonce: testUser2CurrentNonce,
           serverId: 1n,
@@ -3590,7 +3685,7 @@ describe("DataPortabilityPermissions", () => {
           testUser1,
           testServer1.address,
           "0x1234567890abcdef",
-          serverUrl
+          serverUrl,
         );
 
         // Verify server was created with ID 1
@@ -3652,7 +3747,7 @@ describe("DataPortabilityPermissions", () => {
           testUser1,
           testServer1.address,
           "0x1234567890abcdef",
-          serverUrl
+          serverUrl,
         );
 
         // Verify user has both permissions and trusted servers
@@ -3721,23 +3816,28 @@ describe("DataPortabilityPermissions", () => {
 
     describe("Server Registration", () => {
       it("should register a new server", async () => {
-        const serverNonce = await testServersContract.userNonce(testUser1.address);
+        const serverNonce = await testServersContract.userNonce(
+          testUser1.address,
+        );
         const serverSignature = await createAddServerSignature(
           testUser1,
           serverNonce,
           testServer1.address,
           "0x1234567890abcdef",
-          "https://testServer1.example.com"
+          "https://testServer1.example.com",
         );
 
         const tx = await testServersContract
           .connect(testUser1)
-          .addServerWithSignature({
-            nonce: serverNonce,
-            serverAddress: testServer1.address,
-            publicKey: "0x1234567890abcdef",
-            serverUrl: "https://testServer1.example.com",
-          }, serverSignature);
+          .addServerWithSignature(
+            {
+              nonce: serverNonce,
+              serverAddress: testServer1.address,
+              publicKey: "0x1234567890abcdef",
+              serverUrl: "https://testServer1.example.com",
+            },
+            serverSignature,
+          );
 
         await expect(tx)
           .to.emit(testServersContract, "ServerRegistered")
@@ -3761,42 +3861,52 @@ describe("DataPortabilityPermissions", () => {
       });
 
       it("should reject server registration with empty URL", async () => {
-        const serverNonce = await testServersContract.userNonce(testUser1.address);
+        const serverNonce = await testServersContract.userNonce(
+          testUser1.address,
+        );
         const serverSignature = await createAddServerSignature(
           testUser1,
           serverNonce,
           testServer1.address,
           "0x1234567890abcdef",
-          ""
+          "",
         );
 
         await expect(
-          testServersContract.connect(testUser1).addServerWithSignature({
-            nonce: serverNonce,
-            serverAddress: testServer1.address,
-            publicKey: "0x1234567890abcdef",
-            serverUrl: "",
-          }, serverSignature),
+          testServersContract.connect(testUser1).addServerWithSignature(
+            {
+              nonce: serverNonce,
+              serverAddress: testServer1.address,
+              publicKey: "0x1234567890abcdef",
+              serverUrl: "",
+            },
+            serverSignature,
+          ),
         ).to.be.revertedWithCustomError(testServersContract, "EmptyUrl");
       });
 
       it("should reject server registration with empty public key", async () => {
-        const serverNonce = await testServersContract.userNonce(testUser1.address);
+        const serverNonce = await testServersContract.userNonce(
+          testUser1.address,
+        );
         const serverSignature = await createAddServerSignature(
           testUser1,
           serverNonce,
           testServer1.address,
           "",
-          "https://testServer1.example.com"
+          "https://testServer1.example.com",
         );
 
         await expect(
-          testServersContract.connect(testUser1).addServerWithSignature({
-            nonce: serverNonce,
-            serverAddress: testServer1.address,
-            publicKey: "",
-            serverUrl: "https://testServer1.example.com",
-          }, serverSignature),
+          testServersContract.connect(testUser1).addServerWithSignature(
+            {
+              nonce: serverNonce,
+              serverAddress: testServer1.address,
+              publicKey: "",
+              serverUrl: "https://testServer1.example.com",
+            },
+            serverSignature,
+          ),
         ).to.be.revertedWithCustomError(testServersContract, "EmptyPublicKey");
       });
 
@@ -3808,36 +3918,44 @@ describe("DataPortabilityPermissions", () => {
           nonce + 1n,
           testServer1.address,
           "0x1234567890abcdef",
-          "https://testServer1.example.com"
+          "https://testServer1.example.com",
         );
 
         await expect(
-          testServersContract.connect(testUser1).addServerWithSignature({
-            nonce: nonce + 1n,
-            serverAddress: testServer1.address,
-            publicKey: "0x1234567890abcdef",
-            serverUrl: "https://testServer1.example.com",
-          }, signature),
+          testServersContract.connect(testUser1).addServerWithSignature(
+            {
+              nonce: nonce + 1n,
+              serverAddress: testServer1.address,
+              publicKey: "0x1234567890abcdef",
+              serverUrl: "https://testServer1.example.com",
+            },
+            signature,
+          ),
         ).to.be.revertedWithCustomError(testServersContract, "InvalidNonce");
       });
 
       it("should reject server registration with zero address server", async () => {
-        const serverNonce = await testServersContract.userNonce(testUser1.address);
+        const serverNonce = await testServersContract.userNonce(
+          testUser1.address,
+        );
         const serverSignature = await createAddServerSignature(
           testUser1,
           serverNonce,
           ethers.ZeroAddress,
           "0x1234567890abcdef",
-          "https://testServer1.example.com"
+          "https://testServer1.example.com",
         );
 
         await expect(
-          testServersContract.connect(testUser1).addServerWithSignature({
-            nonce: serverNonce,
-            serverAddress: ethers.ZeroAddress,
-            publicKey: "0x1234567890abcdef",
-            serverUrl: "https://testServer1.example.com",
-          }, serverSignature),
+          testServersContract.connect(testUser1).addServerWithSignature(
+            {
+              nonce: serverNonce,
+              serverAddress: ethers.ZeroAddress,
+              publicKey: "0x1234567890abcdef",
+              serverUrl: "https://testServer1.example.com",
+            },
+            serverSignature,
+          ),
         ).to.be.revertedWithCustomError(testServersContract, "ZeroAddress");
       });
 
@@ -3849,15 +3967,18 @@ describe("DataPortabilityPermissions", () => {
           nonce1,
           testServer1.address,
           "0x1234567890abcdef",
-          "https://testServer1.example.com"
+          "https://testServer1.example.com",
         );
-        await testServersContract.connect(testUser1).addServerWithSignature({
-          nonce: nonce1,
-          serverAddress: testServer1.address,
-          publicKey: "0x1234567890abcdef",
-          serverUrl: "https://testServer1.example.com",
-        }, signature1);
-        
+        await testServersContract.connect(testUser1).addServerWithSignature(
+          {
+            nonce: nonce1,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: "https://testServer1.example.com",
+          },
+          signature1,
+        );
+
         // Second user tries to register same server address
         const nonce2 = await testServersContract.userNonce(testUser2.address);
         const signature2 = await createAddServerSignature(
@@ -3865,15 +3986,18 @@ describe("DataPortabilityPermissions", () => {
           nonce2,
           testServer1.address,
           "0x1234567890abcdef",
-          "https://testServer1.example.com"
+          "https://testServer1.example.com",
         );
         await expect(
-          testServersContract.connect(testUser2).addServerWithSignature({
-            nonce: nonce2,
-            serverAddress: testServer1.address,
-            publicKey: "0x1234567890abcdef",
-            serverUrl: "https://testServer1.example.com",
-          }, signature2),
+          testServersContract.connect(testUser2).addServerWithSignature(
+            {
+              nonce: nonce2,
+              serverAddress: testServer1.address,
+              publicKey: "0x1234567890abcdef",
+              serverUrl: "https://testServer1.example.com",
+            },
+            signature2,
+          ),
         ).to.be.revertedWithCustomError(
           testServersContract,
           "ServerAlreadyRegistered",
@@ -3883,20 +4007,25 @@ describe("DataPortabilityPermissions", () => {
 
     describe("Server Updates", () => {
       beforeEach(async () => {
-        const serverNonce = await testServersContract.userNonce(testUser1.address);
+        const serverNonce = await testServersContract.userNonce(
+          testUser1.address,
+        );
         const serverSignature = await createAddServerSignature(
           testUser1,
           serverNonce,
           testServer1.address,
           "0x1234567890abcdef",
-          "https://testServer1.example.com"
+          "https://testServer1.example.com",
         );
-        await testServersContract.connect(testUser1).addServerWithSignature({
-          nonce: serverNonce,
-          serverAddress: testServer1.address,
-          publicKey: "0x1234567890abcdef",
-          serverUrl: "https://testServer1.example.com",
-        }, serverSignature);
+        await testServersContract.connect(testUser1).addServerWithSignature(
+          {
+            nonce: serverNonce,
+            serverAddress: testServer1.address,
+            publicKey: "0x1234567890abcdef",
+            serverUrl: "https://testServer1.example.com",
+          },
+          serverSignature,
+        );
       });
 
       it("should update server URL by owner", async () => {
@@ -3945,20 +4074,25 @@ describe("DataPortabilityPermissions", () => {
           publicKey: "0x1234567890abcdef",
           serverUrl: "https://testServer1.example.com",
         };
-        const serverNonce = await testServersContract.userNonce(testUser1.address);
+        const serverNonce = await testServersContract.userNonce(
+          testUser1.address,
+        );
         const serverSignature = await createAddServerSignature(
           testUser1,
           serverNonce,
           serverInput.serverAddress,
           serverInput.publicKey,
-          serverInput.serverUrl
+          serverInput.serverUrl,
         );
-        await testServersContract.connect(testUser1).addServerWithSignature({
-          nonce: serverNonce,
-          serverAddress: serverInput.serverAddress,
-          publicKey: serverInput.publicKey,
-          serverUrl: serverInput.serverUrl,
-        }, serverSignature);
+        await testServersContract.connect(testUser1).addServerWithSignature(
+          {
+            nonce: serverNonce,
+            serverAddress: serverInput.serverAddress,
+            publicKey: serverInput.publicKey,
+            serverUrl: serverInput.serverUrl,
+          },
+          serverSignature,
+        );
       });
 
       it("should trust a server", async () => {
@@ -3971,7 +4105,9 @@ describe("DataPortabilityPermissions", () => {
         expect(
           await testServersContract.userServerIdsLength(testUser1.address),
         ).to.equal(1);
-        const userServers = await testServersContract.userServerIdsValues(testUser1.address);
+        const userServers = await testServersContract.userServerIdsValues(
+          testUser1.address,
+        );
         expect(userServers).to.include(1n);
       });
 
@@ -4006,7 +4142,9 @@ describe("DataPortabilityPermissions", () => {
         expect(
           await testServersContract.userServerIdsLength(testUser1.address),
         ).to.equal(1);
-        const userServers = await testServersContract.userServerIdsValues(testUser1.address);
+        const userServers = await testServersContract.userServerIdsValues(
+          testUser1.address,
+        );
         expect(userServers.length).to.equal(1);
       });
 
@@ -4045,7 +4183,7 @@ describe("DataPortabilityPermissions", () => {
           testUser1,
           serverInput.serverAddress,
           serverInput.publicKey,
-          serverInput.serverUrl
+          serverInput.serverUrl,
         );
 
         // Verify server was created and trusted
@@ -4057,7 +4195,9 @@ describe("DataPortabilityPermissions", () => {
         expect(
           await testServersContract.userServerIdsLength(testUser1.address),
         ).to.equal(1);
-        const userServers = await testServersContract.userServerIdsValues(testUser1.address);
+        const userServers = await testServersContract.userServerIdsValues(
+          testUser1.address,
+        );
         expect(userServers).to.include(1n);
       });
 
@@ -4075,7 +4215,7 @@ describe("DataPortabilityPermissions", () => {
           nonce,
           addServerInput.serverAddress,
           addServerInput.publicKey,
-          addServerInput.serverUrl
+          addServerInput.serverUrl,
         );
 
         const tx = await testServersContract
@@ -4090,7 +4230,7 @@ describe("DataPortabilityPermissions", () => {
             testUser1.address,
             testServer1.address,
             "0x1234567890abcdef",
-            "https://testServer1.example.com"
+            "https://testServer1.example.com",
           );
 
         await expect(tx)
@@ -4108,8 +4248,10 @@ describe("DataPortabilityPermissions", () => {
         (
           await testServersContract.userServerIdsLength(testUser1.address)
         ).should.eq(1);
-        
-        const userServers = await testServersContract.userServerIdsValues(testUser1.address);
+
+        const userServers = await testServersContract.userServerIdsValues(
+          testUser1.address,
+        );
         expect(userServers).to.include(1n);
 
         // Verify nonce was incremented
@@ -4130,13 +4272,13 @@ describe("DataPortabilityPermissions", () => {
           nonce + 1n,
           addServerInput.serverAddress,
           addServerInput.publicKey,
-          addServerInput.serverUrl
+          addServerInput.serverUrl,
         );
 
         await expect(
           testServersContract
             .connect(testUser1)
-            .addAndTrustServerWithSignature(addServerInput, signature)
+            .addAndTrustServerWithSignature(addServerInput, signature),
         )
           .to.be.revertedWithCustomError(testServersContract, "InvalidNonce")
           .withArgs(nonce, nonce + 1n);
@@ -4156,13 +4298,13 @@ describe("DataPortabilityPermissions", () => {
           nonce,
           addServerInput.serverAddress,
           addServerInput.publicKey,
-          addServerInput.serverUrl
+          addServerInput.serverUrl,
         );
 
         await expect(
           testServersContract
             .connect(testUser1)
-            .addAndTrustServerWithSignature(addServerInput, signature)
+            .addAndTrustServerWithSignature(addServerInput, signature),
         ).to.be.revertedWithCustomError(testServersContract, "EmptyPublicKey");
       });
 
@@ -4180,13 +4322,13 @@ describe("DataPortabilityPermissions", () => {
           nonce,
           addServerInput.serverAddress,
           addServerInput.publicKey,
-          addServerInput.serverUrl
+          addServerInput.serverUrl,
         );
 
         await expect(
           testServersContract
             .connect(testUser1)
-            .addAndTrustServerWithSignature(addServerInput, signature)
+            .addAndTrustServerWithSignature(addServerInput, signature),
         ).to.be.revertedWithCustomError(testServersContract, "EmptyUrl");
       });
 
@@ -4205,7 +4347,7 @@ describe("DataPortabilityPermissions", () => {
           nonce1,
           addServerInput1.serverAddress,
           addServerInput1.publicKey,
-          addServerInput1.serverUrl
+          addServerInput1.serverUrl,
         );
 
         await testServersContract
@@ -4226,14 +4368,17 @@ describe("DataPortabilityPermissions", () => {
           nonce2,
           addServerInput2.serverAddress,
           addServerInput2.publicKey,
-          addServerInput2.serverUrl
+          addServerInput2.serverUrl,
         );
 
         await expect(
           testServersContract
             .connect(testUser2)
-            .addAndTrustServerWithSignature(addServerInput2, signature2)
-        ).to.be.revertedWithCustomError(testServersContract, "ServerAlreadyRegistered");
+            .addAndTrustServerWithSignature(addServerInput2, signature2),
+        ).to.be.revertedWithCustomError(
+          testServersContract,
+          "ServerAlreadyRegistered",
+        );
       });
 
       it("should work when called by sponsor but signed by user", async () => {
@@ -4250,7 +4395,7 @@ describe("DataPortabilityPermissions", () => {
           nonce,
           addServerInput.serverAddress,
           addServerInput.publicKey,
-          addServerInput.serverUrl
+          addServerInput.serverUrl,
         );
 
         const tx = await testServersContract
@@ -4260,12 +4405,16 @@ describe("DataPortabilityPermissions", () => {
         // Verify server was created with testUser1 as owner (not sponsor)
         const serverInfo = await testServersContract.servers(1);
         serverInfo.owner.should.eq(testUser1.address);
-        
+
         // Verify server is trusted by testUser1 (not sponsor)
-        const userServers = await testServersContract.userServerIdsValues(testUser1.address);
+        const userServers = await testServersContract.userServerIdsValues(
+          testUser1.address,
+        );
         expect(userServers).to.include(1n);
-        
-        const sponsorServers = await testServersContract.userServerIdsValues(sponsor.address);
+
+        const sponsorServers = await testServersContract.userServerIdsValues(
+          sponsor.address,
+        );
         expect(sponsorServers).to.not.include(1n);
       });
     });
@@ -4278,20 +4427,25 @@ describe("DataPortabilityPermissions", () => {
           publicKey: "0x1234567890abcdef",
           serverUrl: "https://testServer1.example.com",
         };
-        const serverNonce = await testServersContract.userNonce(testUser1.address);
+        const serverNonce = await testServersContract.userNonce(
+          testUser1.address,
+        );
         const serverSignature = await createAddServerSignature(
           testUser1,
           serverNonce,
           serverInput.serverAddress,
           serverInput.publicKey,
-          serverInput.serverUrl
+          serverInput.serverUrl,
         );
-        await testServersContract.connect(testUser1).addServerWithSignature({
-          nonce: serverNonce,
-          serverAddress: serverInput.serverAddress,
-          publicKey: serverInput.publicKey,
-          serverUrl: serverInput.serverUrl,
-        }, serverSignature);
+        await testServersContract.connect(testUser1).addServerWithSignature(
+          {
+            nonce: serverNonce,
+            serverAddress: serverInput.serverAddress,
+            publicKey: serverInput.publicKey,
+            serverUrl: serverInput.serverUrl,
+          },
+          serverSignature,
+        );
       });
 
       it("should trust server with valid signature", async () => {
@@ -4338,7 +4492,9 @@ describe("DataPortabilityPermissions", () => {
       });
 
       it("should reject trust with invalid nonce", async () => {
-        const currentNonce = await testServersContract.userNonce(testUser1.address);
+        const currentNonce = await testServersContract.userNonce(
+          testUser1.address,
+        );
         const trustInput = {
           nonce: currentNonce + 1n, // Wrong nonce (should be currentNonce)
           serverId: 1n,
@@ -4373,7 +4529,9 @@ describe("DataPortabilityPermissions", () => {
 
       it("should add and trust server with signature", async () => {
         // First, add the server with signature
-        const addServerNonce = await testServersContract.userNonce(testUser1.address);
+        const addServerNonce = await testServersContract.userNonce(
+          testUser1.address,
+        );
         const addServerInput = {
           nonce: addServerNonce,
           serverAddress: testServer2.address,
@@ -4386,7 +4544,7 @@ describe("DataPortabilityPermissions", () => {
           addServerNonce,
           testServer2.address,
           "0xabcdef1234567890",
-          "https://testServer2.example.com"
+          "https://testServer2.example.com",
         );
 
         const addTx = await testServersContract
@@ -4404,7 +4562,9 @@ describe("DataPortabilityPermissions", () => {
           );
 
         // Get the server ID
-        const serverId = await testServersContract.serverAddressToId(testServer2.address);
+        const serverId = await testServersContract.serverAddressToId(
+          testServer2.address,
+        );
 
         // Then trust the server with signature
         const trustServerInput = {
@@ -4414,7 +4574,7 @@ describe("DataPortabilityPermissions", () => {
 
         const trustServerSignature = await createTrustServerSignature(
           trustServerInput,
-          testUser1
+          testUser1,
         );
 
         const trustTx = await testServersContract
@@ -4451,35 +4611,45 @@ describe("DataPortabilityPermissions", () => {
           serverUrl: "https://testServer2.example.com",
         };
 
-        const serverNonce1 = await testServersContract.userNonce(testUser1.address);
+        const serverNonce1 = await testServersContract.userNonce(
+          testUser1.address,
+        );
         const serverSignature1 = await createAddServerSignature(
           testUser1,
           serverNonce1,
           serverInput1.serverAddress,
           serverInput1.publicKey,
-          serverInput1.serverUrl
+          serverInput1.serverUrl,
         );
-        
-        await testServersContract.connect(testUser1).addServerWithSignature({
-          nonce: serverNonce1,
-          serverAddress: serverInput1.serverAddress,
-          publicKey: serverInput1.publicKey,
-          serverUrl: serverInput1.serverUrl,
-        }, serverSignature1);
-        const serverNonce2 = await testServersContract.userNonce(testUser2.address);
+
+        await testServersContract.connect(testUser1).addServerWithSignature(
+          {
+            nonce: serverNonce1,
+            serverAddress: serverInput1.serverAddress,
+            publicKey: serverInput1.publicKey,
+            serverUrl: serverInput1.serverUrl,
+          },
+          serverSignature1,
+        );
+        const serverNonce2 = await testServersContract.userNonce(
+          testUser2.address,
+        );
         const serverSignature2 = await createAddServerSignature(
           testUser2,
           serverNonce2,
           serverInput2.serverAddress,
           serverInput2.publicKey,
-          serverInput2.serverUrl
+          serverInput2.serverUrl,
         );
-        await testServersContract.connect(testUser2).addServerWithSignature({
-          nonce: serverNonce2,
-          serverAddress: serverInput2.serverAddress,
-          publicKey: serverInput2.publicKey,
-          serverUrl: serverInput2.serverUrl,
-        }, serverSignature2);
+        await testServersContract.connect(testUser2).addServerWithSignature(
+          {
+            nonce: serverNonce2,
+            serverAddress: serverInput2.serverAddress,
+            publicKey: serverInput2.publicKey,
+            serverUrl: serverInput2.serverUrl,
+          },
+          serverSignature2,
+        );
         await testServersContract.connect(testUser1).trustServer(1);
         await testServersContract.connect(testUser1).trustServer(2);
       });
@@ -4546,9 +4716,13 @@ describe("DataPortabilityPermissions", () => {
       });
 
       it("should verify server trust relationships", async () => {
-        const userServers = await testServersContract.userServerIdsValues(testUser1.address);
+        const userServers = await testServersContract.userServerIdsValues(
+          testUser1.address,
+        );
         expect(userServers).to.include(1n);
-        const user2Servers = await testServersContract.userServerIdsValues(testUser2.address);
+        const user2Servers = await testServersContract.userServerIdsValues(
+          testUser2.address,
+        );
         expect(user2Servers).to.not.include(1n);
       });
     });
@@ -4582,27 +4756,33 @@ describe("DataPortabilityPermissions", () => {
           nonce,
           serverInput.serverAddress,
           serverInput.publicKey,
-          serverInput.serverUrl
+          serverInput.serverUrl,
         );
 
         await expect(
-          testServersContract.connect(testUser1).addServerWithSignature({
-            nonce: nonce,
-            serverAddress: serverInput.serverAddress,
-            publicKey: serverInput.publicKey,
-            serverUrl: serverInput.serverUrl,
-          }, signature),
+          testServersContract.connect(testUser1).addServerWithSignature(
+            {
+              nonce: nonce,
+              serverAddress: serverInput.serverAddress,
+              publicKey: serverInput.publicKey,
+              serverUrl: serverInput.serverUrl,
+            },
+            signature,
+          ),
         ).to.be.revertedWithCustomError(testServersContract, "EnforcedPause");
 
         await testServersContract.connect(deployOwner).unpause();
 
         await expect(
-          testServersContract.connect(testUser1).addServerWithSignature({
-            nonce: nonce,
-            serverAddress: serverInput.serverAddress,
-            publicKey: serverInput.publicKey,
-            serverUrl: serverInput.serverUrl,
-          }, signature),
+          testServersContract.connect(testUser1).addServerWithSignature(
+            {
+              nonce: nonce,
+              serverAddress: serverInput.serverAddress,
+              publicKey: serverInput.publicKey,
+              serverUrl: serverInput.serverUrl,
+            },
+            signature,
+          ),
         ).to.not.be.reverted;
       });
 
@@ -4922,7 +5102,7 @@ describe("DataPortabilityPermissions", () => {
       const serverInput = {
         serverAddress: testServer1.address,
         publicKey: "publicKey1",
-        serverUrl: "https://server1.example.com"
+        serverUrl: "https://server1.example.com",
       };
 
       // Call addAndTrustServerOnBehalf from an account with PERMISSION_MANAGER_ROLE
@@ -4939,7 +5119,9 @@ describe("DataPortabilityPermissions", () => {
         .addAndTrustServerOnBehalf(testUser1.address, serverInput);
 
       // Verify server was added
-      const serverId = await testServersContract.serverAddressToId(testServer1.address);
+      const serverId = await testServersContract.serverAddressToId(
+        testServer1.address,
+      );
       expect(serverId).to.be.greaterThan(0);
 
       // Verify server details
@@ -4950,7 +5132,9 @@ describe("DataPortabilityPermissions", () => {
       expect(serverInfo.url).to.equal("https://server1.example.com");
 
       // Verify server is trusted by the user
-      const userServers = await testServersContract.userServerIdsValues(testUser1.address);
+      const userServers = await testServersContract.userServerIdsValues(
+        testUser1.address,
+      );
       expect(userServers).to.include(BigInt(serverId));
 
       // Verify server count increased
@@ -4965,7 +5149,7 @@ describe("DataPortabilityPermissions", () => {
       const serverInput = {
         serverAddress: testServer1.address,
         publicKey: "publicKey1",
-        serverUrl: "https://server1.example.com"
+        serverUrl: "https://server1.example.com",
       };
 
       const PERMISSION_MANAGER_ROLE = ethers.keccak256(
@@ -4976,8 +5160,12 @@ describe("DataPortabilityPermissions", () => {
       await expect(
         testServersContract
           .connect(testUser1)
-          .addAndTrustServerOnBehalf(testUser1.address, serverInput)
-      ).to.be.revertedWithCustomError(testServersContract, "AccessControlUnauthorizedAccount")
+          .addAndTrustServerOnBehalf(testUser1.address, serverInput),
+      )
+        .to.be.revertedWithCustomError(
+          testServersContract,
+          "AccessControlUnauthorizedAccount",
+        )
         .withArgs(testUser1.address, PERMISSION_MANAGER_ROLE);
     });
 
@@ -4985,7 +5173,7 @@ describe("DataPortabilityPermissions", () => {
       const serverInput = {
         serverAddress: ethers.ZeroAddress,
         publicKey: "publicKey1",
-        serverUrl: "https://server1.example.com"
+        serverUrl: "https://server1.example.com",
       };
 
       // Grant role to maintainer for testing
@@ -4999,7 +5187,7 @@ describe("DataPortabilityPermissions", () => {
       await expect(
         testServersContract
           .connect(maintainer)
-          .addAndTrustServerOnBehalf(testUser1.address, serverInput)
+          .addAndTrustServerOnBehalf(testUser1.address, serverInput),
       ).to.be.revertedWithCustomError(testServersContract, "ZeroAddress");
     });
 
@@ -5007,7 +5195,7 @@ describe("DataPortabilityPermissions", () => {
       const serverInput = {
         serverAddress: testServer1.address,
         publicKey: "",
-        serverUrl: "https://server1.example.com"
+        serverUrl: "https://server1.example.com",
       };
 
       // Grant role to maintainer for testing
@@ -5021,7 +5209,7 @@ describe("DataPortabilityPermissions", () => {
       await expect(
         testServersContract
           .connect(maintainer)
-          .addAndTrustServerOnBehalf(testUser1.address, serverInput)
+          .addAndTrustServerOnBehalf(testUser1.address, serverInput),
       ).to.be.revertedWithCustomError(testServersContract, "EmptyPublicKey");
     });
 
@@ -5029,7 +5217,7 @@ describe("DataPortabilityPermissions", () => {
       const serverInput = {
         serverAddress: testServer1.address,
         publicKey: "publicKey1",
-        serverUrl: ""
+        serverUrl: "",
       };
 
       // Grant role to maintainer for testing
@@ -5043,7 +5231,7 @@ describe("DataPortabilityPermissions", () => {
       await expect(
         testServersContract
           .connect(maintainer)
-          .addAndTrustServerOnBehalf(testUser1.address, serverInput)
+          .addAndTrustServerOnBehalf(testUser1.address, serverInput),
       ).to.be.revertedWithCustomError(testServersContract, "EmptyUrl");
     });
 
@@ -5051,7 +5239,7 @@ describe("DataPortabilityPermissions", () => {
       const serverInput = {
         serverAddress: testServer1.address,
         publicKey: "publicKey1",
-        serverUrl: "https://server1.example.com"
+        serverUrl: "https://server1.example.com",
       };
 
       // Grant role to maintainer for testing
@@ -5071,8 +5259,11 @@ describe("DataPortabilityPermissions", () => {
       await expect(
         testServersContract
           .connect(maintainer)
-          .addAndTrustServerOnBehalf(testUser2.address, serverInput)
-      ).to.be.revertedWithCustomError(testServersContract, "ServerAlreadyRegistered");
+          .addAndTrustServerOnBehalf(testUser2.address, serverInput),
+      ).to.be.revertedWithCustomError(
+        testServersContract,
+        "ServerAlreadyRegistered",
+      );
     });
   });
 
@@ -5085,51 +5276,6 @@ describe("DataPortabilityPermissions", () => {
         .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
     });
 
-    // Helper function to create signature for addServerFilesAndPermissions
-    const createServerFilesAndPermissionSignature = async (
-      serverFilesAndPermissionInput: {
-        nonce: bigint;
-        granteeId: bigint;
-        grant: string;
-        fileUrls: string[];
-        serverAddress: string;
-        serverUrl: string;
-        serverPublicKey: string;
-      },
-      signer: HardhatEthersSigner,
-    ) => {
-      const domain = {
-        name: "VanaDataPortabilityPermissions",
-        version: "1",
-        chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
-        verifyingContract: await dataPermission.getAddress(),
-      };
-
-      const types = {
-        ServerFilesAndPermission: [
-          { name: "nonce", type: "uint256" },
-          { name: "granteeId", type: "uint256" },
-          { name: "grant", type: "string" },
-          { name: "fileUrls", type: "string[]" },
-          { name: "serverAddress", type: "address" },
-          { name: "serverUrl", type: "string" },
-          { name: "serverPublicKey", type: "string" },
-        ],
-      };
-
-      const value = {
-        nonce: serverFilesAndPermissionInput.nonce,
-        granteeId: serverFilesAndPermissionInput.granteeId,
-        grant: serverFilesAndPermissionInput.grant,
-        fileUrls: serverFilesAndPermissionInput.fileUrls,
-        serverAddress: serverFilesAndPermissionInput.serverAddress,
-        serverUrl: serverFilesAndPermissionInput.serverUrl,
-        serverPublicKey: serverFilesAndPermissionInput.serverPublicKey,
-      };
-
-      return await signer.signTypedData(domain, types, value);
-    };
-
     it("should add server, files, and permissions in one transaction", async function () {
       const serverFilesAndPermissionInput = {
         nonce: 0n,
@@ -5138,12 +5284,14 @@ describe("DataPortabilityPermissions", () => {
         fileUrls: ["https://file1.example.com", "https://file2.example.com"],
         serverAddress: testServer1.address,
         serverUrl: "https://server1.example.com",
-        serverPublicKey: "publicKey1"
+        serverPublicKey: "publicKey1",
+        filePermissions: [[], []], // No DataRegistry permissions for each file
       };
 
       const signature = await createServerFilesAndPermissionSignature(
         serverFilesAndPermissionInput,
-        testUser1
+        dataPermission.target.toString(),
+        testUser1,
       );
 
       const tx = await dataPermission
@@ -5151,14 +5299,22 @@ describe("DataPortabilityPermissions", () => {
         .addServerFilesAndPermissions(serverFilesAndPermissionInput, signature);
 
       // Verify server was added and trusted
-      const serverId = await testServersContract.serverAddressToId(testServer1.address);
+      const serverId = await testServersContract.serverAddressToId(
+        testServer1.address,
+      );
       expect(serverId).to.be.greaterThan(0);
-      const userServers = await testServersContract.userServerIdsValues(testUser1.address);
+      const userServers = await testServersContract.userServerIdsValues(
+        testUser1.address,
+      );
       expect(userServers).to.include(BigInt(serverId));
 
       // Verify files were added
-      const file1Id = await dataRegistry.fileIdByUrl("https://file1.example.com");
-      const file2Id = await dataRegistry.fileIdByUrl("https://file2.example.com");
+      const file1Id = await dataRegistry.fileIdByUrl(
+        "https://file1.example.com",
+      );
+      const file2Id = await dataRegistry.fileIdByUrl(
+        "https://file2.example.com",
+      );
       expect(file1Id).to.be.greaterThan(0);
       expect(file2Id).to.be.greaterThan(0);
 
@@ -5191,22 +5347,31 @@ describe("DataPortabilityPermissions", () => {
 
     it("should handle existing files correctly", async function () {
       // Pre-add one file
-      await dataRegistry.connect(testUser1).addFile("https://existing-file.example.com");
-      const existingFileId = await dataRegistry.fileIdByUrl("https://existing-file.example.com");
+      await dataRegistry
+        .connect(testUser1)
+        .addFile("https://existing-file.example.com");
+      const existingFileId = await dataRegistry.fileIdByUrl(
+        "https://existing-file.example.com",
+      );
 
       const serverFilesAndPermissionInput = {
         nonce: 0n,
         granteeId: 1n,
         grant: "ipfs://grant1",
-        fileUrls: ["https://existing-file.example.com", "https://new-file.example.com"],
+        fileUrls: [
+          "https://existing-file.example.com",
+          "https://new-file.example.com",
+        ],
         serverAddress: testServer1.address,
         serverUrl: "https://server1.example.com",
-        serverPublicKey: "publicKey1"
+        serverPublicKey: "publicKey1",
+        filePermissions: [[], []], // No DataRegistry permissions for each file
       };
 
       const signature = await createServerFilesAndPermissionSignature(
         serverFilesAndPermissionInput,
-        testUser1
+        dataPermission.target.toString(),
+        testUser1,
       );
 
       await dataPermission
@@ -5218,13 +5383,17 @@ describe("DataPortabilityPermissions", () => {
       expect(permissionFileIds.length).to.equal(2);
       expect(permissionFileIds).to.include(existingFileId);
 
-      const newFileId = await dataRegistry.fileIdByUrl("https://new-file.example.com");
+      const newFileId = await dataRegistry.fileIdByUrl(
+        "https://new-file.example.com",
+      );
       expect(permissionFileIds).to.include(newFileId);
     });
 
     it("should reject if existing file is not owned by signer", async function () {
       // Pre-add file with different owner
-      await dataRegistry.connect(testUser2).addFile("https://other-user-file.example.com");
+      await dataRegistry
+        .connect(testUser2)
+        .addFile("https://other-user-file.example.com");
 
       const serverFilesAndPermissionInput = {
         nonce: 0n,
@@ -5233,18 +5402,23 @@ describe("DataPortabilityPermissions", () => {
         fileUrls: ["https://other-user-file.example.com"],
         serverAddress: testServer1.address,
         serverUrl: "https://server1.example.com",
-        serverPublicKey: "publicKey1"
+        serverPublicKey: "publicKey1",
+        filePermissions: [[]], // No DataRegistry permissions
       };
 
       const signature = await createServerFilesAndPermissionSignature(
         serverFilesAndPermissionInput,
-        testUser1
+        dataPermission.target.toString(),
+        testUser1,
       );
 
       await expect(
         dataPermission
           .connect(testUser1)
-          .addServerFilesAndPermissions(serverFilesAndPermissionInput, signature)
+          .addServerFilesAndPermissions(
+            serverFilesAndPermissionInput,
+            signature,
+          ),
       ).to.be.revertedWithCustomError(dataPermission, "NotFileOwner");
     });
 
@@ -5256,19 +5430,25 @@ describe("DataPortabilityPermissions", () => {
         fileUrls: ["https://file1.example.com"],
         serverAddress: testServer1.address,
         serverUrl: "https://server1.example.com",
-        serverPublicKey: "publicKey1"
+        serverPublicKey: "publicKey1",
+        filePermissions: [[]], // No DataRegistry permissions
       };
 
       const signature = await createServerFilesAndPermissionSignature(
         serverFilesAndPermissionInput,
-        testUser1
+        dataPermission.target.toString(),
+        testUser1,
       );
 
       await expect(
         dataPermission
           .connect(testUser1)
-          .addServerFilesAndPermissions(serverFilesAndPermissionInput, signature)
-      ).to.be.revertedWithCustomError(dataPermission, "InvalidNonce")
+          .addServerFilesAndPermissions(
+            serverFilesAndPermissionInput,
+            signature,
+          ),
+      )
+        .to.be.revertedWithCustomError(dataPermission, "InvalidNonce")
         .withArgs(0, 1);
     });
 
@@ -5280,18 +5460,23 @@ describe("DataPortabilityPermissions", () => {
         fileUrls: ["https://file1.example.com"],
         serverAddress: testServer1.address,
         serverUrl: "https://server1.example.com",
-        serverPublicKey: "publicKey1"
+        serverPublicKey: "publicKey1",
+        filePermissions: [[]], // No DataRegistry permissions
       };
 
       const signature = await createServerFilesAndPermissionSignature(
         serverFilesAndPermissionInput,
-        testUser1
+        dataPermission.target.toString(),
+        testUser1,
       );
 
       await expect(
         dataPermission
           .connect(testUser1)
-          .addServerFilesAndPermissions(serverFilesAndPermissionInput, signature)
+          .addServerFilesAndPermissions(
+            serverFilesAndPermissionInput,
+            signature,
+          ),
       ).to.be.revertedWithCustomError(dataPermission, "EmptyGrant");
     });
 
@@ -5303,18 +5488,23 @@ describe("DataPortabilityPermissions", () => {
         fileUrls: ["https://file1.example.com"],
         serverAddress: testServer1.address,
         serverUrl: "https://server1.example.com",
-        serverPublicKey: "publicKey1"
+        serverPublicKey: "publicKey1",
+        filePermissions: [[]], // No DataRegistry permissions
       };
 
       const signature = await createServerFilesAndPermissionSignature(
         serverFilesAndPermissionInput,
-        testUser1
+        dataPermission.target.toString(),
+        testUser1,
       );
 
       await expect(
         dataPermission
           .connect(testUser1)
-          .addServerFilesAndPermissions(serverFilesAndPermissionInput, signature)
+          .addServerFilesAndPermissions(
+            serverFilesAndPermissionInput,
+            signature,
+          ),
       ).to.be.revertedWithCustomError(dataPermission, "GranteeNotFound");
     });
 
@@ -5326,18 +5516,23 @@ describe("DataPortabilityPermissions", () => {
         fileUrls: ["https://file1.example.com"],
         serverAddress: testServer1.address,
         serverUrl: "https://server1.example.com",
-        serverPublicKey: ""
+        serverPublicKey: "",
+        filePermissions: [[]], // No DataRegistry permissions
       };
 
       const signature = await createServerFilesAndPermissionSignature(
         serverFilesAndPermissionInput,
-        testUser1
+        dataPermission.target.toString(),
+        testUser1,
       );
 
       await expect(
         dataPermission
           .connect(testUser1)
-          .addServerFilesAndPermissions(serverFilesAndPermissionInput, signature)
+          .addServerFilesAndPermissions(
+            serverFilesAndPermissionInput,
+            signature,
+          ),
       ).to.be.revertedWithCustomError(testServersContract, "EmptyPublicKey");
     });
 
@@ -5349,18 +5544,23 @@ describe("DataPortabilityPermissions", () => {
         fileUrls: ["https://file1.example.com"],
         serverAddress: testServer1.address,
         serverUrl: "",
-        serverPublicKey: "publicKey1"
+        serverPublicKey: "publicKey1",
+        filePermissions: [[]], // No DataRegistry permissions
       };
 
       const signature = await createServerFilesAndPermissionSignature(
         serverFilesAndPermissionInput,
-        testUser1
+        dataPermission.target.toString(),
+        testUser1,
       );
 
       await expect(
         dataPermission
           .connect(testUser1)
-          .addServerFilesAndPermissions(serverFilesAndPermissionInput, signature)
+          .addServerFilesAndPermissions(
+            serverFilesAndPermissionInput,
+            signature,
+          ),
       ).to.be.revertedWithCustomError(testServersContract, "EmptyUrl");
     });
 
@@ -5372,12 +5572,14 @@ describe("DataPortabilityPermissions", () => {
         fileUrls: [], // Empty array
         serverAddress: testServer1.address,
         serverUrl: "https://server1.example.com",
-        serverPublicKey: "publicKey1"
+        serverPublicKey: "publicKey1",
+        filePermissions: [], // Empty permissions array to match empty fileUrls
       };
 
       const signature = await createServerFilesAndPermissionSignature(
         serverFilesAndPermissionInput,
-        testUser1
+        dataPermission.target.toString(),
+        testUser1,
       );
 
       const tx = await dataPermission
@@ -5385,7 +5587,9 @@ describe("DataPortabilityPermissions", () => {
         .addServerFilesAndPermissions(serverFilesAndPermissionInput, signature);
 
       // Should still create server and permission, just with no files
-      const serverId = await testServersContract.serverAddressToId(testServer1.address);
+      const serverId = await testServersContract.serverAddressToId(
+        testServer1.address,
+      );
       expect(serverId).to.be.greaterThan(0);
 
       const permission = await dataPermission.permissions(1);
@@ -5401,16 +5605,21 @@ describe("DataPortabilityPermissions", () => {
       const serverFilesAndPermissionInput = {
         nonce: 0n,
         granteeId: 1n,
-        grant: "ipfs://grant1",  
-        fileUrls: ["https://file1.example.com"],
+        grant: "ipfs://grant1",
+        fileUrls: ["https://file1.example.com", "https://file2.example.com"],
         serverAddress: testServer1.address,
         serverUrl: "https://server1.example.com",
-        serverPublicKey: "publicKey1"
+        serverPublicKey: "publicKey1",
+        filePermissions: [
+          [{ account: user3.address, key: "key1" }],
+          [{ account: user3.address, key: "key1" }],
+        ], // No DataRegistry permissions
       };
 
       const signature = await createServerFilesAndPermissionSignature(
         serverFilesAndPermissionInput,
-        testUser1
+        dataPermission.target.toString(),
+        testUser1,
       );
 
       // Call from different user (sponsor) but signature is from testUser1
@@ -5424,6 +5633,99 @@ describe("DataPortabilityPermissions", () => {
 
       expect(await dataPermission.userNonce(testUser1.address)).to.equal(1);
       expect(await dataPermission.userNonce(sponsor.address)).to.equal(0);
+    });
+
+    it("should reject when filePermissions array length doesn't match fileUrls", async function () {
+      const serverFilesAndPermissionInput = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant1",
+        fileUrls: ["https://file1.example.com", "https://file2.example.com"],
+        serverAddress: testServer1.address,
+        serverUrl: "https://server1.example.com",
+        serverPublicKey: "publicKey1",
+        filePermissions: [[]], // Only one permission array for two files
+      };
+
+      const signature = await createServerFilesAndPermissionSignature(
+        serverFilesAndPermissionInput,
+        dataPermission.target.toString(),
+        testUser1,
+      );
+
+      await expect(
+        dataPermission
+          .connect(testUser1)
+          .addServerFilesAndPermissions(
+            serverFilesAndPermissionInput,
+            signature,
+          ),
+      )
+        .to.be.revertedWithCustomError(
+          dataPermission,
+          "InvalidPermissionsLength",
+        )
+        .withArgs(2, 1);
+    });
+
+    it("should handle files with DataRegistry permissions", async function () {
+      const serverFilesAndPermissionInput = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant1",
+        fileUrls: ["https://file1.example.com", "https://file2.example.com"],
+        serverAddress: testServer1.address,
+        serverUrl: "https://server1.example.com",
+        serverPublicKey: "publicKey1",
+        filePermissions: [
+          [{ account: testUser2.address, key: "encryptionKey1" }], // Permission for file 1
+          [
+            { account: testUser2.address, key: "encryptionKey2" },
+            { account: testServer1.address, key: "encryptionKey3" },
+          ], // Multiple permissions for file 2
+        ],
+      };
+
+      const signature = await createServerFilesAndPermissionSignature(
+        serverFilesAndPermissionInput,
+        dataPermission.target.toString(),
+        testUser1,
+      );
+
+      await dataPermission
+        .connect(testUser1)
+        .addServerFilesAndPermissions(serverFilesAndPermissionInput, signature);
+
+      console.log(testUser1.address);
+      console.log(await dataPermission.permissionsCount());
+      console.log((await dataPermission.permissions(1)).grantor);
+
+      // Verify files were created with correct permissions
+      const file1Id = await dataRegistry.fileIdByUrl(
+        "https://file1.example.com",
+      );
+      const file2Id = await dataRegistry.fileIdByUrl(
+        "https://file2.example.com",
+      );
+
+      // Check file 1 permissions
+      const file1Permission = await dataRegistry.filePermissions(
+        file1Id,
+        testUser2.address,
+      );
+      expect(file1Permission).to.equal("encryptionKey1");
+
+      // Check file 2 permissions
+      const file2Permission1 = await dataRegistry.filePermissions(
+        file2Id,
+        testUser2.address,
+      );
+      const file2Permission2 = await dataRegistry.filePermissions(
+        file2Id,
+        testServer1.address,
+      );
+      expect(file2Permission1).to.equal("encryptionKey2");
+      expect(file2Permission2).to.equal("encryptionKey3");
     });
   });
 });
