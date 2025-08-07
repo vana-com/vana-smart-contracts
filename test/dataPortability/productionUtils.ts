@@ -6,6 +6,9 @@ import { createPermissionSignature, PermissionData } from "./signatureUtils";
 
 chai.use(chaiAsPromised);
 
+const dataPortabilityPermissionsAddress =
+  "0xD54523048AdD05b4d734aFaE7C68324Ebb7373eF";
+
 describe("Data Portability Production Utils", () => {
   let deployerWallet: Wallet;
 
@@ -28,13 +31,10 @@ describe("Data Portability Production Utils", () => {
       fileIds: [1654309n],
     };
 
-    // Mock contract address - replace with actual deployed contract address
-    const contractAddress = "0x0d15681C472082e33Aac426C588d9d0C2264014c";
-
     // Create signature using shared utility
     const signature = await createPermissionSignature(
       permission,
-      contractAddress,
+      dataPortabilityPermissionsAddress,
       deployerWallet,
     );
 
@@ -46,7 +46,7 @@ describe("Data Portability Production Utils", () => {
     console.log("Generated signature:", signature);
     console.log("Deployer address:", deployerWallet.address);
     console.log("Permission data:", permission);
-    console.log("Contract address:", contractAddress);
+    console.log("Contract address:", dataPortabilityPermissionsAddress);
     console.log(
       "Chain ID:",
       await ethers.provider.getNetwork().then((n) => n.chainId),
