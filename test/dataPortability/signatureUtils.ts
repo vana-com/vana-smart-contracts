@@ -1,6 +1,6 @@
 import { ethers } from "hardhat";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { Wallet } from "ethers";
+import { Addressable, Wallet } from "ethers";
 
 /**
  * Interface for permission data structure
@@ -226,7 +226,7 @@ export interface ServerFilesAndPermissionData {
  */
 export async function createServerFilesAndPermissionSignature(
   serverFilesAndPermissionInput: ServerFilesAndPermissionData,
-  contractAddress: string,
+  contractAddress: string | Addressable,
   signer: HardhatEthersSigner,
 ): Promise<string> {
   const domain = {
@@ -265,4 +265,57 @@ export async function createServerFilesAndPermissionSignature(
   };
 
   return await signer.signTypedData(domain, types, value);
+}
+
+/**
+ * Recovers the signer address from a ServerFilesAndPermission signature
+ * @param serverFilesAndPermissionInput - ServerFilesAndPermission data that was signed
+ * @param signature - The signature to verify
+ * @param contractAddress - Address of the DataPortabilityPermissions contract
+ * @param chainId  - Optional chain ID, defaults to the current network's chain ID
+ * @returns Promise<string> - The recovered signer address
+ */
+export async function recoverServerFilesAndPermissionSigner(
+  serverFilesAndPermissionInput: ServerFilesAndPermissionData,
+  contractAddress: string | Addressable,
+  signature: string,
+  chainId?: number,
+): Promise<string | Addressable> {
+  const domain = {
+    name: "VanaDataPortabilityPermissions",
+    version: "1",
+    chainId:
+      chainId ?? (await ethers.provider.getNetwork().then((n) => n.chainId)),
+    verifyingContract: contractAddress,
+  };
+
+  const types = {
+    ServerFilesAndPermission: [
+      { name: "nonce", type: "uint256" },
+      { name: "granteeId", type: "uint256" },
+      { name: "grant", type: "string" },
+      { name: "fileUrls", type: "string[]" },
+      { name: "serverAddress", type: "address" },
+      { name: "serverUrl", type: "string" },
+      { name: "serverPublicKey", type: "string" },
+      { name: "filePermissions", type: "Permission[][]" },
+    ],
+    Permission: [
+      { name: "account", type: "address" },
+      { name: "key", type: "string" },
+    ],
+  };
+
+  const value = {
+    nonce: serverFilesAndPermissionInput.nonce,
+    granteeId: serverFilesAndPermissionInput.granteeId,
+    grant: serverFilesAndPermissionInput.grant,
+    fileUrls: serverFilesAndPermissionInput.fileUrls,
+    serverAddress: serverFilesAndPermissionInput.serverAddress,
+    serverUrl: serverFilesAndPermissionInput.serverUrl,
+    serverPublicKey: serverFilesAndPermissionInput.serverPublicKey,
+    filePermissions: serverFilesAndPermissionInput.filePermissions,
+  };
+
+  return ethers.verifyTypedData(domain, types, value, signature);
 }

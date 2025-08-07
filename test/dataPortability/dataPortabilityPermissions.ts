@@ -8,7 +8,11 @@ import {
   MockDataRegistry,
 } from "../../typechain-types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { createServerFilesAndPermissionSignature } from "./signatureUtils";
+import {
+  createServerFilesAndPermissionSignature,
+  recoverServerFilesAndPermissionSigner,
+  ServerFilesAndPermissionData,
+} from "./signatureUtils";
 
 chai.use(chaiAsPromised);
 should();
@@ -2233,7 +2237,7 @@ describe("DataPortabilityPermissions", () => {
         ).to.be.revertedWithCustomError(testServersContract, "ServerNotFound");
       });
 
-      it("should reject trusting already trusted server", async function () {
+      it("should allow trusting already trusted server (idempotent)", async function () {
         // First register and trust the server
         await addAndTrustServer(
           testUser1,
@@ -2242,13 +2246,13 @@ describe("DataPortabilityPermissions", () => {
           serverUrl,
         );
 
-        // Try to trust again
-        await expect(
-          testServersContract.connect(testUser1).trustServer(1),
-        ).to.be.revertedWithCustomError(
-          testServersContract,
-          "ServerAlreadyTrusted",
-        );
+        // Trust again - should succeed (idempotent)
+        await testServersContract.connect(testUser1).trustServer(1);
+
+        // Should still have only one trusted server
+        (
+          await testServersContract.userServerIdsLength(testUser1.address)
+        ).should.eq(1);
       });
 
       it("should allow trusting multiple servers", async function () {
@@ -2280,7 +2284,7 @@ describe("DataPortabilityPermissions", () => {
         trustedServers.should.deep.eq([1n, 2n]);
       });
 
-      it("should allow trusting same server multiple times (idempotent)", async function () {
+      it("should handle trusting same server multiple times gracefully", async function () {
         // Register server first
         const serverNonce = await testServersContract.userNonce(
           testUser1.address,
@@ -2305,18 +2309,19 @@ describe("DataPortabilityPermissions", () => {
         // Trust server
         await testServersContract.connect(testUser1).trustServer(1);
 
-        // Trust again - should fail with ServerAlreadyTrusted
-        await expect(
-          testServersContract.connect(testUser1).trustServer(1),
-        ).to.be.revertedWithCustomError(
-          testServersContract,
-          "ServerAlreadyTrusted",
-        );
+        // Trust again - should succeed (idempotent behavior)
+        await testServersContract.connect(testUser1).trustServer(1);
 
         // Should still have only one trusted server
         (
           await testServersContract.userServerIdsLength(testUser1.address)
         ).should.eq(1);
+
+        // Verify server is still trusted
+        const trustedServers = await testServersContract.userServerIdsValues(
+          testUser1.address,
+        );
+        trustedServers.should.deep.eq([1n]);
       });
     });
 
@@ -4117,15 +4122,16 @@ describe("DataPortabilityPermissions", () => {
         ).to.be.revertedWithCustomError(testServersContract, "ServerNotFound");
       });
 
-      it("should reject trusting already trusted server", async () => {
+      it("should allow trusting already trusted server (idempotent)", async () => {
         await testServersContract.connect(testUser1).trustServer(1);
 
-        await expect(
-          testServersContract.connect(testUser1).trustServer(1),
-        ).to.be.revertedWithCustomError(
-          testServersContract,
-          "ServerAlreadyTrusted",
-        );
+        // Trust again - should succeed (idempotent)
+        await testServersContract.connect(testUser1).trustServer(1);
+
+        // Should still have only one trusted server
+        expect(
+          await testServersContract.userServerIdsLength(testUser1.address),
+        ).to.equal(1);
       });
 
       it("should untrust a server", async () => {
@@ -5468,7 +5474,7 @@ describe("DataPortabilityPermissions", () => {
     });
 
     it("should add server, files, and permissions in one transaction", async function () {
-      const serverFilesAndPermissionInput = {
+      const serverFilesAndPermissionInput: ServerFilesAndPermissionData = {
         nonce: 0n,
         granteeId: 1n,
         grant: "ipfs://grant1",
@@ -5481,12 +5487,18 @@ describe("DataPortabilityPermissions", () => {
 
       const signature = await createServerFilesAndPermissionSignature(
         serverFilesAndPermissionInput,
-        dataPermission.target.toString(),
+        dataPermission.target,
         testUser1,
       );
 
+      const recoveredSigner = await recoverServerFilesAndPermissionSigner(
+        serverFilesAndPermissionInput,
+        dataPermission.target,
+        signature,
+      );
+
       const tx = await dataPermission
-        .connect(testUser1)
+        .connect(deployer)
         .addServerFilesAndPermissions(serverFilesAndPermissionInput, signature);
 
       // Verify server was added and trusted
