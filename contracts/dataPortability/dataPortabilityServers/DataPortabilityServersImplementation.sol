@@ -239,9 +239,6 @@ contract DataPortabilityServersImplementation is
         // Check if server is already trusted and active
         if (userData.trustedServerIds.contains(serverId)) {
             TrustedServer storage trustedServer = userData.trustedServers[serverId];
-            if (block.number <= trustedServer.endBlock) {
-                revert ServerAlreadyTrusted();
-            }
         }
 
         userData.trustedServerIds.add(serverId);
@@ -316,12 +313,20 @@ contract DataPortabilityServersImplementation is
     }
 
     /// @inheritdoc IDataPortabilityServers
-    function addAndTrustServerOnBehalf(
+    function addAndTrustServerByManager(
         address ownerAddress,
         AddServerInput calldata addServerInput
     ) external override whenNotPaused onlyRole(PERMISSION_MANAGER_ROLE) {
         uint256 serverId = _addServer(addServerInput, ownerAddress);
         _trustServer(serverId, ownerAddress);
+    }
+
+    /// @inheritdoc IDataPortabilityServers
+    function trustServerByManager(
+        address userAddress,
+        uint256 serverId
+    ) external override whenNotPaused onlyRole(PERMISSION_MANAGER_ROLE) {
+        _trustServer(serverId, userAddress);
     }
 
     function _untrustServer(uint256 serverId, address signer) internal {
