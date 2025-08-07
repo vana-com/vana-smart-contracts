@@ -51,6 +51,7 @@ contract DLPRegistryImplementation is
     event DlpTokenUpdated(uint256 indexed dlpId, address tokenAddress);
     event DlpLpTokenIdUpdated(uint256 indexed dlpId, uint256 lpTokenId);
 
+    error InvalidDlpId();
     error InvalidDlpStatus();
     error InvalidDlpVerification();
     error DlpTokenNotSet();
@@ -456,4 +457,5 @@ contract DLPRegistryImplementation is
             emit DlpStatusUpdated(dlp.id, newStatus);
         }
     }
+
 }
