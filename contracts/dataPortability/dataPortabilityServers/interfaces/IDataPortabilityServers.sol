@@ -246,7 +246,7 @@ interface IDataPortabilityServers {
     ) external;
 
     /**
-     * @notice Registers a server and establishes trust on behalf of another address
+     * @notice Registers a server and establishes trust by manager role
      * @dev Administrative function for authorized roles to manage servers for users
      * @param ownerAddress Address that will own the registered server
      * @param addServerInput Server registration details (no nonce required)
@@ -265,7 +265,7 @@ interface IDataPortabilityServers {
      *
      * @custom:access-control Requires PERMISSION_MANAGER_ROLE
      */
-    function addAndTrustServerOnBehalf(address ownerAddress, AddServerInput calldata addServerInput) external;
+    function addAndTrustServerByManager(address ownerAddress, AddServerInput calldata addServerInput) external;
 
     /**
      * @notice Updates the URL of an existing server
@@ -321,6 +321,27 @@ interface IDataPortabilityServers {
      * @custom:signature-format TrustServer(uint256 nonce,uint256 serverId)
      */
     function trustServerWithSignature(TrustServerInput calldata trustServerInput, bytes calldata signature) external;
+
+    /**
+     * @notice Establishes trust with a server by manager role
+     * @dev Administrative function for authorized roles to manage trust for users
+     * @param userAddress Address of the user to establish trust for
+     * @param serverId Unique identifier of the server to trust
+     *
+     * Requirements:
+     * - Caller must have PERMISSION_MANAGER_ROLE
+     * - Server must exist
+     * - Contract must not be paused
+     *
+     * Effects:
+     * - Creates or reactivates trust relationship for the user
+     * - Sets start block to current block and end block to max uint256
+     * - Adds server to user's trusted server set
+     * - Emits ServerTrusted event
+     *
+     * @custom:access-control Requires PERMISSION_MANAGER_ROLE
+     */
+    function trustServerByManager(address userAddress, uint256 serverId) external;
 
     /**
      * @notice Revokes trust from a server

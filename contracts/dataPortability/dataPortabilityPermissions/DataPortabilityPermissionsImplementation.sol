@@ -474,15 +474,22 @@ contract DataPortabilityPermissionsImplementation is
             );
         }
 
-        // 1. Add and trust server using DataPortabilityServers contract
-        dataPortabilityServers.addAndTrustServerOnBehalf(
-            signer,
-            IDataPortabilityServers.AddServerInput({
-                serverAddress: serverFilesAndPermissionInput.serverAddress,
-                publicKey: serverFilesAndPermissionInput.serverPublicKey,
-                serverUrl: serverFilesAndPermissionInput.serverUrl
-            })
-        );
+        // 1. Check if server exists and handle accordingly
+        uint256 serverId = dataPortabilityServers.serverAddressToId(serverFilesAndPermissionInput.serverAddress);
+
+        if (serverId == 0) {
+            // Server doesn't exist, add and trust it
+            dataPortabilityServers.addAndTrustServerByManager(
+                signer,
+                IDataPortabilityServers.AddServerInput({
+                    serverAddress: serverFilesAndPermissionInput.serverAddress,
+                    publicKey: serverFilesAndPermissionInput.serverPublicKey,
+                    serverUrl: serverFilesAndPermissionInput.serverUrl
+                })
+            );
+        } else {
+            dataPortabilityServers.trustServerByManager(signer, serverId);
+        }
 
         // 2. Add files to DataRegistry with specific permissions for each file
         uint256[] memory fileIds = new uint256[](serverFilesAndPermissionInput.fileUrls.length);

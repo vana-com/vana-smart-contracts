@@ -5093,19 +5093,19 @@ describe("DataPortabilityPermissions", () => {
     });
   });
 
-  describe("addAndTrustServerOnBehalf", () => {
+  describe("addAndTrustServerByManager", () => {
     beforeEach(async () => {
       await deploy();
     });
 
-    it("should add and trust server on behalf of user", async function () {
+    it("should add and trust server by manager", async function () {
       const serverInput = {
         serverAddress: testServer1.address,
         publicKey: "publicKey1",
         serverUrl: "https://server1.example.com",
       };
 
-      // Call addAndTrustServerOnBehalf from an account with PERMISSION_MANAGER_ROLE
+      // Call addAndTrustServerByManager from an account with PERMISSION_MANAGER_ROLE
       // Grant role to maintainer for testing
       const PERMISSION_MANAGER_ROLE = ethers.keccak256(
         ethers.toUtf8Bytes("PERMISSION_MANAGER_ROLE"),
@@ -5116,7 +5116,7 @@ describe("DataPortabilityPermissions", () => {
 
       const tx = await testServersContract
         .connect(maintainer)
-        .addAndTrustServerOnBehalf(testUser1.address, serverInput);
+        .addAndTrustServerByManager(testUser1.address, serverInput);
 
       // Verify server was added
       const serverId = await testServersContract.serverAddressToId(
@@ -5160,7 +5160,7 @@ describe("DataPortabilityPermissions", () => {
       await expect(
         testServersContract
           .connect(testUser1)
-          .addAndTrustServerOnBehalf(testUser1.address, serverInput),
+          .addAndTrustServerByManager(testUser1.address, serverInput),
       )
         .to.be.revertedWithCustomError(
           testServersContract,
@@ -5187,7 +5187,7 @@ describe("DataPortabilityPermissions", () => {
       await expect(
         testServersContract
           .connect(maintainer)
-          .addAndTrustServerOnBehalf(testUser1.address, serverInput),
+          .addAndTrustServerByManager(testUser1.address, serverInput),
       ).to.be.revertedWithCustomError(testServersContract, "ZeroAddress");
     });
 
@@ -5209,7 +5209,7 @@ describe("DataPortabilityPermissions", () => {
       await expect(
         testServersContract
           .connect(maintainer)
-          .addAndTrustServerOnBehalf(testUser1.address, serverInput),
+          .addAndTrustServerByManager(testUser1.address, serverInput),
       ).to.be.revertedWithCustomError(testServersContract, "EmptyPublicKey");
     });
 
@@ -5231,7 +5231,7 @@ describe("DataPortabilityPermissions", () => {
       await expect(
         testServersContract
           .connect(maintainer)
-          .addAndTrustServerOnBehalf(testUser1.address, serverInput),
+          .addAndTrustServerByManager(testUser1.address, serverInput),
       ).to.be.revertedWithCustomError(testServersContract, "EmptyUrl");
     });
 
@@ -5253,17 +5253,208 @@ describe("DataPortabilityPermissions", () => {
       // Add server first time
       await testServersContract
         .connect(maintainer)
-        .addAndTrustServerOnBehalf(testUser1.address, serverInput);
+        .addAndTrustServerByManager(testUser1.address, serverInput);
 
       // Try to add same server address again
       await expect(
         testServersContract
           .connect(maintainer)
-          .addAndTrustServerOnBehalf(testUser2.address, serverInput),
+          .addAndTrustServerByManager(testUser2.address, serverInput),
       ).to.be.revertedWithCustomError(
         testServersContract,
         "ServerAlreadyRegistered",
       );
+    });
+  });
+
+  describe("trustServerByManager", () => {
+    beforeEach(async () => {
+      await deploy();
+    });
+
+    it("should trust an existing server by manager", async function () {
+      // First, add a server without trusting it
+      const serverInput = {
+        serverAddress: testServer1.address,
+        publicKey: "publicKey1",
+        serverUrl: "https://server1.example.com",
+      };
+
+      // Add server as testUser1
+      const addServerInput = {
+        nonce: 0n,
+        serverAddress: testServer1.address,
+        publicKey: "publicKey1",
+        serverUrl: "https://server1.example.com",
+      };
+
+      const signature = await createAddServerSignature(
+        testUser1,
+        addServerInput.nonce,
+        addServerInput.serverAddress,
+        addServerInput.publicKey,
+        addServerInput.serverUrl,
+      );
+
+      await testServersContract
+        .connect(testUser1)
+        .addServerWithSignature(addServerInput, signature);
+
+      // Verify server was added
+      const serverId = await testServersContract.serverAddressToId(
+        testServer1.address,
+      );
+      expect(serverId).to.be.greaterThan(0);
+
+      // Verify server is not trusted by testUser2
+      let userServers = await testServersContract.userServerIdsValues(
+        testUser2.address,
+      );
+      expect(userServers).to.not.include(BigInt(serverId));
+
+      // Grant PERMISSION_MANAGER_ROLE to maintainer
+      const PERMISSION_MANAGER_ROLE = ethers.keccak256(
+        ethers.toUtf8Bytes("PERMISSION_MANAGER_ROLE"),
+      );
+      await testServersContract
+        .connect(owner)
+        .grantRole(PERMISSION_MANAGER_ROLE, maintainer.address);
+
+      // Trust server for testUser2 using manager role
+      const tx = await testServersContract
+        .connect(maintainer)
+        .trustServerByManager(testUser2.address, serverId);
+
+      // Verify server is now trusted by testUser2
+      userServers = await testServersContract.userServerIdsValues(
+        testUser2.address,
+      );
+      expect(userServers).to.include(BigInt(serverId));
+
+      // Verify event was emitted
+      await expect(tx)
+        .to.emit(testServersContract, "ServerTrusted")
+        .withArgs(testUser2.address, serverId);
+
+      // Verify trust details
+      const trustedServer = await testServersContract.userServers(
+        testUser2.address,
+        serverId,
+      );
+      expect(trustedServer.id).to.equal(serverId);
+      expect(trustedServer.startBlock).to.be.greaterThan(0);
+      expect(trustedServer.endBlock).to.equal(ethers.MaxUint256);
+    });
+
+    it("should reject call from non-PERMISSION_MANAGER_ROLE", async function () {
+      // First, add a server
+      const addServerInput = {
+        nonce: 0n,
+        serverAddress: testServer1.address,
+        publicKey: "publicKey1",
+        serverUrl: "https://server1.example.com",
+      };
+
+      const signature = await createAddServerSignature(
+        testUser1,
+        addServerInput.nonce,
+        addServerInput.serverAddress,
+        addServerInput.publicKey,
+        addServerInput.serverUrl,
+      );
+
+      await testServersContract
+        .connect(testUser1)
+        .addServerWithSignature(addServerInput, signature);
+
+      const serverId = await testServersContract.serverAddressToId(
+        testServer1.address,
+      );
+
+      const PERMISSION_MANAGER_ROLE = ethers.keccak256(
+        ethers.toUtf8Bytes("PERMISSION_MANAGER_ROLE"),
+      );
+
+      // Should reject when called by testUser1 (who doesn't have PERMISSION_MANAGER_ROLE)
+      await expect(
+        testServersContract
+          .connect(testUser1)
+          .trustServerByManager(testUser2.address, serverId),
+      )
+        .to.be.revertedWithCustomError(
+          testServersContract,
+          "AccessControlUnauthorizedAccount",
+        )
+        .withArgs(testUser1.address, PERMISSION_MANAGER_ROLE);
+    });
+
+    it("should reject with invalid server ID", async function () {
+      // Grant PERMISSION_MANAGER_ROLE to maintainer
+      const PERMISSION_MANAGER_ROLE = ethers.keccak256(
+        ethers.toUtf8Bytes("PERMISSION_MANAGER_ROLE"),
+      );
+      await testServersContract
+        .connect(owner)
+        .grantRole(PERMISSION_MANAGER_ROLE, maintainer.address);
+
+      // Try to trust a non-existent server
+      await expect(
+        testServersContract
+          .connect(maintainer)
+          .trustServerByManager(testUser1.address, 999),
+      ).to.be.revertedWithCustomError(testServersContract, "ServerNotFound");
+    });
+
+    it("should allow re-trusting an untrusted server", async function () {
+      // First, add and trust a server for testUser1
+      const PERMISSION_MANAGER_ROLE = ethers.keccak256(
+        ethers.toUtf8Bytes("PERMISSION_MANAGER_ROLE"),
+      );
+      await testServersContract
+        .connect(owner)
+        .grantRole(PERMISSION_MANAGER_ROLE, maintainer.address);
+
+      const serverInput = {
+        serverAddress: testServer1.address,
+        publicKey: "publicKey1",
+        serverUrl: "https://server1.example.com",
+      };
+
+      await testServersContract
+        .connect(maintainer)
+        .addAndTrustServerByManager(testUser1.address, serverInput);
+
+      const serverId = await testServersContract.serverAddressToId(
+        testServer1.address,
+      );
+
+      // Untrust the server as testUser1
+      await testServersContract.connect(testUser1).untrustServer(serverId);
+
+      // Verify server is untrusted (endBlock should be current block)
+      let trustedServer = await testServersContract.userServers(
+        testUser1.address,
+        serverId,
+      );
+      expect(trustedServer.endBlock).to.be.lessThan(ethers.MaxUint256);
+
+      // Re-trust the server using manager role
+      const tx = await testServersContract
+        .connect(maintainer)
+        .trustServerByManager(testUser1.address, serverId);
+
+      // Verify server is trusted again
+      trustedServer = await testServersContract.userServers(
+        testUser1.address,
+        serverId,
+      );
+      expect(trustedServer.startBlock).to.be.greaterThan(0);
+      expect(trustedServer.endBlock).to.equal(ethers.MaxUint256);
+
+      // Verify event was emitted
+      await expect(tx)
+        .to.emit(testServersContract, "ServerTrusted")
+        .withArgs(testUser1.address, serverId);
     });
   });
 
