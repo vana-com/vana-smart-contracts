@@ -23,3 +23,5 @@ artifacts/
 deployments/
 
 test/dlpRewards/dlpReward2.ts
+
+./CLAUDE.md
