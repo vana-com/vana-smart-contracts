@@ -1,7 +1,7 @@
 import { deployments, ethers, upgrades } from "hardhat";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { DeployFunction } from "hardhat-deploy/types";
-import { verifyContract } from "./helpers";
+import { verifyContract } from "../helpers";
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -37,7 +37,10 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     },
   );
 
-  if (implementationDeploy.receipt && implementationDeploy.receipt.status === 1) {
+  if (
+    implementationDeploy.receipt &&
+    implementationDeploy.receipt.status === 1
+  ) {
     console.log("Deployment confirmed and successful.");
   } else {
     throw new Error("Deployment failed or was reverted.");

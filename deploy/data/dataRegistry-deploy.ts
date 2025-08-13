@@ -1,7 +1,7 @@
 import { ethers } from "hardhat";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { DeployFunction } from "hardhat-deploy/types";
-import { deployProxy, verifyProxy } from "./helpers";
+import { deployProxy, verifyProxy } from "../helpers";
 
 const implementationContractName = "DataRegistryImplementation";
 const proxyContractName = "DataRegistryProxy";
