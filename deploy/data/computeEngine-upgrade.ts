@@ -1,7 +1,7 @@
 import { deployments, ethers, upgrades } from "hardhat";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { DeployFunction } from "hardhat-deploy/types";
-import { verifyContract, verifyProxy } from "./helpers";
+import { verifyContract, verifyProxy } from "../helpers";
 
 const implementationContractName = "ComputeEngineImplementation";
 const proxyContractName = "ComputeEngineProxy";
@@ -36,9 +36,14 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   console.log(`********** Upgrade to new implementation **********`);
 
   const proxyAddress = (await deployments.get(proxyContractName)).address;
-  const proxy = await ethers.getContractAt(implementationContractName, proxyAddress);
+  const proxy = await ethers.getContractAt(
+    implementationContractName,
+    proxyAddress,
+  );
 
-  await proxy.upgradeToAndCall(implementationDeploy.address, "0x", { from: deployer.address });
+  await proxy.upgradeToAndCall(implementationDeploy.address, "0x", {
+    from: deployer.address,
+  });
 };
 
 export default func;
