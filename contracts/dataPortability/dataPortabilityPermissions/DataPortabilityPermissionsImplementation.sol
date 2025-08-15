@@ -39,7 +39,7 @@ contract DataPortabilityPermissionsImplementation is
         keccak256("RevokePermission(uint256 nonce,uint256 permissionId)");
     bytes32 private constant SERVER_FILES_AND_PERMISSION_TYPEHASH =
         keccak256(
-            "ServerFilesAndPermission(uint256 nonce,uint256 granteeId,string grant,string[] fileUrls,address serverAddress,string serverUrl,string serverPublicKey,Permission[][] filePermissions)Permission(address account,string key)"
+            "ServerFilesAndPermission(uint256 nonce,uint256 granteeId,string grant,string[] fileUrls,uint256[] schemaIds,address serverAddress,string serverUrl,string serverPublicKey,Permission[][] filePermissions)Permission(address account,string key)"
         );
 
     error InvalidNonce(uint256 expectedNonce, uint256 providedNonce);
@@ -51,6 +51,7 @@ contract DataPortabilityPermissionsImplementation is
     error NotPermissionGrantor(address permissionOwner, address requestor);
     error NotFileOwner(address fileOwner, address requestor);
     error InvalidPermissionsLength(uint256 filesLength, uint256 permissionsLength);
+    error InvalidSchemaIdsLength(uint256 filesLength, uint256 schemaIdsLength);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() ERC2771ContextUpgradeable(address(0)) {
@@ -207,6 +208,7 @@ contract DataPortabilityPermissionsImplementation is
                 serverFilesAndPermissionInput.granteeId,
                 keccak256(bytes(serverFilesAndPermissionInput.grant)),
                 _hashStringArray(serverFilesAndPermissionInput.fileUrls),
+                _hashUint256Array(serverFilesAndPermissionInput.schemaIds),
                 serverFilesAndPermissionInput.serverAddress,
                 keccak256(bytes(serverFilesAndPermissionInput.serverUrl)),
                 keccak256(bytes(serverFilesAndPermissionInput.serverPublicKey)),
@@ -237,6 +239,16 @@ contract DataPortabilityPermissionsImplementation is
             }
         }
         return keccak256(abi.encodePacked(hashes));
+    }
+
+    /**
+     * @notice Hashes an array of uint256 for EIP-712 signature verification
+     * @dev Creates deterministic hash by packing the uint256 values
+     * @param uintArray Array of uint256 to hash
+     * @return bytes32 Keccak256 hash of the packed uint256 array
+     */
+    function _hashUint256Array(uint256[] calldata uintArray) internal pure returns (bytes32) {
+        return keccak256(abi.encodePacked(uintArray));
     }
 
     // In DataPortabilityPermissionsImplementation contract
@@ -466,6 +478,14 @@ contract DataPortabilityPermissionsImplementation is
 
         ++userData.nonce;
 
+        // Validate schemaIds array length matches fileUrls
+        if (serverFilesAndPermissionInput.schemaIds.length != serverFilesAndPermissionInput.fileUrls.length) {
+            revert InvalidSchemaIdsLength(
+                serverFilesAndPermissionInput.fileUrls.length,
+                serverFilesAndPermissionInput.schemaIds.length
+            );
+        }
+
         // Validate filePermissions array length matches fileUrls
         if (serverFilesAndPermissionInput.filePermissions.length != serverFilesAndPermissionInput.fileUrls.length) {
             revert InvalidPermissionsLength(
@@ -514,11 +534,12 @@ contract DataPortabilityPermissionsImplementation is
                     }
                 }
             } else {
-                // Add new file with permissions
-                fileIds[i] = dataRegistry.addFileWithPermissions(
+                // Add new file with permissions and schema
+                fileIds[i] = dataRegistry.addFileWithPermissionsAndSchema(
                     serverFilesAndPermissionInput.fileUrls[i],
                     signer,
-                    serverFilesAndPermissionInput.filePermissions[i]
+                    serverFilesAndPermissionInput.filePermissions[i],
+                    serverFilesAndPermissionInput.schemaIds[i]
                 );
             }
             unchecked {

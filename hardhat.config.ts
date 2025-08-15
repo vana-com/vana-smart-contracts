@@ -10,6 +10,7 @@ dotenv.config();
 const FIRST_COMPILER_SETTINGS = {
   version: "0.8.24",
   settings: {
+    viaIR: true,
     optimizer: {
       enabled: true,
       runs: 1,
@@ -24,6 +25,7 @@ const FIRST_COMPILER_SETTINGS = {
 const DEFAULT_COMPILER_SETTINGS = {
   version: "0.8.28",
   settings: {
+    viaIR: true,
     optimizer: {
       enabled: true,
       runs: 1,
