@@ -39,7 +39,7 @@ contract DataPortabilityPermissionsImplementation is
         keccak256("RevokePermission(uint256 nonce,uint256 permissionId)");
     bytes32 private constant SERVER_FILES_AND_PERMISSION_TYPEHASH =
         keccak256(
-            "ServerFilesAndPermission(uint256 nonce,uint256 granteeId,string grant,string[] fileUrls,address serverAddress,string serverUrl,string serverPublicKey,Permission[][] filePermissions)Permission(address account,string key)"
+            "ServerFilesAndPermission(uint256 nonce,uint256 granteeId,string grant,string[] fileUrls,uint256[] schemaIds,address serverAddress,string serverUrl,string serverPublicKey,Permission[][] filePermissions)Permission(address account,string key)"
         );
 
     error InvalidNonce(uint256 expectedNonce, uint256 providedNonce);
