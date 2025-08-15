@@ -63,6 +63,10 @@ const config: HardhatUserConfig = {
           },
         },
       },
+      "@openzeppelin/contracts/finance/VestingWallet.sol": {
+        version: "0.8.24",
+        settings: { optimizer: { enabled: true, runs: 1 } },
+      },
     },
   },
   networks: {
