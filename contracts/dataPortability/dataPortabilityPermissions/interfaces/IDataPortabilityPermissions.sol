@@ -114,6 +114,7 @@ interface IDataPortabilityPermissions {
      * @param granteeId Unique identifier of the grantee to grant access to
      * @param grant IPFS or other URI describing the specific permissions being granted
      * @param fileUrls Array of file URLs to register (new files will be created if not existing)
+     * @param schemaIds Array of schema IDs for each file URL (0 if not applicable)
      * @param serverAddress Blockchain address for the data portability server
      * @param serverUrl HTTP/HTTPS endpoint where the server can be reached
      * @param serverPublicKey Public key for encrypting communications with the server
@@ -124,6 +125,7 @@ interface IDataPortabilityPermissions {
         uint256 granteeId;
         string grant;
         string[] fileUrls;
+        uint256[] schemaIds;
         address serverAddress;
         string serverUrl;
         string serverPublicKey;
