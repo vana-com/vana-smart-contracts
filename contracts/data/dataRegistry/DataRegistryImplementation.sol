@@ -163,9 +163,7 @@ contract DataRegistryImplementation is
         _trustedForwarder = trustedForwarderAddress;
     }
 
-    function updateDataRefinerRegistry(
-        IDataRefinerRegistry newDataRefinerRegistry
-    ) external onlyRole(MAINTAINER_ROLE) {
+    function updateDataRefinerRegistry(IDataRefinerRegistry newDataRefinerRegistry) external onlyRole(MAINTAINER_ROLE) {
         dataRefinerRegistry = newDataRefinerRegistry;
     }
 
@@ -193,7 +191,13 @@ contract DataRegistryImplementation is
         File storage file = _files[fileId];
 
         return
-            FileResponse({id: fileId, url: file.url, ownerAddress: file.ownerAddress, addedAtBlock: file.addedAtBlock});
+            FileResponse({
+                id: fileId,
+                url: file.url,
+                ownerAddress: file.ownerAddress,
+                schemaId: file.schemaId,
+                addedAtBlock: file.addedAtBlock
+            });
     }
 
     /**
