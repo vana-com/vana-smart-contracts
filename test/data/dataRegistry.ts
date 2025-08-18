@@ -186,7 +186,9 @@ describe("DataRegistry", () => {
         .connect(user1)
         .addFile("file1")
         .should.emit(dataRegistry, "FileAdded")
-        .withArgs(1, user1, "file1");
+        .withArgs(1, user1, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user1, "file1", 0);
 
       (await dataRegistry.filesCount()).should.eq(1);
 
@@ -205,19 +207,25 @@ describe("DataRegistry", () => {
         .connect(user1)
         .addFile("file1")
         .should.emit(dataRegistry, "FileAdded")
-        .withArgs(1, user1, "file1");
+        .withArgs(1, user1, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user1, "file1", 0);
 
       await dataRegistry
         .connect(user2)
         .addFile("file2")
         .should.emit(dataRegistry, "FileAdded")
-        .withArgs(2, user2, "file2");
+        .withArgs(2, user2, "file2")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(2, user2, "file2", 0);
 
       await dataRegistry
         .connect(user1)
         .addFile("file3")
         .should.emit(dataRegistry, "FileAdded")
-        .withArgs(3, user1, "file3");
+        .withArgs(3, user1, "file3")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(3, user1, "file3", 0);
 
       (await dataRegistry.filesCount()).should.eq(3);
 
@@ -251,7 +259,9 @@ describe("DataRegistry", () => {
         .connect(user1)
         .addFile("file1")
         .should.emit(dataRegistry, "FileAdded")
-        .withArgs(1, user1, "file1");
+        .withArgs(1, user1, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user1, "file1", 0);
 
       await dataRegistry
         .connect(user2)
@@ -639,6 +649,8 @@ describe("DataRegistry", () => {
         ])
         .should.emit(dataRegistry, "FileAdded")
         .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 0)
         .and.emit(dataRegistry, "PermissionGranted")
         .withArgs(1, dlp1);
 
@@ -809,7 +821,9 @@ describe("DataRegistry", () => {
         .connect(user1)
         .addFileWithSchema("file1", 1)
         .should.emit(dataRegistry, "FileAdded")
-        .withArgs(1, user1, "file1");
+        .withArgs(1, user1, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user1, "file1", 1);
 
       (await dataRegistry.filesCount()).should.eq(1);
 
@@ -827,7 +841,9 @@ describe("DataRegistry", () => {
         .connect(user1)
         .addFileWithSchema("file1", 0)
         .should.emit(dataRegistry, "FileAdded")
-        .withArgs(1, user1, "file1");
+        .withArgs(1, user1, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user1, "file1", 0);
 
       (await dataRegistry.filesCount()).should.eq(1);
 
@@ -853,7 +869,9 @@ describe("DataRegistry", () => {
         .connect(user1)
         .addFileWithSchema("file1", 1)
         .should.emit(dataRegistry, "FileAdded")
-        .withArgs(1, user1, "file1");
+        .withArgs(1, user1, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user1, "file1", 1);
 
       await dataRegistry
         .connect(user2)
@@ -875,7 +893,9 @@ describe("DataRegistry", () => {
         .connect(user1)
         .addFile("file1")
         .should.emit(dataRegistry, "FileAdded")
-        .withArgs(1, user1, "file1");
+        .withArgs(1, user1, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user1, "file1", 0);
 
       (await dataRegistry.filesCount()).should.eq(1);
 
@@ -927,6 +947,8 @@ describe("DataRegistry", () => {
         ], 1)
         .should.emit(dataRegistry, "FileAdded")
         .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 1)
         .and.emit(dataRegistry, "PermissionGranted")
         .withArgs(1, dlp1)
         .and.emit(dataRegistry, "PermissionGranted")
@@ -951,6 +973,8 @@ describe("DataRegistry", () => {
         ], 0)
         .should.emit(dataRegistry, "FileAdded")
         .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 0)
         .and.emit(dataRegistry, "PermissionGranted")
         .withArgs(1, dlp1);
 
@@ -982,7 +1006,9 @@ describe("DataRegistry", () => {
           { account: dlp1, key: "key1" },
         ], 1)
         .should.emit(dataRegistry, "FileAdded")
-        .withArgs(1, user2, "file1");
+        .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 1);
 
       await dataRegistry
         .connect(user2)
@@ -1011,6 +1037,8 @@ describe("DataRegistry", () => {
         ])
         .should.emit(dataRegistry, "FileAdded")
         .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 0)
         .and.emit(dataRegistry, "PermissionGranted")
         .withArgs(1, dlp1);
 
@@ -1031,7 +1059,9 @@ describe("DataRegistry", () => {
         .connect(user1)
         .addFileWithPermissionsAndSchema("file1", user2, [], 1)
         .should.emit(dataRegistry, "FileAdded")
-        .withArgs(1, user2, "file1");
+        .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 1);
 
       const file1 = await dataRegistry.files(1);
       file1.id.should.eq(1);
@@ -1056,6 +1086,8 @@ describe("DataRegistry", () => {
         ], 1)
         .should.emit(dataRegistry, "FileAdded")
         .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 1)
         .and.emit(dataRegistry, "PermissionGranted")
         .withArgs(1, dlp1)
         .and.emit(dataRegistry, "PermissionGranted")
@@ -1069,6 +1101,132 @@ describe("DataRegistry", () => {
       (await dataRegistry.filePermissions(1, dlp2)).should.eq("key2");
       (await dataRegistry.filePermissions(1, dlp3)).should.eq("key3");
       (await dataRegistry.filePermissions(1, queryEngine)).should.eq("key4");
+    });
+  });
+
+  describe("EmitLegacyEvents", () => {
+    beforeEach(async () => {
+      await deploy();
+
+      const DLPRegistryMockFactory =
+        await ethers.getContractFactory("DLPRegistryMock");
+      const DLPRegistryMock = await DLPRegistryMockFactory.deploy();
+
+      await DLPRegistryMock.connect(dlp1).registerDlp();
+
+      const dataRefinerRegistryDeploy = await upgrades.deployProxy(
+        await ethers.getContractFactory("DataRefinerRegistryImplementation"),
+        [owner.address, DLPRegistryMock.target],
+        {
+          kind: "uups",
+        },
+      );
+
+      dataRefinerRegistry = await ethers.getContractAt(
+        "DataRefinerRegistryImplementation",
+        dataRefinerRegistryDeploy.target,
+      );
+
+      await dataRegistry
+        .connect(owner)
+        .updateDataRefinerRegistry(dataRefinerRegistry.target);
+    });
+
+    it("should only emit FileAddedV2 when emitLegacyEvents is false", async function () {
+      // Disable legacy events
+      await dataRegistry.connect(owner).updateEmitLegacyEvents(false);
+
+      await dataRegistry
+        .connect(user1)
+        .addFile("file1")
+        .should.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user1, "file1", 0)
+        .and.not.emit(dataRegistry, "FileAdded");
+
+      (await dataRegistry.filesCount()).should.eq(1);
+    });
+
+    it("should only emit FileAddedV2 when emitLegacyEvents is false with schema", async function () {
+      // Disable legacy events
+      await dataRegistry.connect(owner).updateEmitLegacyEvents(false);
+
+      await dataRefinerRegistry
+        .connect(user1)
+        .addSchema("Schema1", "JSON", "https://example.com/schema1.json");
+
+      await dataRegistry
+        .connect(user1)
+        .addFileWithSchema("file1", 1)
+        .should.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user1, "file1", 1)
+        .and.not.emit(dataRegistry, "FileAdded");
+
+      (await dataRegistry.filesCount()).should.eq(1);
+    });
+
+    it("should only emit FileAddedV2 when emitLegacyEvents is false with permissions", async function () {
+      // Disable legacy events
+      await dataRegistry.connect(owner).updateEmitLegacyEvents(false);
+
+      await dataRegistry
+        .connect(user1)
+        .addFileWithPermissions("file1", user2, [
+          { account: dlp1, key: "key1" },
+        ])
+        .should.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 0)
+        .and.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, dlp1)
+        .and.not.emit(dataRegistry, "FileAdded");
+
+      (await dataRegistry.filesCount()).should.eq(1);
+    });
+
+    it("should only emit FileAddedV2 when emitLegacyEvents is false with permissions and schema", async function () {
+      // Disable legacy events
+      await dataRegistry.connect(owner).updateEmitLegacyEvents(false);
+
+      await dataRefinerRegistry
+        .connect(user1)
+        .addSchema("Schema1", "JSON", "https://example.com/schema1.json");
+
+      await dataRegistry
+        .connect(user1)
+        .addFileWithPermissionsAndSchema("file1", user2, [
+          { account: dlp1, key: "key1" },
+        ], 1)
+        .should.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 1)
+        .and.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, dlp1)
+        .and.not.emit(dataRegistry, "FileAdded");
+
+      (await dataRegistry.filesCount()).should.eq(1);
+    });
+
+    it("should emit both events when emitLegacyEvents is re-enabled", async function () {
+      // First disable legacy events
+      await dataRegistry.connect(owner).updateEmitLegacyEvents(false);
+
+      await dataRegistry
+        .connect(user1)
+        .addFile("file1")
+        .should.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user1, "file1", 0)
+        .and.not.emit(dataRegistry, "FileAdded");
+
+      // Re-enable legacy events
+      await dataRegistry.connect(owner).updateEmitLegacyEvents(true);
+
+      await dataRegistry
+        .connect(user2)
+        .addFile("file2")
+        .should.emit(dataRegistry, "FileAdded")
+        .withArgs(2, user2, "file2")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(2, user2, "file2", 0);
+
+      (await dataRegistry.filesCount()).should.eq(2);
     });
   });
 
@@ -1124,6 +1282,8 @@ describe("DataRegistry", () => {
         ])
         .should.emit(dataRegistry, "FileAdded")
         .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 0)
         .and.emit(dataRegistry, "PermissionGranted")
         .withArgs(1, dlp1);
 
@@ -1158,6 +1318,8 @@ describe("DataRegistry", () => {
         ])
         .should.emit(dataRegistry, "FileAdded")
         .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 0)
         .and.emit(dataRegistry, "PermissionGranted")
         .withArgs(1, dlp1);
 
@@ -1212,6 +1374,8 @@ describe("DataRegistry", () => {
         ])
         .should.emit(dataRegistry, "FileAdded")
         .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 0)
         .and.emit(dataRegistry, "PermissionGranted")
         .withArgs(1, dlp1);
 
@@ -1237,6 +1401,8 @@ describe("DataRegistry", () => {
         ])
         .should.emit(dataRegistry, "FileAdded")
         .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 0)
         .and.emit(dataRegistry, "PermissionGranted")
         .withArgs(1, dlp1);
 
@@ -1276,6 +1442,8 @@ describe("DataRegistry", () => {
         ])
         .should.emit(dataRegistry, "FileAdded")
         .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 0)
         .and.emit(dataRegistry, "PermissionGranted")
         .withArgs(1, dlp1);
 
@@ -1301,6 +1469,8 @@ describe("DataRegistry", () => {
         ])
         .should.emit(dataRegistry, "FileAdded")
         .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 0)
         .and.emit(dataRegistry, "PermissionGranted")
         .withArgs(1, dlp1);
 
@@ -1341,6 +1511,8 @@ describe("DataRegistry", () => {
         ])
         .should.emit(dataRegistry, "FileAdded")
         .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 0)
         .and.emit(dataRegistry, "PermissionGranted")
         .withArgs(1, dlp1);
 
@@ -1361,6 +1533,8 @@ describe("DataRegistry", () => {
         ])
         .should.emit(dataRegistry, "FileAdded")
         .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 0)
         .and.emit(dataRegistry, "PermissionGranted")
         .withArgs(1, dlp1);
 
