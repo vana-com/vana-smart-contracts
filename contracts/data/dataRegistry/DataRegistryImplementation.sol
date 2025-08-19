@@ -30,6 +30,18 @@ contract DataRegistryImplementation is
     event FileAdded(uint256 indexed fileId, address indexed ownerAddress, string url);
 
     /**
+     * @notice Triggered when a file has been added
+     *
+     * @param fileId                            id of the file
+     * @param ownerAddress                      address of the owner
+     * @param url                               url of the file
+     * @param schemaId                          id of the schema (0 if not applicable)
+     * @dev This event is used to track files with schemas in the new version of the contract.
+     * @dev It is emitted in addition to the original FileAdded event to maintain backward compatibility.
+     */
+    event FileAddedV2(uint256 indexed fileId, address indexed ownerAddress, string url, uint256 schemaId);
+
+    /**
      * @notice Triggered when user has added an proof to the file
      *
      * @param fileId                            id of the file
@@ -96,6 +108,7 @@ contract DataRegistryImplementation is
         __Pausable_init();
 
         _trustedForwarder = trustedForwarderAddress;
+        emitLegacyEvents = true;
 
         _setRoleAdmin(MAINTAINER_ROLE, DEFAULT_ADMIN_ROLE);
         _grantRole(DEFAULT_ADMIN_ROLE, ownerAddress);
@@ -163,10 +176,12 @@ contract DataRegistryImplementation is
         _trustedForwarder = trustedForwarderAddress;
     }
 
-    function updateDataRefinerRegistry(
-        IDataRefinerRegistry newDataRefinerRegistry
-    ) external onlyRole(MAINTAINER_ROLE) {
+    function updateDataRefinerRegistry(IDataRefinerRegistry newDataRefinerRegistry) external onlyRole(MAINTAINER_ROLE) {
         dataRefinerRegistry = newDataRefinerRegistry;
+    }
+
+    function updateEmitLegacyEvents(bool newEmitLegacyEvents) external onlyRole(MAINTAINER_ROLE) {
+        emitLegacyEvents = newEmitLegacyEvents;
     }
 
     /**
@@ -193,7 +208,13 @@ contract DataRegistryImplementation is
         File storage file = _files[fileId];
 
         return
-            FileResponse({id: fileId, url: file.url, ownerAddress: file.ownerAddress, addedAtBlock: file.addedAtBlock});
+            FileResponse({
+                id: fileId,
+                url: file.url,
+                ownerAddress: file.ownerAddress,
+                schemaId: file.schemaId,
+                addedAtBlock: file.addedAtBlock
+            });
     }
 
     /**
@@ -392,7 +413,10 @@ contract DataRegistryImplementation is
 
         _urlHashToFileId[urlHash] = cachedFilesCount;
 
-        emit FileAdded(cachedFilesCount, ownerAddress, url);
+        if (emitLegacyEvents) {
+            emit FileAdded(cachedFilesCount, ownerAddress, url);
+        }
+        emit FileAddedV2(cachedFilesCount, ownerAddress, url, schemaId);
 
         return cachedFilesCount;
     }

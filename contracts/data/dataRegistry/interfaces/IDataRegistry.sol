@@ -33,6 +33,7 @@ interface IDataRegistry {
         uint256 id;
         address ownerAddress;
         string url;
+        uint256 schemaId;
         uint256 addedAtBlock;
     }
 

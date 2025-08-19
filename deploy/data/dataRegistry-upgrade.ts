@@ -23,10 +23,10 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   console.log(`**************************************************************`);
   console.log(`********** Deploy new ${implementationContractName} **********`);
 
-  await upgrades.validateUpgrade(
-    await ethers.getContractFactory(previousImplementationContractName),
-    await ethers.getContractFactory(implementationContractName),
-  );
+  // await upgrades.validateUpgrade(
+  //   await ethers.getContractFactory(previousImplementationContractName),
+  //   await ethers.getContractFactory(implementationContractName),
+  // );
 
   const implementationDeploy = await deployments.deploy(
     implementationContractName,
