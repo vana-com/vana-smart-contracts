@@ -112,7 +112,8 @@ contract MockDataRegistry is IDataRegistry {
             id: fileId,
             url: url,
             ownerAddress: ownerAddress,
-            addedAtBlock: block.number
+            addedAtBlock: block.number,
+            schemaId: 0 // Default schema ID, can be updated later
         });
         
         _urlToFileId[url] = fileId;
@@ -127,7 +128,8 @@ contract MockDataRegistry is IDataRegistry {
             id: fileId,
             url: url,
             ownerAddress: ownerAddress,
-            addedAtBlock: block.number
+            addedAtBlock: block.number,
+            schemaId: 0 // Default schema ID, can be updated later
         });
         _urlToFileId[url] = fileId;
     }
