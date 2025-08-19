@@ -20,6 +20,8 @@ contract DataRegistryImplementation is
 
     bytes32 public constant REFINEMENT_SERVICE_ROLE = keccak256("REFINEMENT_SERVICE_ROLE");
 
+    bytes32 public constant DATA_PORTABILITY_ROLE = keccak256("DATA_PORTABILITY_ROLE");
+
     /**
      * @notice Triggered when a file has been added
      *
@@ -323,7 +325,7 @@ contract DataRegistryImplementation is
      * @param key                               encryption key for the account
      */
     function addFilePermission(uint256 fileId, address account, string memory key) external override whenNotPaused {
-        if (_msgSender() != _files[fileId].ownerAddress) {
+        if (_msgSender() != _files[fileId].ownerAddress && !hasRole(DATA_PORTABILITY_ROLE, _msgSender())) {
             revert NotFileOwner();
         }
 

@@ -37,6 +37,9 @@ describe("DataRegistry", () => {
   const REFINEMENT_SERVICE_ROLE = ethers.keccak256(
     ethers.toUtf8Bytes("REFINEMENT_SERVICE_ROLE"),
   );
+  const DATA_PORTABILITY_ROLE = ethers.keccak256(
+    ethers.toUtf8Bytes("DATA_PORTABILITY_ROLE"),
+  );
 
   const deploy = async () => {
     [
@@ -498,8 +501,13 @@ describe("DataRegistry", () => {
   });
 
   describe("FilePermission", () => {
+    let dataPortabilityUser: HardhatEthersSigner;
+    
     beforeEach(async () => {
       await deploy();
+      // Get an additional signer for dataPortability tests
+      const signers = await ethers.getSigners();
+      dataPortabilityUser = signers[14];
     });
 
     it("should addFilePermission, one file, one dlp", async function () {
@@ -623,6 +631,47 @@ describe("DataRegistry", () => {
         .connect(user2)
         .addFilePermission(1, dlp1, "key1")
         .should.be.rejectedWith("NotFileOwner()");
+    });
+
+    it("should allow addFilePermission when non-owner but has DATA_PORTABILITY_ROLE", async function () {
+      await dataRegistry.connect(user1).addFile("file1");
+      
+      // Grant DATA_PORTABILITY_ROLE to dataPortabilityUser
+      await dataRegistry
+        .connect(owner)
+        .grantRole(DATA_PORTABILITY_ROLE, dataPortabilityUser.address);
+      
+      // dataPortabilityUser should be able to add permission even though they are not the file owner
+      await dataRegistry
+        .connect(dataPortabilityUser)
+        .addFilePermission(1, dlp1, "key1")
+        .should.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, dlp1);
+      
+      (await dataRegistry.filePermissions(1, dlp1)).should.eq("key1");
+    });
+
+    it("should reject addFilePermission when non-owner without DATA_PORTABILITY_ROLE", async function () {
+      await dataRegistry.connect(user1).addFile("file1");
+      
+      // user2 does not have DATA_PORTABILITY_ROLE and is not the file owner
+      await dataRegistry
+        .connect(user2)
+        .addFilePermission(1, dlp1, "key1")
+        .should.be.rejectedWith("NotFileOwner()");
+    });
+
+    it("should allow addFilePermission when caller is the file owner", async function () {
+      await dataRegistry.connect(user1).addFile("file1");
+      
+      // user1 is the file owner, so they should be able to add permission
+      await dataRegistry
+        .connect(user1)
+        .addFilePermission(1, dlp1, "key1")
+        .should.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, dlp1);
+      
+      (await dataRegistry.filePermissions(1, dlp1)).should.eq("key1");
     });
 
     it("should reject addFilePermission when paused", async function () {
