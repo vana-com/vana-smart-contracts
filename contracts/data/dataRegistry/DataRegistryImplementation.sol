@@ -296,6 +296,29 @@ contract DataRegistryImplementation is
         return fileId;
     }
 
+    function addFilePermissionsAndSchema(
+        uint256 fileId,
+        Permission[] memory permissions,
+        uint256 schemaId
+    ) external override whenNotPaused {
+        if (_msgSender() != _files[fileId].ownerAddress && !hasRole(DATA_PORTABILITY_ROLE, _msgSender())) {
+            revert NotFileOwner();
+        }
+
+        if (schemaId > 0 && !dataRefinerRegistry.isValidSchemaId(schemaId)) {
+            revert IDataRefinerRegistry.InvalidSchemaId(schemaId);
+        }
+
+        _files[fileId].schemaId = schemaId;
+
+        emit FileAddedV2(fileId, _files[fileId].ownerAddress, _files[fileId].url, schemaId);
+
+        for (uint256 i = 0; i < permissions.length; i++) {
+            _files[fileId].permissions[permissions[i].account] = permissions[i].key;
+            emit PermissionGranted(fileId, permissions[i].account);
+        }
+    }
+
     /**
      * @notice Adds an proof to the file
      *
