@@ -63,13 +63,14 @@ interface IDataRegistry {
         Permission[] memory permissions,
         uint256 schemaId
     ) external returns (uint256);
+    function addFilePermissionsAndSchema(uint256 fileId, Permission[] memory permissions, uint256 schemaId) external;
     function addProof(uint256 fileId, Proof memory proof) external;
     function addFilePermission(uint256 fileId, address account, string memory key) external;
 
     function dataRefinerRegistry() external view returns (IDataRefinerRegistry);
 
     function updateDataRefinerRegistry(IDataRefinerRegistry newDataRefinerRegistry) external;
-    
+
     /// @notice Adds a refinement to a file with the given fileId.
     /// @param fileId The ID of the file to add the refinement to.
     /// @param refinerId The ID of the refiner.
