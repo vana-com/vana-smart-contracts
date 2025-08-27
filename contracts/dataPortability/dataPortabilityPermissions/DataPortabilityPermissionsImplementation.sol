@@ -522,12 +522,17 @@ contract DataPortabilityPermissionsImplementation is
                     revert NotFileOwner(dataRegistry.files(existingFileId).ownerAddress, signer);
                 }
                 fileIds[i] = existingFileId;
-
-                dataRegistry.addFilePermissionsAndSchema(
-                    existingFileId,
-                    serverFilesAndPermissionInput.filePermissions[i],
-                    serverFilesAndPermissionInput.schemaIds[i]
-                );
+                // Add permissions to existing file
+                for (uint256 j = 0; j < serverFilesAndPermissionInput.filePermissions[i].length; ) {
+                    dataRegistry.addFilePermission(
+                        existingFileId,
+                        serverFilesAndPermissionInput.filePermissions[i][j].account,
+                        serverFilesAndPermissionInput.filePermissions[i][j].key
+                    );
+                    unchecked {
+                        ++j;
+                    }
+                }
             } else {
                 // Add new file with permissions and schema
                 fileIds[i] = dataRegistry.addFileWithPermissionsAndSchema(
