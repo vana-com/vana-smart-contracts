@@ -1,16 +1,32 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {IDLPRegistry} from "../../../interfaces/IDLPRegistry.sol";
+import {IDatasetRegistry} from "../../../interfaces/IDatasetRegistry.sol";
 
 interface IVanaRuntimePermissions {
-    event PermissionAdded(uint256 indexed permissionId, uint256 indexed dlpId, string criteria);
+    event PermissionAdded(
+        uint256 indexed permissionId,
+        uint256 indexed datasetId,
+        string accessPredicate,
+        address tokenAddress,
+        uint256 pricePerAccess
+    );
+    event GenericPermissionUpdated(
+        uint256 indexed permissionId,
+        uint256 indexed datasetId,
+        address tokenAddress,
+        uint256 pricePerAccess
+    );
+    event RequestSent(uint256 indexed requestId, uint256 indexed permissionId, address indexed requestor);
+    event AccessGranted(uint256 indexed requestId, uint256 indexed permissionId, address indexed requestor, string accessUrl);
+    event VanaRuntimeAssigned(address indexed vanaRuntime, uint256 indexed requestId);
+    event VanaRuntimeRevoked(address indexed vanaRuntime, uint256 indexed requestId);
 
     struct Permission {
         uint256 id;
-        uint256 dlpId; // If dlpId is 0, it means the permission not tied to a specific DLP.
-        bool isGeneric; // If true, the permission is generic to access to any file in the DLP.
-        string conditions;
+        uint256 datasetId;
+        bool isGeneric; // If true, the permission is generic to access to any file in the dataset.
+        string accessPredicate; // A predicate to define access conditions
         address tokenAddress; // The address of the token used for payment
         uint256 pricePerAccess;
         uint256 createdAt;
@@ -22,5 +38,8 @@ interface IVanaRuntimePermissions {
         uint256 permissionId;
         address requestor;
         uint256 requestedAt;
+        address vanaRuntime; // The Vana Runtime assigned to the request
+        uint256 accessGrantedAt;
+        string accessUrl; // URL to access the data, if access is granted
     }
 }
