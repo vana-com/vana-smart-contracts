@@ -6,7 +6,7 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import "./interfaces/DataRegistryStorageV1.sol";
+import "./interfaces/DataRegistryStorageV2.sol";
 
 contract DataRegistryImplementation is
     UUPSUpgradeable,
@@ -14,7 +14,7 @@ contract DataRegistryImplementation is
     AccessControlUpgradeable,
     MulticallUpgradeable,
     ERC2771ContextUpgradeable,
-    DataRegistryStorageV1
+    DataRegistryStorageV2
 {
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
 
@@ -184,6 +184,10 @@ contract DataRegistryImplementation is
         dataRefinerRegistry = newDataRefinerRegistry;
     }
 
+    function updateDatasetRegistry(IDatasetRegistry newDatasetRegistry) external onlyRole(MAINTAINER_ROLE) {
+        datasetRegistry = newDatasetRegistry;
+    }
+
     function updateEmitLegacyEvents(bool newEmitLegacyEvents) external onlyRole(MAINTAINER_ROLE) {
         emitLegacyEvents = newEmitLegacyEvents;
     }
@@ -331,6 +335,16 @@ contract DataRegistryImplementation is
         uint256 cachedProofCount = ++_files[fileId].proofsCount;
 
         _files[fileId].proofs[cachedProofCount] = proof;
+
+        // Add file to dataset in DatasetRegistry if configured
+        if (address(datasetRegistry) != address(0)) {
+            datasetRegistry.addFileToDataset(
+                fileId,
+                proof.data.dlpId,
+                _files[fileId].ownerAddress,
+                proof.data.score
+            );
+        }
 
         emit ProofAdded(
             fileId,
