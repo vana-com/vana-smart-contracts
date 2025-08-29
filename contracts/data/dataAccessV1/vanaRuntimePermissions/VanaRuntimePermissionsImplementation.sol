@@ -33,9 +33,10 @@ contract VanaRuntimePermissionsImplementation is
     error PermissionNotFound(uint256 permissionId);
     error RequestNotFound(uint256 requestId);
     error VanaRuntimeAlreadyAssigned(address vanaRuntime, uint256 requestId);
+    error VanaRuntimeAssignedToDifferentGrantor(address vanaRuntime, address existingGrantor, address newGrantor);
 
     modifier onlyDatasetOwner(uint256 datasetId) {
-        if (datasetRegistry.datasets(datasetId).ownerAddress != msg.sender) {
+        if (datasetRegistry.datasets(datasetId).owner != msg.sender) {
             revert NotDatasetOwner();
         }
         _;
@@ -91,7 +92,7 @@ contract VanaRuntimePermissionsImplementation is
     function addGenericPermission(
         uint256 datasetId,
         address tokenAddress,
-        uint256 pricePerAccess
+        uint256 pricePerFile
     ) external whenNotPaused onlyDatasetOwner(datasetId) {
         if (_datasetGenericPermissions[datasetId] != 0) {
             revert ExistingGenericPermission(datasetId, _datasetGenericPermissions[datasetId]);
@@ -104,18 +105,18 @@ contract VanaRuntimePermissionsImplementation is
             isGeneric: true,
             accessPredicate: "",
             tokenAddress: tokenAddress,
-            pricePerAccess: pricePerAccess,
+            pricePerFile: pricePerFile,
             createdAt: block.timestamp,
             updatedAt: block.timestamp
         });
         _datasetGenericPermissions[datasetId] = permissionId;
-        emit PermissionAdded(permissionId, datasetId, "", tokenAddress, pricePerAccess);
+        emit PermissionAdded(permissionId, datasetId, "", tokenAddress, pricePerFile);
     }
 
     function updateGenericPermission(
         uint256 datasetId,
         address tokenAddress,
-        uint256 pricePerAccess
+        uint256 pricePerFile
     ) external whenNotPaused onlyDatasetOwner(datasetId) {
         uint256 permissionId = _datasetGenericPermissions[datasetId];
         if (permissionId == 0) {
@@ -124,10 +125,10 @@ contract VanaRuntimePermissionsImplementation is
 
         Permission storage permission = _permissions[permissionId];
         permission.tokenAddress = tokenAddress;
-        permission.pricePerAccess = pricePerAccess;
+        permission.pricePerFile = pricePerFile;
         permission.updatedAt = block.timestamp;
 
-        emit GenericPermissionUpdated(permissionId, datasetId, permission.tokenAddress, pricePerAccess);
+        emit GenericPermissionUpdated(permissionId, datasetId, permission.tokenAddress, pricePerFile);
     }
 
     function sendRequest(uint256 permissionId) external payable whenNotPaused {
@@ -137,8 +138,10 @@ contract VanaRuntimePermissionsImplementation is
         }
 
         // Deposit the access fee
-        if (permission.pricePerAccess > 0) {
-            _deposit(msg.sender, permission.tokenAddress, permission.pricePerAccess);
+        if (permission.pricePerFile > 0) {
+            uint256 fileIdsCount = datasetRegistry.datasets(permission.datasetId).fileIdsCount;
+            uint256 totalPrice = permission.pricePerFile * fileIdsCount;
+            _deposit(msg.sender, permission.tokenAddress, totalPrice);
         }
 
         uint256 requestId = ++requestsCount;
@@ -164,13 +167,22 @@ contract VanaRuntimePermissionsImplementation is
         if (request.vanaRuntime != address(0)) {
             return; // Vana Runtime already assigned
         }
+        
+        // Check if VanaRuntime is already assigned to a different grantor
+        address existingGrantor = _vanaRuntimeToGrantor[vanaRuntime];
+        if (existingGrantor != address(0) && existingGrantor != request.requestor) {
+            revert VanaRuntimeAssignedToDifferentGrantor(vanaRuntime, existingGrantor, request.requestor);
+        }
+        
+        // Check if VanaRuntime is already assigned to another request
         uint256 assignedRequestId = _vanaRuntimeToRequest[vanaRuntime];
-        if (assignedRequestId != 0) {
+        if (assignedRequestId != 0 && assignedRequestId != requestId) {
             revert VanaRuntimeAlreadyAssigned(vanaRuntime, assignedRequestId);
         }
 
         request.vanaRuntime = vanaRuntime;
         _vanaRuntimeToRequest[vanaRuntime] = requestId;
+        _vanaRuntimeToGrantor[vanaRuntime] = request.requestor;
         emit VanaRuntimeAssigned(vanaRuntime, requestId);
     }
 
@@ -190,7 +202,7 @@ contract VanaRuntimePermissionsImplementation is
         return _vanaRuntimeToRequest[vanaRuntime] == requestId;
     }
 
-    function grantAccess(uint256 requestId, string memory accessUrl) external whenNotPaused onlyRole(PGE_ROLE) {
+    function grantAccess(uint256 requestId, string memory accessUrl, uint256 accessFilesCount) external whenNotPaused onlyRole(PGE_ROLE) {
         Request storage request = _requests[requestId];
         if (request.id == 0) {
             revert RequestNotFound(requestId);
@@ -200,8 +212,24 @@ contract VanaRuntimePermissionsImplementation is
         }
 
         Permission storage permission = _permissions[request.permissionId];
-        if (permission.tokenAddress != VANA) {
-            IERC20(permission.tokenAddress).safeTransferFrom(msg.sender, address(this), permission.pricePerAccess);
+        
+        // Deduct from requestor's deposited balance
+        if (permission.pricePerFile > 0) {
+            address requestor = request.requestor;
+            address token = permission.tokenAddress;
+
+            uint256 price = permission.pricePerFile * accessFilesCount;
+            
+            if (_accountBalances[requestor][token] < price) {
+                revert InsufficientBalance();
+            }
+            
+            unchecked {
+                _accountBalances[requestor][token] -= price;
+            }
+            
+            // Note: The funds remain in the treasury, they're just deducted from the requestor's balance
+            // The dataset owner or protocol can claim these funds through a separate mechanism
         }
 
         request.accessGrantedAt = block.timestamp;

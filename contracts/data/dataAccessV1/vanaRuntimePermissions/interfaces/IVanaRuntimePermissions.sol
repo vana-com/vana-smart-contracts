@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {IDatasetRegistry} from "../../../interfaces/IDatasetRegistry.sol";
+import {IDatasetRegistry} from "../../datasetRegistry/interfaces/IDatasetRegistry.sol";
 
 interface IVanaRuntimePermissions {
     event PermissionAdded(
@@ -9,13 +9,13 @@ interface IVanaRuntimePermissions {
         uint256 indexed datasetId,
         string accessPredicate,
         address tokenAddress,
-        uint256 pricePerAccess
+        uint256 pricePerFile
     );
     event GenericPermissionUpdated(
         uint256 indexed permissionId,
         uint256 indexed datasetId,
         address tokenAddress,
-        uint256 pricePerAccess
+        uint256 pricePerFile
     );
     event RequestSent(uint256 indexed requestId, uint256 indexed permissionId, address indexed requestor);
     event AccessGranted(uint256 indexed requestId, uint256 indexed permissionId, address indexed requestor, string accessUrl);
@@ -28,7 +28,7 @@ interface IVanaRuntimePermissions {
         bool isGeneric; // If true, the permission is generic to access to any file in the dataset.
         string accessPredicate; // A predicate to define access conditions
         address tokenAddress; // The address of the token used for payment
-        uint256 pricePerAccess;
+        uint256 pricePerFile;
         uint256 createdAt;
         uint256 updatedAt;
     }

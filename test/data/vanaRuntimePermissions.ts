@@ -560,6 +560,172 @@ describe("VanaRuntimePermissions - DataAccessTreasuryUpgradeable Features", () =
     });
   });
 
+  describe("Grant Access with Deposited Funds", () => {
+    beforeEach(async () => {
+      await deploy();
+      
+      // Setup a dataset and permission
+      await mockDatasetRegistry.setDatasetOwner(1, owner.address);
+      await vanaRuntimePermissions.connect(owner).addGenericPermission(
+        1, // datasetId
+        await mockToken.getAddress(),
+        parseEther("10") // price per access
+      );
+    });
+
+    it("should deduct from requestor's balance when granting access", async () => {
+      const pricePerAccess = parseEther("10");
+      
+      // User deposits funds and sends request
+      await mockToken.connect(user1).approve(await vanaRuntimePermissions.getAddress(), pricePerAccess);
+      await vanaRuntimePermissions.connect(user1).sendRequest(1);
+      
+      // Check balance after request (should have deposited the fee)
+      const balanceBeforeGrant = await vanaRuntimePermissions.balanceOf(user1.address, await mockToken.getAddress());
+      balanceBeforeGrant.should.eq(pricePerAccess);
+      
+      // PGE grants access
+      await vanaRuntimePermissions.connect(pge).grantAccess(1, "https://access.url");
+      
+      // Check balance after grant (should be deducted)
+      const balanceAfterGrant = await vanaRuntimePermissions.balanceOf(user1.address, await mockToken.getAddress());
+      balanceAfterGrant.should.eq(0);
+    });
+
+    it("should emit AccessGranted event", async () => {
+      const pricePerAccess = parseEther("10");
+      
+      await mockToken.connect(user1).approve(await vanaRuntimePermissions.getAddress(), pricePerAccess);
+      await vanaRuntimePermissions.connect(user1).sendRequest(1);
+      
+      await vanaRuntimePermissions.connect(pge).grantAccess(1, "https://access.url")
+        .should.emit(vanaRuntimePermissions, "AccessGranted")
+        .withArgs(1, 1, user1.address, "https://access.url");
+    });
+
+    it("should revert if requestor has insufficient balance for access", async () => {
+      // Setup permission with 10 token fee
+      const highFee = parseEther("10");
+      
+      // User1 deposits and sends request with exact amount
+      await mockToken.connect(user1).approve(await vanaRuntimePermissions.getAddress(), highFee);
+      await vanaRuntimePermissions.connect(user1).sendRequest(1);
+      
+      // User1 withdraws all their funds
+      await vanaRuntimePermissions.connect(user1).withdraw(await mockToken.getAddress(), highFee);
+      
+      // Now granting access should fail due to insufficient balance
+      await vanaRuntimePermissions.connect(pge).grantAccess(1, "https://access.url")
+        .should.be.revertedWithCustomError(vanaRuntimePermissions, "InsufficientBalance");
+    });
+
+    it("should handle VANA payments correctly", async () => {
+      // Create permission with VANA payment
+      await mockDatasetRegistry.setDatasetOwner(3, owner.address);
+      await vanaRuntimePermissions.connect(owner).addGenericPermission(
+        3, // datasetId
+        VANA_ADDRESS,
+        parseEther("1") // 1 VANA
+      );
+      
+      // User deposits VANA and sends request (permission ID is 2, not 3)
+      await vanaRuntimePermissions.connect(user1).sendRequest(2, { value: parseEther("1") });
+      
+      const balanceBeforeGrant = await vanaRuntimePermissions.balanceOf(user1.address, VANA_ADDRESS);
+      balanceBeforeGrant.should.eq(parseEther("1"));
+      
+      // PGE grants access (request ID is 1)
+      await vanaRuntimePermissions.connect(pge).grantAccess(1, "https://access.url");
+      
+      // Check balance after grant
+      const balanceAfterGrant = await vanaRuntimePermissions.balanceOf(user1.address, VANA_ADDRESS);
+      balanceAfterGrant.should.eq(0);
+    });
+
+    it("should not deduct if access was already granted", async () => {
+      const pricePerAccess = parseEther("10");
+      
+      await mockToken.connect(user1).approve(await vanaRuntimePermissions.getAddress(), pricePerAccess * 2n);
+      await vanaRuntimePermissions.connect(user1).sendRequest(1);
+      
+      // Deposit extra funds
+      await vanaRuntimePermissions.connect(user1).deposit(await mockToken.getAddress(), pricePerAccess);
+      
+      const balanceBefore = await vanaRuntimePermissions.balanceOf(user1.address, await mockToken.getAddress());
+      balanceBefore.should.eq(pricePerAccess * 2n);
+      
+      // Grant access first time
+      await vanaRuntimePermissions.connect(pge).grantAccess(1, "https://access.url");
+      
+      const balanceAfterFirst = await vanaRuntimePermissions.balanceOf(user1.address, await mockToken.getAddress());
+      balanceAfterFirst.should.eq(pricePerAccess); // One fee deducted
+      
+      // Try to grant access again (should not deduct)
+      await vanaRuntimePermissions.connect(pge).grantAccess(1, "https://access.url");
+      
+      const balanceAfterSecond = await vanaRuntimePermissions.balanceOf(user1.address, await mockToken.getAddress());
+      balanceAfterSecond.should.eq(pricePerAccess); // Balance unchanged
+    });
+
+    it("should handle zero-fee permissions", async () => {
+      // Create permission with zero fee
+      await mockDatasetRegistry.setDatasetOwner(4, owner.address);
+      await vanaRuntimePermissions.connect(owner).addGenericPermission(
+        4, // datasetId
+        await mockToken.getAddress(),
+        0 // free access
+      );
+      
+      // User sends request without depositing
+      // beforeEach creates permission 1, this test creates permission 2
+      await vanaRuntimePermissions.connect(user1).sendRequest(2);
+      
+      // PGE grants access (should not deduct anything) - request ID is 1 (first request in this test)
+      await vanaRuntimePermissions.connect(pge).grantAccess(1, "https://access.url")
+        .should.be.fulfilled;
+      
+      // Balance should still be zero
+      const balance = await vanaRuntimePermissions.balanceOf(user1.address, await mockToken.getAddress());
+      balance.should.eq(0);
+    });
+
+    it("should only allow PGE role to grant access", async () => {
+      const pricePerAccess = parseEther("10");
+      
+      await mockToken.connect(user1).approve(await vanaRuntimePermissions.getAddress(), pricePerAccess);
+      await vanaRuntimePermissions.connect(user1).sendRequest(1);
+      
+      // Non-PGE user tries to grant access
+      await vanaRuntimePermissions.connect(user2).grantAccess(1, "https://access.url")
+        .should.be.rejectedWith("AccessControlUnauthorizedAccount");
+    });
+
+    it("should handle multiple requests and grants correctly", async () => {
+      const pricePerAccess = parseEther("10");
+      const totalDeposit = pricePerAccess * 3n;
+      
+      // User deposits enough for 3 requests
+      await mockToken.connect(user1).approve(await vanaRuntimePermissions.getAddress(), totalDeposit);
+      
+      // Send 3 requests
+      await vanaRuntimePermissions.connect(user1).sendRequest(1);
+      await vanaRuntimePermissions.connect(user1).sendRequest(1);
+      await vanaRuntimePermissions.connect(user1).sendRequest(1);
+      
+      const initialBalance = await vanaRuntimePermissions.balanceOf(user1.address, await mockToken.getAddress());
+      initialBalance.should.eq(totalDeposit);
+      
+      // Grant access for each request
+      await vanaRuntimePermissions.connect(pge).grantAccess(1, "https://access1.url");
+      await vanaRuntimePermissions.connect(pge).grantAccess(2, "https://access2.url");
+      await vanaRuntimePermissions.connect(pge).grantAccess(3, "https://access3.url");
+      
+      // All funds should be deducted
+      const finalBalance = await vanaRuntimePermissions.balanceOf(user1.address, await mockToken.getAddress());
+      finalBalance.should.eq(0);
+    });
+  });
+
   describe("Edge Cases and Error Handling", () => {
     beforeEach(async () => {
       await deploy();

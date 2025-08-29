@@ -19,4 +19,5 @@ abstract contract VanaRuntimePermissionsStorageV1 is IVanaRuntimePermissions {
     mapping(uint256 permissionId => EnumerableSet.UintSet requestIds) internal _permissionRequests;
 
     mapping(address vanaRuntime => uint256 requestId) internal _vanaRuntimeToRequest;
+    mapping(address vanaRuntime => address grantor) internal _vanaRuntimeToGrantor;
 }
