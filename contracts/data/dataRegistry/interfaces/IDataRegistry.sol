@@ -27,6 +27,7 @@ interface IDataRegistry {
         /// @dev refinements is a mapping of refinerId to an URL of the File's refinement against the refiner.
         mapping(uint256 refinerId => string url) refinements;
         uint256 schemaId; // New field to link to Schema
+        mapping(address owner => uint256 share) shares;
     }
 
     struct FileResponse {

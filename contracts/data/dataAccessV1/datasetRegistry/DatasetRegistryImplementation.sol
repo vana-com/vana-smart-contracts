@@ -93,7 +93,8 @@ contract DatasetRegistryImplementation is
         address owner,
         uint256[] memory parentDatasetIds,
         address[] memory contributors,
-        uint256[] memory shares
+        uint256[] memory shares,
+        string memory fileIdsUrl
     ) external whenNotPaused onlyRole(MAINTAINER_ROLE) returns (uint256) {
         if (parentDatasetIds.length == 0) {
             revert DerivedDatasetNeedsParents();
@@ -133,6 +134,7 @@ contract DatasetRegistryImplementation is
         uint256 datasetId = ++datasetsCount;
         _datasets[datasetId].owner = owner;
         _datasets[datasetId].datasetType = DatasetType.DERIVED;
+        _datasets[datasetId].fileIdsUrl = fileIdsUrl;
         
         // Add parent datasets
         for (uint256 i = 0; i < parentDatasetIds.length; i++) {
@@ -152,7 +154,12 @@ contract DatasetRegistryImplementation is
         return datasetId;
     }
 
-    function addFileToDataset( uint256 fileId, uint256 dlpId,address fileOwner, uint256 share) external whenNotPaused onlyRole(DATA_REGISTRY_ROLE) {
+    function addFileToDataset(uint256 fileId, uint256 dlpId, address fileOwner, uint256 share) external whenNotPaused onlyRole(DATA_REGISTRY_ROLE) {
+        // Delegate to addFileToMainDataset for backwards compatibility
+        addFileToMainDataset(fileId, dlpId, fileOwner, share);
+    }
+
+    function addFileToMainDataset(uint256 fileId, uint256 dlpId, address fileOwner, uint256 share) public whenNotPaused onlyRole(DATA_REGISTRY_ROLE) {
         uint256 datasetId = dlpToDataset[dlpId];
         if (datasetId == 0) {
             revert DatasetNotFound(datasetId);
@@ -172,6 +179,24 @@ contract DatasetRegistryImplementation is
         emit OwnerSharesUpdated(datasetId, fileOwner, dataset.ownerShares[fileOwner]);
     }
 
+    function addFileToDerivedDataset(uint256 fileId, uint256 datasetId) external whenNotPaused onlyRole(DATA_REGISTRY_ROLE) datasetExists(datasetId) {
+        Dataset storage dataset = _datasets[datasetId];
+        
+        // Ensure it's a derived dataset
+        if (dataset.datasetType != DatasetType.DERIVED) {
+            revert("Can only add files to derived datasets through this method");
+        }
+        
+        if (dataset.fileIds.contains(fileId)) {
+            revert FileAlreadyInDataset(datasetId, fileId);
+        }
+
+        dataset.fileIds.add(fileId);
+        
+        // For derived datasets, we don't update owner shares here since they're determined by parent datasets
+        emit FileAddedToDataset(datasetId, fileId, address(0));
+    }
+
     function datasets(uint256 datasetId) external view datasetExists(datasetId) returns (DatasetInfo memory) {
         Dataset storage dataset = _datasets[datasetId];
         return DatasetInfo({
@@ -179,7 +204,8 @@ contract DatasetRegistryImplementation is
             datasetType: dataset.datasetType,
             totalShares: dataset.totalShares,
             fileIdsCount: dataset.fileIds.length(),
-            parentDatasetIds: dataset.parentDatasetIds.values()
+            parentDatasetIds: dataset.parentDatasetIds.values(),
+            fileIdsUrl: dataset.fileIdsUrl
         });
     }
 

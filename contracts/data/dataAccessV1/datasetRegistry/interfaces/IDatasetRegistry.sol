@@ -34,7 +34,6 @@ interface IDatasetRegistry {
         address indexed owner,
         uint256 shares
     );
-    
 
     struct Dataset {
         address owner; // Owner of the dataset
@@ -43,6 +42,7 @@ interface IDatasetRegistry {
         mapping(address => uint256) ownerShares; // Aggregated shares across files for each owner
         EnumerableSet.UintSet fileIds; // IDs of files in the dataset
         EnumerableSet.UintSet parentDatasetIds; // Parent dataset IDs (only for DERIVED datasets)
+        string fileIdsUrl; // IPFS URL containing list of file IDs for derived datasets
     }
 
     struct DatasetInfo {
@@ -51,6 +51,7 @@ interface IDatasetRegistry {
         uint256 totalShares;
         uint256 fileIdsCount;
         uint256[] parentDatasetIds;
+        string fileIdsUrl;
     }
 
     function datasetsCount() external view returns (uint256);
@@ -65,10 +66,15 @@ interface IDatasetRegistry {
         address owner,
         uint256[] memory parentDatasetIds,
         address[] memory contributors,
-        uint256[] memory shares
+        uint256[] memory shares,
+        string memory fileIdsUrl
     ) external returns (uint256);
     
     function addFileToDataset(uint256 fileId, uint256 dlpId, address fileOwner, uint256 share) external;
+    
+    function addFileToMainDataset(uint256 fileId, uint256 dlpId, address fileOwner, uint256 share) external;
+    
+    function addFileToDerivedDataset(uint256 fileId, uint256 datasetId) external;
     
     function ownerShares(uint256 datasetId, address owner) external view returns (uint256);
     

@@ -177,10 +177,11 @@ describe("DatasetRegistry", () => {
       // Then create a derived dataset with dlp1 as contributor (since it owns parent dataset)
       const contributors = [dlp1.address, dlp2.address];
       const shares = [parseEther("0.6"), parseEther("0.4")];
+      const fileIdsUrl = "ipfs://QmExampleHash/fileIds.json";
       
       const tx = await datasetRegistry
         .connect(maintainer)
-        .createDerivedDataset(dlp2.address, [1], contributors, shares);
+        .createDerivedDataset(dlp2.address, [1], contributors, shares, fileIdsUrl);
 
       const receipt = await tx.wait();
       const event = receipt?.logs.find(log => 
@@ -209,21 +210,21 @@ describe("DatasetRegistry", () => {
       // Try to create derived dataset without including parent owner (dlp1) in contributors
       await datasetRegistry
         .connect(maintainer)
-        .createDerivedDataset(dlp2.address, [1], [dlp2.address], [parseEther("1.0")])
+        .createDerivedDataset(dlp2.address, [1], [dlp2.address], [parseEther("1.0")], "")
         .should.be.rejectedWith("ParentDatasetOwnerNotIncluded");
     });
 
     it("should fail to create derived dataset without parents", async function () {
       await datasetRegistry
         .connect(maintainer)
-        .createDerivedDataset(dlp2.address, [], [], [])
+        .createDerivedDataset(dlp2.address, [], [], [], "")
         .should.be.rejectedWith("DerivedDatasetNeedsParents");
     });
 
     it("should fail to create derived dataset with invalid parent", async function () {
       await datasetRegistry
         .connect(maintainer)
-        .createDerivedDataset(dlp2.address, [999], [dlp2.address], [parseEther("1.0")])
+        .createDerivedDataset(dlp2.address, [999], [dlp2.address], [parseEther("1.0")], "")
         .should.be.rejectedWith("InvalidParentDataset");
     });
 
@@ -234,7 +235,7 @@ describe("DatasetRegistry", () => {
 
       await datasetRegistry
         .connect(maintainer)
-        .createDerivedDataset(dlp2.address, [1], [dlp1.address, dlp2.address], [parseEther("1.0")]) // Only 1 share for 2 contributors
+        .createDerivedDataset(dlp2.address, [1], [dlp1.address, dlp2.address], [parseEther("1.0")], "") // Only 1 share for 2 contributors
         .should.be.rejectedWith("ContributorsSharesMismatch");
     });
   });
@@ -254,6 +255,7 @@ describe("DatasetRegistry", () => {
       datasetInfo.totalShares.should.eq(0);
       datasetInfo.fileIdsCount.should.eq(0);
       datasetInfo.parentDatasetIds.should.be.empty;
+      datasetInfo.fileIdsUrl.should.eq("");
     });
 
     it("should fail for non-existent dataset", async function () {
@@ -264,10 +266,11 @@ describe("DatasetRegistry", () => {
       // Create a derived dataset
       const contributors = [dlp1.address, dlp2.address];
       const shares = [parseEther("0.7"), parseEther("0.3")];
+      const fileIdsUrl = "ipfs://QmDerivedDatasetFiles/files.json";
       
       await datasetRegistry
         .connect(maintainer)
-        .createDerivedDataset(dlp2.address, [1], contributors, shares);
+        .createDerivedDataset(dlp2.address, [1], contributors, shares, fileIdsUrl);
 
       const datasetInfo = await datasetRegistry.datasets(2);
       
@@ -276,6 +279,7 @@ describe("DatasetRegistry", () => {
       datasetInfo.totalShares.should.eq(parseEther("1.0"));
       datasetInfo.fileIdsCount.should.eq(0);
       datasetInfo.parentDatasetIds.should.deep.eq([1n]);
+      datasetInfo.fileIdsUrl.should.eq(fileIdsUrl);
     });
   });
 
@@ -395,6 +399,235 @@ describe("DatasetRegistry", () => {
       const datasetInfo = await datasetRegistry.datasets(1);
       datasetInfo.totalShares.should.eq(share1 + share2);
       datasetInfo.fileIdsCount.should.eq(2);
+    });
+  });
+
+  describe("New File Management Methods", () => {
+    beforeEach(async () => {
+      await deploy();
+      // Create main and derived datasets for testing
+      await datasetRegistry.connect(maintainer).createMainDataset(1, dlp1.address);
+      await datasetRegistry.connect(maintainer).createMainDataset(2, dlp2.address);
+      
+      // Create a derived dataset
+      const contributors = [dlp1.address, dlp2.address, user3.address];
+      const shares = [parseEther("0.4"), parseEther("0.4"), parseEther("0.2")];
+      const fileIdsUrl = "ipfs://QmDerivedDataset/files.json";
+      await datasetRegistry
+        .connect(maintainer)
+        .createDerivedDataset(user3.address, [1, 2], contributors, shares, fileIdsUrl);
+    });
+
+    describe("addFileToMainDataset", () => {
+      it("should add file to main dataset successfully", async function () {
+        const fileId = 10;
+        const dlpId = 1;
+        const share = parseEther("0.75");
+        
+        const tx = await datasetRegistry
+          .connect(dataRegistryRole)
+          .addFileToMainDataset(fileId, dlpId, user1.address, share);
+
+        const receipt = await tx.wait();
+        const fileEvent = receipt?.logs.find(log => 
+          datasetRegistry.interface.parseLog(log as any)?.name === "FileAddedToDataset"
+        );
+        const parsedFileEvent = datasetRegistry.interface.parseLog(fileEvent as any);
+
+        parsedFileEvent?.args.datasetId.should.eq(1);
+        parsedFileEvent?.args.fileId.should.eq(fileId);
+        parsedFileEvent?.args.fileOwner.should.eq(user1.address);
+
+        // Verify file is in dataset
+        (await datasetRegistry.isFileInDataset(1, fileId)).should.eq(true);
+        (await datasetRegistry.ownerShares(1, user1.address)).should.eq(share);
+      });
+
+      it("should use addFileToDataset for backwards compatibility", async function () {
+        const fileId = 11;
+        const dlpId = 1;
+        const share = parseEther("0.25");
+        
+        // Call the original method which should delegate to addFileToMainDataset
+        await datasetRegistry
+          .connect(dataRegistryRole)
+          .addFileToDataset(fileId, dlpId, user2.address, share)
+          .should.not.be.rejected;
+
+        // Verify it worked
+        (await datasetRegistry.isFileInDataset(1, fileId)).should.eq(true);
+        (await datasetRegistry.ownerShares(1, user2.address)).should.eq(share);
+      });
+
+      it("should fail if not DATA_REGISTRY_ROLE", async function () {
+        await datasetRegistry
+          .connect(user1)
+          .addFileToMainDataset(1, 1, user1.address, parseEther("0.5"))
+          .should.be.rejectedWith("AccessControl");
+      });
+
+      it("should accumulate shares for same owner", async function () {
+        const dlpId = 2;
+        const share1 = parseEther("0.2");
+        const share2 = parseEther("0.3");
+
+        await datasetRegistry
+          .connect(dataRegistryRole)
+          .addFileToMainDataset(20, dlpId, user1.address, share1).should.not.be.rejected;
+
+        await datasetRegistry
+          .connect(dataRegistryRole)
+          .addFileToMainDataset(21, dlpId, user1.address, share2).should.not.be.rejected;
+
+        (await datasetRegistry.ownerShares(2, user1.address)).should.eq(share1 + share2);
+      });
+
+      it("should fail when dlpId doesn't have a dataset", async function () {
+        const fileId = 30;
+        const dlpId = 999; // Non-existent DLP
+        const share = parseEther("0.5");
+        
+        await datasetRegistry
+          .connect(dataRegistryRole)
+          .addFileToMainDataset(fileId, dlpId, user1.address, share)
+          .should.be.rejectedWith("DatasetNotFound");
+      });
+    });
+
+    describe("addFileToDerivedDataset", () => {
+      it("should add file to derived dataset successfully", async function () {
+        const fileId = 100;
+        const datasetId = 3; // The derived dataset created in beforeEach
+        
+        const tx = await datasetRegistry
+          .connect(dataRegistryRole)
+          .addFileToDerivedDataset(fileId, datasetId);
+
+        const receipt = await tx.wait();
+        const fileEvent = receipt?.logs.find(log => 
+          datasetRegistry.interface.parseLog(log as any)?.name === "FileAddedToDataset"
+        );
+        const parsedFileEvent = datasetRegistry.interface.parseLog(fileEvent as any);
+
+        parsedFileEvent?.args.datasetId.should.eq(datasetId);
+        parsedFileEvent?.args.fileId.should.eq(fileId);
+        parsedFileEvent?.args.fileOwner.should.eq(ethers.ZeroAddress); // No specific owner for derived datasets
+
+        // Verify file is in dataset
+        (await datasetRegistry.isFileInDataset(datasetId, fileId)).should.eq(true);
+        
+        // Verify shares are not updated (they remain as set during creation)
+        const datasetInfo = await datasetRegistry.datasets(datasetId);
+        datasetInfo.totalShares.should.eq(parseEther("1.0")); // Original total from creation
+        datasetInfo.fileIdsCount.should.eq(1);
+      });
+
+      it("should fail if trying to add to main dataset", async function () {
+        const fileId = 101;
+        const mainDatasetId = 1; // Main dataset
+        
+        await datasetRegistry
+          .connect(dataRegistryRole)
+          .addFileToDerivedDataset(fileId, mainDatasetId)
+          .should.be.rejectedWith("Can only add files to derived datasets through this method");
+      });
+
+      it("should fail if dataset doesn't exist", async function () {
+        await datasetRegistry
+          .connect(dataRegistryRole)
+          .addFileToDerivedDataset(102, 999)
+          .should.be.rejectedWith("0xbb36834d");
+      });
+
+      it("should fail if file already in dataset", async function () {
+        const fileId = 103;
+        const datasetId = 3;
+
+        await datasetRegistry
+          .connect(dataRegistryRole)
+          .addFileToDerivedDataset(fileId, datasetId).should.not.be.rejected;
+
+        await datasetRegistry
+          .connect(dataRegistryRole)
+          .addFileToDerivedDataset(fileId, datasetId)
+          .should.be.rejectedWith("FileAlreadyInDataset");
+      });
+
+      it("should add multiple files to derived dataset", async function () {
+        const datasetId = 3;
+        const fileIds = [200, 201, 202, 203];
+
+        for (const fileId of fileIds) {
+          await datasetRegistry
+            .connect(dataRegistryRole)
+            .addFileToDerivedDataset(fileId, datasetId).should.not.be.rejected;
+        }
+
+        // Verify all files are in dataset
+        for (const fileId of fileIds) {
+          (await datasetRegistry.isFileInDataset(datasetId, fileId)).should.eq(true);
+        }
+
+        const datasetInfo = await datasetRegistry.datasets(datasetId);
+        datasetInfo.fileIdsCount.should.eq(fileIds.length);
+        // Shares should remain unchanged from creation
+        datasetInfo.totalShares.should.eq(parseEther("1.0"));
+      });
+
+      it("should not affect owner shares when adding files", async function () {
+        const datasetId = 3;
+        
+        // Check initial shares
+        const initialShare1 = await datasetRegistry.ownerShares(datasetId, dlp1.address);
+        const initialShare2 = await datasetRegistry.ownerShares(datasetId, dlp2.address);
+        const initialShare3 = await datasetRegistry.ownerShares(datasetId, user3.address);
+
+        // Add files
+        await datasetRegistry
+          .connect(dataRegistryRole)
+          .addFileToDerivedDataset(300, datasetId).should.not.be.rejected;
+        
+        await datasetRegistry
+          .connect(dataRegistryRole)
+          .addFileToDerivedDataset(301, datasetId).should.not.be.rejected;
+
+        // Verify shares remain unchanged
+        (await datasetRegistry.ownerShares(datasetId, dlp1.address)).should.eq(initialShare1);
+        (await datasetRegistry.ownerShares(datasetId, dlp2.address)).should.eq(initialShare2);
+        (await datasetRegistry.ownerShares(datasetId, user3.address)).should.eq(initialShare3);
+      });
+    });
+
+    describe("fileIdsUrl for derived datasets", () => {
+      it("should store and retrieve fileIdsUrl correctly", async function () {
+        const fileIdsUrl = "ipfs://QmTestHash123/dataset_files.json";
+        const contributors = [dlp1.address, user1.address];
+        const shares = [parseEther("0.5"), parseEther("0.5")];
+        
+        await datasetRegistry
+          .connect(maintainer)
+          .createDerivedDataset(user1.address, [1], contributors, shares, fileIdsUrl);
+
+        const datasetInfo = await datasetRegistry.datasets(4);
+        datasetInfo.fileIdsUrl.should.eq(fileIdsUrl);
+      });
+
+      it("should handle empty fileIdsUrl", async function () {
+        const contributors = [dlp2.address, user2.address];
+        const shares = [parseEther("0.6"), parseEther("0.4")];
+        
+        await datasetRegistry
+          .connect(maintainer)
+          .createDerivedDataset(user2.address, [2], contributors, shares, "");
+
+        const datasetInfo = await datasetRegistry.datasets(4);
+        datasetInfo.fileIdsUrl.should.eq("");
+      });
+
+      it("should return empty fileIdsUrl for main datasets", async function () {
+        const datasetInfo = await datasetRegistry.datasets(1);
+        datasetInfo.fileIdsUrl.should.eq("");
+      });
     });
   });
 
