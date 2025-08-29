@@ -49,10 +49,7 @@ contract DatasetRegistryImplementation is
         _disableInitializers();
     }
 
-    function initialize(
-        address ownerAddress,
-        address initDataRegistry
-    ) external initializer {
+    function initialize(address ownerAddress, address initDataRegistry) external initializer {
         __UUPSUpgradeable_init();
         __Pausable_init();
         __AccessControl_init();
@@ -74,8 +71,10 @@ contract DatasetRegistryImplementation is
 
     function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
-
-    function createMainDataset(uint256 dlpId, address owner) external whenNotPaused onlyRole(MAINTAINER_ROLE) returns (uint256) {
+    function createMainDataset(
+        uint256 dlpId,
+        address owner
+    ) external whenNotPaused onlyRole(MAINTAINER_ROLE) returns (uint256) {
         if (dlpToDataset[dlpId] != 0) {
             revert DatasetAlreadyExists(dlpId);
         }
@@ -133,7 +132,7 @@ contract DatasetRegistryImplementation is
         uint256 datasetId = ++datasetsCount;
         _datasets[datasetId].owner = owner;
         _datasets[datasetId].datasetType = DatasetType.DERIVED;
-        
+
         // Add parent datasets
         for (uint256 i = 0; i < parentDatasetIds.length; i++) {
             _datasets[datasetId].parentDatasetIds.add(parentDatasetIds[i]);
@@ -152,14 +151,19 @@ contract DatasetRegistryImplementation is
         return datasetId;
     }
 
-    function addFileToDataset( uint256 fileId, uint256 dlpId,address fileOwner, uint256 share) external whenNotPaused onlyRole(DATA_REGISTRY_ROLE) {
+    function addFileToDataset(
+        uint256 fileId,
+        uint256 dlpId,
+        address fileOwner,
+        uint256 share
+    ) external whenNotPaused onlyRole(DATA_REGISTRY_ROLE) {
         uint256 datasetId = dlpToDataset[dlpId];
         if (datasetId == 0) {
             revert DatasetNotFound(datasetId);
         }
 
         Dataset storage dataset = _datasets[datasetId];
-        
+
         if (dataset.fileIds.contains(fileId)) {
             revert FileAlreadyInDataset(datasetId, fileId);
         }
@@ -174,37 +178,42 @@ contract DatasetRegistryImplementation is
 
     function datasets(uint256 datasetId) external view datasetExists(datasetId) returns (DatasetInfo memory) {
         Dataset storage dataset = _datasets[datasetId];
-        return DatasetInfo({
-            owner: dataset.owner,
-            datasetType: dataset.datasetType,
-            totalShares: dataset.totalShares,
-            fileIdsCount: dataset.fileIds.length(),
-            parentDatasetIds: dataset.parentDatasetIds.values()
-        });
+        return
+            DatasetInfo({
+                owner: dataset.owner,
+                datasetType: dataset.datasetType,
+                totalShares: dataset.totalShares,
+                fileIdsCount: dataset.fileIds.length(),
+                parentDatasetIds: dataset.parentDatasetIds.values()
+            });
     }
 
     function ownerShares(uint256 datasetId, address owner) external view datasetExists(datasetId) returns (uint256) {
         return _datasets[datasetId].ownerShares[owner];
     }
 
-    function datasetFiles(uint256 datasetId, uint256 offset, uint256 limit) external view datasetExists(datasetId) returns (uint256[] memory) {
+    function datasetFiles(
+        uint256 datasetId,
+        uint256 offset,
+        uint256 limit
+    ) external view datasetExists(datasetId) returns (uint256[] memory) {
         EnumerableSet.UintSet storage fileIds = _datasets[datasetId].fileIds;
         uint256 totalFiles = fileIds.length();
-        
+
         if (offset >= totalFiles) {
             return new uint256[](0);
         }
-        
+
         uint256 end = offset + limit;
         if (end > totalFiles) {
             end = totalFiles;
         }
-        
+
         uint256[] memory result = new uint256[](end - offset);
         for (uint256 i = 0; i < end - offset; i++) {
             result[i] = fileIds.at(offset + i);
         }
-        
+
         return result;
     }
 
