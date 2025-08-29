@@ -2,6 +2,7 @@
 pragma solidity 0.8.24;
 
 import "./IDataRegistry.sol";
+import "../../dataAccessV1/datasetRegistry/interfaces/IDatasetRegistry.sol";
 
 /**
  * @title Storage for DataRegistry
@@ -17,4 +18,6 @@ abstract contract DataRegistryStorageV1 is IDataRegistry {
     IDataRefinerRegistry public override dataRefinerRegistry;
 
     bool public emitLegacyEvents;
+
+    IDatasetRegistry public datasetRegistry;
 }

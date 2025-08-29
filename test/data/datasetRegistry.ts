@@ -296,9 +296,10 @@ describe("DatasetRegistry", () => {
       const dlpId = 1;
       const share = parseEther("0.5");
       
+      const shares = [{ owner: user1.address, share: share }];
       const tx = await datasetRegistry
         .connect(dataRegistryRole)
-        .addFileToDataset(fileId, dlpId, user1.address, share);
+        .addFileToMainDataset(fileId, dlpId, shares);
 
       const receipt = await tx.wait();
       const fileEvent = receipt?.logs.find(log => 
@@ -313,7 +314,6 @@ describe("DatasetRegistry", () => {
 
       parsedFileEvent?.args.datasetId.should.eq(1);
       parsedFileEvent?.args.fileId.should.eq(fileId);
-      parsedFileEvent?.args.fileOwner.should.eq(user1.address);
 
       parsedShareEvent?.args.datasetId.should.eq(1);
       parsedShareEvent?.args.owner.should.eq(user1.address);
@@ -332,16 +332,18 @@ describe("DatasetRegistry", () => {
     });
 
     it("should fail if not DATA_REGISTRY_ROLE", async function () {
+      const shares = [{ owner: user1.address, share: parseEther("0.5") }];
       await datasetRegistry
         .connect(user1)
-        .addFileToDataset(1, 1, user1.address, parseEther("0.5"))
+        .addFileToMainDataset(1, 1, shares)
         .should.be.rejectedWith("AccessControl");
     });
 
     it("should fail if dataset not found", async function () {
+      const shares = [{ owner: user1.address, share: parseEther("0.5") }];
       await datasetRegistry
         .connect(dataRegistryRole)
-        .addFileToDataset(1, 999, user1.address, parseEther("0.5"))
+        .addFileToMainDataset(1, 999, shares)
         .should.be.rejectedWith("DatasetNotFound");
     });
 
@@ -350,13 +352,15 @@ describe("DatasetRegistry", () => {
       const dlpId = 1;
       const share = parseEther("0.5");
 
+      const shares1 = [{ owner: user1.address, share: share }];
       await datasetRegistry
         .connect(dataRegistryRole)
-        .addFileToDataset(fileId, dlpId, user1.address, share).should.not.be.rejected;
+        .addFileToMainDataset(fileId, dlpId, shares1).should.not.be.rejected;
 
+      const shares2 = [{ owner: user2.address, share: share }];
       await datasetRegistry
         .connect(dataRegistryRole)
-        .addFileToDataset(fileId, dlpId, user2.address, share)
+        .addFileToMainDataset(fileId, dlpId, shares2)
         .should.be.rejectedWith("FileAlreadyInDataset");
     });
 
@@ -365,13 +369,15 @@ describe("DatasetRegistry", () => {
       const share1 = parseEther("0.3");
       const share2 = parseEther("0.7");
 
+      const shares1 = [{ owner: user1.address, share: share1 }];
       await datasetRegistry
         .connect(dataRegistryRole)
-        .addFileToDataset(1, dlpId, user1.address, share1).should.not.be.rejected;
+        .addFileToMainDataset(1, dlpId, shares1).should.not.be.rejected;
 
+      const shares2 = [{ owner: user1.address, share: share2 }];
       await datasetRegistry
         .connect(dataRegistryRole)
-        .addFileToDataset(2, dlpId, user1.address, share2).should.not.be.rejected;
+        .addFileToMainDataset(2, dlpId, shares2).should.not.be.rejected;
 
       (await datasetRegistry.ownerShares(1, user1.address)).should.eq(share1 + share2);
       
@@ -385,13 +391,15 @@ describe("DatasetRegistry", () => {
       const share1 = parseEther("0.3");
       const share2 = parseEther("0.7");
 
+      const shares1 = [{ owner: user1.address, share: share1 }];
       await datasetRegistry
         .connect(dataRegistryRole)
-        .addFileToDataset(1, dlpId, user1.address, share1).should.not.be.rejected;
+        .addFileToMainDataset(1, dlpId, shares1).should.not.be.rejected;
 
+      const shares2 = [{ owner: user2.address, share: share2 }];
       await datasetRegistry
         .connect(dataRegistryRole)
-        .addFileToDataset(2, dlpId, user2.address, share2).should.not.be.rejected;
+        .addFileToMainDataset(2, dlpId, shares2).should.not.be.rejected;
 
       (await datasetRegistry.ownerShares(1, user1.address)).should.eq(share1);
       (await datasetRegistry.ownerShares(1, user2.address)).should.eq(share2);
@@ -424,9 +432,10 @@ describe("DatasetRegistry", () => {
         const dlpId = 1;
         const share = parseEther("0.75");
         
+        const shares = [{ owner: user1.address, share: share }];
         const tx = await datasetRegistry
           .connect(dataRegistryRole)
-          .addFileToMainDataset(fileId, dlpId, user1.address, share);
+          .addFileToMainDataset(fileId, dlpId, shares);
 
         const receipt = await tx.wait();
         const fileEvent = receipt?.logs.find(log => 
@@ -436,33 +445,18 @@ describe("DatasetRegistry", () => {
 
         parsedFileEvent?.args.datasetId.should.eq(1);
         parsedFileEvent?.args.fileId.should.eq(fileId);
-        parsedFileEvent?.args.fileOwner.should.eq(user1.address);
 
         // Verify file is in dataset
         (await datasetRegistry.isFileInDataset(1, fileId)).should.eq(true);
         (await datasetRegistry.ownerShares(1, user1.address)).should.eq(share);
       });
 
-      it("should use addFileToDataset for backwards compatibility", async function () {
-        const fileId = 11;
-        const dlpId = 1;
-        const share = parseEther("0.25");
-        
-        // Call the original method which should delegate to addFileToMainDataset
-        await datasetRegistry
-          .connect(dataRegistryRole)
-          .addFileToDataset(fileId, dlpId, user2.address, share)
-          .should.not.be.rejected;
-
-        // Verify it worked
-        (await datasetRegistry.isFileInDataset(1, fileId)).should.eq(true);
-        (await datasetRegistry.ownerShares(1, user2.address)).should.eq(share);
-      });
 
       it("should fail if not DATA_REGISTRY_ROLE", async function () {
+        const shares = [{ owner: user1.address, share: parseEther("0.5") }];
         await datasetRegistry
           .connect(user1)
-          .addFileToMainDataset(1, 1, user1.address, parseEther("0.5"))
+          .addFileToMainDataset(1, 1, shares)
           .should.be.rejectedWith("AccessControl");
       });
 
@@ -471,13 +465,15 @@ describe("DatasetRegistry", () => {
         const share1 = parseEther("0.2");
         const share2 = parseEther("0.3");
 
+        const shares1 = [{ owner: user1.address, share: share1 }];
         await datasetRegistry
           .connect(dataRegistryRole)
-          .addFileToMainDataset(20, dlpId, user1.address, share1).should.not.be.rejected;
+          .addFileToMainDataset(20, dlpId, shares1).should.not.be.rejected;
 
+        const shares2 = [{ owner: user1.address, share: share2 }];
         await datasetRegistry
           .connect(dataRegistryRole)
-          .addFileToMainDataset(21, dlpId, user1.address, share2).should.not.be.rejected;
+          .addFileToMainDataset(21, dlpId, shares2).should.not.be.rejected;
 
         (await datasetRegistry.ownerShares(2, user1.address)).should.eq(share1 + share2);
       });
@@ -487,10 +483,80 @@ describe("DatasetRegistry", () => {
         const dlpId = 999; // Non-existent DLP
         const share = parseEther("0.5");
         
+        const shares = [{ owner: user1.address, share: share }];
         await datasetRegistry
           .connect(dataRegistryRole)
-          .addFileToMainDataset(fileId, dlpId, user1.address, share)
+          .addFileToMainDataset(fileId, dlpId, shares)
           .should.be.rejectedWith("DatasetNotFound");
+      });
+
+      it("should handle multiple owners in a single file", async function () {
+        const fileId = 100;
+        const dlpId = 1;
+        const shares = [
+          { owner: user1.address, share: parseEther("0.3") }, // 30%
+          { owner: user2.address, share: parseEther("0.7") }  // 70%
+        ];
+        
+        const tx = await datasetRegistry
+          .connect(dataRegistryRole)
+          .addFileToMainDataset(fileId, dlpId, shares);
+
+        // Verify both owners have correct shares
+        (await datasetRegistry.ownerShares(1, user1.address)).should.eq(parseEther("0.3"));
+        (await datasetRegistry.ownerShares(1, user2.address)).should.eq(parseEther("0.7"));
+        
+        // Verify total shares increased correctly
+        const datasetInfo = await datasetRegistry.datasets(1);
+        datasetInfo.totalShares.should.be.at.least(parseEther("1.0")); // At least 1.0 from this file
+        
+        // Verify both OwnerSharesUpdated events were emitted
+        const receipt = await tx.wait();
+        const shareEvents = receipt?.logs.filter(log => {
+          try {
+            const parsed = datasetRegistry.interface.parseLog(log);
+            return parsed?.name === "OwnerSharesUpdated";
+          } catch {
+            return false;
+          }
+        });
+        
+        shareEvents!.length.should.eq(2); // One for each owner
+      });
+
+      it("should reject empty shares array", async function () {
+        const fileId = 101;
+        const dlpId = 1;
+        const shares: any[] = [];
+        
+        await datasetRegistry
+          .connect(dataRegistryRole)
+          .addFileToMainDataset(fileId, dlpId, shares)
+          .should.be.rejectedWith("EmptySharesArray");
+      });
+
+      it("should handle maximum number of owners per file", async function () {
+        const fileId = 102;
+        const dlpId = 1;
+        
+        // Create shares for 10 different owners
+        const shares = [];
+        for (let i = 0; i < 10; i++) {
+          const wallet = ethers.Wallet.createRandom();
+          shares.push({
+            owner: wallet.address,
+            share: parseEther("0.1") // 10% each
+          });
+        }
+        
+        await datasetRegistry
+          .connect(dataRegistryRole)
+          .addFileToMainDataset(fileId, dlpId, shares)
+          .should.not.be.rejected;
+          
+        // Verify total shares accumulated correctly
+        const datasetInfo = await datasetRegistry.datasets(1);
+        datasetInfo.totalShares.should.be.at.least(parseEther("1.0"));
       });
     });
 
@@ -511,7 +577,6 @@ describe("DatasetRegistry", () => {
 
         parsedFileEvent?.args.datasetId.should.eq(datasetId);
         parsedFileEvent?.args.fileId.should.eq(fileId);
-        parsedFileEvent?.args.fileOwner.should.eq(ethers.ZeroAddress); // No specific owner for derived datasets
 
         // Verify file is in dataset
         (await datasetRegistry.isFileInDataset(datasetId, fileId)).should.eq(true);
@@ -638,9 +703,10 @@ describe("DatasetRegistry", () => {
       
       // Add multiple files to dataset using dataRegistryRole
       for (let i = 1; i <= 25; i++) {
+        const shares = [{ owner: user1.address, share: parseEther("0.1") }];
         await datasetRegistry
           .connect(dataRegistryRole)
-          .addFileToDataset(i, 1, user1.address, parseEther("0.1"));
+          .addFileToMainDataset(i, 1, shares);
       }
     });
 
@@ -805,6 +871,109 @@ describe("DatasetRegistry", () => {
       // Verify dataset 1 is still empty (it exists from beforeEach)
       const datasetInfo = await datasetRegistry.datasets(1);
       datasetInfo.fileIdsCount.should.eq(0);
+      datasetInfo.totalShares.should.eq(0);
+    });
+
+    it("should handle multi-owner files in DataRegistry integration", async function () {
+      // Create a multi-owner file via DataRegistry
+      const ownerShares = [
+        { ownerAddress: user1.address, share: parseEther("0.4") }, // 40%
+        { ownerAddress: user2.address, share: parseEther("0.6") }  // 60%
+      ];
+
+      const addFileRequest = {
+        url: "multi-owner-integration-test",
+        ownerShares: ownerShares,
+        permissions: [],
+        schemaId: 0
+      };
+
+      await dataRegistry.connect(user1).addFileV3(addFileRequest);
+
+      // Add proof which should trigger DatasetRegistry integration
+      const proof = {
+        signature: "0x1234",
+        data: {
+          score: 1000,
+          dlpId: 1,
+          metadata: "test metadata",
+          proofUrl: "https://proof.url",
+          instruction: "test instruction"
+        }
+      };
+
+      await dataRegistry.connect(user1).addProof(1, proof);
+
+      // Verify shares were distributed correctly in DatasetRegistry
+      const user1Share = await datasetRegistry.ownerShares(1, user1.address);
+      const user2Share = await datasetRegistry.ownerShares(1, user2.address);
+      
+      // Expected shares: user1: 0.4 * 1000 = 400, user2: 0.6 * 1000 = 600
+      user1Share.should.eq(400);
+      user2Share.should.eq(600);
+
+      // Verify total shares in dataset
+      const datasetInfo = await datasetRegistry.datasets(1);
+      datasetInfo.totalShares.should.eq(1000);
+    });
+
+    it("should handle single-owner files in integration unchanged", async function () {
+      // Create a single-owner file the old way
+      await dataRegistry.connect(user1).addFile("single-owner-integration-test");
+
+      const proof = {
+        signature: "0x1234",
+        data: {
+          score: 500,
+          dlpId: 1,
+          metadata: "test metadata",
+          proofUrl: "https://proof.url",
+          instruction: "test instruction"
+        }
+      };
+
+      await dataRegistry.connect(user1).addProof(1, proof);
+
+      // Should get full score as share
+      const user1Share = await datasetRegistry.ownerShares(1, user1.address);
+      user1Share.should.eq(500);
+
+      const datasetInfo = await datasetRegistry.datasets(1);
+      datasetInfo.totalShares.should.eq(500);
+    });
+
+    it("should handle zero score proofs in integration", async function () {
+      const ownerShares = [
+        { ownerAddress: user1.address, share: parseEther("1.0") }
+      ];
+
+      const addFileRequest = {
+        url: "zero-score-integration-test",
+        ownerShares: ownerShares,
+        permissions: [],
+        schemaId: 0
+      };
+
+      await dataRegistry.connect(user1).addFileV3(addFileRequest);
+
+      const proof = {
+        signature: "0x1234",
+        data: {
+          score: 0, // Zero score
+          dlpId: 1,
+          metadata: "test metadata",
+          proofUrl: "https://proof.url",
+          instruction: "test instruction"
+        }
+      };
+
+      await dataRegistry.connect(user1).addProof(1, proof);
+
+      // Should have zero shares
+      const user1Share = await datasetRegistry.ownerShares(1, user1.address);
+      user1Share.should.eq(0);
+
+      const datasetInfo = await datasetRegistry.datasets(1);
       datasetInfo.totalShares.should.eq(0);
     });
   });

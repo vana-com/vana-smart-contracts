@@ -4,6 +4,11 @@ pragma solidity ^0.8.24;
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 interface IDatasetRegistry {
+    struct OwnerShare {
+        address owner;
+        uint256 share;
+    }
+
     enum DatasetType {
         MAIN,
         DERIVED
@@ -25,8 +30,7 @@ interface IDatasetRegistry {
     
     event FileAddedToDataset(
         uint256 indexed datasetId,
-        uint256 indexed fileId,
-        address indexed fileOwner
+        uint256 indexed fileId
     );
     
     event OwnerSharesUpdated(
@@ -70,9 +74,7 @@ interface IDatasetRegistry {
         string memory fileIdsUrl
     ) external returns (uint256);
     
-    function addFileToDataset(uint256 fileId, uint256 dlpId, address fileOwner, uint256 share) external;
-    
-    function addFileToMainDataset(uint256 fileId, uint256 dlpId, address fileOwner, uint256 share) external;
+    function addFileToMainDataset(uint256 fileId, uint256 dlpId, OwnerShare[] memory shares) external;
     
     function addFileToDerivedDataset(uint256 fileId, uint256 datasetId) external;
     

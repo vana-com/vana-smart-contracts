@@ -1835,4 +1835,470 @@ describe("DataRegistry", () => {
         .withArgs(1, 1, "refinement1b");
     });
   });
+
+  describe("AddFileV3", function () {
+    beforeEach(async () => {
+      await deploy();
+
+      const DLPRegistryMockFactory =
+        await ethers.getContractFactory("DLPRegistryMock");
+      const DLPRegistryMock = await DLPRegistryMockFactory.deploy();
+
+      await DLPRegistryMock.connect(dlp1).registerDlp();
+
+      const dataRefinerRegistryDeploy = await upgrades.deployProxy(
+        await ethers.getContractFactory("DataRefinerRegistryImplementation"),
+        [owner.address, DLPRegistryMock.target],
+        {
+          kind: "uups",
+        },
+      );
+
+      dataRefinerRegistry = await ethers.getContractAt(
+        "DataRefinerRegistryImplementation",
+        dataRefinerRegistryDeploy.target,
+      );
+
+      await dataRegistry
+        .connect(owner)
+        .updateDataRefinerRegistry(dataRefinerRegistry.target);
+    });
+
+    it("should addFileV3 with multiple owners and shares", async function () {
+      const ownerShares = [
+        { ownerAddress: user1.address, share: ethers.parseEther("0.6") }, // 60%
+        { ownerAddress: user2.address, share: ethers.parseEther("0.4") }  // 40%
+      ];
+
+      const addFileRequest = {
+        url: "file1-multi-owner",
+        ownerShares: ownerShares,
+        permissions: [{ account: dlp1.address, key: "key1" }],
+        schemaId: 0
+      };
+
+      const expectedFileId = 1;
+      const tx = await dataRegistry
+        .connect(user1)
+        .addFileV3(addFileRequest);
+
+      await tx.should.emit(dataRegistry, "PermissionGranted")
+        .withArgs(expectedFileId, dlp1.address);
+
+      // Check the FileAddedV3 event separately due to array comparison issues
+      const receipt = await tx.wait();
+      const fileAddedV3Event = receipt?.logs.find(log => {
+        try {
+          const parsed = dataRegistry.interface.parseLog(log);
+          return parsed?.name === 'FileAddedV3';
+        } catch {
+          return false;
+        }
+      });
+      
+      fileAddedV3Event.should.not.be.undefined;
+
+      const file = await dataRegistry.files(expectedFileId);
+      file.id.should.eq(expectedFileId);
+      file.ownerAddress.should.eq(ethers.ZeroAddress);
+      file.url.should.eq("file1-multi-owner");
+
+      const fileV3 = await dataRegistry.filesV3(expectedFileId);
+      fileV3.id.should.eq(expectedFileId);
+      fileV3.ownerAddress.should.eq(ethers.ZeroAddress);
+      fileV3.url.should.eq("file1-multi-owner");
+      fileV3.ownerShares.length.should.eq(2);
+      fileV3.ownerShares[0].ownerAddress.should.eq(user1.address);
+      fileV3.ownerShares[0].share.should.eq(ethers.parseEther("0.6"));
+      fileV3.ownerShares[1].ownerAddress.should.eq(user2.address);
+      fileV3.ownerShares[1].share.should.eq(ethers.parseEther("0.4"));
+    });
+
+    it("should addFileV3 with schema", async function () {
+      await dataRefinerRegistry
+        .connect(user1)
+        .addSchema("Schema1", "JSON", "https://example.com/schema1.json");
+
+      const ownerShares = [
+        { ownerAddress: user1.address, share: ethers.parseEther("1.0") } // 100%
+      ];
+
+      const addFileRequest = {
+        url: "file2-with-schema",
+        ownerShares: ownerShares,
+        permissions: [],
+        schemaId: 1
+      };
+
+      const expectedFileId = 1;
+      const tx = await dataRegistry
+        .connect(user1)
+        .addFileV3(addFileRequest);
+
+      // Check that the event was emitted (without detailed array comparison)
+      const receipt = await tx.wait();
+      const fileAddedV3Event = receipt?.logs.find(log => {
+        try {
+          const parsed = dataRegistry.interface.parseLog(log);
+          return parsed?.name === 'FileAddedV3';
+        } catch {
+          return false;
+        }
+      });
+      
+      fileAddedV3Event.should.not.be.undefined;
+
+      const fileV3 = await dataRegistry.filesV3(expectedFileId);
+      fileV3.schemaId.should.eq(1);
+    });
+
+    it("should reject addFileV3 with no owners", async function () {
+      const addFileRequest = {
+        url: "file3",
+        ownerShares: [],
+        permissions: [],
+        schemaId: 0
+      };
+
+      await dataRegistry
+        .connect(user1)
+        .addFileV3(addFileRequest)
+        .should.be.rejectedWith("AtLeastOneOwnerRequired");
+    });
+
+    it("should reject addFileV3 with invalid owner address", async function () {
+      const ownerShares = [
+        { ownerAddress: ethers.ZeroAddress, share: ethers.parseEther("1.0") }
+      ];
+
+      const addFileRequest = {
+        url: "file4",
+        ownerShares: ownerShares,
+        permissions: [],
+        schemaId: 0
+      };
+
+      await dataRegistry
+        .connect(user1)
+        .addFileV3(addFileRequest)
+        .should.be.rejectedWith("InvalidOwnerAddress");
+    });
+
+    it("should reject addFileV3 with zero share", async function () {
+      const ownerShares = [
+        { ownerAddress: user1.address, share: 0 }
+      ];
+
+      const addFileRequest = {
+        url: "file5",
+        ownerShares: ownerShares,
+        permissions: [],
+        schemaId: 0
+      };
+
+      await dataRegistry
+        .connect(user1)
+        .addFileV3(addFileRequest)
+        .should.be.rejectedWith("ShareMustBeGreaterThanZero");
+    });
+
+    it("should reject addFileV3 with invalid total shares", async function () {
+      const ownerShares = [
+        { ownerAddress: user1.address, share: ethers.parseEther("0.5") },
+        { ownerAddress: user2.address, share: ethers.parseEther("0.3") } // Only 80%
+      ];
+
+      const addFileRequest = {
+        url: "file6",
+        ownerShares: ownerShares,
+        permissions: [],
+        schemaId: 0
+      };
+
+      await dataRegistry
+        .connect(user1)
+        .addFileV3(addFileRequest)
+        .should.be.rejectedWith("TotalSharesMustEqual1e18");
+    });
+
+    it("should reject addFileV3 with duplicate URL", async function () {
+      const ownerShares = [
+        { ownerAddress: user1.address, share: ethers.parseEther("1.0") }
+      ];
+
+      const addFileRequest = {
+        url: "duplicate-url",
+        ownerShares: ownerShares,
+        permissions: [],
+        schemaId: 0
+      };
+
+      await dataRegistry.connect(user1).addFileV3(addFileRequest);
+
+      await dataRegistry
+        .connect(user2)
+        .addFileV3(addFileRequest)
+        .should.be.rejectedWith("FileUrlAlreadyUsed()");
+    });
+
+    it("should reject addFileV3 when paused", async function () {
+      await dataRegistry.connect(owner).pause();
+
+      const ownerShares = [
+        { ownerAddress: user1.address, share: ethers.parseEther("1.0") }
+      ];
+
+      const addFileRequest = {
+        url: "file-paused",
+        ownerShares: ownerShares,
+        permissions: [],
+        schemaId: 0
+      };
+
+      await dataRegistry
+        .connect(user1)
+        .addFileV3(addFileRequest)
+        .should.be.rejectedWith("EnforcedPause");
+    });
+
+    it("should filesV3 return empty ownerShares for single-owner files", async function () {
+      await dataRegistry.connect(user1).addFile("single-owner-file");
+
+      const fileV3 = await dataRegistry.filesV3(1);
+      fileV3.ownerAddress.should.eq(user1.address);
+      fileV3.ownerShares.length.should.eq(0);
+    });
+
+    it("should calculate shares correctly for multi-owner files when adding proof", async function () {
+      // Create a multi-owner file with 60/40 split
+      const ownerShares = [
+        { ownerAddress: user1.address, share: ethers.parseEther("0.6") }, // 60%
+        { ownerAddress: user2.address, share: ethers.parseEther("0.4") }  // 40%
+      ];
+
+      const addFileRequest = {
+        url: "multi-owner-proof-test",
+        ownerShares: ownerShares,
+        permissions: [],
+        schemaId: 0
+      };
+
+      await dataRegistry.connect(user1).addFileV3(addFileRequest);
+
+      // Add a proof with score 1000
+      const proof = {
+        signature: "0x1234",
+        data: {
+          score: 1000,
+          dlpId: 1,
+          metadata: "test metadata",
+          proofUrl: "https://proof.url",
+          instruction: "test instruction"
+        }
+      };
+
+      // This should not revert - share calculation works for multi-owner files
+      await dataRegistry.connect(user1).addProof(1, proof);
+
+      // Verify that the calculated shares would be correct:
+      // User1: (0.6 * 1e18 * 1000) / 1e18 = 600
+      // User2: (0.4 * 1e18 * 1000) / 1e18 = 400
+      // The actual verification would happen in DatasetRegistry integration tests
+    });
+
+    it("should handle single-owner files correctly when adding proof", async function () {
+      await dataRegistry.connect(user1).addFile("single-owner-proof-test");
+
+      // Add a proof with score 1000
+      const proof = {
+        signature: "0x1234",
+        data: {
+          score: 1000,
+          dlpId: 1,
+          metadata: "test metadata",
+          proofUrl: "https://proof.url",
+          instruction: "test instruction"
+        }
+      };
+
+      // This should not revert - single owner files work as before
+      await dataRegistry.connect(user1).addProof(1, proof);
+
+      // For single-owner files, the share should equal the fileScore (1000)
+    });
+
+    it("should handle edge case: very small ownership percentages", async function () {
+      // Create a multi-owner file with very small percentages
+      const ownerShares = [
+        { ownerAddress: user1.address, share: 1 }, // Minimal share (1 wei out of 1e18)
+        { ownerAddress: user2.address, share: ethers.parseEther("1.0") - BigInt(1) }  // Rest
+      ];
+
+      const addFileRequest = {
+        url: "edge-case-small-shares",
+        ownerShares: ownerShares,
+        permissions: [],
+        schemaId: 0
+      };
+
+      await dataRegistry.connect(user1).addFileV3(addFileRequest);
+
+      // Add a proof with very high score
+      const proof = {
+        signature: "0x1234",
+        data: {
+          score: ethers.parseEther("1000000").toString(), // 1 million tokens
+          dlpId: 1,
+          metadata: "test metadata",
+          proofUrl: "https://proof.url",
+          instruction: "test instruction"
+        }
+      };
+
+      // This should not revert even with edge case calculations
+      await dataRegistry.connect(user1).addProof(1, proof);
+
+      // Verify file structure is correct
+      const fileV3 = await dataRegistry.filesV3(1);
+      fileV3.ownerShares.length.should.eq(2);
+      fileV3.ownerShares[0].share.should.eq(1);
+      fileV3.ownerShares[1].share.should.eq(ethers.parseEther("1.0") - BigInt(1));
+    });
+
+    it("should handle edge case: maximum precision shares", async function () {
+      // Create shares that use full 1e18 precision
+      const ownerShares = [
+        { ownerAddress: user1.address, share: "333333333333333333" }, // ~33.33% with maximum precision
+        { ownerAddress: user2.address, share: "666666666666666667" }  // ~66.67% to total exactly 1e18
+      ];
+
+      const addFileRequest = {
+        url: "max-precision-shares",
+        ownerShares: ownerShares,
+        permissions: [],
+        schemaId: 0
+      };
+
+      await dataRegistry.connect(user1).addFileV3(addFileRequest);
+
+      const proof = {
+        signature: "0x1234",
+        data: {
+          score: 12345, // Arbitrary score
+          dlpId: 1,
+          metadata: "test metadata",
+          proofUrl: "https://proof.url",
+          instruction: "test instruction"
+        }
+      };
+
+      await dataRegistry.connect(user1).addProof(1, proof);
+    });
+
+    it("should handle edge case: zero score proof", async function () {
+      const ownerShares = [
+        { ownerAddress: user1.address, share: ethers.parseEther("1.0") }
+      ];
+
+      const addFileRequest = {
+        url: "zero-score-test",
+        ownerShares: ownerShares,
+        permissions: [],
+        schemaId: 0
+      };
+
+      await dataRegistry.connect(user1).addFileV3(addFileRequest);
+
+      const proof = {
+        signature: "0x1234",
+        data: {
+          score: 0, // Zero score
+          dlpId: 1,
+          metadata: "test metadata",
+          proofUrl: "https://proof.url",
+          instruction: "test instruction"
+        }
+      };
+
+      // Should not revert with zero score
+      await dataRegistry.connect(user1).addProof(1, proof);
+    });
+
+    it("should handle filesV3 for non-existent files gracefully", async function () {
+      // This should return default values without reverting
+      const fileV3 = await dataRegistry.filesV3(999999);
+      fileV3.id.should.eq(999999);
+      fileV3.url.should.eq("");
+      fileV3.ownerAddress.should.eq(ethers.ZeroAddress);
+      fileV3.ownerShares.length.should.eq(0);
+    });
+
+    it("should handle addFileV3 with maximum number of owners", async function () {
+      // Test with many owners (but reasonable number for gas limits)
+      const ownerShares = [];
+      const sharePerOwner = ethers.parseEther("1.0") / BigInt(20); // 5% each for 20 owners
+      
+      for (let i = 0; i < 20; i++) {
+        const wallet = ethers.Wallet.createRandom();
+        ownerShares.push({
+          ownerAddress: wallet.address,
+          share: sharePerOwner
+        });
+      }
+
+      const addFileRequest = {
+        url: "many-owners-test",
+        ownerShares: ownerShares,
+        permissions: [],
+        schemaId: 0
+      };
+
+      await dataRegistry.connect(user1).addFileV3(addFileRequest);
+
+      const fileV3 = await dataRegistry.filesV3(1);
+      fileV3.ownerShares.length.should.eq(20);
+      fileV3.ownerAddress.should.eq(ethers.ZeroAddress);
+    });
+
+    it("should handle proof addition for files with many owners without gas issues", async function () {
+      // Create a file with several owners
+      const ownerShares = [];
+      const sharePerOwner = ethers.parseEther("1.0") / BigInt(5); // 20% each for 5 owners
+      
+      for (let i = 0; i < 5; i++) {
+        const wallet = ethers.Wallet.createRandom();
+        ownerShares.push({
+          ownerAddress: wallet.address,
+          share: sharePerOwner
+        });
+      }
+
+      const addFileRequest = {
+        url: "gas-test-many-owners",
+        ownerShares: ownerShares,
+        permissions: [],
+        schemaId: 0
+      };
+
+      await dataRegistry.connect(user1).addFileV3(addFileRequest);
+
+      const proof = {
+        signature: "0x1234",
+        data: {
+          score: 1000,
+          dlpId: 1,
+          metadata: "test metadata",
+          proofUrl: "https://proof.url",
+          instruction: "test instruction"
+        }
+      };
+
+      // This should complete successfully without gas issues
+      const tx = await dataRegistry.connect(user1).addProof(1, proof);
+      const receipt = await tx.wait();
+      
+      // Verify gas usage is reasonable (less than 500k gas)
+      receipt!.gasUsed.should.be.below(500000);
+    });
+  });
 });

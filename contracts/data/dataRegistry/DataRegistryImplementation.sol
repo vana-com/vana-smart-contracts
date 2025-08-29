@@ -6,7 +6,9 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import "./interfaces/DataRegistryStorageV2.sol";
+import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
+import "../dataAccessV1/datasetRegistry/interfaces/IDatasetRegistry.sol";
+import "./interfaces/DataRegistryStorageV1.sol";
 
 contract DataRegistryImplementation is
     UUPSUpgradeable,
@@ -14,8 +16,10 @@ contract DataRegistryImplementation is
     AccessControlUpgradeable,
     MulticallUpgradeable,
     ERC2771ContextUpgradeable,
-    DataRegistryStorageV2
+    DataRegistryStorageV1
 {
+    using EnumerableSet for EnumerableSet.AddressSet;
+    
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
 
     bytes32 public constant REFINEMENT_SERVICE_ROLE = keccak256("REFINEMENT_SERVICE_ROLE");
@@ -44,6 +48,16 @@ contract DataRegistryImplementation is
      * @dev It is emitted in addition to the original FileAdded event to maintain backward compatibility.
      */
     event FileAddedV2(uint256 indexed fileId, address indexed ownerAddress, string url, uint256 schemaId);
+
+    /**
+     * @notice Triggered when a file with multiple owners has been added
+     *
+     * @param fileId                            id of the file
+     * @param url                               url of the file
+     * @param ownerShares                       array of owner addresses and their shares
+     * @param schemaId                          id of the schema (0 if not applicable)
+     */
+    event FileAddedV3(uint256 indexed fileId, string url, OwnerShare[] ownerShares, uint256 schemaId);
 
     /**
      * @notice Triggered when user has added an proof to the file
@@ -225,6 +239,36 @@ contract DataRegistryImplementation is
             });
     }
 
+    function filesV3(uint256 fileId) external view override returns (FileResponseV3 memory) {
+        File storage file = _files[fileId];
+
+        OwnerShare[] memory ownerShares;
+        
+        if (file.ownerAddress == address(0)) {
+            uint256 shareOwnersCount = file.shareOwners.length();
+            ownerShares = new OwnerShare[](shareOwnersCount);
+            
+            for (uint256 i = 0; i < shareOwnersCount; i++) {
+                address owner = file.shareOwners.at(i);
+                ownerShares[i] = OwnerShare({
+                    ownerAddress: owner,
+                    share: file.shares[owner]
+                });
+            }
+        } else {
+            ownerShares = new OwnerShare[](0);
+        }
+
+        return FileResponseV3({
+            id: fileId,
+            url: file.url,
+            ownerAddress: file.ownerAddress,
+            schemaId: file.schemaId,
+            addedAtBlock: file.addedAtBlock,
+            ownerShares: ownerShares
+        });
+    }
+
     /**
      * @notice Get fileId by URL
      * @param url The URL to look up
@@ -302,6 +346,35 @@ contract DataRegistryImplementation is
         return fileId;
     }
 
+    function addFileV3(AddFileRequest memory addFileData) external override whenNotPaused returns (uint256) {
+        if (addFileData.ownerShares.length == 0) {
+            revert AtLeastOneOwnerRequired();
+        }
+        
+        uint256 totalShares = 0;
+        for (uint256 i = 0; i < addFileData.ownerShares.length; i++) {
+            if (addFileData.ownerShares[i].ownerAddress == address(0)) {
+                revert InvalidOwnerAddress();
+            }
+            if (addFileData.ownerShares[i].share == 0) {
+                revert ShareMustBeGreaterThanZero();
+            }
+            totalShares += addFileData.ownerShares[i].share;
+        }
+        if (totalShares != 1e18) {
+            revert TotalSharesMustEqual1e18();
+        }
+
+        uint256 fileId = _addFileWithShares(addFileData.url, addFileData.ownerShares, addFileData.schemaId);
+
+        for (uint256 i = 0; i < addFileData.permissions.length; i++) {
+            _files[fileId].permissions[addFileData.permissions[i].account] = addFileData.permissions[i].key;
+            emit PermissionGranted(fileId, addFileData.permissions[i].account);
+        }
+
+        return fileId;
+    }
+
     function addFilePermissionsAndSchema(
         uint256 fileId,
         Permission[] memory permissions,
@@ -338,12 +411,36 @@ contract DataRegistryImplementation is
 
         // Add file to dataset in DatasetRegistry if configured
         if (address(datasetRegistry) != address(0)) {
-            datasetRegistry.addFileToDataset(
-                fileId,
-                proof.data.dlpId,
-                _files[fileId].ownerAddress,
-                proof.data.score
-            );
+            File storage file = _files[fileId];
+            
+            // Create an array to hold the owner shares
+            IDatasetRegistry.OwnerShare[] memory ownerShares;
+            
+            if (file.ownerAddress != address(0)) {
+                // Single owner file - create array with one element
+                ownerShares = new IDatasetRegistry.OwnerShare[](1);
+                ownerShares[0] = IDatasetRegistry.OwnerShare({
+                    owner: file.ownerAddress,
+                    share: proof.data.score
+                });
+            } else {
+                // Multi-owner file - calculate shares based on ownership percentages
+                uint256 shareOwnersCount = file.shareOwners.length();
+                ownerShares = new IDatasetRegistry.OwnerShare[](shareOwnersCount);
+                
+                for (uint256 i = 0; i < shareOwnersCount; i++) {
+                    address owner = file.shareOwners.at(i);
+                    uint256 ownershipPercentage = file.shares[owner]; // This is already scaled to 1e18
+                    uint256 calculatedShare = (ownershipPercentage * proof.data.score) / 1e18;
+                    
+                    ownerShares[i] = IDatasetRegistry.OwnerShare({
+                        owner: owner,
+                        share: calculatedShare
+                    });
+                }
+            }
+            
+            datasetRegistry.addFileToMainDataset(fileId, proof.data.dlpId, ownerShares);
         }
 
         emit ProofAdded(
@@ -462,6 +559,43 @@ contract DataRegistryImplementation is
             emit FileAdded(cachedFilesCount, ownerAddress, url);
         }
         emit FileAddedV2(cachedFilesCount, ownerAddress, url, schemaId);
+
+        return cachedFilesCount;
+    }
+
+    function _addFileWithShares(
+        string memory url,
+        OwnerShare[] memory ownerShares,
+        uint256 schemaId
+    ) internal returns (uint256) {
+        uint256 cachedFilesCount = ++filesCount;
+
+        bytes32 urlHash = keccak256(abi.encodePacked(url));
+
+        if (_urlHashToFileId[urlHash] != 0) {
+            revert FileUrlAlreadyUsed();
+        }
+
+        if (schemaId > 0 && !dataRefinerRegistry.isValidSchemaId(schemaId)) {
+            revert IDataRefinerRegistry.InvalidSchemaId(schemaId);
+        }
+
+        File storage file = _files[cachedFilesCount];
+
+        file.url = url;
+        file.addedAtBlock = block.number;
+        file.schemaId = schemaId;
+        
+        for (uint256 i = 0; i < ownerShares.length; i++) {
+            file.shares[ownerShares[i].ownerAddress] = ownerShares[i].share;
+            file.shareOwners.add(ownerShares[i].ownerAddress);
+        }
+        
+        file.ownerAddress = address(0);
+
+        _urlHashToFileId[urlHash] = cachedFilesCount;
+
+        emit FileAddedV3(cachedFilesCount, url, ownerShares, schemaId);
 
         return cachedFilesCount;
     }

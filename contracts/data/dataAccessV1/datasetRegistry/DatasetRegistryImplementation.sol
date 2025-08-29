@@ -29,6 +29,7 @@ contract DatasetRegistryImplementation is
     error ContributorsSharesMismatch();
     error ParentDatasetOwnerNotIncluded(address parentOwner);
     error InvalidSharesSum();
+    error EmptySharesArray();
 
     modifier onlyDatasetOwner(uint256 datasetId) {
         if (_datasets[datasetId].owner != msg.sender) {
@@ -154,12 +155,11 @@ contract DatasetRegistryImplementation is
         return datasetId;
     }
 
-    function addFileToDataset(uint256 fileId, uint256 dlpId, address fileOwner, uint256 share) external whenNotPaused onlyRole(DATA_REGISTRY_ROLE) {
-        // Delegate to addFileToMainDataset for backwards compatibility
-        addFileToMainDataset(fileId, dlpId, fileOwner, share);
-    }
-
-    function addFileToMainDataset(uint256 fileId, uint256 dlpId, address fileOwner, uint256 share) public whenNotPaused onlyRole(DATA_REGISTRY_ROLE) {
+    function addFileToMainDataset(uint256 fileId, uint256 dlpId, OwnerShare[] memory shares) external whenNotPaused onlyRole(DATA_REGISTRY_ROLE) {
+        if (shares.length == 0) {
+            revert EmptySharesArray();
+        }
+        
         uint256 datasetId = dlpToDataset[dlpId];
         if (datasetId == 0) {
             revert DatasetNotFound(datasetId);
@@ -172,11 +172,18 @@ contract DatasetRegistryImplementation is
         }
 
         dataset.fileIds.add(fileId);
-        dataset.ownerShares[fileOwner] += share;
-        dataset.totalShares += share;
+        
+        for (uint256 i = 0; i < shares.length; i++) {
+            address owner = shares[i].owner;
+            uint256 share = shares[i].share;
+            
+            dataset.ownerShares[owner] += share;
+            dataset.totalShares += share;
+            
+            emit OwnerSharesUpdated(datasetId, owner, dataset.ownerShares[owner]);
+        }
 
-        emit FileAddedToDataset(datasetId, fileId, fileOwner);
-        emit OwnerSharesUpdated(datasetId, fileOwner, dataset.ownerShares[fileOwner]);
+        emit FileAddedToDataset(datasetId, fileId);
     }
 
     function addFileToDerivedDataset(uint256 fileId, uint256 datasetId) external whenNotPaused onlyRole(DATA_REGISTRY_ROLE) datasetExists(datasetId) {
@@ -194,7 +201,7 @@ contract DatasetRegistryImplementation is
         dataset.fileIds.add(fileId);
         
         // For derived datasets, we don't update owner shares here since they're determined by parent datasets
-        emit FileAddedToDataset(datasetId, fileId, address(0));
+        emit FileAddedToDataset(datasetId, fileId);
     }
 
     function datasets(uint256 datasetId) external view datasetExists(datasetId) returns (DatasetInfo memory) {

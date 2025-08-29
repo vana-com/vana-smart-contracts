@@ -75,6 +75,52 @@ contract MockDataRegistry is IDataRegistry {
         return _addFile(url, ownerAddress);
     }
 
+    function addFileV3(AddFileRequest memory addFileData) external override returns (uint256) {
+        if (addFileData.ownerShares.length == 0) {
+            revert AtLeastOneOwnerRequired();
+        }
+        
+        uint256 totalShares = 0;
+        for (uint256 i = 0; i < addFileData.ownerShares.length; i++) {
+            if (addFileData.ownerShares[i].ownerAddress == address(0)) {
+                revert InvalidOwnerAddress();
+            }
+            if (addFileData.ownerShares[i].share == 0) {
+                revert ShareMustBeGreaterThanZero();
+            }
+            totalShares += addFileData.ownerShares[i].share;
+        }
+        if (totalShares != 1e18) {
+            revert TotalSharesMustEqual1e18();
+        }
+        
+        uint256 fileId = _addFile(addFileData.url, address(0));
+        
+        for (uint256 i = 0; i < addFileData.permissions.length; i++) {
+            _filePermissions[fileId][addFileData.permissions[i].account] = addFileData.permissions[i].key;
+        }
+        
+        if (addFileData.schemaId > 0) {
+            _files[fileId].schemaId = addFileData.schemaId;
+        }
+        
+        return fileId;
+    }
+
+    function filesV3(uint256 fileId) external view override returns (FileResponseV3 memory) {
+        FileResponse memory file = _files[fileId];
+        OwnerShare[] memory ownerShares = new OwnerShare[](0);
+        
+        return FileResponseV3({
+            id: file.id,
+            url: file.url,
+            ownerAddress: file.ownerAddress,
+            schemaId: file.schemaId,
+            addedAtBlock: file.addedAtBlock,
+            ownerShares: ownerShares
+        });
+    }
+
     function addFilePermissionsAndSchema(
         uint256 fileId,
         Permission[] memory permissions,

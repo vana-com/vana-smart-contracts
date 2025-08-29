@@ -2,8 +2,14 @@
 pragma solidity 0.8.24;
 
 import "../../dataRefinerRegistry/interfaces/IDataRefinerRegistry.sol";
+import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 interface IDataRegistry {
+    error AtLeastOneOwnerRequired();
+    error InvalidOwnerAddress();
+    error ShareMustBeGreaterThanZero();
+    error TotalSharesMustEqual1e18();
+    
     struct ProofData {
         uint256 score;
         uint256 dlpId;
@@ -28,6 +34,7 @@ interface IDataRegistry {
         mapping(uint256 refinerId => string url) refinements;
         uint256 schemaId; // New field to link to Schema
         mapping(address owner => uint256 share) shares;
+        EnumerableSet.AddressSet shareOwners;
     }
 
     struct FileResponse {
@@ -38,9 +45,30 @@ interface IDataRegistry {
         uint256 addedAtBlock;
     }
 
+    struct FileResponseV3 {
+        uint256 id;
+        address ownerAddress;
+        string url;
+        uint256 schemaId;
+        uint256 addedAtBlock;
+        OwnerShare[] ownerShares;
+    }
+
     struct Permission {
         address account;
         string key;
+    }
+
+    struct OwnerShare {
+        address ownerAddress;
+        uint256 share;
+    }
+
+    struct AddFileRequest {
+        string url;
+        OwnerShare[] ownerShares;
+        Permission[] permissions;
+        uint256 schemaId;
     }
 
     function version() external pure returns (uint256);
@@ -64,6 +92,8 @@ interface IDataRegistry {
         Permission[] memory permissions,
         uint256 schemaId
     ) external returns (uint256);
+    function addFileV3(AddFileRequest memory addFileData) external returns (uint256);
+    function filesV3(uint256 index) external view returns (FileResponseV3 memory);
     function addProof(uint256 fileId, Proof memory proof) external;
     function addFilePermission(uint256 fileId, address account, string memory key) external;
     function addFilePermissionsAndSchema(uint256 fileId, Permission[] memory permissions, uint256 schemaId) external;
