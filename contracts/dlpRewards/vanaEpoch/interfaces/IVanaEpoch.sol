@@ -10,6 +10,7 @@ interface IVanaEpoch {
     struct EpochDlp {
         uint256 rewardAmount;
         uint256 penaltyAmount;
+        uint256 bonusAmount;
     }
 
     struct Epoch {
@@ -19,6 +20,7 @@ interface IVanaEpoch {
         bool isFinalized;
         EnumerableSet.UintSet dlpIds; // Participating DLPs
         mapping(uint256 dlpId => EpochDlp epochDlp) dlps;
+        EnumerableSet.UintSet dlpIdsWithBonus; // DLPs with bonus rewards
     }
 
     // View functions for contract state and configuration
@@ -39,12 +41,14 @@ interface IVanaEpoch {
     }
     function epochs(uint256 epochId) external view returns (EpochInfo memory);
     function epochDlpIds(uint256 epochId) external view returns (uint256[] memory);
+    function epochDlpIdsWithBonus(uint256 epochId) external view returns (uint256[] memory);
     function epochRewardAmount() external view returns (uint256);
 
     struct EpochDlpInfo {
         bool isTopDlp;
         uint256 rewardAmount;
         uint256 penaltyAmount;
+        uint256 bonusAmount;
         uint256 distributedAmount;
         uint256 distributedPenaltyAmount;
     }
@@ -87,4 +91,7 @@ interface IVanaEpoch {
         Rewards[] calldata dlpRewards,
         bool isFinalized
     ) external;
+
+    function addEpochDlpBonusAmount(uint256 epochId, uint256 dlpId, uint256 amount) external;
+    function overrideEpochDlpBonusAmount(uint256 epochId, uint256 dlpId, uint256 amount) external;
 }
