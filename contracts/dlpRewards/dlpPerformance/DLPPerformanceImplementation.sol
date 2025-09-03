@@ -65,6 +65,7 @@ contract DLPPerformanceImplementation is
         uint256 penaltyAmount,
         uint256 distributedPenaltyAmount
     );
+    error DuplicateDlpId(uint256 dlpId);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -195,6 +196,21 @@ contract DLPPerformanceImplementation is
             revert InvalidEpochDlpPerformancesCount();
         }
 
+        // Check for duplicate dlpIds
+        for (uint256 i = 0; i < newEpochDlpPerformancesCount; ) {
+            for (uint256 j = i + 1; j < newEpochDlpPerformancesCount; ) {
+                if (newEpochDlpPerformances[i].dlpId == newEpochDlpPerformances[j].dlpId) {
+                    revert DuplicateDlpId(newEpochDlpPerformances[i].dlpId);
+                }
+                unchecked {
+                    ++j;
+                }
+            }
+            unchecked {
+                ++i;
+            }
+        }
+
         uint256 tradingVolumeTotalScore;
         uint256 uniqueContributorsTotalScore;
         uint256 dataAccessFeesTotalScore;
@@ -237,18 +253,17 @@ contract DLPPerformanceImplementation is
             }
         }
 
-        //commented just on moksha
-        //        if (tradingVolumeTotalScore > 1e18 || tradingVolumeTotalScore < 1e18 - 1e9) {
-        //            revert InvalidTradingVolumeScore();
-        //        }
-        //
-        //        if (uniqueContributorsTotalScore > 1e18 || uniqueContributorsTotalScore < 1e18 - 1e9) {
-        //            revert InvalidUniqueContributorsScore();
-        //        }
-        //
-        //        if (dataAccessFeesTotalScore > 1e18 || dataAccessFeesTotalScore < 1e18 - 1e9) {
-        //            revert InvalidDataAccessFeesScore();
-        //        }
+        if (tradingVolumeTotalScore > 1e18 || tradingVolumeTotalScore < 1e18 - 1e9) {
+            revert InvalidTradingVolumeScore();
+        }
+
+        if (uniqueContributorsTotalScore > 1e18 || uniqueContributorsTotalScore < 1e18 - 1e9) {
+            revert InvalidUniqueContributorsScore();
+        }
+
+        if (dataAccessFeesTotalScore > 1e18 || dataAccessFeesTotalScore < 1e18 - 1e9) {
+            revert InvalidDataAccessFeesScore();
+        }
     }
 
     function confirmEpochFinalScores(uint256 epochId) external override onlyRole(MAINTAINER_ROLE) {
