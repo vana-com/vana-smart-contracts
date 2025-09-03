@@ -26,12 +26,14 @@ interface IDataRegistry {
         mapping(address account => string key) permissions;
         /// @dev refinements is a mapping of refinerId to an URL of the File's refinement against the refiner.
         mapping(uint256 refinerId => string url) refinements;
+        uint256 schemaId; // New field to link to Schema
     }
 
     struct FileResponse {
         uint256 id;
         address ownerAddress;
         string url;
+        uint256 schemaId;
         uint256 addedAtBlock;
     }
 
@@ -49,18 +51,26 @@ interface IDataRegistry {
     function pause() external;
     function unpause() external;
     function addFile(string memory url) external returns (uint256);
+    function addFileWithSchema(string memory url, uint256 schemaId) external returns (uint256);
     function addFileWithPermissions(
         string memory url,
         address ownerAddress,
         Permission[] memory permissions
     ) external returns (uint256);
+    function addFileWithPermissionsAndSchema(
+        string memory url,
+        address ownerAddress,
+        Permission[] memory permissions,
+        uint256 schemaId
+    ) external returns (uint256);
+    function addFilePermissionsAndSchema(uint256 fileId, Permission[] memory permissions, uint256 schemaId) external;
     function addProof(uint256 fileId, Proof memory proof) external;
     function addFilePermission(uint256 fileId, address account, string memory key) external;
 
     function dataRefinerRegistry() external view returns (IDataRefinerRegistry);
 
     function updateDataRefinerRegistry(IDataRefinerRegistry newDataRefinerRegistry) external;
-    
+
     /// @notice Adds a refinement to a file with the given fileId.
     /// @param fileId The ID of the file to add the refinement to.
     /// @param refinerId The ID of the refiner.

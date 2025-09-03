@@ -10,6 +10,7 @@ dotenv.config();
 const FIRST_COMPILER_SETTINGS = {
   version: "0.8.24",
   settings: {
+    viaIR: true,
     optimizer: {
       enabled: true,
       runs: 1,
@@ -24,6 +25,7 @@ const FIRST_COMPILER_SETTINGS = {
 const DEFAULT_COMPILER_SETTINGS = {
   version: "0.8.28",
   settings: {
+    viaIR: true,
     optimizer: {
       enabled: true,
       runs: 1,
@@ -69,12 +71,10 @@ const config: HardhatUserConfig = {
     hardhat: {
       allowUnlimitedContractSize: true,
       chainId: 1480,
-      forking: {
-        url: process.env.VANA_RPC_URL || "",
-        // blockNumber: 2_500_000,
-        // url: process.env.MOKSHA_RPC_URL || "",
-        // blockNumber: 2_569_780,
-      },
+      // forking: {
+      //   // url: process.env.VANA_RPC_URL || "",
+      //   url: process.env.MOKSHA_RPC_URL || "",
+      // },
       chains: {
         1480: {
           hardforkHistory: {
