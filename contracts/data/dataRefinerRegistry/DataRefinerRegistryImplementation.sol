@@ -22,11 +22,12 @@ contract DataRefinerRegistryImplementation is
         uint256 indexed refinerId,
         uint256 indexed dlpId,
         string name,
+        uint256 indexed schemaId,
         string schemaDefinitionUrl,
         string refinementInstructionUrl
     );
 
-    error NotDlpOwner();
+    event SchemaAdded(uint256 indexed schemaId, string name, string dialect, string definitionUrl);
 
     /// @notice Reverts if the caller is not the owner of the DLP
     /// @param dlpId The ID of the DLP
@@ -90,13 +91,16 @@ contract DataRefinerRegistryImplementation is
     /// @inheritdoc IDataRefinerRegistry
     function refiners(uint256 refinerId) external view override returns (RefinerInfo memory) {
         Refiner storage refiner = _refiners[refinerId];
-        return RefinerInfo({
-            dlpId: refiner.dlpId,
-            owner: refiner.owner,
-            name: refiner.name,
-            schemaDefinitionUrl: refiner.schemaDefinitionUrl,
-            refinementInstructionUrl: refiner.refinementInstructionUrl
-        });
+        uint256 schemaId = refiner.schemaId;
+        return
+            RefinerInfo({
+                dlpId: refiner.dlpId,
+                owner: refiner.owner,
+                name: refiner.name,
+                schemaDefinitionUrl: schemaId == 0 ? refiner.schemaDefinitionUrl : _schemas[schemaId].definitionUrl,
+                refinementInstructionUrl: refiner.refinementInstructionUrl,
+                schemaId: schemaId
+            });
     }
 
     /// @inheritdoc IDataRefinerRegistry
@@ -124,9 +128,48 @@ contract DataRefinerRegistryImplementation is
 
         _dlpRefiners[dlpId].add(newRefinerId);
 
-        emit RefinerAdded(newRefinerId, dlpId, name, schemaDefinitionUrl, refinementInstructionUrl);
+        emit RefinerAdded(newRefinerId, dlpId, name, 0, schemaDefinitionUrl, refinementInstructionUrl);
 
         return newRefinerId;
+    }
+
+    function addRefinerWithSchemaId(
+        uint256 dlpId,
+        string calldata name,
+        uint256 schemaId,
+        string calldata refinementInstructionUrl
+    ) external onlyDlpOwner(dlpId) whenNotPaused returns (uint256) {
+        if (schemaId == 0 || schemaId > schemasCount) {
+            revert InvalidSchemaId(schemaId);
+        }
+
+        uint256 newRefinerId = ++refinersCount;
+
+        {
+            Refiner storage newRefiner = _refiners[newRefinerId];
+            newRefiner.dlpId = dlpId;
+            newRefiner.owner = msg.sender;
+            newRefiner.name = name;
+            newRefiner.schemaId = schemaId;
+            newRefiner.refinementInstructionUrl = refinementInstructionUrl;
+        }
+
+        _dlpRefiners[dlpId].add(newRefinerId);
+
+        emit RefinerAdded(newRefinerId, dlpId, name, schemaId, _schemas[schemaId].definitionUrl, refinementInstructionUrl);
+
+        return newRefinerId;
+    }
+
+    function updateSchemaId(
+        uint256 refinerId,
+        uint256 newSchemaId
+    ) external override onlyDlpOwner(_refiners[refinerId].dlpId) whenNotPaused {
+        if (!isValidSchemaId(newSchemaId)) {
+            revert InvalidSchemaId(newSchemaId);
+        }
+
+        _refiners[refinerId].schemaId = newSchemaId;
     }
 
     /// @inheritdoc IDataRefinerRegistry
@@ -170,16 +213,39 @@ contract DataRefinerRegistryImplementation is
         _dlpRefinementServices[dlpId].remove(refinementService);
     }
 
-    function dlpRefinementServices(
-        uint256 dlpId
-    ) external view override returns (address[] memory) {
+    function dlpRefinementServices(uint256 dlpId) external view override returns (address[] memory) {
         return _dlpRefinementServices[dlpId].values();
     }
 
-    function isRefinementService(
-        uint256 refinerId,
-        address refinementService
-    ) external view override returns (bool) {
+    function isRefinementService(uint256 refinerId, address refinementService) external view override returns (bool) {
         return _dlpRefinementServices[_refiners[refinerId].dlpId].contains(refinementService);
+    }
+
+    function addSchema(
+        string calldata name,
+        string calldata dialect,
+        string calldata definitionUrl
+    ) external override whenNotPaused returns (uint256) {
+        uint256 newSchemaId = ++schemasCount;
+
+        Schema storage newSchema = _schemas[newSchemaId];
+        newSchema.name = name;
+        newSchema.dialect = dialect;
+        newSchema.definitionUrl = definitionUrl;
+
+        emit SchemaAdded(newSchemaId, name, dialect, definitionUrl);
+
+        return newSchemaId;
+    }
+
+    function schemas(uint256 schemaId) external view override returns (Schema memory) {
+        if (!isValidSchemaId(schemaId)) {
+            revert InvalidSchemaId(schemaId);
+        }
+        return _schemas[schemaId];
+    }
+
+    function isValidSchemaId(uint256 schemaId) public view override returns (bool) {
+        return schemaId > 0 && schemaId <= schemasCount;
     }
 }
