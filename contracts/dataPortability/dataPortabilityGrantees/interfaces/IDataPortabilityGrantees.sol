@@ -50,17 +50,17 @@ interface IDataPortabilityGrantees {
 
     /**
      * @notice External grantee information structure for read operations
-     * @dev Read-only view of grantee data with permission IDs as array for external consumption
+     * @dev Read-only view of grantee data with permission count for external consumption
      * @param owner Address that registered and controls this grantee
      * @param granteeAddress Unique blockchain address representing this grantee
      * @param publicKey Public key for encrypting data intended for this grantee
-     * @param permissionIds Array of permission IDs associated with this grantee
+     * @param permissionsCount Number of permissions associated with this grantee
      */
     struct GranteeInfo {
         address owner;
         address granteeAddress;
         string publicKey;
-        uint256[] permissionIds;
+        uint256 permissionsCount;
     }
 
     // ==================== EVENTS ====================
@@ -174,6 +174,35 @@ interface IDataPortabilityGrantees {
      * @return uint256[] Array of permission IDs associated with this grantee
      */
     function granteePermissionIds(uint256 granteeId) external view returns (uint256[] memory);
+
+    /**
+     * @notice Gets paginated permission IDs associated with a grantee
+     * @dev Returns a subset of permission IDs to avoid gas limit issues with large lists
+     * @param granteeId Unique identifier of the grantee
+     * @param offset Starting index for pagination (0-based)
+     * @param limit Maximum number of permission IDs to return
+     * @return permissionIds Array of permission IDs for the requested page
+     * @return totalCount Total number of permissions associated with the grantee
+     * @return hasMore Boolean indicating if there are more permissions beyond this page
+     *
+     * Requirements:
+     * - Grantee must exist
+     * - Offset must be less than total permission count
+     *
+     * Example usage:
+     * - First page: granteePermissionsPaginated(granteeId, 0, 100)
+     * - Second page: granteePermissionsPaginated(granteeId, 100, 100)
+     * - Continue until hasMore is false
+     */
+    function granteePermissionsPaginated(
+        uint256 granteeId,
+        uint256 offset,
+        uint256 limit
+    ) external view returns (
+        uint256[] memory permissionIds,
+        uint256 totalCount,
+        bool hasMore
+    );
 
     // ==================== PERMISSION MANAGEMENT FUNCTIONS ====================
 

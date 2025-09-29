@@ -145,7 +145,7 @@ contract DataPortabilityGranteesImplementation is
                 owner: granteeData.owner,
                 granteeAddress: granteeData.granteeAddress,
                 publicKey: granteeData.publicKey,
-                permissionIds: _granteePermissions[granteeId].values()
+                permissionsCount: _granteePermissions[granteeId].length()
             });
     }
 
@@ -156,7 +156,7 @@ contract DataPortabilityGranteesImplementation is
                 owner: granteeData.owner,
                 granteeAddress: granteeData.granteeAddress,
                 publicKey: granteeData.publicKey,
-                permissionIds: _granteePermissions[granteeId].values()
+                permissionsCount: _granteePermissions[granteeId].length()
             });
     }
 
@@ -168,7 +168,7 @@ contract DataPortabilityGranteesImplementation is
                 owner: granteeData.owner,
                 granteeAddress: granteeData.granteeAddress,
                 publicKey: granteeData.publicKey,
-                permissionIds: _granteePermissions[granteeId].values()
+                permissionsCount: _granteePermissions[granteeId].length()
             });
     }
 
@@ -178,6 +178,48 @@ contract DataPortabilityGranteesImplementation is
 
     function granteePermissions(uint256 granteeId) external view override returns (uint256[] memory) {
         return _granteePermissions[granteeId].values();
+    }
+
+    function granteePermissionsPaginated(
+        uint256 granteeId,
+        uint256 offset,
+        uint256 limit
+    ) external view override returns (
+        uint256[] memory permissionIds,
+        uint256 totalCount,
+        bool hasMore
+    ) {
+        if (granteeId == 0 || granteeId > granteesCount) {
+            revert GranteeNotFound();
+        }
+
+        EnumerableSet.UintSet storage permissions = _granteePermissions[granteeId];
+        totalCount = permissions.length();
+
+        // Return empty array if offset is beyond the total count
+        if (offset >= totalCount) {
+            return (new uint256[](0), totalCount, false);
+        }
+
+        // Calculate the actual number of items to return
+        uint256 remaining = totalCount - offset;
+        uint256 resultLength = remaining < limit ? remaining : limit;
+
+        // Create array with the exact size needed
+        permissionIds = new uint256[](resultLength);
+
+        // Populate the array with permission IDs
+        for (uint256 i = 0; i < resultLength;) {
+            permissionIds[i] = permissions.at(offset + i);
+            unchecked {
+                ++i;
+            }
+        }
+
+        // Check if there are more items beyond this page
+        hasMore = (offset + resultLength) < totalCount;
+
+        return (permissionIds, totalCount, hasMore);
     }
 
     function addPermissionToGrantee(
