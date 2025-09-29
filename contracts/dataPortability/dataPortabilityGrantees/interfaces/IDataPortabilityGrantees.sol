@@ -50,13 +50,29 @@ interface IDataPortabilityGrantees {
 
     /**
      * @notice External grantee information structure for read operations
+     * @dev Read-only view of grantee data with permission IDs as array for external consumption
+     * @param owner Address that registered and controls this grantee
+     * @param granteeAddress Unique blockchain address representing this grantee
+     * @param publicKey Public key for encrypting data intended for this grantee
+     * @param permissionIds Array of permission IDs associated with this grantee
+     */
+    struct GranteeInfo {
+        address owner;
+        address granteeAddress;
+        string publicKey;
+        uint256[] permissionIds;
+    }
+
+    /**
+     * @notice External grantee information structure for read operations
      * @dev Read-only view of grantee data with permission count for external consumption
+     * @dev Keep GranteeInfo for backward compatibility
      * @param owner Address that registered and controls this grantee
      * @param granteeAddress Unique blockchain address representing this grantee
      * @param publicKey Public key for encrypting data intended for this grantee
      * @param permissionsCount Number of permissions associated with this grantee
      */
-    struct GranteeInfo {
+    struct GranteeInfoV2 {
         address owner;
         address granteeAddress;
         string publicKey;
@@ -112,6 +128,8 @@ interface IDataPortabilityGrantees {
      */
     function grantees(uint256 granteeId) external view returns (GranteeInfo memory);
 
+    function granteesV2(uint256 granteeId) external view returns (GranteeInfoV2 memory);
+
     /**
      * @notice Gets all permission IDs associated with a grantee
      * @dev Returns the complete list of permissions granted to the specified grantee
@@ -159,6 +177,8 @@ interface IDataPortabilityGrantees {
      */
     function granteeInfo(uint256 granteeId) external view returns (GranteeInfo memory);
 
+    function granteeInfoV2(uint256 granteeId) external view returns (GranteeInfoV2 memory);
+
     /**
      * @notice Retrieves grantee information by grantee address
      * @dev Looks up grantee details using the grantee's blockchain address
@@ -166,6 +186,8 @@ interface IDataPortabilityGrantees {
      * @return GranteeInfo Complete grantee information including ID, owner, and permissions
      */
     function granteeByAddress(address granteeAddress) external view returns (GranteeInfo memory);
+
+    function granteeByAddressV2(address granteeAddress) external view returns (GranteeInfoV2 memory);
 
     /**
      * @notice Gets all permission IDs associated with a grantee
