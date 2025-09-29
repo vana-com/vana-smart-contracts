@@ -145,6 +145,17 @@ contract DataPortabilityGranteesImplementation is
                 owner: granteeData.owner,
                 granteeAddress: granteeData.granteeAddress,
                 publicKey: granteeData.publicKey,
+                permissionIds: _granteePermissions[granteeId].values()
+            });
+    }
+
+    function granteesV2(uint256 granteeId) external view override returns (GranteeInfoV2 memory) {
+        Grantee storage granteeData = _grantees[granteeId];
+        return
+            GranteeInfoV2({
+                owner: granteeData.owner,
+                granteeAddress: granteeData.granteeAddress,
+                publicKey: granteeData.publicKey,
                 permissionsCount: _granteePermissions[granteeId].length()
             });
     }
@@ -153,6 +164,17 @@ contract DataPortabilityGranteesImplementation is
         Grantee storage granteeData = _grantees[granteeId];
         return
             GranteeInfo({
+                owner: granteeData.owner,
+                granteeAddress: granteeData.granteeAddress,
+                publicKey: granteeData.publicKey,
+                permissionIds: _granteePermissions[granteeId].values()
+            });
+    }
+
+    function granteeInfoV2(uint256 granteeId) external view override returns (GranteeInfoV2 memory) {
+        Grantee storage granteeData = _grantees[granteeId];
+        return
+            GranteeInfoV2({
                 owner: granteeData.owner,
                 granteeAddress: granteeData.granteeAddress,
                 publicKey: granteeData.publicKey,
@@ -165,6 +187,18 @@ contract DataPortabilityGranteesImplementation is
         Grantee storage granteeData = _grantees[granteeId];
         return
             GranteeInfo({
+                owner: granteeData.owner,
+                granteeAddress: granteeData.granteeAddress,
+                publicKey: granteeData.publicKey,
+                permissionIds: _granteePermissions[granteeId].values()
+            });
+    }
+
+    function granteeByAddressV2(address granteeAddress) external view override returns (GranteeInfoV2 memory) {
+        uint256 granteeId = granteeAddressToId[granteeAddress];
+        Grantee storage granteeData = _grantees[granteeId];
+        return
+            GranteeInfoV2({
                 owner: granteeData.owner,
                 granteeAddress: granteeData.granteeAddress,
                 publicKey: granteeData.publicKey,
