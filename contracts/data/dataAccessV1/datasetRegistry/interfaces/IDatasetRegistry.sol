@@ -3,24 +3,14 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
-interface IDatasetRegistry {
-    enum DatasetType {
-        MAIN,
-        DERIVED
-    }
+interface IDatasetValidator {
+    function validate(uint256 fileId) external view returns (bool);
+}
 
-    event MainDatasetCreated(
+interface IDatasetRegistry {
+    event DatasetCreated(
         uint256 indexed datasetId,
-        uint256 indexed dlpId,
         address indexed owner
-    );
-    
-    event DerivedDatasetCreated(
-        uint256 indexed datasetId,
-        address indexed owner,
-        uint256[] parentDatasetIds,
-        address[] contributors,
-        uint256[] shares
     );
     
     event FileAddedToDataset(
@@ -35,19 +25,17 @@ interface IDatasetRegistry {
         uint256 shares
     );
     
-
     struct Dataset {
         address owner; // Owner of the dataset
-        DatasetType datasetType; // Type of dataset (MAIN or DERIVED)
+        IDatasetValidator validator; // Validator contract for files
         uint256 totalShares; // Sum of all shares in dataset
         mapping(address => uint256) ownerShares; // Aggregated shares across files for each owner
         EnumerableSet.UintSet fileIds; // IDs of files in the dataset
-        EnumerableSet.UintSet parentDatasetIds; // Parent dataset IDs (only for DERIVED datasets)
+        EnumerableSet.UintSet parentDatasetIds; // Parent dataset IDs
     }
 
     struct DatasetInfo {
         address owner;
-        DatasetType datasetType;
         uint256 totalShares;
         uint256 fileIdsCount;
         uint256[] parentDatasetIds;
@@ -55,18 +43,9 @@ interface IDatasetRegistry {
 
     function datasetsCount() external view returns (uint256);
     
-    function dlpToDataset(uint256 dlpId) external view returns (uint256);
-    
     function datasets(uint256 datasetId) external view returns (DatasetInfo memory);
     
-    function createMainDataset(uint256 dlpId, address owner) external returns (uint256);
-    
-    function createDerivedDataset(
-        address owner,
-        uint256[] memory parentDatasetIds,
-        address[] memory contributors,
-        uint256[] memory shares
-    ) external returns (uint256);
+    function createDataset(address owner) external returns (uint256);
     
     function addFileToDataset(uint256 fileId, uint256 dlpId, address fileOwner, uint256 share) external;
     

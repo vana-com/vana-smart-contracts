@@ -17,7 +17,6 @@ contract DatasetRegistryImplementation is
     using EnumerableSet for EnumerableSet.UintSet;
 
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
-    bytes32 public constant DATA_REGISTRY_ROLE = keccak256("DATA_REGISTRY_ROLE");
 
     error DatasetNotFound(uint256 datasetId);
     error DatasetAlreadyExists(uint256 dlpId);
@@ -29,6 +28,7 @@ contract DatasetRegistryImplementation is
     error ContributorsSharesMismatch();
     error ParentDatasetOwnerNotIncluded(address parentOwner);
     error InvalidSharesSum();
+    error FileValidationFailed(uint256 fileId);
 
     modifier onlyDatasetOwner(uint256 datasetId) {
         if (_datasets[datasetId].owner != msg.sender) {
@@ -49,16 +49,16 @@ contract DatasetRegistryImplementation is
         _disableInitializers();
     }
 
-    function initialize(address ownerAddress, address initDataRegistry) external initializer {
+    function initialize(address ownerAddress, IDataRegistry initDataRegistry) external initializer {
         __UUPSUpgradeable_init();
         __Pausable_init();
         __AccessControl_init();
 
+        dataRegistry = initDataRegistry;
+
         _setRoleAdmin(MAINTAINER_ROLE, DEFAULT_ADMIN_ROLE);
-        _setRoleAdmin(DATA_REGISTRY_ROLE, DEFAULT_ADMIN_ROLE);
         _grantRole(DEFAULT_ADMIN_ROLE, ownerAddress);
         _grantRole(MAINTAINER_ROLE, ownerAddress);
-        _grantRole(DATA_REGISTRY_ROLE, initDataRegistry);
     }
 
     function pause() external onlyRole(MAINTAINER_ROLE) {
@@ -71,101 +71,35 @@ contract DatasetRegistryImplementation is
 
     function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
-    function createMainDataset(
-        uint256 dlpId,
-        address owner
-    ) external whenNotPaused onlyRole(MAINTAINER_ROLE) returns (uint256) {
-        if (dlpToDataset[dlpId] != 0) {
-            revert DatasetAlreadyExists(dlpId);
-        }
-
-        uint256 datasetId = ++datasetsCount;
-        _datasets[datasetId].owner = owner;
-        _datasets[datasetId].datasetType = DatasetType.MAIN;
-        dlpToDataset[dlpId] = datasetId;
-
-        emit MainDatasetCreated(datasetId, dlpId, owner);
-        return datasetId;
-    }
-
-    function createDerivedDataset(
+    function createDataset(
         address owner,
-        uint256[] memory parentDatasetIds,
-        address[] memory contributors,
-        uint256[] memory shares
-    ) external whenNotPaused onlyRole(MAINTAINER_ROLE) returns (uint256) {
-        if (parentDatasetIds.length == 0) {
-            revert DerivedDatasetNeedsParents();
-        }
-        if (contributors.length != shares.length) {
-            revert ContributorsSharesMismatch();
-        }
-
-        // Validate parent datasets exist and are MAIN datasets
-        // Also collect parent owners to verify they are included in contributors
-        address[] memory parentOwners = new address[](parentDatasetIds.length);
-        for (uint256 i = 0; i < parentDatasetIds.length; i++) {
-            uint256 parentId = parentDatasetIds[i];
-            if (parentId == 0 || parentId > datasetsCount) {
-                revert InvalidParentDataset(parentId);
-            }
-            if (_datasets[parentId].datasetType != DatasetType.MAIN) {
-                revert ParentMustBeMainDataset(parentId);
-            }
-            parentOwners[i] = _datasets[parentId].owner;
-        }
-
-        // Verify each parent dataset owner is included in contributors
-        for (uint256 i = 0; i < parentOwners.length; i++) {
-            bool found = false;
-            for (uint256 j = 0; j < contributors.length; j++) {
-                if (contributors[j] == parentOwners[i]) {
-                    found = true;
-                    break;
-                }
-            }
-            if (!found) {
-                revert ParentDatasetOwnerNotIncluded(parentOwners[i]);
-            }
-        }
-
+        IDatasetValidator validator
+    ) external whenNotPaused returns (uint256) {
         uint256 datasetId = ++datasetsCount;
         _datasets[datasetId].owner = owner;
-        _datasets[datasetId].datasetType = DatasetType.DERIVED;
-
-        // Add parent datasets
-        for (uint256 i = 0; i < parentDatasetIds.length; i++) {
-            _datasets[datasetId].parentDatasetIds.add(parentDatasetIds[i]);
-        }
-
-        // Set initial shares for contributors
-        uint256 totalShares = 0;
-        for (uint256 i = 0; i < contributors.length; i++) {
-            _datasets[datasetId].ownerShares[contributors[i]] = shares[i];
-            totalShares += shares[i];
-            emit OwnerSharesUpdated(datasetId, contributors[i], shares[i]);
-        }
-        _datasets[datasetId].totalShares = totalShares;
-
-        emit DerivedDatasetCreated(datasetId, owner, parentDatasetIds, contributors, shares);
+        _datasets[datasetId].validator = validator;
+        
+        emit DatasetCreated(datasetId, owner);
         return datasetId;
     }
 
     function addFileToDataset(
-        uint256 fileId,
-        uint256 dlpId,
-        address fileOwner,
-        uint256 share
-    ) external whenNotPaused onlyRole(DATA_REGISTRY_ROLE) {
-        uint256 datasetId = dlpToDataset[dlpId];
-        if (datasetId == 0) {
-            revert DatasetNotFound(datasetId);
-        }
-
+        uint256 datasetId,
+        uint256 fileId
+    ) external whenNotPaused {
         Dataset storage dataset = _datasets[datasetId];
 
         if (dataset.fileIds.contains(fileId)) {
             revert FileAlreadyInDataset(datasetId, fileId);
+        }
+
+        address fileOwner = dataRegistry.files(fileId).ownerAddress;
+        if (msg.sender != fileOwner) {
+            revert OnlyDatasetOwner();
+        }
+
+        if (!dataset.validator.validate(fileId)) {
+            revert FileValidationFailed(fileId);
         }
 
         dataset.fileIds.add(fileId);
