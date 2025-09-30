@@ -4,7 +4,6 @@ pragma solidity 0.8.24;
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
@@ -20,7 +19,6 @@ contract DataPortabilityPermissionsImplementation is
     UUPSUpgradeable,
     PausableUpgradeable,
     AccessControlUpgradeable,
-    MulticallUpgradeable,
     ERC2771ContextUpgradeable,
     EIP712Upgradeable,
     DataPortabilityPermissionsStorage
@@ -543,7 +541,7 @@ contract DataPortabilityPermissionsImplementation is
         }
 
         // 3. Add permission directly using internal logic
-        return _addPermissionFromServerFiles(serverFilesAndPermissionInput, fileIds, signature, signer);
+        return _addPermissionFromServerFiles(serverFilesAndPermissionInput, fileIds, signer);
     }
 
     /**
@@ -551,14 +549,12 @@ contract DataPortabilityPermissionsImplementation is
      * @dev Specialized permission creation for the combined server/files/permission flow
      * @param serverFilesAndPermissionInput The server files and permission input data
      * @param fileIds Array of file IDs to associate with the permission
-     * @param signature The original signature for the operation
      * @param signer The verified signer address
      * @return uint256 The unique ID of the created permission
      */
     function _addPermissionFromServerFiles(
         ServerFilesAndPermissionInput calldata serverFilesAndPermissionInput,
         uint256[] memory fileIds,
-        bytes calldata signature,
         address signer
     ) internal returns (uint256) {
         if (bytes(serverFilesAndPermissionInput.grant).length == 0) {
