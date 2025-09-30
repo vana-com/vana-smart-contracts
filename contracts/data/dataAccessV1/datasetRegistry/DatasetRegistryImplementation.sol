@@ -8,6 +8,7 @@ import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 import "./interfaces/DatasetRegistryStorageV1.sol";
 
+
 contract DatasetRegistryImplementation is
     UUPSUpgradeable,
     PausableUpgradeable,
@@ -15,6 +16,7 @@ contract DatasetRegistryImplementation is
     DatasetRegistryStorageV1
 {
     using EnumerableSet for EnumerableSet.UintSet;
+    using EnumerableSet for EnumerableSet.AddressSet;
 
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
 
@@ -83,6 +85,27 @@ contract DatasetRegistryImplementation is
         return datasetId;
     }
 
+    function _checkFileOwnership(uint256 fileId, address fileOwner) internal view {
+        IDataRegistry.FileResponse memory file = dataRegistry.files(fileId);
+        address actualOwner = dataRegistry.files(fileId).ownerAddress;
+        if (actualOwner != fileOwner) {
+            uint256 proofsCount = file.proofsCount;
+            bool found = false;
+            for (uint256 i = 1; i <= proofsCount; i++) {
+                IDataRegistry.Proof memory proof = dataRegistry.fileProofs(fileId, i);
+                uint256 dlpId = proof.data.dlpId;
+                IDLPRegistry.DlpInfo memory dlp = dlpRegistry.dlps(dlpId);
+                if (dlp.ownerAddress == fileOwner || dlp.dlpAddress == fileOwner) {
+                    found = true;
+                    break;
+                }
+            }
+            if (!found) {
+                revert OnlyDatasetOwner();
+            }
+        }
+    }
+
     function addFileToDataset(
         uint256 datasetId,
         uint256 fileId
@@ -93,21 +116,20 @@ contract DatasetRegistryImplementation is
             revert FileAlreadyInDataset(datasetId, fileId);
         }
 
-        address fileOwner = dataRegistry.files(fileId).ownerAddress;
-        if (msg.sender != fileOwner) {
-            revert OnlyDatasetOwner();
-        }
+        _checkFileOwnership(fileId, msg.sender);
 
         if (!dataset.validator.validate(fileId)) {
             revert FileValidationFailed(fileId);
         }
 
         dataset.fileIds.add(fileId);
-        dataset.ownerShares[fileOwner] += share;
+        // Default share of 1 per file
+        uint256 share = 1;
+        dataset.ownerShares[msg.sender] += share;
         dataset.totalShares += share;
 
-        emit FileAddedToDataset(datasetId, fileId, fileOwner);
-        emit OwnerSharesUpdated(datasetId, fileOwner, dataset.ownerShares[fileOwner]);
+        emit FileAddedToDataset(datasetId, fileId, msg.sender);
+        emit OwnerSharesUpdated(datasetId, msg.sender, dataset.ownerShares[msg.sender]);
     }
 
     function datasets(uint256 datasetId) external view datasetExists(datasetId) returns (DatasetInfo memory) {
@@ -115,7 +137,6 @@ contract DatasetRegistryImplementation is
         return
             DatasetInfo({
                 owner: dataset.owner,
-                datasetType: dataset.datasetType,
                 totalShares: dataset.totalShares,
                 fileIdsCount: dataset.fileIds.length(),
                 parentDatasetIds: dataset.parentDatasetIds.values()

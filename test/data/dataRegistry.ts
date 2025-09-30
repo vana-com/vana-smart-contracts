@@ -1185,7 +1185,7 @@ describe("DataRegistry", () => {
       // First add a file
       await dataRegistry
         .connect(user1)
-        .addFile("file1");
+        .addFile("file1", user1);
       
       // Add schema
       await dataRefinerRegistry
@@ -1221,7 +1221,7 @@ describe("DataRegistry", () => {
       // First add a file as user1
       await dataRegistry
         .connect(user1)
-        .addFile("file1");
+        .addFile("file1", user1);
       
       // Add schema
       await dataRefinerRegistry
@@ -1253,7 +1253,7 @@ describe("DataRegistry", () => {
       // First add a file as user1
       await dataRegistry
         .connect(user1)
-        .addFile("file1");
+        .addFile("file1", user1);
       
       // Add schema
       await dataRefinerRegistry
@@ -1278,7 +1278,7 @@ describe("DataRegistry", () => {
       // First add a file
       await dataRegistry
         .connect(user1)
-        .addFile("file1");
+        .addFile("file1", user1);
 
       // Add permissions with no schema (schemaId = 0)
       await dataRegistry
@@ -1300,7 +1300,7 @@ describe("DataRegistry", () => {
       // First add a file
       await dataRegistry
         .connect(user1)
-        .addFile("file1");
+        .addFile("file1", user1);
 
       // Try to add permissions with invalid schemaId
       await dataRegistry
@@ -1315,7 +1315,7 @@ describe("DataRegistry", () => {
       // First add a file
       await dataRegistry
         .connect(user1)
-        .addFile("file1");
+        .addFile("file1", user1);
 
       // Pause the contract
       await dataRegistry.connect(owner).pause();
@@ -1333,7 +1333,7 @@ describe("DataRegistry", () => {
       // First add a file
       await dataRegistry
         .connect(user1)
-        .addFile("file1");
+        .addFile("file1", user1);
       
       // Add schema
       await dataRefinerRegistry

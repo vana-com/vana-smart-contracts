@@ -35,6 +35,7 @@ interface IDataRegistry {
         string url;
         uint256 schemaId;
         uint256 addedAtBlock;
+        uint256 proofsCount;
     }
 
     struct Permission {

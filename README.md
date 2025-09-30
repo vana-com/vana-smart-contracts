@@ -1,5 +1,7 @@
 # Vana Smart Contracts
 
+[![semantic-release: angular](https://img.shields.io/badge/semantic--release-conventionalcommits-e10079?logo=semantic-release)](https://github.com/semantic-release/semantic-release)
+
 ## About Vana
 
 Vana is an open and decentralized protocol for data sovereignty that unlocks user-owned data as a new digital asset class in the global AI economy. The Vana network is an EVM-compatible layer-1 blockchain designed to restore individual control over personal data and enable user-owned AI through private and secure data transactions at individual and collective levels.

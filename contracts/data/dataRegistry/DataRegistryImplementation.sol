@@ -6,7 +6,7 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
-import "./interfaces/DataRegistryStorageV2.sol";
+import "./interfaces/DataRegistryStorageV1.sol";
 
 contract DataRegistryImplementation is
     UUPSUpgradeable,
@@ -14,15 +14,13 @@ contract DataRegistryImplementation is
     AccessControlUpgradeable,
     MulticallUpgradeable,
     ERC2771ContextUpgradeable,
-    DataRegistryStorageV2
+    DataRegistryStorageV1
 {
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
 
     bytes32 public constant REFINEMENT_SERVICE_ROLE = keccak256("REFINEMENT_SERVICE_ROLE");
 
     bytes32 public constant DATA_PORTABILITY_ROLE = keccak256("DATA_PORTABILITY_ROLE");
-
-    bytes32 public constant PGE_ROLE = keccak256("PGE_ROLE");
 
     /**
      * @notice Triggered when a file has been added
@@ -184,10 +182,6 @@ contract DataRegistryImplementation is
         dataRefinerRegistry = newDataRefinerRegistry;
     }
 
-    function updateDatasetRegistry(IDatasetRegistry newDatasetRegistry) external onlyRole(MAINTAINER_ROLE) {
-        datasetRegistry = newDatasetRegistry;
-    }
-
     function updateEmitLegacyEvents(bool newEmitLegacyEvents) external onlyRole(MAINTAINER_ROLE) {
         emitLegacyEvents = newEmitLegacyEvents;
     }
@@ -221,7 +215,8 @@ contract DataRegistryImplementation is
                 url: file.url,
                 ownerAddress: file.ownerAddress,
                 schemaId: file.schemaId,
-                addedAtBlock: file.addedAtBlock
+                addedAtBlock: file.addedAtBlock,
+                proofsCount: file.proofsCount
             });
     }
 
@@ -336,16 +331,6 @@ contract DataRegistryImplementation is
 
         _files[fileId].proofs[cachedProofCount] = proof;
 
-        // Add file to dataset in DatasetRegistry if configured
-        if (address(datasetRegistry) != address(0)) {
-            datasetRegistry.addFileToDataset(
-                fileId,
-                proof.data.dlpId,
-                _files[fileId].ownerAddress,
-                proof.data.score
-            );
-        }
-
         emit ProofAdded(
             fileId,
             _files[fileId].ownerAddress,
@@ -364,11 +349,7 @@ contract DataRegistryImplementation is
      * @param key                               encryption key for the account
      */
     function addFilePermission(uint256 fileId, address account, string memory key) external override whenNotPaused {
-        if (
-            _msgSender() != _files[fileId].ownerAddress &&
-            !hasRole(DATA_PORTABILITY_ROLE, _msgSender()) &&
-            !hasRole(PGE_ROLE, _msgSender())
-        ) {
+        if (_msgSender() != _files[fileId].ownerAddress && !hasRole(DATA_PORTABILITY_ROLE, _msgSender())) {
             revert NotFileOwner();
         }
 

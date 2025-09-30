@@ -45,9 +45,9 @@ interface IDatasetRegistry {
     
     function datasets(uint256 datasetId) external view returns (DatasetInfo memory);
     
-    function createDataset(address owner) external returns (uint256);
-    
-    function addFileToDataset(uint256 fileId, uint256 dlpId, address fileOwner, uint256 share) external;
+    function createDataset(address owner, IDatasetValidator validator) external returns (uint256);
+
+    function addFileToDataset(uint256 datasetId, uint256 fileId) external;
     
     function ownerShares(uint256 datasetId, address owner) external view returns (uint256);
     
