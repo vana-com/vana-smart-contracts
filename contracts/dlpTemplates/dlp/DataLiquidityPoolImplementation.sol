@@ -89,6 +89,13 @@ contract DataLiquidityPoolImplementation is
      */
     event TeePoolUpdated(address newTeePool);
 
+    /**
+     * @notice Triggered when the token has been updated
+     *
+     * @param newToken                new token
+     */
+    event TokenUpdated(address newToken);
+
     error FileAlreadyAdded();
     error InvalidScore();
     error InvalidAttestator();
@@ -322,6 +329,17 @@ contract DataLiquidityPoolImplementation is
      */
     function updateTrustedForwarder(address trustedForwarderAddress) external onlyRole(DEFAULT_ADMIN_ROLE) {
         _trustedForwarder = trustedForwarderAddress;
+    }
+
+    /**
+     * @notice Updates the token
+     *
+     * @param newToken                new token
+     */
+    function updateToken(address newToken) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        token = IERC20(newToken);
+
+        emit TokenUpdated(newToken);
     }
 
     /**
