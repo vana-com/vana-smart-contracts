@@ -54,6 +54,7 @@ interface IDataLiquidityPool {
     function updateProofInstruction(string calldata newProofInstruction) external;
     function updatePublicKey(string calldata newProofInstruction) external;
     function updateToken(address newToken) external;
+    function updateName(string calldata newName) external;
     function requestReward(uint256 registryFileId, uint256 proofIndex) external;
     function addRewardsForContributors(uint256 contributorsRewardAmount) external;
 }

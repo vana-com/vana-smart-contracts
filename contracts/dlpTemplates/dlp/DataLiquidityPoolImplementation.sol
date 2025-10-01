@@ -96,6 +96,13 @@ contract DataLiquidityPoolImplementation is
      */
     event TokenUpdated(address newToken);
 
+    /**
+     * @notice Triggered when the name has been updated
+     *
+     * @param newName                new name
+     */
+    event NameUpdated(string newName);
+
     error FileAlreadyAdded();
     error InvalidScore();
     error InvalidAttestator();
@@ -340,6 +347,17 @@ contract DataLiquidityPoolImplementation is
         token = IERC20(newToken);
 
         emit TokenUpdated(newToken);
+    }
+
+    /**
+     * @notice Updates the name
+     *
+     * @param newName                new name
+     */
+    function updateName(string calldata newName) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        name = newName;
+
+        emit NameUpdated(newName);
     }
 
     /**
