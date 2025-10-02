@@ -33,7 +33,8 @@ describe("DLP fork tests", () => {
   const dlpRewardDeployerTreasuryAddress =
     "0xb547ca8Fe4990fe330FeAeb1C2EBb42F925Af5b8";
 
-  const adminAddress = "0x2AC93684679a5bdA03C6160def908CdB8D46792f";
+  const adminAddress = "0x5ECA5208F29e32879a711467916965B2D753bAf4";
+  const maintainerAddress = "0xd5d84a26A1e72f946b3f0901466EF10c7D9fA2b6";
   const wvanaAddress = "0x00eddd9621fb08436d0331c149d1690909a5906d";
   // Position Manager contract address (Ethereum mainnet)
   const uniswapPositionManagerAddress =
@@ -103,6 +104,12 @@ describe("DLP fork tests", () => {
     });
     admin = await ethers.provider.getSigner(adminAddress);
 
+    await network.provider.request({
+      method: "hardhat_impersonateAccount",
+      params: [maintainerAddress],
+    });
+    maintainer = await ethers.provider.getSigner(maintainerAddress);
+
     dlpRegistry = await ethers.getContractAt(
       "DLPRegistryImplementation",
       dlpRegistryAddress,
@@ -135,7 +142,7 @@ describe("DLP fork tests", () => {
       await deploy();
     });
 
-    it("simulate epoch end", async function () {
+    it.only("simulate epoch end", async function () {
       // ============================================================================
       // CONTRACT UPGRADES
       // ============================================================================
@@ -146,7 +153,7 @@ describe("DLP fork tests", () => {
       // EPOCH PREPARATION
       // ============================================================================
 
-      const epochId = 6n; //await vanaEpoch.epochsCount();
+      const epochId = await vanaEpoch.epochsCount();
       const currentBlock = await getCurrentBlockNumber();
       const epoch = await vanaEpoch.epochs(epochId);
 
@@ -523,7 +530,9 @@ describe("DLP fork tests", () => {
       return parts.join(" ");
     }
 
-    it.only("simulate reward distribution", async function () {
+    it("simulate reward distribution", async function () {
+      const epochId = 7; //await vanaEpoch.epochsCount();
+
       // ============================================================================
       // CONTRACT UPGRADES
       // ============================================================================
@@ -532,7 +541,7 @@ describe("DLP fork tests", () => {
 
       await dlpRewardDeployer
         .connect(admin)
-        .initializeEpochRewards(6n, (3600 * 24) / 6, 90, (3600 * 24) / 6);
+        .initializeEpochRewards(epochId, (3600 * 24) / 6, 90, (3600 * 24) / 6);
       await dlpRewardDeployer
         .connect(admin)
         .updateNumberOfBlocksBetweenTranches((3600 * 2) / 60);
@@ -541,7 +550,6 @@ describe("DLP fork tests", () => {
       // EPOCH PREPARATION
       // ============================================================================
 
-      const epochId = 6; //await vanaEpoch.epochsCount();
       const epoch = await vanaEpoch.epochs(epochId);
 
       console.log("📅 REWARD DISTRIBUTION SIMULATION");
@@ -701,7 +709,7 @@ describe("DLP fork tests", () => {
         );
 
         const tx = await dlpRewardDeployer
-          .connect(admin)
+          .connect(maintainer)
           .distributeRewards(epochId, [dlpId]);
 
         const receipt = await getReceipt(tx);

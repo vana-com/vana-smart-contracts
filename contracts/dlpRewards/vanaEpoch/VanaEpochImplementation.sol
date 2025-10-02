@@ -32,6 +32,7 @@ contract VanaEpochImplementation is
     event EpochFinalized(uint256 epochId);
     event EpochDlpRewardOverridden(uint256 epochId, uint256 dlpId, uint256 rewardAmount, uint256 penaltyAmount);
     event EpochDlpBonusUpdated(uint256 epochId, uint256 dlpId, uint256 oldBonusAmount, uint256 newBonusAmount);
+    event LastEpochSet(uint256 lastEpoch);
 
     error EpochNotEnded();
     error EpochAlreadyFinalized();
@@ -39,6 +40,8 @@ contract VanaEpochImplementation is
     error InvalidEpoch();
     error EpochRewardExceeded(uint256 totalRewardAmount, uint256 epochRewardAmount);
     error EpochRewardNotDistributed();
+    error LastEpochExceeded(uint256 lastEpoch);
+    error LastEpochAlreadySet();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -72,6 +75,22 @@ contract VanaEpochImplementation is
 
     function version() external pure virtual override returns (uint256) {
         return 1;
+    }
+
+    /**
+     * @notice Sets the last epoch number. Can only be called once.
+     * @param _lastEpoch The last epoch number
+     */
+    function setLastEpoch(uint256 _lastEpoch) external onlyRole(MAINTAINER_ROLE) {
+        if (lastEpoch > 0) {
+            revert LastEpochAlreadySet();
+        }
+        if (_lastEpoch == 0) {
+            revert InvalidEpoch();
+        }
+
+        lastEpoch = _lastEpoch;
+        emit LastEpochSet(_lastEpoch);
     }
 
     function epochs(uint256 epochId) external view override returns (EpochInfo memory) {
@@ -163,11 +182,13 @@ contract VanaEpochImplementation is
     ) external override whenNotPaused onlyRole(DLP_PERFORMANCE_ROLE) {
         if (epochId > epochsCount) {
             revert InvalidEpoch();
-        } else if (epochId == epochsCount) {
-            revert EpochNotEnded();
         }
 
         Epoch storage epoch = _epochs[epochId];
+
+        if (epoch.endBlock >= block.number) {
+            revert EpochNotEnded();
+        }
 
         if (epoch.isFinalized) {
             revert EpochAlreadyFinalized();
@@ -228,11 +249,13 @@ contract VanaEpochImplementation is
     ) external override whenNotPaused onlyRole(DLP_PERFORMANCE_ROLE) {
         if (epochId > epochsCount) {
             revert InvalidEpoch();
-        } else if (epochId == epochsCount) {
-            revert EpochNotEnded();
         }
 
         Epoch storage epoch = _epochs[epochId];
+
+        if (epoch.endBlock >= block.number) {
+            revert EpochNotEnded();
+        }
 
         if (!epoch.isFinalized) {
             revert EpochNotFinalized();
@@ -247,13 +270,11 @@ contract VanaEpochImplementation is
     function forceFinalizedEpoch(
         uint256 epochId
     ) external override nonReentrant whenNotPaused onlyRole(MAINTAINER_ROLE) {
-        _createEpochsUntilBlockNumber(block.number);
+        Epoch storage epoch = _epochs[epochId];
 
-        if (epochId >= epochsCount) {
+        if (epoch.endBlock >= block.number) {
             revert EpochNotEnded();
         }
-
-        Epoch storage epoch = _epochs[epochId];
 
         epoch.isFinalized = true;
 
@@ -303,20 +324,25 @@ contract VanaEpochImplementation is
      * @notice Creates epochs up to target block
      */
     function _createEpochsUntilBlockNumber(uint256 blockNumber) internal {
-        Epoch storage lastEpoch = _epochs[epochsCount];
+        Epoch storage currentEpoch = _epochs[epochsCount];
 
-        if (lastEpoch.endBlock > block.number) {
+        if (currentEpoch.endBlock > block.number) {
             return;
         }
 
-        while (lastEpoch.endBlock < blockNumber) {
+        while (currentEpoch.endBlock < blockNumber) {
+            // Check if we've reached the last epoch
+            if (epochsCount >= lastEpoch) {
+                revert LastEpochExceeded(lastEpoch);
+            }
+
             Epoch storage newEpoch = _epochs[++epochsCount];
-            newEpoch.startBlock = lastEpoch.endBlock + 1;
+            newEpoch.startBlock = currentEpoch.endBlock + 1;
             newEpoch.endBlock = newEpoch.startBlock + epochSize * daySize - 1;
             newEpoch.rewardAmount = epochRewardAmount;
 
             emit EpochCreated(epochsCount, newEpoch.startBlock, newEpoch.endBlock, newEpoch.rewardAmount);
-            lastEpoch = newEpoch;
+            currentEpoch = newEpoch;
         }
     }
 
