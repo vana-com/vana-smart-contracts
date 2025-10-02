@@ -29,6 +29,7 @@ contract DataPortabilityGranteesImplementation is
     error EmptyPublicKey();
     error GranteeAlreadyRegistered();
     error GranteeNotFound();
+    error UnauthorizedRegistration();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() ERC2771ContextUpgradeable(address(0)) {
@@ -106,6 +107,11 @@ contract DataPortabilityGranteesImplementation is
         address granteeAddress,
         string memory publicKey
     ) external override whenNotPaused returns (uint256) {
+        // Allow registration if caller has MAINTAINER_ROLE OR owner is the granteeAddress
+        if (!hasRole(MAINTAINER_ROLE, _msgSender()) && owner != granteeAddress) {
+            revert UnauthorizedRegistration();
+        }
+
         if (bytes(publicKey).length == 0) {
             revert EmptyPublicKey();
         }
