@@ -50,6 +50,7 @@ contract DataPortabilityPermissionsImplementation is
     error NotFileOwner(address fileOwner, address requestor);
     error InvalidPermissionsLength(uint256 filesLength, uint256 permissionsLength);
     error InvalidSchemaIdsLength(uint256 filesLength, uint256 schemaIdsLength);
+    error FileNotInPermission(uint256 permissionId, uint256 fileId);
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() ERC2771ContextUpgradeable(address(0)) {
@@ -368,24 +369,7 @@ contract DataPortabilityPermissionsImplementation is
     }
 
     function _addPermission(PermissionInput calldata permissionInput, address signer) internal returns (uint256) {
-        if (bytes(permissionInput.grant).length == 0) {
-            revert EmptyGrant();
-        }
-
-        if (permissionInput.granteeId == 0 || permissionInput.granteeId > dataPortabilityGrantees.granteesCount()) {
-            revert GranteeNotFound();
-        }
-
-        uint256 permissionId = ++permissionsCount;
-
-        Permission storage permissionData = _permissions[permissionId];
-        permissionData.grantor = signer;
-        permissionData.nonce = permissionInput.nonce;
-        permissionData.granteeId = permissionInput.granteeId;
-        permissionData.grant = permissionInput.grant;
-        permissionData.startBlock = block.number;
-        permissionData.endBlock = type(uint256).max; // Default to no expiration
-
+        // Validate file ownership
         uint256 fileIdsLength = permissionInput.fileIds.length;
         for (uint256 i = 0; i < fileIdsLength; ) {
             uint256 fileId = permissionInput.fileIds[i];
@@ -393,8 +377,124 @@ contract DataPortabilityPermissionsImplementation is
             if (fileOwner != signer) {
                 revert NotFileOwner(fileOwner, signer);
             }
-            permissionData.fileIds.add(fileId);
-            _filePermissions[fileId].add(permissionId);
+            unchecked {
+                ++i;
+            }
+        }
+
+        return
+            _createPermission(
+                signer,
+                permissionInput.nonce,
+                permissionInput.granteeId,
+                permissionInput.grant,
+                permissionInput.fileIds
+            );
+    }
+
+    /**
+     * @notice Internal function to create permission with common logic
+     * @dev Shared permission creation logic used by both direct and server-based flows
+     *      Permission hash is based on (signer, granteeId, grant) without nonce or fileIds
+     *      If a permission with the same hash exists:
+     *      - If inactive (revoked), it will be reactivated and new files added
+     *      - If active, new files are added to the existing permission
+     *      If no permission exists, creates a new one with the specified files
+     * @param signer The verified signer address
+     * @param nonce The nonce for this permission
+     * @param granteeId The ID of the grantee
+     * @param grant The grant string
+     * @param fileIds Array of file IDs to associate with the permission
+     * @return uint256 The unique ID of the created, reactivated, or existing permission
+     */
+    function _createPermission(
+        address signer,
+        uint256 nonce,
+        uint256 granteeId,
+        string memory grant,
+        uint256[] memory fileIds
+    ) internal returns (uint256) {
+        if (bytes(grant).length == 0) {
+            revert EmptyGrant();
+        }
+
+        if (granteeId == 0 || granteeId > dataPortabilityGrantees.granteesCount()) {
+            revert GranteeNotFound();
+        }
+
+        // Compute hash based on signer, granteeId, and grant (without nonce or fileIds)
+        bytes32 permissionHash = keccak256(abi.encodePacked(signer, granteeId, grant));
+
+        // Check if permission with same hash already exists
+        uint256 existingPermId = permissionHashToId[permissionHash];
+
+        if (existingPermId != 0) {
+            // Permission already exists
+            Permission storage existingPermission = _permissions[existingPermId];
+
+            // Check if it's inactive (revoked)
+            if (block.number > existingPermission.endBlock) {
+                // Reactivate the permission
+                existingPermission.startBlock = block.number;
+                existingPermission.endBlock = type(uint256).max;
+
+                // Re-add to user's permission set if not already there
+                _users[signer].permissionIds.add(existingPermId);
+
+                // Re-add to grantee's permission set
+                dataPortabilityGrantees.addPermissionToGrantee(granteeId, existingPermId);
+
+                emit PermissionReactivated(existingPermId, block.number);
+            }
+
+            // Add new files to the existing permission
+            uint256[] memory newFileIds = new uint256[](fileIds.length);
+            uint256 newFileCount = 0;
+
+            uint256 fileIdsLength = fileIds.length;
+            for (uint256 i = 0; i < fileIdsLength; ) {
+                if (!existingPermission.fileIds.contains(fileIds[i])) {
+                    existingPermission.fileIds.add(fileIds[i]);
+                    _filePermissions[fileIds[i]].add(existingPermId);
+                    newFileIds[newFileCount] = fileIds[i];
+                    ++newFileCount;
+                }
+                unchecked {
+                    ++i;
+                }
+            }
+
+            // Emit event only if new files were added
+            if (newFileCount > 0) {
+                // Create a properly sized array for the event
+                uint256[] memory addedFiles = new uint256[](newFileCount);
+                for (uint256 i = 0; i < newFileCount; ) {
+                    addedFiles[i] = newFileIds[i];
+                    unchecked {
+                        ++i;
+                    }
+                }
+                emit FilesAddedToPermission(existingPermId, addedFiles, block.number);
+            }
+
+            return existingPermId;
+        }
+
+        // Create new permission
+        uint256 permissionId = ++permissionsCount;
+
+        Permission storage permissionData = _permissions[permissionId];
+        permissionData.grantor = signer;
+        permissionData.nonce = nonce;
+        permissionData.granteeId = granteeId;
+        permissionData.grant = grant;
+        permissionData.startBlock = block.number;
+        permissionData.endBlock = type(uint256).max; // Default to no expiration
+
+        uint256 fileIdsLength = fileIds.length;
+        for (uint256 i = 0; i < fileIdsLength; ) {
+            permissionData.fileIds.add(fileIds[i]);
+            _filePermissions[fileIds[i]].add(permissionId);
             unchecked {
                 ++i;
             }
@@ -402,15 +502,18 @@ contract DataPortabilityPermissionsImplementation is
 
         _users[signer].permissionIds.add(permissionId);
 
-        dataPortabilityGrantees.addPermissionToGrantee(permissionInput.granteeId, permissionId);
+        dataPortabilityGrantees.addPermissionToGrantee(granteeId, permissionId);
 
-        emit PermissionAdded(
-            permissionId,
-            signer,
-            permissionInput.granteeId,
-            permissionInput.grant,
-            permissionInput.fileIds
-        );
+        // Store the hash mapping to prevent future duplicates
+        permissionHashToId[permissionHash] = permissionId;
+
+        // Emit permission creation event
+        emit PermissionCreated(permissionId, signer, granteeId, grant, block.number);
+
+        // Emit files added event
+        if (fileIds.length > 0) {
+            emit FilesAddedToPermission(permissionId, fileIds, block.number);
+        }
 
         return permissionId;
     }
@@ -446,6 +549,9 @@ contract DataPortabilityPermissionsImplementation is
             revert InactivePermission(permissionId);
         }
 
+        // Get all file IDs to emit removal events
+        uint256[] memory fileIds = permissionData.fileIds.values();
+
         permissionData.endBlock = block.number; // Set end block to current block to revoke
 
         User storage userData = _users[signer];
@@ -455,7 +561,39 @@ contract DataPortabilityPermissionsImplementation is
 
         dataPortabilityGrantees.removePermissionFromGrantee(permissionData.granteeId, permissionId);
 
-        emit PermissionRevoked(permissionId);
+        // Emit file removal event for each file
+        uint256 fileIdsLength = fileIds.length;
+        for (uint256 i = 0; i < fileIdsLength; ) {
+            emit FileRemovedFromPermission(permissionId, fileIds[i], block.number);
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    function revokeFilePermission(uint256 permissionId, uint256 fileId) external override whenNotPaused {
+        Permission storage permissionData = _permissions[permissionId];
+        address signer = _msgSender();
+
+        if (permissionData.grantor != signer) {
+            revert NotPermissionGrantor(permissionData.grantor, signer);
+        }
+
+        if (block.number < permissionData.startBlock || block.number > permissionData.endBlock) {
+            revert InactivePermission(permissionId);
+        }
+
+        if (!permissionData.fileIds.contains(fileId)) {
+            revert FileNotInPermission(permissionId, fileId);
+        }
+
+        // Remove file from permission
+        permissionData.fileIds.remove(fileId);
+
+        // Remove permission from file's permission set
+        _filePermissions[fileId].remove(permissionId);
+
+        emit FileRemovedFromPermission(permissionId, fileId, block.number);
     }
 
     /// @inheritdoc IDataPortabilityPermissions
@@ -557,48 +695,14 @@ contract DataPortabilityPermissionsImplementation is
         uint256[] memory fileIds,
         address signer
     ) internal returns (uint256) {
-        if (bytes(serverFilesAndPermissionInput.grant).length == 0) {
-            revert EmptyGrant();
-        }
-
-        if (
-            serverFilesAndPermissionInput.granteeId == 0 ||
-            serverFilesAndPermissionInput.granteeId > dataPortabilityGrantees.granteesCount()
-        ) {
-            revert GranteeNotFound();
-        }
-
-        uint256 permissionId = ++permissionsCount;
-
-        Permission storage permissionData = _permissions[permissionId];
-        permissionData.grantor = signer;
-        permissionData.nonce = serverFilesAndPermissionInput.nonce;
-        permissionData.granteeId = serverFilesAndPermissionInput.granteeId;
-        permissionData.grant = serverFilesAndPermissionInput.grant;
-        permissionData.startBlock = block.number;
-        permissionData.endBlock = type(uint256).max; // Default to no expiration
-
-        for (uint256 i = 0; i < fileIds.length; ) {
-            permissionData.fileIds.add(fileIds[i]);
-            _filePermissions[fileIds[i]].add(permissionId);
-            unchecked {
-                ++i;
-            }
-        }
-
-        _users[signer].permissionIds.add(permissionId);
-
-        dataPortabilityGrantees.addPermissionToGrantee(serverFilesAndPermissionInput.granteeId, permissionId);
-
-        emit PermissionAdded(
-            permissionId,
-            signer,
-            serverFilesAndPermissionInput.granteeId,
-            serverFilesAndPermissionInput.grant,
-            fileIds
-        );
-
-        return permissionId;
+        return
+            _createPermission(
+                signer,
+                serverFilesAndPermissionInput.nonce,
+                serverFilesAndPermissionInput.granteeId,
+                serverFilesAndPermissionInput.grant,
+                fileIds
+            );
     }
 
     function filePermissionIds(uint256 fileId) external view override returns (uint256[] memory) {
@@ -616,5 +720,112 @@ contract DataPortabilityPermissionsImplementation is
 
     function filePermissions(uint256 fileId) external view override returns (uint256[] memory) {
         return _filePermissions[fileId].values();
+    }
+
+    /**
+     * @notice Checks if a permission already exists for the given parameters
+     * @dev Computes the permission hash and looks it up in the registry
+     *      Returns 0 if no permission exists, otherwise returns the permission ID
+     *      Note: Permission hash is based on (grantor, granteeId, grant) without nonce or fileIds
+     * @param grantor The address of the permission grantor
+     * @param granteeId The ID of the grantee
+     * @param grant The grant string (e.g., IPFS URI)
+     * @return uint256 The permission ID if it exists, 0 otherwise
+     */
+    function existingPermissionId(
+        address grantor,
+        uint256 granteeId,
+        string calldata grant
+    ) external view override returns (uint256) {
+        // Compute the permission hash using the same logic as _createPermission
+        bytes32 permissionHash = keccak256(abi.encodePacked(grantor, granteeId, grant));
+
+        // Return the permission ID (0 if doesn't exist)
+        return permissionHashToId[permissionHash];
+    }
+
+    /**
+     * @notice Checks if a specific file is included in a permission
+     * @dev Returns true if the file ID exists in the permission's file set
+     * @param permissionId The ID of the permission to check
+     * @param fileId The file ID to check for
+     * @return bool True if the file is in the permission, false otherwise
+     */
+    function existingPermissionFileId(uint256 permissionId, uint256 fileId) external view override returns (bool) {
+        return _permissions[permissionId].fileIds.contains(fileId);
+    }
+
+    /**
+     * @notice Migrates existing permissions to populate permission hashes retroactively
+     * @dev This function is used to add hashes for permissions created before the new hash format was implemented
+     *      Permission hash is now based on (grantor, granteeId, grant) without nonce or fileIds
+     *      If duplicate permissions are found (both active), the later permission is "ghosted":
+     *      - Removed from user's permission set
+     *      - Removed from grantee's permission set
+     *      - Permission data remains in storage but is no longer tracked
+     * @param startPermissionId The starting permission ID for the batch (inclusive)
+     * @param endPermissionId The ending permission ID for the batch (inclusive)
+     * @custom:security Only callable by MAINTAINER_ROLE for one-time migration after upgrade
+     */
+    function migratePermissionHashes(
+        uint256 startPermissionId,
+        uint256 endPermissionId
+    ) external onlyRole(MAINTAINER_ROLE) {
+        require(startPermissionId > 0 && startPermissionId <= endPermissionId, "Invalid range");
+        require(endPermissionId <= permissionsCount, "End ID exceeds total count");
+
+        for (uint256 permissionId = startPermissionId; permissionId <= endPermissionId; ) {
+            Permission storage permissionData = _permissions[permissionId];
+
+            // Skip if permission has no grantor (invalid/deleted permission)
+            if (permissionData.grantor == address(0)) {
+                unchecked {
+                    ++permissionId;
+                }
+                continue;
+            }
+
+            // Compute the permission hash using new format (grantor, granteeId, grant)
+            bytes32 permissionHash = keccak256(
+                abi.encodePacked(permissionData.grantor, permissionData.granteeId, permissionData.grant)
+            );
+
+            // Check if this hash already exists
+            uint256 existingPermId = permissionHashToId[permissionHash];
+
+            if (existingPermId != 0 && existingPermId != permissionId) {
+                // Duplicate found - determine which one to keep
+                Permission storage existingPermission = _permissions[existingPermId];
+
+                // Check if both are active
+                bool currentActive = block.number >= permissionData.startBlock &&
+                    block.number <= permissionData.endBlock;
+                bool existingActive = block.number >= existingPermission.startBlock &&
+                    block.number <= existingPermission.endBlock;
+
+                if (currentActive && existingActive) {
+                    // Both active - ghost the later one (current)
+                    // Remove from user's permission set
+                    _users[permissionData.grantor].permissionIds.remove(permissionId);
+
+                    // Remove from grantee's permission set
+                    dataPortabilityGrantees.removePermissionFromGrantee(permissionData.granteeId, permissionId);
+
+                    emit DuplicatePermissionGhosted(permissionId, existingPermId);
+                } else if (!existingActive && currentActive) {
+                    // Existing is inactive, current is active - replace the hash mapping
+                    permissionHashToId[permissionHash] = permissionId;
+                }
+                // If current is inactive, leave the existing mapping as is
+            } else if (existingPermId == 0) {
+                // No duplicate - add the hash mapping
+                permissionHashToId[permissionHash] = permissionId;
+            }
+            // If existingPermId == permissionId, hash already correctly mapped
+
+            unchecked {
+                ++permissionId;
+            }
+        }
     }
 }

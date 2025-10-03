@@ -135,7 +135,7 @@ describe("DLP fork tests", () => {
       await deploy();
     });
 
-    it("simulate epoch end", async function () {
+    it.only("simulate epoch end", async function () {
       // ============================================================================
       // CONTRACT UPGRADES
       // ============================================================================
@@ -523,7 +523,7 @@ describe("DLP fork tests", () => {
       return parts.join(" ");
     }
 
-    it.only("simulate reward distribution", async function () {
+    it("simulate reward distribution", async function () {
       // ============================================================================
       // CONTRACT UPGRADES
       // ============================================================================

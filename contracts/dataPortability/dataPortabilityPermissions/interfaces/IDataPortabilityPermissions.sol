@@ -48,6 +48,11 @@ interface IDataPortabilityPermissions {
         EnumerableSet.UintSet permissionIds;
     }
 
+    struct PermissionFile {
+        uint256 startBlock;
+        uint256 endBlock;
+    }
+
     /**
      * @notice Internal permission data structure with full relationship mappings
      * @dev Contains all permission details including file associations and time bounds
@@ -67,6 +72,7 @@ interface IDataPortabilityPermissions {
         uint256 startBlock;
         uint256 endBlock;
         EnumerableSet.UintSet fileIds;
+        mapping(uint256 fileId => PermissionFile permissionFile) filePermissions;
     }
 
     /**
@@ -146,28 +152,53 @@ interface IDataPortabilityPermissions {
     // ==================== EVENTS ====================
 
     /**
-     * @notice Emitted when a new permission is granted
-     * @dev This event provides complete information about the permission creation
+     * @notice Emitted when a new permission is created
+     * @dev This event indicates a new permission structure was created (without file details)
      * @param permissionId Unique identifier assigned to the new permission
-     * @param user Address of the user (grantor) who granted the permission
+     * @param grantor Address of the user (grantor) who granted the permission
      * @param granteeId Unique identifier of the grantee receiving access rights
      * @param grant IPFS or other URI describing the specific permissions granted
-     * @param fileIds Array of file IDs covered by this permission
+     * @param blockNumber Block number when the permission was created
      */
-    event PermissionAdded(
+    event PermissionCreated(
         uint256 indexed permissionId,
-        address indexed user,
+        address indexed grantor,
         uint256 indexed granteeId,
         string grant,
-        uint256[] fileIds
+        uint256 blockNumber
     );
 
     /**
-     * @notice Emitted when a permission is revoked by the grantor
-     * @dev Revocation immediately terminates access by setting end block to current block
-     * @param permissionId Unique identifier of the revoked permission
+     * @notice Emitted when an existing inactive permission is reactivated
+     * @dev Reactivation occurs when attempting to create a duplicate permission
+     * @param permissionId Unique identifier of the reactivated permission
+     * @param blockNumber Block number when the permission was reactivated
      */
-    event PermissionRevoked(uint256 indexed permissionId);
+    event PermissionReactivated(uint256 indexed permissionId, uint256 blockNumber);
+
+    /**
+     * @notice Emitted when a duplicate permission is marked as ghost during migration
+     * @dev Ghost permissions exist in storage but are removed from user and grantee tracking
+     * @param duplicatePermissionId The ID of the permission that was made a ghost
+     * @param originalPermissionId The ID of the original permission that was kept
+     */
+    event DuplicatePermissionGhosted(uint256 indexed duplicatePermissionId, uint256 indexed originalPermissionId);
+
+    /**
+     * @notice Emitted when files are added to a permission
+     * @param permissionId Unique identifier of the permission
+     * @param fileIds Array of file IDs that were added
+     * @param blockNumber Block number when the files were added
+     */
+    event FilesAddedToPermission(uint256 indexed permissionId, uint256[] fileIds, uint256 blockNumber);
+
+    /**
+     * @notice Emitted when a file is removed from a permission
+     * @param permissionId Unique identifier of the permission
+     * @param fileId The file ID that was removed
+     * @param blockNumber Block number when the file was removed
+     */
+    event FileRemovedFromPermission(uint256 indexed permissionId, uint256 indexed fileId, uint256 blockNumber);
 
     // ==================== CORE FUNCTIONS ====================
 
@@ -271,6 +302,31 @@ interface IDataPortabilityPermissions {
      * @return uint256[] Array of permission IDs that include this file
      */
     function filePermissions(uint256 fileId) external view returns (uint256[] memory);
+
+    /**
+     * @notice Checks if a permission already exists for the given parameters
+     * @dev Computes the permission hash and looks it up in the registry
+     *      Returns 0 if no permission exists, otherwise returns the permission ID
+     *      Note: Permission hash is based on (grantor, granteeId, grant) without nonce or fileIds
+     * @param grantor The address of the permission grantor
+     * @param granteeId The ID of the grantee
+     * @param grant The grant string (e.g., IPFS URI)
+     * @return uint256 The permission ID if it exists, 0 otherwise
+     */
+    function existingPermissionId(
+        address grantor,
+        uint256 granteeId,
+        string calldata grant
+    ) external view returns (uint256);
+
+    /**
+     * @notice Checks if a specific file is included in a permission
+     * @dev Returns true if the file ID exists in the permission's file set
+     * @param permissionId The ID of the permission to check
+     * @param fileId The file ID to check for
+     * @return bool True if the file is in the permission, false otherwise
+     */
+    function existingPermissionFileId(uint256 permissionId, uint256 fileId) external view returns (bool);
 
     // ==================== CONTRACT MANAGEMENT ====================
 
@@ -419,6 +475,25 @@ interface IDataPortabilityPermissions {
         RevokePermissionInput calldata revokePermissionInput,
         bytes calldata signature
     ) external;
+
+    /**
+     * @notice Revokes a single file from a permission
+     * @dev Removes the specified file from the permission's file set
+     * @param permissionId Unique identifier of the permission
+     * @param fileId The file ID to revoke from the permission
+     *
+     * Requirements:
+     * - Caller must be the permission grantor
+     * - Permission must be currently active
+     * - File must exist in the permission
+     * - Contract must not be paused
+     *
+     * Effects:
+     * - Removes file from permission's file set
+     * - Removes permission from file's permission set
+     * - Emits FileRevokedFromPermission event
+     */
+    function revokeFilePermission(uint256 permissionId, uint256 fileId) external;
 
     /**
      * @notice Gets all file IDs associated with a permission

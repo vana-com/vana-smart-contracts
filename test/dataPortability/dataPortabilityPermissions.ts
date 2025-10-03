@@ -314,7 +314,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const permission = {
         nonce: 0n,
@@ -367,7 +367,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const permission = {
         nonce: 1n, // Wrong nonce - should be 0
@@ -392,7 +392,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const permission = {
         nonce: 0n,
@@ -411,11 +411,11 @@ describe("DataPortabilityPermissions", () => {
       (await dataPermission.userNonce(testUser1.address)).should.eq(0);
     });
 
-    it("should allow multiple permissions with the same grant", async function () {
+    it("should prevent duplicate permissions with the same grant and fileIds", async function () {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const permission1 = {
         nonce: 0n,
@@ -427,7 +427,7 @@ describe("DataPortabilityPermissions", () => {
       const permission2 = {
         nonce: 1n,
         granteeId: 1n,
-        grant: "ipfs://samegrant", // Same grant - should be allowed now
+        grant: "ipfs://samegrant", // Same grant and fileIds - should return existing permission
         fileIds: [],
       };
 
@@ -441,31 +441,29 @@ describe("DataPortabilityPermissions", () => {
       );
 
       // Add first permission
-      await dataPermission
+      const tx1 = await dataPermission
         .connect(sponsor)
         .addPermission(permission1, signature1);
 
-      // Add second permission with same grant - should succeed
-      await dataPermission
+      // Try to add duplicate permission - should return existing permission ID
+      const tx2 = await dataPermission
         .connect(sponsor)
         .addPermission(permission2, signature2);
 
-      // Verify both permissions were added
-      (await dataPermission.permissionsCount()).should.eq(2);
+      // Verify only one permission was created
+      (await dataPermission.permissionsCount()).should.eq(1);
       (await dataPermission.userNonce(testUser1.address)).should.eq(2);
 
-      // Verify both permissions have the same grant
-      const storedPermission1 = await dataPermission.permissions(1);
-      const storedPermission2 = await dataPermission.permissions(2);
-      storedPermission1.grant.should.eq("ipfs://samegrant");
-      storedPermission2.grant.should.eq("ipfs://samegrant");
+      // Verify the stored permission
+      const storedPermission = await dataPermission.permissions(1);
+      storedPermission.grant.should.eq("ipfs://samegrant");
     });
 
     it("should add multiple permissions for the same user with sequential nonces", async function () {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const permission1 = {
         nonce: 0n,
@@ -546,10 +544,10 @@ describe("DataPortabilityPermissions", () => {
       // First register grantees for both users
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
       await granteesContract
         .connect(testUser2)
-        .registerGrantee(testUser2.address, testUser1.address, "publicKey2");
+        .registerGrantee(testUser1.address, testUser1.address, "publicKey2");
 
       const permission1 = {
         nonce: 0n,
@@ -604,13 +602,13 @@ describe("DataPortabilityPermissions", () => {
       // First register grantees for all users
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
       await granteesContract
         .connect(testUser2)
-        .registerGrantee(testUser2.address, user3.address, "publicKey2");
+        .registerGrantee(user3.address, user3.address, "publicKey2");
       await granteesContract
         .connect(user3)
-        .registerGrantee(user3.address, maintainer.address, "publicKey3");
+        .registerGrantee(maintainer.address, maintainer.address, "publicKey3");
 
       const permissions = [
         { nonce: 0n, granteeId: 1n, grant: "ipfs://grant1", fileIds: [] },
@@ -652,7 +650,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const permission = {
         nonce: 0n,
@@ -679,10 +677,10 @@ describe("DataPortabilityPermissions", () => {
       // First register grantees for both users
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
       await granteesContract
         .connect(testUser2)
-        .registerGrantee(testUser2.address, testUser1.address, "publicKey2");
+        .registerGrantee(testUser1.address, testUser1.address, "publicKey2");
 
       const permission1 = {
         nonce: 0n,
@@ -747,7 +745,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const permission = {
         nonce: 0n,
@@ -769,7 +767,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const permissions = [
         { nonce: 0n, granteeId: 1n, grant: "ipfs://grant1", fileIds: [] },
@@ -804,10 +802,10 @@ describe("DataPortabilityPermissions", () => {
       // First register grantees for both users
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
       await granteesContract
         .connect(testUser2)
-        .registerGrantee(testUser2.address, testUser1.address, "publicKey2");
+        .registerGrantee(testUser1.address, testUser1.address, "publicKey2");
 
       const permission1 = {
         nonce: 0n,
@@ -866,7 +864,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const permission = {
         nonce: 0n,
@@ -902,7 +900,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const validPermission = {
         nonce: 0n,
@@ -928,7 +926,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const longGrant = "ipfs://" + "a".repeat(1000); // Very long grant
       const permission = {
@@ -951,7 +949,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const permission = {
         nonce: 0n,
@@ -973,7 +971,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const permission = {
         nonce: 0n,
@@ -1005,7 +1003,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const permission = {
         nonce: 0n,
@@ -1139,7 +1137,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // First add a permission
         const permission = {
@@ -1187,7 +1185,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // User1 adds a permission
         const permission = {
@@ -1219,7 +1217,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Add and revoke a permission
         const permission = {
@@ -1249,7 +1247,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Add multiple permissions
         const permissions = [
@@ -1294,7 +1292,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Add a permission first
         const permission = {
@@ -1346,7 +1344,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Add a permission
         const permission = {
@@ -1388,10 +1386,10 @@ describe("DataPortabilityPermissions", () => {
         // First register grantees for both users
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
         await granteesContract
           .connect(testUser2)
-          .registerGrantee(testUser2.address, testUser1.address, "publicKey2");
+          .registerGrantee(testUser1.address, testUser1.address, "publicKey2");
 
         // User1 adds a permission
         const permission1 = {
@@ -1437,7 +1435,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Add permission
         const permission = {
@@ -1487,7 +1485,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Add 3 permissions
         const permissions = [
@@ -1543,7 +1541,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Add permission
         const permission = {
@@ -1598,7 +1596,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Add permission 1
         const perm1 = {
@@ -1652,7 +1650,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Add a permission
         const permission = {
@@ -1697,7 +1695,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Initial nonce
         (await dataPermission.userNonce(testUser1.address)).should.eq(0);
@@ -1749,7 +1747,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Add a permission
         const permission = {
@@ -1848,10 +1846,10 @@ describe("DataPortabilityPermissions", () => {
       // First register grantees
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
       await granteesContract
         .connect(testUser2)
-        .registerGrantee(testUser2.address, user3.address, "publicKey2");
+        .registerGrantee(user3.address, user3.address, "publicKey2");
 
       const permission = {
         nonce: 0n,
@@ -1901,7 +1899,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const permissions = [];
       const signatures = [];
@@ -1931,6 +1929,1082 @@ describe("DataPortabilityPermissions", () => {
       (
         await dataPermission.userPermissionIdsLength(testUser1.address)
       ).should.eq(10);
+    });
+  });
+
+  describe("Duplicate Prevention", () => {
+    beforeEach(async () => {
+      await deploy();
+    });
+
+    const createPermissionSignature = async (
+      permission: {
+        nonce: bigint;
+        granteeId: bigint;
+        grant: string;
+        fileIds: bigint[];
+      },
+      signer: HardhatEthersSigner,
+    ) => {
+      const domain = {
+        name: "VanaDataPortabilityPermissions",
+        version: "1",
+        chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
+        verifyingContract: await dataPermission.getAddress(),
+      };
+
+      const types = {
+        Permission: [
+          { name: "nonce", type: "uint256" },
+          { name: "granteeId", type: "uint256" },
+          { name: "grant", type: "string" },
+          { name: "fileIds", type: "uint256[]" },
+        ],
+      };
+
+      const value = {
+        nonce: permission.nonce,
+        granteeId: permission.granteeId,
+        grant: permission.grant,
+        fileIds: permission.fileIds,
+      };
+
+      return await signer.signTypedData(domain, types, value);
+    };
+
+    it("should return existing permission ID when adding duplicate", async function () {
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
+
+      const permission1 = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://duplicate-test",
+        fileIds: [],
+      };
+
+      const permission2 = {
+        nonce: 1n,
+        granteeId: 1n,
+        grant: "ipfs://duplicate-test",
+        fileIds: [],
+      };
+
+      const signature1 = await createPermissionSignature(
+        permission1,
+        testUser1,
+      );
+      const signature2 = await createPermissionSignature(
+        permission2,
+        testUser1,
+      );
+
+      // Add first permission
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission1, signature1);
+
+      // Add duplicate - should return same ID
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission2, signature2);
+
+      // Verify only one permission was created
+      (await dataPermission.permissionsCount()).should.eq(1);
+      (await dataPermission.userNonce(testUser1.address)).should.eq(2);
+    });
+
+    it("should reactivate revoked permission when duplicate is added", async function () {
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
+
+      const permission1 = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://reactivate-test",
+        fileIds: [],
+      };
+
+      const signature1 = await createPermissionSignature(
+        permission1,
+        testUser1,
+      );
+
+      // Add permission
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission1, signature1);
+
+      // Revoke it
+      await dataPermission.connect(testUser1).revokePermission(1);
+
+      // Verify it's revoked
+      const revokedPermission = await dataPermission.permissions(1);
+      revokedPermission.endBlock.should.not.eq(ethers.MaxUint256);
+
+      // Try to add same permission again - should reactivate
+      const permission2 = {
+        nonce: 1n,
+        granteeId: 1n,
+        grant: "ipfs://reactivate-test",
+        fileIds: [],
+      };
+      const signature2 = await createPermissionSignature(
+        permission2,
+        testUser1,
+      );
+
+      const tx = await dataPermission
+        .connect(sponsor)
+        .addPermission(permission2, signature2);
+
+      // Verify PermissionReactivated event was emitted
+      await expect(tx)
+        .to.emit(dataPermission, "PermissionReactivated")
+        .withArgs(1);
+
+      // Verify permission is now active again
+      const reactivatedPermission = await dataPermission.permissions(1);
+      reactivatedPermission.endBlock.should.eq(ethers.MaxUint256);
+
+      // Verify still only one permission exists
+      (await dataPermission.permissionsCount()).should.eq(1);
+    });
+
+    it("should create different permissions for different fileIds", async function () {
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
+
+      // Set up files
+      await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
+      await dataRegistry.setFile(2, testUser1.address, "ipfs://file2");
+
+      const permission1 = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://same-grant",
+        fileIds: [1n],
+      };
+
+      const permission2 = {
+        nonce: 1n,
+        granteeId: 1n,
+        grant: "ipfs://same-grant",
+        fileIds: [2n],
+      };
+
+      const signature1 = await createPermissionSignature(
+        permission1,
+        testUser1,
+      );
+      const signature2 = await createPermissionSignature(
+        permission2,
+        testUser1,
+      );
+
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission1, signature1);
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission2, signature2);
+
+      // Verify two different permissions were created
+      (await dataPermission.permissionsCount()).should.eq(2);
+    });
+
+    it("should create different permissions for different grants", async function () {
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
+
+      const permission1 = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant1",
+        fileIds: [],
+      };
+
+      const permission2 = {
+        nonce: 1n,
+        granteeId: 1n,
+        grant: "ipfs://grant2",
+        fileIds: [],
+      };
+
+      const signature1 = await createPermissionSignature(
+        permission1,
+        testUser1,
+      );
+      const signature2 = await createPermissionSignature(
+        permission2,
+        testUser1,
+      );
+
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission1, signature1);
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission2, signature2);
+
+      // Verify two different permissions were created
+      (await dataPermission.permissionsCount()).should.eq(2);
+    });
+
+    it("should create different permissions for different grantees", async function () {
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
+
+      await granteesContract
+        .connect(testUser2)
+        .registerGrantee(user3.address, user3.address, "publicKey2");
+
+      const permission1 = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://same-grant",
+        fileIds: [],
+      };
+
+      const permission2 = {
+        nonce: 1n,
+        granteeId: 2n,
+        grant: "ipfs://same-grant",
+        fileIds: [],
+      };
+
+      const signature1 = await createPermissionSignature(
+        permission1,
+        testUser1,
+      );
+      const signature2 = await createPermissionSignature(
+        permission2,
+        testUser1,
+      );
+
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission1, signature1);
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission2, signature2);
+
+      // Verify two different permissions were created
+      (await dataPermission.permissionsCount()).should.eq(2);
+    });
+
+    it("should create different permissions for different signers", async function () {
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
+
+      const permission1 = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://same-grant",
+        fileIds: [],
+      };
+
+      const permission2 = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://same-grant",
+        fileIds: [],
+      };
+
+      const signature1 = await createPermissionSignature(
+        permission1,
+        testUser1,
+      );
+      const signature2 = await createPermissionSignature(
+        permission2,
+        testUser2,
+      );
+
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission1, signature1);
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission2, signature2);
+
+      // Verify two different permissions were created
+      (await dataPermission.permissionsCount()).should.eq(2);
+
+      const storedPermission1 = await dataPermission.permissions(1);
+      const storedPermission2 = await dataPermission.permissions(2);
+
+      storedPermission1.grantor.should.eq(testUser1.address);
+      storedPermission2.grantor.should.eq(testUser2.address);
+    });
+
+    it("should handle complex fileIds arrays in duplicate detection", async function () {
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
+
+      // Set up files
+      await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
+      await dataRegistry.setFile(2, testUser1.address, "ipfs://file2");
+      await dataRegistry.setFile(3, testUser1.address, "ipfs://file3");
+
+      const permission1 = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://complex-files",
+        fileIds: [1n, 2n, 3n],
+      };
+
+      const permission2 = {
+        nonce: 1n,
+        granteeId: 1n,
+        grant: "ipfs://complex-files",
+        fileIds: [1n, 2n, 3n],
+      };
+
+      const signature1 = await createPermissionSignature(
+        permission1,
+        testUser1,
+      );
+      const signature2 = await createPermissionSignature(
+        permission2,
+        testUser1,
+      );
+
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission1, signature1);
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission2, signature2);
+
+      // Verify only one permission was created
+      (await dataPermission.permissionsCount()).should.eq(1);
+    });
+
+    it("should treat different fileIds order as different permissions", async function () {
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
+
+      // Set up files
+      await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
+      await dataRegistry.setFile(2, testUser1.address, "ipfs://file2");
+
+      const permission1 = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://order-test",
+        fileIds: [1n, 2n],
+      };
+
+      const permission2 = {
+        nonce: 1n,
+        granteeId: 1n,
+        grant: "ipfs://order-test",
+        fileIds: [2n, 1n], // Different order
+      };
+
+      const signature1 = await createPermissionSignature(
+        permission1,
+        testUser1,
+      );
+      const signature2 = await createPermissionSignature(
+        permission2,
+        testUser1,
+      );
+
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission1, signature1);
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission2, signature2);
+
+      // Verify two different permissions were created (order matters)
+      (await dataPermission.permissionsCount()).should.eq(2);
+    });
+
+    it("should maintain correct state after reactivating permission", async function () {
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
+
+      const permission1 = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://state-test",
+        fileIds: [],
+      };
+
+      const signature1 = await createPermissionSignature(
+        permission1,
+        testUser1,
+      );
+
+      // Add permission
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission1, signature1);
+
+      const originalPermission = await dataPermission.permissions(1);
+      const originalStartBlock = originalPermission.startBlock;
+
+      // Revoke it
+      await dataPermission.connect(testUser1).revokePermission(1);
+
+      // Mine some blocks to ensure different block number
+      await ethers.provider.send("evm_mine", []);
+      await ethers.provider.send("evm_mine", []);
+
+      // Reactivate by adding duplicate
+      const permission2 = {
+        nonce: 1n,
+        granteeId: 1n,
+        grant: "ipfs://state-test",
+        fileIds: [],
+      };
+      const signature2 = await createPermissionSignature(
+        permission2,
+        testUser1,
+      );
+
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission2, signature2);
+
+      const reactivatedPermission = await dataPermission.permissions(1);
+
+      // Verify state changes
+      reactivatedPermission.startBlock.should.not.eq(originalStartBlock); // New start block
+      reactivatedPermission.endBlock.should.eq(ethers.MaxUint256); // Active again
+      reactivatedPermission.nonce.should.eq(1n); // Updated nonce
+      reactivatedPermission.grantor.should.eq(testUser1.address); // Same grantor
+      reactivatedPermission.granteeId.should.eq(1n); // Same grantee
+      reactivatedPermission.grant.should.eq("ipfs://state-test"); // Same grant
+
+      // Verify user's permission set includes it
+      const userPermissionIds = await dataPermission.userPermissionIdsValues(
+        testUser1.address,
+      );
+      userPermissionIds.should.deep.equal([1n]);
+    });
+  });
+
+  describe("Check Existing Permission", () => {
+    beforeEach(async () => {
+      await deploy();
+    });
+
+    const createPermissionSignature = async (
+      permission: {
+        nonce: bigint;
+        granteeId: bigint;
+        grant: string;
+        fileIds: bigint[];
+      },
+      signer: HardhatEthersSigner,
+    ) => {
+      const domain = {
+        name: "VanaDataPortabilityPermissions",
+        version: "1",
+        chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
+        verifyingContract: await dataPermission.getAddress(),
+      };
+
+      const types = {
+        Permission: [
+          { name: "nonce", type: "uint256" },
+          { name: "granteeId", type: "uint256" },
+          { name: "grant", type: "string" },
+          { name: "fileIds", type: "uint256[]" },
+        ],
+      };
+
+      const value = {
+        nonce: permission.nonce,
+        granteeId: permission.granteeId,
+        grant: permission.grant,
+        fileIds: permission.fileIds,
+      };
+
+      return await signer.signTypedData(domain, types, value);
+    };
+
+    it("should return 0 for non-existent permission", async function () {
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
+
+      const existingId = await dataPermission.existingPermissionId(
+        testUser1.address,
+        1n,
+        "ipfs://nonexistent",
+        [],
+      );
+
+      existingId.should.eq(0n);
+    });
+
+    it("should return permission ID for existing permission", async function () {
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
+
+      const permission = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://existing",
+        fileIds: [],
+      };
+
+      const signature = await createPermissionSignature(permission, testUser1);
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission, signature);
+
+      // Check if permission exists
+      const existingId = await dataPermission.existingPermissionId(
+        testUser1.address,
+        1n,
+        "ipfs://existing",
+        [],
+      );
+
+      existingId.should.eq(1n);
+    });
+
+    it("should work with different fileIds", async function () {
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
+
+      // Set up files
+      await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
+      await dataRegistry.setFile(2, testUser1.address, "ipfs://file2");
+
+      const permission = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://with-files",
+        fileIds: [1n, 2n],
+      };
+
+      const signature = await createPermissionSignature(permission, testUser1);
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission, signature);
+
+      // Check with correct fileIds
+      const existingId1 = await dataPermission.existingPermissionId(
+        testUser1.address,
+        1n,
+        "ipfs://with-files",
+        [1n, 2n],
+      );
+      existingId1.should.eq(1n);
+
+      // Check with different fileIds - should return 0
+      const existingId2 = await dataPermission.existingPermissionId(
+        testUser1.address,
+        1n,
+        "ipfs://with-files",
+        [2n, 1n], // Different order
+      );
+      existingId2.should.eq(0n);
+
+      // Check with completely different fileIds - should return 0
+      const existingId3 = await dataPermission.existingPermissionId(
+        testUser1.address,
+        1n,
+        "ipfs://with-files",
+        [1n],
+      );
+      existingId3.should.eq(0n);
+    });
+
+    it("should distinguish between different grantors", async function () {
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
+
+      const permission = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant",
+        fileIds: [],
+      };
+
+      const signature = await createPermissionSignature(permission, testUser1);
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission, signature);
+
+      // Check with correct grantor
+      const existingId1 = await dataPermission.existingPermissionId(
+        testUser1.address,
+        1n,
+        "ipfs://grant",
+        [],
+      );
+      existingId1.should.eq(1n);
+
+      // Check with different grantor - should return 0
+      const existingId2 = await dataPermission.existingPermissionId(
+        testUser2.address,
+        1n,
+        "ipfs://grant",
+        [],
+      );
+      existingId2.should.eq(0n);
+    });
+
+    it("should distinguish between different grantees", async function () {
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
+
+      await granteesContract
+        .connect(testUser2)
+        .registerGrantee(user3.address, user3.address, "publicKey2");
+
+      const permission = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant",
+        fileIds: [],
+      };
+
+      const signature = await createPermissionSignature(permission, testUser1);
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission, signature);
+
+      // Check with correct granteeId
+      const existingId1 = await dataPermission.existingPermissionId(
+        testUser1.address,
+        1n,
+        "ipfs://grant",
+        [],
+      );
+      existingId1.should.eq(1n);
+
+      // Check with different granteeId - should return 0
+      const existingId2 = await dataPermission.existingPermissionId(
+        testUser1.address,
+        2n,
+        "ipfs://grant",
+        [],
+      );
+      existingId2.should.eq(0n);
+    });
+
+    it("should distinguish between different grants", async function () {
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
+
+      const permission = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant1",
+        fileIds: [],
+      };
+
+      const signature = await createPermissionSignature(permission, testUser1);
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission, signature);
+
+      // Check with correct grant
+      const existingId1 = await dataPermission.existingPermissionId(
+        testUser1.address,
+        1n,
+        "ipfs://grant1",
+        [],
+      );
+      existingId1.should.eq(1n);
+
+      // Check with different grant - should return 0
+      const existingId2 = await dataPermission.existingPermissionId(
+        testUser1.address,
+        1n,
+        "ipfs://grant2",
+        [],
+      );
+      existingId2.should.eq(0n);
+    });
+
+    it("should work after migration", async function () {
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
+
+      const permission = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://pre-migration",
+        fileIds: [],
+      };
+
+      const signature = await createPermissionSignature(permission, testUser1);
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission, signature);
+
+      // Run migration
+      await dataPermission.connect(maintainer).migratePermissionHashes(1, 1);
+
+      // Check if permission can be found after migration
+      const existingId = await dataPermission.existingPermissionId(
+        testUser1.address,
+        1n,
+        "ipfs://pre-migration",
+        [],
+      );
+      existingId.should.eq(1n);
+    });
+
+    it("should return the permission ID even after duplicate attempt", async function () {
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
+
+      const permission1 = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://test",
+        fileIds: [],
+      };
+
+      const signature1 = await createPermissionSignature(
+        permission1,
+        testUser1,
+      );
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission1, signature1);
+
+      // Permission ID 1 is created, check it exists
+      const existingId1 = await dataPermission.existingPermissionId(
+        testUser1.address,
+        1n,
+        "ipfs://test",
+        [],
+      );
+      existingId1.should.eq(1n);
+
+      // The second add should return the same ID due to duplicate prevention
+      // So we should still be able to find it
+      const existingId2 = await dataPermission.existingPermissionId(
+        testUser1.address,
+        1n,
+        "ipfs://test",
+        [],
+      );
+      existingId2.should.eq(1n);
+    });
+  });
+
+  describe("Migration - Retroactive Hash Population", () => {
+    beforeEach(async () => {
+      await deploy();
+    });
+
+    const createPermissionSignature = async (
+      permission: {
+        nonce: bigint;
+        granteeId: bigint;
+        grant: string;
+        fileIds: bigint[];
+      },
+      signer: HardhatEthersSigner,
+    ) => {
+      const domain = {
+        name: "VanaDataPortabilityPermissions",
+        version: "1",
+        chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
+        verifyingContract: await dataPermission.getAddress(),
+      };
+
+      const types = {
+        Permission: [
+          { name: "nonce", type: "uint256" },
+          { name: "granteeId", type: "uint256" },
+          { name: "grant", type: "string" },
+          { name: "fileIds", type: "uint256[]" },
+        ],
+      };
+
+      const value = {
+        nonce: permission.nonce,
+        granteeId: permission.granteeId,
+        grant: permission.grant,
+        fileIds: permission.fileIds,
+      };
+
+      return await signer.signTypedData(domain, types, value);
+    };
+
+    it("should populate hashes for permissions without duplicates", async function () {
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
+
+      // Create some permissions
+      const permission1 = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant1",
+        fileIds: [],
+      };
+
+      const permission2 = {
+        nonce: 1n,
+        granteeId: 1n,
+        grant: "ipfs://grant2",
+        fileIds: [],
+      };
+
+      const signature1 = await createPermissionSignature(
+        permission1,
+        testUser1,
+      );
+      const signature2 = await createPermissionSignature(
+        permission2,
+        testUser1,
+      );
+
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission1, signature1);
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission2, signature2);
+
+      // Migration should succeed without errors
+      await dataPermission.connect(maintainer).migratePermissionHashes(1, 2);
+
+      // Verify permissions still exist and are accessible
+      const perm1 = await dataPermission.permissions(1);
+      const perm2 = await dataPermission.permissions(2);
+
+      perm1.grant.should.eq("ipfs://grant1");
+      perm2.grant.should.eq("ipfs://grant2");
+    });
+
+    it("should ghost duplicate active permissions during migration", async function () {
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
+
+      // Create two identical permissions
+      const permission1 = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://duplicate",
+        fileIds: [],
+      };
+
+      const permission2 = {
+        nonce: 1n,
+        granteeId: 1n,
+        grant: "ipfs://duplicate",
+        fileIds: [],
+      };
+
+      const signature1 = await createPermissionSignature(
+        permission1,
+        testUser1,
+      );
+      const signature2 = await createPermissionSignature(
+        permission2,
+        testUser1,
+      );
+
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission1, signature1);
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission2, signature2);
+
+      // Due to duplicate prevention, only 1 permission was actually created
+      const permissionsCount = await dataPermission.permissionsCount();
+      permissionsCount.should.eq(1n);
+
+      // Run migration
+      await dataPermission
+        .connect(maintainer)
+        .migratePermissionHashes(1, Number(permissionsCount));
+
+      // Permission data should still exist in storage
+      const perm1 = await dataPermission.permissions(1);
+      perm1.grant.should.eq("ipfs://duplicate");
+
+      // User should have 1 permission
+      (
+        await dataPermission.userPermissionIdsLength(testUser1.address)
+      ).should.eq(1);
+    });
+
+    it("should handle batch migration correctly", async function () {
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
+
+      // Create 5 permissions
+      for (let i = 0; i < 5; i++) {
+        const permission = {
+          nonce: BigInt(i),
+          granteeId: 1n,
+          grant: `ipfs://grant${i}`,
+          fileIds: [],
+        };
+        const signature = await createPermissionSignature(
+          permission,
+          testUser1,
+        );
+        await dataPermission
+          .connect(sponsor)
+          .addPermission(permission, signature);
+      }
+
+      // Migrate in batch
+      await dataPermission.connect(maintainer).migratePermissionHashes(1, 5);
+
+      // All permissions should still be accessible
+      for (let i = 1; i <= 5; i++) {
+        const perm = await dataPermission.permissions(i);
+        perm.grant.should.eq(`ipfs://grant${i - 1}`);
+      }
+    });
+
+    it("should reject migration with invalid range", async function () {
+      await expect(
+        dataPermission.connect(maintainer).migratePermissionHashes(0, 10),
+      ).to.be.revertedWith("Invalid range");
+
+      await expect(
+        dataPermission.connect(maintainer).migratePermissionHashes(10, 5),
+      ).to.be.revertedWith("Invalid range");
+    });
+
+    it("should reject migration when end ID exceeds total count", async function () {
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
+
+      const permission = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant1",
+        fileIds: [],
+      };
+
+      const signature = await createPermissionSignature(permission, testUser1);
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission, signature);
+
+      // Only 1 permission exists, trying to migrate up to ID 10 should fail
+      await expect(
+        dataPermission.connect(maintainer).migratePermissionHashes(1, 10),
+      ).to.be.revertedWith("End ID exceeds total count");
+    });
+
+    it("should only allow MAINTAINER_ROLE to run migration", async function () {
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
+
+      const permission = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant1",
+        fileIds: [],
+      };
+
+      const signature = await createPermissionSignature(permission, testUser1);
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission, signature);
+
+      // Non-maintainer should not be able to run migration
+      await expect(
+        dataPermission.connect(testUser1).migratePermissionHashes(1, 1),
+      ).to.be.reverted;
+    });
+
+    it("should handle migration with fileIds", async function () {
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
+
+      // Set up files
+      await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
+      await dataRegistry.setFile(2, testUser1.address, "ipfs://file2");
+
+      // Create permission with fileIds
+      const permission1 = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://with-files",
+        fileIds: [1n, 2n],
+      };
+
+      const signature1 = await createPermissionSignature(
+        permission1,
+        testUser1,
+      );
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission1, signature1);
+
+      // Migration should succeed
+      await dataPermission.connect(maintainer).migratePermissionHashes(1, 1);
+
+      // Permission should still be accessible
+      const perm = await dataPermission.permissions(1);
+      perm.grant.should.eq("ipfs://with-files");
+
+      // User should still have the permission
+      (
+        await dataPermission.userPermissionIdsLength(testUser1.address)
+      ).should.eq(1);
+    });
+
+    it("should skip permissions with no grantor", async function () {
+      await granteesContract
+        .connect(testUser1)
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
+
+      const permission = {
+        nonce: 0n,
+        granteeId: 1n,
+        grant: "ipfs://grant1",
+        fileIds: [],
+      };
+
+      const signature = await createPermissionSignature(permission, testUser1);
+      await dataPermission
+        .connect(sponsor)
+        .addPermission(permission, signature);
+
+      // Migration should not fail - we can only migrate up to existing permissions
+      const permissionsCount = await dataPermission.permissionsCount();
+      await dataPermission
+        .connect(maintainer)
+        .migratePermissionHashes(1, Number(permissionsCount));
+
+      // Permission should still exist
+      const perm = await dataPermission.permissions(1);
+      perm.grant.should.eq("ipfs://grant1");
     });
   });
 
@@ -3093,7 +4167,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Add a permission
         const permission = {
@@ -3267,7 +4341,7 @@ describe("DataPortabilityPermissions", () => {
         // First register grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Set up files owned by testUser1
         await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
@@ -3325,7 +4399,7 @@ describe("DataPortabilityPermissions", () => {
         // First register grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Set up files owned by different users
         await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
@@ -3355,7 +4429,7 @@ describe("DataPortabilityPermissions", () => {
         // First register grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         const permission = {
           nonce: 0n,
@@ -3384,7 +4458,7 @@ describe("DataPortabilityPermissions", () => {
         // First register grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
         await dataRegistry.setFile(2, testUser1.address, "ipfs://file2");
@@ -3420,7 +4494,7 @@ describe("DataPortabilityPermissions", () => {
         // First register grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
 
@@ -3471,7 +4545,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
         await dataRegistry.setFile(2, testUser1.address, "ipfs://file2");
@@ -3521,7 +4595,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
         await dataRegistry.setFile(2, testUser1.address, "ipfs://file2");
@@ -3563,7 +4637,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Set up 100 files owned by testUser1
         const fileCount = 100;
@@ -3608,7 +4682,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Only set up file 1
         await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
@@ -3636,7 +4710,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
         await dataRegistry.setFile(2, testUser1.address, "ipfs://file2");
@@ -3729,7 +4803,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Add a permission for testUser1
         const permission = {
@@ -4828,11 +5902,11 @@ describe("DataPortabilityPermissions", () => {
       it("should register a new grantee", async () => {
         const tx = await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, grantee1.address, "publicKey1");
+          .registerGrantee(grantee1.address, grantee1.address, "publicKey1");
 
         await expect(tx)
           .to.emit(granteesContract, "GranteeRegistered")
-          .withArgs(1, testUser1.address, grantee1.address, "publicKey1");
+          .withArgs(1, grantee1.address, grantee1.address, "publicKey1");
 
         // Verify grantee was registered
         const granteeInfo = await granteesContract.grantees(1);
@@ -4849,7 +5923,7 @@ describe("DataPortabilityPermissions", () => {
         await expect(
           granteesContract
             .connect(testUser1)
-            .registerGrantee(testUser1.address, grantee1.address, ""),
+            .registerGrantee(grantee1.address, grantee1.address, ""),
         ).to.be.revertedWithCustomError(granteesContract, "EmptyPublicKey");
       });
 
@@ -4858,7 +5932,7 @@ describe("DataPortabilityPermissions", () => {
           granteesContract
             .connect(testUser1)
             .registerGrantee(
-              testUser1.address,
+              ethers.ZeroAddress,
               ethers.ZeroAddress,
               "publicKey1",
             ),
@@ -4871,7 +5945,7 @@ describe("DataPortabilityPermissions", () => {
             .connect(testUser1)
             .registerGrantee(
               ethers.ZeroAddress,
-              grantee1.address,
+              ethers.ZeroAddress,
               "publicKey1",
             ),
         ).to.be.revertedWithCustomError(granteesContract, "ZeroAddress");
@@ -4880,12 +5954,12 @@ describe("DataPortabilityPermissions", () => {
       it("should reject duplicate grantee registration", async () => {
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, grantee1.address, "publicKey1");
+          .registerGrantee(grantee1.address, grantee1.address, "publicKey1");
 
         await expect(
           granteesContract
             .connect(testUser2)
-            .registerGrantee(testUser2.address, grantee1.address, "publicKey2"),
+            .registerGrantee(grantee1.address, grantee1.address, "publicKey2"),
         ).to.be.revertedWithCustomError(
           granteesContract,
           "GranteeAlreadyRegistered",
@@ -4895,20 +5969,20 @@ describe("DataPortabilityPermissions", () => {
       it("should register multiple grantees", async () => {
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, grantee1.address, "publicKey1");
+          .registerGrantee(grantee1.address, grantee1.address, "publicKey1");
 
         await granteesContract
           .connect(testUser2)
-          .registerGrantee(testUser2.address, grantee2.address, "publicKey2");
+          .registerGrantee(grantee2.address, grantee2.address, "publicKey2");
 
         expect(await granteesContract.granteesCount()).to.equal(2);
 
         const grantee1Info = await granteesContract.grantees(1);
-        expect(grantee1Info.owner).to.equal(testUser1.address);
+        expect(grantee1Info.owner).to.equal(grantee1.address);
         expect(grantee1Info.granteeAddress).to.equal(grantee1.address);
 
         const grantee2Info = await granteesContract.grantees(2);
-        expect(grantee2Info.owner).to.equal(testUser2.address);
+        expect(grantee2Info.owner).to.equal(grantee2.address);
         expect(grantee2Info.granteeAddress).to.equal(grantee2.address);
       });
     });
@@ -4917,15 +5991,15 @@ describe("DataPortabilityPermissions", () => {
       beforeEach(async () => {
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, grantee1.address, "publicKey1");
+          .registerGrantee(grantee1.address, grantee1.address, "publicKey1");
         await granteesContract
           .connect(testUser2)
-          .registerGrantee(testUser2.address, grantee2.address, "publicKey2");
+          .registerGrantee(grantee2.address, grantee2.address, "publicKey2");
       });
 
       it("should return grantee info", async () => {
         const granteeInfo = await granteesContract.grantees(1);
-        expect(granteeInfo.owner).to.equal(testUser1.address);
+        expect(granteeInfo.owner).to.equal(grantee1.address);
         expect(granteeInfo.granteeAddress).to.equal(grantee1.address);
         expect(granteeInfo.publicKey).to.equal("publicKey1");
         expect(granteeInfo.permissionIds).to.deep.equal([]);
@@ -4933,7 +6007,7 @@ describe("DataPortabilityPermissions", () => {
 
       it("should return grantee info by granteeInfo method", async () => {
         const granteeInfo = await granteesContract.granteeInfo(1);
-        expect(granteeInfo.owner).to.equal(testUser1.address);
+        expect(granteeInfo.owner).to.equal(grantee1.address);
         expect(granteeInfo.granteeAddress).to.equal(grantee1.address);
         expect(granteeInfo.publicKey).to.equal("publicKey1");
       });
@@ -4942,7 +6016,7 @@ describe("DataPortabilityPermissions", () => {
         const granteeInfo = await granteesContract.granteeByAddress(
           grantee1.address,
         );
-        expect(granteeInfo.owner).to.equal(testUser1.address);
+        expect(granteeInfo.owner).to.equal(grantee1.address);
         expect(granteeInfo.granteeAddress).to.equal(grantee1.address);
         expect(granteeInfo.publicKey).to.equal("publicKey1");
       });
@@ -4974,7 +6048,7 @@ describe("DataPortabilityPermissions", () => {
       beforeEach(async () => {
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, grantee1.address, "publicKey1");
+          .registerGrantee(grantee1.address, grantee1.address, "publicKey1");
 
         // Grant permission manager role to deployOwner for testing
         const PERMISSION_MANAGER_ROLE =
@@ -5067,7 +6141,7 @@ describe("DataPortabilityPermissions", () => {
         await expect(
           granteesContract
             .connect(testUser1)
-            .registerGrantee(testUser1.address, grantee1.address, "publicKey1"),
+            .registerGrantee(grantee1.address, grantee1.address, "publicKey1"),
         ).to.not.be.reverted;
       });
 
@@ -5470,7 +6544,7 @@ describe("DataPortabilityPermissions", () => {
       // Register a grantee for testing
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
     });
 
     it("should add server, files, and permissions in one transaction", async function () {
