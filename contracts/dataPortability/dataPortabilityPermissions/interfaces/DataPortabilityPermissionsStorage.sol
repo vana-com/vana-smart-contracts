@@ -17,4 +17,8 @@ abstract contract DataPortabilityPermissionsStorage is IDataPortabilityPermissio
 
     IDataPortabilityServers public override dataPortabilityServers;
     IDataPortabilityGrantees public override dataPortabilityGrantees;
+
+    /// @dev Mapping from permission hash to permission ID to prevent duplicates
+    /// Hash is computed as keccak256(abi.encodePacked(signer, granteeId, grant))
+    mapping(bytes32 => uint256) internal permissionHashToId;
 }
