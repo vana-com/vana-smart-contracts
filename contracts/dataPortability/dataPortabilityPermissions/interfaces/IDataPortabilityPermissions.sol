@@ -149,6 +149,19 @@ interface IDataPortabilityPermissions {
         uint256 permissionId;
     }
 
+    /**
+     * @notice Input structure for revoking multiple files from a permission with signature verification
+     * @dev Used for EIP-712 signed file revocation operations
+     * @param nonce Current user nonce for replay protection
+     * @param permissionId Unique identifier of the permission
+     * @param fileIds Array of file IDs to revoke from the permission
+     */
+    struct RevokePermissionFilesInput {
+        uint256 nonce;
+        uint256 permissionId;
+        uint256[] fileIds;
+    }
+
     // ==================== EVENTS ====================
 
     /**
@@ -185,12 +198,12 @@ interface IDataPortabilityPermissions {
     event DuplicatePermissionGhosted(uint256 indexed duplicatePermissionId, uint256 indexed originalPermissionId);
 
     /**
-     * @notice Emitted when files are added to a permission
+     * @notice Emitted when a file is added to a permission
      * @param permissionId Unique identifier of the permission
-     * @param fileIds Array of file IDs that were added
-     * @param blockNumber Block number when the files were added
+     * @param fileId file ID that was added
+     * @param blockNumber Block number when the file was added
      */
-    event FilesAddedToPermission(uint256 indexed permissionId, uint256[] fileIds, uint256 blockNumber);
+    event FileAddedToPermission(uint256 indexed permissionId, uint256 fileId, uint256 blockNumber);
 
     /**
      * @notice Emitted when a file is removed from a permission
@@ -328,6 +341,15 @@ interface IDataPortabilityPermissions {
      */
     function existingPermissionFileId(uint256 permissionId, uint256 fileId) external view returns (bool);
 
+    /**
+     * @notice Gets the permission details for a specific file in a permission
+     * @dev Returns the PermissionFile struct with start and end block for a file's permission
+     * @param permissionId The ID of the permission
+     * @param fileId The file ID to get details for
+     * @return PermissionFile struct containing startBlock and endBlock
+     */
+    function permissionFiles(uint256 permissionId, uint256 fileId) external view returns (PermissionFile memory);
+
     // ==================== CONTRACT MANAGEMENT ====================
 
     /**
@@ -437,46 +459,6 @@ interface IDataPortabilityPermissions {
     ) external returns (uint256);
 
     /**
-     * @notice Revokes a permission immediately
-     * @dev Sets the permission's end block to current block, terminating access
-     * @param permissionId Unique identifier of the permission to revoke
-     *
-     * Requirements:
-     * - Caller must be the permission grantor
-     * - Permission must be currently active
-     * - Contract must not be paused
-     *
-     * Effects:
-     * - Sets permission end block to current block
-     * - Removes permission from user's active permissions
-     * - Notifies grantees contract of permission removal
-     * - Emits PermissionRevoked event
-     */
-    function revokePermission(uint256 permissionId) external;
-
-    /**
-     * @notice Revokes a permission using EIP-712 signature verification
-     * @dev Same as revokePermission but with signature-based authorization
-     * @param revokePermissionInput Revocation details including nonce and permission ID
-     * @param signature EIP-712 signature proving authorization from the grantor
-     *
-     * Requirements:
-     * - All requirements from revokePermission
-     * - Signature must be valid for the provided input
-     * - Nonce must match the current user nonce
-     *
-     * Effects:
-     * - All effects from revokePermission
-     * - Increments the signer's nonce
-     *
-     * @custom:signature-format RevokePermission(uint256 nonce,uint256 permissionId)
-     */
-    function revokePermissionWithSignature(
-        RevokePermissionInput calldata revokePermissionInput,
-        bytes calldata signature
-    ) external;
-
-    /**
      * @notice Revokes a single file from a permission
      * @dev Removes the specified file from the permission's file set
      * @param permissionId Unique identifier of the permission
@@ -491,9 +473,34 @@ interface IDataPortabilityPermissions {
      * Effects:
      * - Removes file from permission's file set
      * - Removes permission from file's permission set
-     * - Emits FileRevokedFromPermission event
+     * - Emits FileRemovedFromPermission event
      */
     function revokeFilePermission(uint256 permissionId, uint256 fileId) external;
+
+    /**
+     * @notice Revokes multiple files from a permission using EIP-712 signature verification
+     * @dev Sets endBlock to current block for each active file (where endBlock is 0 or max)
+     * @param revokePermissionFilesInput Revocation details including nonce, permission ID, and file IDs
+     * @param signature EIP-712 signature proving authorization from the grantor
+     *
+     * Requirements:
+     * - Signature must be valid for the provided input
+     * - Nonce must match the current user nonce
+     * - Signer must be the permission grantor
+     * - All files must exist in the permission
+     * - Contract must not be paused
+     *
+     * Effects:
+     * - Increments the signer's nonce
+     * - Sets endBlock to current block for each active file
+     * - Emits FileRemovedFromPermission event for each revoked file
+     *
+     * @custom:signature-format RevokePermissionFiles(uint256 nonce,uint256 permissionId,uint256[] fileIds)
+     */
+    function revokePermissionFiles(
+        RevokePermissionFilesInput calldata revokePermissionFilesInput,
+        bytes calldata signature
+    ) external;
 
     /**
      * @notice Gets all file IDs associated with a permission

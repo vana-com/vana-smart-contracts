@@ -135,7 +135,7 @@ describe("DLP fork tests", () => {
       await deploy();
     });
 
-    it.only("simulate epoch end", async function () {
+    it("simulate epoch end", async function () {
       // ============================================================================
       // CONTRACT UPGRADES
       // ============================================================================
@@ -523,7 +523,7 @@ describe("DLP fork tests", () => {
       return parts.join(" ");
     }
 
-    it("simulate reward distribution", async function () {
+    it.only("simulate reward distribution", async function () {
       // ============================================================================
       // CONTRACT UPGRADES
       // ============================================================================
@@ -541,7 +541,7 @@ describe("DLP fork tests", () => {
       // EPOCH PREPARATION
       // ============================================================================
 
-      const epochId = 6; //await vanaEpoch.epochsCount();
+      const epochId = 7; //await vanaEpoch.epochsCount();
       const epoch = await vanaEpoch.epochs(epochId);
 
       console.log("📅 REWARD DISTRIBUTION SIMULATION");
