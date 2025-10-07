@@ -1,0 +1,40 @@
+# ============================================================================
+# .aiignore - Vana Smart Contracts
+# ============================================================================
+# This file excludes content from AI assistant context.
+#
+# Philosophy: Only exclude what's actually harmful or wasteful.
+# - Most exclusions are already in .gitignore (node_modules, cache, artifacts)
+# - This file focuses on items NOT in .gitignore but problematic for AI
+# - Plus defense-in-depth for security-critical items
+# ============================================================================
+
+# ============================================================================
+# 🔒 SECURITY (Defense in Depth)
+# ============================================================================
+# .env is in .gitignore, but AI tools have bugs bypassing it (Claude #1373)
+# Explicitly block to prevent credential leaks
+
+.env
+.env.*
+!.env.example
+
+# ============================================================================
+# 📦 DEPLOYMENT ARTIFACTS (46MB, NOT in .gitignore)
+# ============================================================================
+# These are tracked in Git for deployment history but massive for AI context
+# - deployments-official/vana: 17MB of JSON
+# - deployments-official/moksha: 29MB of JSON
+# - 245 total files of deployed contract addresses
+
+deployments-official/
+
+# ============================================================================
+# 🔐 LOCK FILES (853KB, NOT in .gitignore)
+# ============================================================================
+# Tracked in Git for reproducible builds, but rarely useful for AI
+# - package-lock.json: 554KB
+# - yarn.lock: 299KB
+
+package-lock.json
+yarn.lock
