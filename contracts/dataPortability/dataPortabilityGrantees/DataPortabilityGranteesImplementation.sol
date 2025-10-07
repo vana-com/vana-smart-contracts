@@ -4,7 +4,6 @@ pragma solidity 0.8.24;
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "./interfaces/DataPortabilityGranteesStorageV1.sol";
 
@@ -18,7 +17,6 @@ contract DataPortabilityGranteesImplementation is
     UUPSUpgradeable,
     PausableUpgradeable,
     AccessControlUpgradeable,
-    MulticallUpgradeable,
     ERC2771ContextUpgradeable,
     DataPortabilityGranteesStorageV1
 {
@@ -31,6 +29,7 @@ contract DataPortabilityGranteesImplementation is
     error EmptyPublicKey();
     error GranteeAlreadyRegistered();
     error GranteeNotFound();
+    error UnauthorizedRegistration();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() ERC2771ContextUpgradeable(address(0)) {
@@ -108,6 +107,11 @@ contract DataPortabilityGranteesImplementation is
         address granteeAddress,
         string memory publicKey
     ) external override whenNotPaused returns (uint256) {
+        // Allow registration if caller has MAINTAINER_ROLE OR owner is the granteeAddress
+        if (!hasRole(MAINTAINER_ROLE, _msgSender()) && owner != granteeAddress) {
+            revert UnauthorizedRegistration();
+        }
+
         if (bytes(publicKey).length == 0) {
             revert EmptyPublicKey();
         }

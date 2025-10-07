@@ -4,7 +4,6 @@ pragma solidity 0.8.24;
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
@@ -20,7 +19,6 @@ contract DataPortabilityServersImplementation is
     UUPSUpgradeable,
     PausableUpgradeable,
     AccessControlUpgradeable,
-    MulticallUpgradeable,
     ERC2771ContextUpgradeable,
     EIP712Upgradeable,
     DataPortabilityServersStorageV1
@@ -432,7 +430,7 @@ contract DataPortabilityServersImplementation is
     }
 
     function servers(uint256 serverId) external view override returns (ServerInfo memory) {
-        Server storage serverData = _servers[serverId];
+        Server memory serverData = _servers[serverId];
         return
             ServerInfo({
                 id: serverId,
@@ -445,7 +443,7 @@ contract DataPortabilityServersImplementation is
 
     function serverByAddress(address serverAddress) external view override returns (ServerInfo memory) {
         uint256 serverId = serverAddressToId[serverAddress];
-        Server storage serverData = _servers[serverId];
+        Server memory serverData = _servers[serverId];
         return
             ServerInfo({
                 id: serverId,
