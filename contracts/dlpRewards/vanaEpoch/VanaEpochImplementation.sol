@@ -21,6 +21,7 @@ contract VanaEpochImplementation is
 
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
     bytes32 public constant DLP_PERFORMANCE_ROLE = keccak256("DLP_PERFORMANCE_ROLE");
+    bytes32 public constant DLP_REWARD_DEPLOYER_ROLE = keccak256("DLP_REWARD_DEPLOYER_ROLE");
 
     event EpochCreated(uint256 epochId, uint256 startBlock, uint256 endBlock, uint256 rewardAmount);
     event EpochUpdated(uint256 epochId, uint256 startBlock, uint256 endBlock, uint256 rewardAmount);
@@ -30,6 +31,7 @@ contract VanaEpochImplementation is
     event EpochDlpRewardAdded(uint256 epochId, uint256 dlpId, uint256 rewardAmount, uint256 penaltyAmount);
     event EpochFinalized(uint256 epochId);
     event EpochDlpRewardOverridden(uint256 epochId, uint256 dlpId, uint256 rewardAmount, uint256 penaltyAmount);
+    event EpochDlpBonusUpdated(uint256 epochId, uint256 dlpId, uint256 oldBonusAmount, uint256 newBonusAmount);
 
     error EpochNotEnded();
     error EpochAlreadyFinalized();
@@ -86,17 +88,24 @@ contract VanaEpochImplementation is
         return _epochs[epochId].dlpIds.values();
     }
 
+    function epochDlpIdsWithBonus(uint256 epochId) external view override returns (uint256[] memory) {
+        return _epochs[epochId].dlpIdsWithBonus.values();
+    }
+
     function epochDlps(uint256 epochId, uint256 dlpId) external view override returns (EpochDlpInfo memory) {
         Epoch storage epoch = _epochs[epochId];
         EpochDlp memory epochDlp = epoch.dlps[dlpId];
+
+        IDLPRewardDeployer.EpochDlpRewardInfo memory dlpRewardInfo = dlpRewardDeployer.epochDlpRewards(epochId, dlpId);
 
         return
             EpochDlpInfo({
                 isTopDlp: epoch.dlpIds.contains(dlpId),
                 rewardAmount: epochDlp.rewardAmount,
                 penaltyAmount: epochDlp.penaltyAmount,
-                distributedAmount: dlpRewardDeployer.epochDlpRewards(epochId, dlpId).totalDistributedAmount,
-                distributedPenaltyAmount: dlpRewardDeployer.epochDlpRewards(epochId, dlpId).distributedPenaltyAmount
+                bonusAmount: epochDlp.bonusAmount,
+                distributedAmount: dlpRewardInfo.totalDistributedAmount,
+                distributedPenaltyAmount: dlpRewardInfo.distributedPenaltyAmount
             });
     }
 
@@ -201,6 +210,12 @@ contract VanaEpochImplementation is
             revert EpochRewardNotDistributed();
         }
         epoch.isFinalized = true;
+
+        //add all DLPs with bonus to epoch.dlpIds
+        uint256[] memory dlpIdsWithBonus = epoch.dlpIdsWithBonus.values();
+        for (uint256 i = 0; i < dlpIdsWithBonus.length; i++) {
+            epoch.dlpIds.add(dlpIdsWithBonus[i]);
+        }
 
         emit EpochFinalized(epochId);
     }
@@ -309,5 +324,45 @@ contract VanaEpochImplementation is
         daySize = newDaySize;
 
         emit EpochDayUpdated(newDaySize);
+    }
+
+    function addEpochDlpBonusAmount(
+        uint256 epochId,
+        uint256 dlpId,
+        uint256 amount
+    ) external override onlyRole(DLP_REWARD_DEPLOYER_ROLE) {
+        if (epochId != epochsCount) {
+            revert InvalidEpoch();
+        }
+
+        Epoch storage epoch = _epochs[epochId];
+
+        uint256 oldAmount = epoch.dlps[dlpId].bonusAmount;
+        epoch.dlps[dlpId].bonusAmount += amount;
+        epoch.dlpIdsWithBonus.add(dlpId);
+
+        emit EpochDlpBonusUpdated(epochId, dlpId, oldAmount, epoch.dlps[dlpId].bonusAmount);
+    }
+
+    function overrideEpochDlpBonusAmount(
+        uint256 epochId,
+        uint256 dlpId,
+        uint256 amount
+    ) external override onlyRole(MAINTAINER_ROLE) {
+        if (epochId != epochsCount) {
+            revert InvalidEpoch();
+        }
+
+        Epoch storage epoch = _epochs[epochId];
+        uint256 oldAmount = epoch.dlps[dlpId].bonusAmount;
+
+        epoch.dlps[dlpId].bonusAmount = amount;
+        epoch.dlpIdsWithBonus.add(dlpId);
+
+        if (amount == 0) {
+            epoch.dlpIdsWithBonus.remove(dlpId);
+        }
+
+        emit EpochDlpBonusUpdated(epochId, dlpId, oldAmount, amount);
     }
 }

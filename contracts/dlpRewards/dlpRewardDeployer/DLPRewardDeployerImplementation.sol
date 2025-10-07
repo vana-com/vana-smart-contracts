@@ -248,8 +248,8 @@ contract DLPRewardDeployerImplementation is
 
         IVanaEpoch.EpochDlpInfo memory epochDlp = vanaEpoch.epochDlps(epochId, dlpId);
 
-        uint256 totalRewardToDistribute = epochDlp.penaltyAmount < epochDlp.rewardAmount
-            ? epochDlp.rewardAmount - epochDlp.penaltyAmount
+        uint256 totalRewardToDistribute = epochDlp.penaltyAmount < epochDlp.rewardAmount + epochDlp.bonusAmount
+            ? epochDlp.rewardAmount + epochDlp.bonusAmount - epochDlp.penaltyAmount
             : 0;
 
         EpochDlpReward storage epochDlpReward = epochReward.epochDlpRewards[dlpId];
@@ -296,5 +296,31 @@ contract DLPRewardDeployerImplementation is
             spareVana,
             usedVanaAmount
         );
+
+        _rolloverUnusedVana(epochId, dlpId, epochDlp, trancheAmount, usedVanaAmount);
+    }
+
+    error RolloverNotPossible();
+    function _rolloverUnusedVana(
+        uint256 epochId,
+        uint256 dlpId,
+        IVanaEpoch.EpochDlpInfo memory epochDlp,
+        uint256 trancheAmount,
+        uint256 usedVanaAmount
+    ) internal {
+        uint256 nextEpochId = epochId + 1;
+        if (vanaEpoch.epochsCount() == nextEpochId && trancheAmount > usedVanaAmount) {
+            IVanaEpoch.EpochDlpInfo memory nextEpochDlp = vanaEpoch.epochDlps(nextEpochId, dlpId);
+
+            if (nextEpochDlp.bonusAmount < epochDlp.rewardAmount) {
+                uint256 vanaToRollover = trancheAmount - usedVanaAmount;
+
+                if (nextEpochDlp.bonusAmount + vanaToRollover > epochDlp.rewardAmount) {
+                    vanaToRollover = epochDlp.rewardAmount - nextEpochDlp.bonusAmount;
+                }
+
+                vanaEpoch.addEpochDlpBonusAmount(nextEpochId, dlpId, vanaToRollover);
+            }
+        }
     }
 }
