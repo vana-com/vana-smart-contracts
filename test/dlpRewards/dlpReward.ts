@@ -293,6 +293,10 @@ describe("DLP System Tests", () => {
 
     await vanaEpoch.updateEpoch(0, 0, EPOCH_START_BLOCK - 1, 0, [], true);
     // await vanaEpoch.updateEpoch(1, EPOCH_START_BLOCK, EPOCH_START_BLOCK + DAY_SIZE * EPOCH_SIZE, EPOCH_REWARD_AMOUNT, [], false);
+
+    // Set lastEpoch to a high number to allow tests to create multiple epochs
+    // Individual tests can override this if they need to test the lastEpoch limit
+    await vanaEpoch.connect(admin).setLastEpoch(1000);
   };
 
   async function advanceToEpochN(epochNumber: number) {
@@ -1361,6 +1365,169 @@ describe("DLP System Tests", () => {
 
       // Should now have 2 epochs
       (await vanaEpoch.epochsCount()).should.eq(2);
+    });
+
+    it("should setLastEpoch successfully", async function () {
+      // Reset and deploy fresh contract
+      await network.provider.request({
+        method: "hardhat_reset",
+        params: [],
+      });
+
+      [admin, maintainer, manager, user1, user2, token1, token2, token3, token4, token5, dlp1Owner, dlp2Owner, rewardDeployer] = await ethers.getSigners();
+
+      const dlpRegistryDeploy = await upgrades.deployProxy(
+        await ethers.getContractFactory("DLPRegistryImplementation"),
+        [admin.address],
+        { kind: "uups" }
+      );
+      dlpRegistry = await ethers.getContractAt("DLPRegistryImplementation", dlpRegistryDeploy.target);
+
+      const vanaEpochDeploy = await upgrades.deployProxy(
+        await ethers.getContractFactory("VanaEpochImplementation"),
+        [{ ownerAddress: admin.address, dlpRegistryAddress: dlpRegistry.target, daySize: DAY_SIZE, epochSize: EPOCH_SIZE, epochRewardAmount: EPOCH_REWARD_AMOUNT }],
+        { kind: "uups" }
+      );
+      vanaEpoch = await ethers.getContractAt("VanaEpochImplementation", vanaEpochDeploy.target);
+
+      // Initially lastEpoch should be 0
+      (await vanaEpoch.lastEpoch()).should.eq(0);
+
+      // Set lastEpoch to 3 for testing
+      await vanaEpoch.connect(admin).setLastEpoch(3);
+
+      // Verify it was set
+      (await vanaEpoch.lastEpoch()).should.eq(3);
+    });
+
+    it("should revert when trying to set lastEpoch twice", async function () {
+      // lastEpoch was already set to 1000 in deploy, so this should revert
+      await vanaEpoch
+        .connect(admin)
+        .setLastEpoch(7)
+        .should.be.revertedWithCustomError(vanaEpoch, "LastEpochAlreadySet");
+    });
+
+    it("should revert when trying to set lastEpoch to 0", async function () {
+      // Reset and deploy fresh contract
+      await network.provider.request({
+        method: "hardhat_reset",
+        params: [],
+      });
+
+      [admin, maintainer, manager, user1, user2, token1, token2, token3, token4, token5, dlp1Owner, dlp2Owner, rewardDeployer] = await ethers.getSigners();
+
+      const dlpRegistryDeploy = await upgrades.deployProxy(
+        await ethers.getContractFactory("DLPRegistryImplementation"),
+        [admin.address],
+        { kind: "uups" }
+      );
+      dlpRegistry = await ethers.getContractAt("DLPRegistryImplementation", dlpRegistryDeploy.target);
+
+      const vanaEpochDeploy = await upgrades.deployProxy(
+        await ethers.getContractFactory("VanaEpochImplementation"),
+        [{ ownerAddress: admin.address, dlpRegistryAddress: dlpRegistry.target, daySize: DAY_SIZE, epochSize: EPOCH_SIZE, epochRewardAmount: EPOCH_REWARD_AMOUNT }],
+        { kind: "uups" }
+      );
+      vanaEpoch = await ethers.getContractAt("VanaEpochImplementation", vanaEpochDeploy.target);
+
+      await vanaEpoch
+        .connect(admin)
+        .setLastEpoch(0)
+        .should.be.revertedWithCustomError(vanaEpoch, "InvalidEpoch");
+    });
+
+    it("should revert when trying to create epoch beyond lastEpoch", async function () {
+      // Reset and deploy fresh contract
+      await network.provider.request({
+        method: "hardhat_reset",
+        params: [],
+      });
+
+      [admin, maintainer, manager, user1, user2, token1, token2, token3, token4, token5, dlp1Owner, dlp2Owner, rewardDeployer] = await ethers.getSigners();
+
+      const dlpRegistryDeploy = await upgrades.deployProxy(
+        await ethers.getContractFactory("DLPRegistryImplementation"),
+        [admin.address],
+        { kind: "uups" }
+      );
+      dlpRegistry = await ethers.getContractAt("DLPRegistryImplementation", dlpRegistryDeploy.target);
+
+      const vanaEpochDeploy = await upgrades.deployProxy(
+        await ethers.getContractFactory("VanaEpochImplementation"),
+        [{ ownerAddress: admin.address, dlpRegistryAddress: dlpRegistry.target, daySize: DAY_SIZE, epochSize: EPOCH_SIZE, epochRewardAmount: EPOCH_REWARD_AMOUNT }],
+        { kind: "uups" }
+      );
+      vanaEpoch = await ethers.getContractAt("VanaEpochImplementation", vanaEpochDeploy.target);
+
+      await vanaEpoch.updateEpoch(0, 0, EPOCH_START_BLOCK - 1, 0, [], true);
+
+      // Set lastEpoch to 2 for testing
+      await vanaEpoch.connect(admin).setLastEpoch(2);
+
+      // Create epochs up to the limit (epoch 2)
+      await advanceToEpochN(1);
+      await vanaEpoch.connect(user1).createEpochs(); // Creates epoch 1
+
+      await advanceToEpochN(2);
+      await vanaEpoch.connect(user1).createEpochs(); // Creates epoch 2
+
+      // Verify we're at epoch 2
+      (await vanaEpoch.epochsCount()).should.eq(2);
+
+      // Advance blocks to trigger epoch 3 creation attempt
+      await advanceToEpochN(3);
+
+      // Should revert when trying to create epoch 3
+      await vanaEpoch
+        .connect(user1)
+        .createEpochs()
+        .should.be.revertedWithCustomError(vanaEpoch, "LastEpochExceeded")
+        .withArgs(2);
+    });
+
+    it("should revert when trying to create epochs beyond lastEpoch using createEpochsUntilBlockNumber", async function () {
+      // Reset and deploy fresh contract
+      await network.provider.request({
+        method: "hardhat_reset",
+        params: [],
+      });
+
+      [admin, maintainer, manager, user1, user2, token1, token2, token3, token4, token5, dlp1Owner, dlp2Owner, rewardDeployer] = await ethers.getSigners();
+
+      const dlpRegistryDeploy = await upgrades.deployProxy(
+        await ethers.getContractFactory("DLPRegistryImplementation"),
+        [admin.address],
+        { kind: "uups" }
+      );
+      dlpRegistry = await ethers.getContractAt("DLPRegistryImplementation", dlpRegistryDeploy.target);
+
+      const vanaEpochDeploy = await upgrades.deployProxy(
+        await ethers.getContractFactory("VanaEpochImplementation"),
+        [{ ownerAddress: admin.address, dlpRegistryAddress: dlpRegistry.target, daySize: DAY_SIZE, epochSize: EPOCH_SIZE, epochRewardAmount: EPOCH_REWARD_AMOUNT }],
+        { kind: "uups" }
+      );
+      vanaEpoch = await ethers.getContractAt("VanaEpochImplementation", vanaEpochDeploy.target);
+
+      await vanaEpoch.updateEpoch(0, 0, EPOCH_START_BLOCK - 1, 0, [], true);
+
+      // Set lastEpoch to 2 for testing
+      await vanaEpoch.connect(admin).setLastEpoch(2);
+
+      // Create epochs up to the limit
+      await advanceToEpochN(2);
+      await vanaEpoch.connect(user1).createEpochs(); // Creates epochs 1 and 2
+
+      // Advance blocks significantly (3 epochs worth)
+      await advanceBlockNTimes(DAY_SIZE * EPOCH_SIZE * 3);
+      const futureBlock = await getCurrentBlockNumber();
+
+      // Should revert when trying to create epochs beyond 2
+      await vanaEpoch
+        .connect(user1)
+        .createEpochsUntilBlockNumber(futureBlock)
+        .should.be.revertedWithCustomError(vanaEpoch, "LastEpochExceeded")
+        .withArgs(2);
     });
   });
 
@@ -3485,6 +3652,115 @@ describe("DLP System Tests", () => {
         dlpRewardDeployerTreasury.target,
       );
       (initialBalance - finalBalance).should.eq(transferAmount);
+    });
+  });
+
+  describe("LAST_EPOCH Limit", () => {
+    beforeEach(async () => {
+      await deploy();
+    });
+
+    it("Should have lastEpoch set to 1000 by default", async () => {
+      const lastEpoch = await vanaEpoch.lastEpoch();
+      lastEpoch.should.eq(1000);
+    });
+
+    it("Should revert when trying to create epoch 8", async () => {
+      // Set lastEpoch to 7 for this test
+      await network.provider.request({
+        method: "hardhat_reset",
+        params: [],
+      });
+      await deploy();
+
+      // Override lastEpoch - need to deploy fresh since it can only be set once
+      await network.provider.request({
+        method: "hardhat_reset",
+        params: [],
+      });
+
+      // Redeploy without setting lastEpoch in deploy function
+      [admin, maintainer, manager, user1, user2, token1, token2, token3, token4, token5, dlp1Owner, dlp2Owner, rewardDeployer] = await ethers.getSigners();
+
+      const dlpRegistryDeploy = await upgrades.deployProxy(
+        await ethers.getContractFactory("DLPRegistryImplementation"),
+        [admin.address],
+        { kind: "uups" }
+      );
+      dlpRegistry = await ethers.getContractAt("DLPRegistryImplementation", dlpRegistryDeploy.target);
+
+      const vanaEpochDeploy = await upgrades.deployProxy(
+        await ethers.getContractFactory("VanaEpochImplementation"),
+        [{ ownerAddress: admin.address, dlpRegistryAddress: dlpRegistry.target, daySize: DAY_SIZE, epochSize: EPOCH_SIZE, epochRewardAmount: EPOCH_REWARD_AMOUNT }],
+        { kind: "uups" }
+      );
+      vanaEpoch = await ethers.getContractAt("VanaEpochImplementation", vanaEpochDeploy.target);
+
+      await vanaEpoch.updateEpoch(0, 0, EPOCH_START_BLOCK - 1, 0, [], true);
+      await vanaEpoch.connect(admin).setLastEpoch(7);
+
+      // Create epochs up to epoch 7
+      while ((await vanaEpoch.epochsCount()) < 7) {
+        await advanceBlockNTimes(DAY_SIZE * EPOCH_SIZE + 1);
+        await vanaEpoch.createEpochs();
+      }
+
+      // Verify we're at epoch 7
+      const epochCount = await vanaEpoch.epochsCount();
+      epochCount.should.eq(7);
+
+      // Advance blocks to trigger epoch 8 creation attempt
+      await advanceBlockNTimes(DAY_SIZE * EPOCH_SIZE + 1);
+
+      // Should revert when trying to create epoch 8
+      await vanaEpoch
+        .createEpochs()
+        .should.be.revertedWithCustomError(vanaEpoch, "LastEpochExceeded")
+        .withArgs(7);
+    });
+
+    it("Should revert when trying to create epochs beyond 7 using createEpochsUntilBlockNumber", async () => {
+      // Set lastEpoch to 7 for this test
+      await network.provider.request({
+        method: "hardhat_reset",
+        params: [],
+      });
+
+      // Redeploy without setting lastEpoch in deploy function
+      [admin, maintainer, manager, user1, user2, token1, token2, token3, token4, token5, dlp1Owner, dlp2Owner, rewardDeployer] = await ethers.getSigners();
+
+      const dlpRegistryDeploy = await upgrades.deployProxy(
+        await ethers.getContractFactory("DLPRegistryImplementation"),
+        [admin.address],
+        { kind: "uups" }
+      );
+      dlpRegistry = await ethers.getContractAt("DLPRegistryImplementation", dlpRegistryDeploy.target);
+
+      const vanaEpochDeploy = await upgrades.deployProxy(
+        await ethers.getContractFactory("VanaEpochImplementation"),
+        [{ ownerAddress: admin.address, dlpRegistryAddress: dlpRegistry.target, daySize: DAY_SIZE, epochSize: EPOCH_SIZE, epochRewardAmount: EPOCH_REWARD_AMOUNT }],
+        { kind: "uups" }
+      );
+      vanaEpoch = await ethers.getContractAt("VanaEpochImplementation", vanaEpochDeploy.target);
+
+      await vanaEpoch.updateEpoch(0, 0, EPOCH_START_BLOCK - 1, 0, [], true);
+      await vanaEpoch.connect(admin).setLastEpoch(7);
+
+      // Create epochs up to epoch 7
+      while ((await vanaEpoch.epochsCount()) < 7) {
+        await advanceBlockNTimes(DAY_SIZE * EPOCH_SIZE + 1);
+        await vanaEpoch.createEpochs();
+      }
+
+      // Advance blocks significantly (3 epochs worth)
+      await advanceBlockNTimes(DAY_SIZE * EPOCH_SIZE * 3);
+      const futureBlock = await getCurrentBlockNumber();
+
+      // Should revert when trying to create epochs beyond 7
+      await vanaEpoch
+        .createEpochsUntilBlockNumber(futureBlock)
+        .should.be.revertedWithCustomError(vanaEpoch, "LastEpochExceeded")
+        .withArgs(7);
     });
   });
 });

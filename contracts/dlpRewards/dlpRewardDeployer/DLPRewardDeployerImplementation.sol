@@ -297,7 +297,7 @@ contract DLPRewardDeployerImplementation is
             usedVanaAmount
         );
 
-        _rolloverUnusedVana(epochId, dlpId, epochDlp, trancheAmount, usedVanaAmount);
+        //        _rolloverUnusedVana(epochId, dlpId, epochDlp, trancheAmount, usedVanaAmount);
     }
 
     error RolloverNotPossible();

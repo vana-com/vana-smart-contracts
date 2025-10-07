@@ -31,6 +31,7 @@ interface IVanaEpoch {
     function epochSize() external view returns (uint256);
     function daySize() external view returns (uint256);
     function epochsCount() external view returns (uint256);
+    function lastEpoch() external view returns (uint256);
 
     // Read-only struct views
     struct EpochInfo {
@@ -60,6 +61,7 @@ interface IVanaEpoch {
     function updateDaySize(uint256 newDaySize) external;
     function updateEpochSize(uint256 newEpochSize) external;
     function updateEpochRewardAmount(uint256 newEpochRewardAmount) external;
+    function setLastEpoch(uint256 _lastEpoch) external;
 
     function updateDlpRegistry(address dlpRegistryAddress) external;
     function updateDlpPerformance(address dlpPerformanceAddress) external;

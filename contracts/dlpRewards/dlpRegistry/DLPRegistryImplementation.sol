@@ -64,7 +64,6 @@ contract DLPRegistryImplementation is
     error InvalidDepositAmount();
     error DlpAddressCannotBeChanged();
     error TransferFailed();
-    error LastEpochMustBeFinalized();
 
     modifier onlyDlpOwner(uint256 dlpId) {
         if (_dlps[dlpId].ownerAddress != msg.sender) {
@@ -166,7 +165,6 @@ contract DLPRegistryImplementation is
     function registerDlp(
         DlpRegistration calldata registrationInfo
     ) external payable override whenNotPaused nonReentrant {
-        vanaEpoch.createEpochs();
         _registerDlp(registrationInfo);
     }
 
@@ -234,8 +232,6 @@ contract DLPRegistryImplementation is
         uint256 dlpId,
         DlpRegistration calldata dlpUpdateInfo
     ) external override whenNotPaused nonReentrant onlyDlpOwner(dlpId) {
-        vanaEpoch.createEpochs();
-
         if (dlpUpdateInfo.ownerAddress == address(0) || dlpUpdateInfo.treasuryAddress == address(0)) {
             revert InvalidAddress();
         }
@@ -279,13 +275,6 @@ contract DLPRegistryImplementation is
     }
 
     function deregisterDlp(uint256 dlpId) external override whenNotPaused nonReentrant onlyDlpOwner(dlpId) {
-        vanaEpoch.createEpochs();
-
-        uint256 epochsCount = vanaEpoch.epochsCount();
-        if (epochsCount > 1 && !vanaEpoch.epochs(epochsCount - 1).isFinalized) {
-            revert LastEpochMustBeFinalized();
-        }
-
         Dlp storage dlp = _dlps[dlpId];
 
         if (dlp.status == DlpStatus.None || dlp.status == DlpStatus.Deregistered) {
@@ -420,8 +409,6 @@ contract DLPRegistryImplementation is
     }
 
     function _setDlpEligibility(Dlp storage dlp) internal {
-        vanaEpoch.createEpochs();
-
         DlpStatus currentStatus = dlp.status;
 
         if (currentStatus == DlpStatus.None || currentStatus == DlpStatus.Deregistered) {
@@ -442,11 +429,6 @@ contract DLPRegistryImplementation is
         }
 
         if (newStatus != currentStatus) {
-            uint256 epochsCount = vanaEpoch.epochsCount();
-            if (epochsCount > 1 && !vanaEpoch.epochs(epochsCount - 1).isFinalized) {
-                revert LastEpochMustBeFinalized();
-            }
-
             dlp.status = newStatus;
 
             if (newStatus == DlpStatus.Eligible) {
@@ -457,5 +439,4 @@ contract DLPRegistryImplementation is
             emit DlpStatusUpdated(dlp.id, newStatus);
         }
     }
-
 }
