@@ -63,6 +63,22 @@ interface IDataPortabilityGrantees {
         uint256[] permissionIds;
     }
 
+    /**
+     * @notice External grantee information structure for read operations
+     * @dev Read-only view of grantee data with permission count for external consumption
+     * @dev Keep GranteeInfo for backward compatibility
+     * @param owner Address that registered and controls this grantee
+     * @param granteeAddress Unique blockchain address representing this grantee
+     * @param publicKey Public key for encrypting data intended for this grantee
+     * @param permissionsCount Number of permissions associated with this grantee
+     */
+    struct GranteeInfoV2 {
+        address owner;
+        address granteeAddress;
+        string publicKey;
+        uint256 permissionsCount;
+    }
+
     // ==================== EVENTS ====================
 
     /**
@@ -112,6 +128,8 @@ interface IDataPortabilityGrantees {
      */
     function grantees(uint256 granteeId) external view returns (GranteeInfo memory);
 
+    function granteesV2(uint256 granteeId) external view returns (GranteeInfoV2 memory);
+
     /**
      * @notice Gets all permission IDs associated with a grantee
      * @dev Returns the complete list of permissions granted to the specified grantee
@@ -159,6 +177,8 @@ interface IDataPortabilityGrantees {
      */
     function granteeInfo(uint256 granteeId) external view returns (GranteeInfo memory);
 
+    function granteeInfoV2(uint256 granteeId) external view returns (GranteeInfoV2 memory);
+
     /**
      * @notice Retrieves grantee information by grantee address
      * @dev Looks up grantee details using the grantee's blockchain address
@@ -167,6 +187,8 @@ interface IDataPortabilityGrantees {
      */
     function granteeByAddress(address granteeAddress) external view returns (GranteeInfo memory);
 
+    function granteeByAddressV2(address granteeAddress) external view returns (GranteeInfoV2 memory);
+
     /**
      * @notice Gets all permission IDs associated with a grantee
      * @dev Alias for granteePermissions() function, returns permission associations
@@ -174,6 +196,35 @@ interface IDataPortabilityGrantees {
      * @return uint256[] Array of permission IDs associated with this grantee
      */
     function granteePermissionIds(uint256 granteeId) external view returns (uint256[] memory);
+
+    /**
+     * @notice Gets paginated permission IDs associated with a grantee
+     * @dev Returns a subset of permission IDs to avoid gas limit issues with large lists
+     * @param granteeId Unique identifier of the grantee
+     * @param offset Starting index for pagination (0-based)
+     * @param limit Maximum number of permission IDs to return
+     * @return permissionIds Array of permission IDs for the requested page
+     * @return totalCount Total number of permissions associated with the grantee
+     * @return hasMore Boolean indicating if there are more permissions beyond this page
+     *
+     * Requirements:
+     * - Grantee must exist
+     * - Offset must be less than total permission count
+     *
+     * Example usage:
+     * - First page: granteePermissionsPaginated(granteeId, 0, 100)
+     * - Second page: granteePermissionsPaginated(granteeId, 100, 100)
+     * - Continue until hasMore is false
+     */
+    function granteePermissionsPaginated(
+        uint256 granteeId,
+        uint256 offset,
+        uint256 limit
+    ) external view returns (
+        uint256[] memory permissionIds,
+        uint256 totalCount,
+        bool hasMore
+    );
 
     // ==================== PERMISSION MANAGEMENT FUNCTIONS ====================
 
