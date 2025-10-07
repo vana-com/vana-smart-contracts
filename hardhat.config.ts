@@ -73,7 +73,7 @@ const config: HardhatUserConfig = {
       chainId: 1480,
       forking: {
         url: process.env.VANA_RPC_URL || "",
-        // blockNumber: 1283121,
+        // blockNumber: 5203720,
         // url: process.env.MOKSHA_RPC_URL || "",
         // blockNumber: 2_569_780,
       },
