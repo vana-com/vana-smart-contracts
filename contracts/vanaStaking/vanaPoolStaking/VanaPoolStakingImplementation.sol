@@ -4,7 +4,6 @@ pragma solidity 0.8.24;
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/utils/MulticallUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "./interfaces/VanaPoolStakingStorageV1.sol";
@@ -14,7 +13,6 @@ contract VanaPoolStakingImplementation is
     PausableUpgradeable,
     AccessControlUpgradeable,
     ReentrancyGuardUpgradeable,
-    MulticallUpgradeable,
     ERC2771ContextUpgradeable,
     VanaPoolStakingStorageV1
 {
@@ -93,7 +91,6 @@ contract VanaPoolStakingImplementation is
         __UUPSUpgradeable_init();
         __Pausable_init();
         __ReentrancyGuard_init();
-        __Multicall_init();
 
         _trustedForwarder = trustedForwarderAddress;
         minStakeAmount = initialMinStake;

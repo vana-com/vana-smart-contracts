@@ -16,4 +16,6 @@ abstract contract VanaEpochStorageV1 is IVanaEpoch {
 
     IDLPPerformance public override dlpPerformance;
     IDLPRewardDeployer public override dlpRewardDeployer;
+
+    uint256 public override lastEpoch;
 }

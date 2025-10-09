@@ -1,7 +1,12 @@
 import { ethers } from "hardhat";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { DeployFunction } from "hardhat-deploy/types";
-import { deterministicDeployProxy, deployProxy, getNextDeploymentAddress, verifyProxy } from "./helpers";
+import {
+  deterministicDeployProxy,
+  deployProxy,
+  getNextDeploymentAddress,
+  verifyProxy,
+} from "../helpers";
 
 const implementationContractName = "DataRefinerRegistryImplementation";
 const proxyContractName = "DataRefinerRegistryProxy";
@@ -15,7 +20,9 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   const dlpRootCoreContractAddress = process.env.DLP_ROOT_CORE_CONTRACT_ADDRESS;
   if (!dlpRootCoreContractAddress) {
-    throw new Error("DLP_ROOT_CORE_CONTRACT_ADDRESS is not defined in the environment variables.");
+    throw new Error(
+      "DLP_ROOT_CORE_CONTRACT_ADDRESS is not defined in the environment variables.",
+    );
   }
 
   const salt = process.env.CREATE2_SALT ?? proxyContractName;

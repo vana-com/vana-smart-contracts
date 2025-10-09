@@ -15,4 +15,6 @@ abstract contract DataRegistryStorageV1 is IDataRegistry {
     mapping(bytes32 => uint256) internal _urlHashToFileId;
 
     IDataRefinerRegistry public override dataRefinerRegistry;
+
+    bool public emitLegacyEvents;
 }

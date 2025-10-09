@@ -182,8 +182,6 @@ contract DLPPerformanceImplementation is
         uint256 epochId,
         EpochDlpPerformanceInput[] calldata newEpochDlpPerformances
     ) external override onlyRole(MANAGER_ROLE) whenNotPaused {
-        vanaEpoch.createEpochs();
-
         IVanaEpoch.EpochInfo memory epoch = vanaEpoch.epochs(epochId);
 
         if (epoch.isFinalized) {
@@ -267,8 +265,6 @@ contract DLPPerformanceImplementation is
     }
 
     function confirmEpochFinalScores(uint256 epochId) external override onlyRole(MAINTAINER_ROLE) {
-        vanaEpoch.createEpochs();
-
         IVanaEpoch.EpochInfo memory epoch = vanaEpoch.epochs(epochId);
 
         if (epoch.isFinalized) {

@@ -37,6 +37,9 @@ describe("DataRegistry", () => {
   const REFINEMENT_SERVICE_ROLE = ethers.keccak256(
     ethers.toUtf8Bytes("REFINEMENT_SERVICE_ROLE"),
   );
+  const DATA_PORTABILITY_ROLE = ethers.keccak256(
+    ethers.toUtf8Bytes("DATA_PORTABILITY_ROLE"),
+  );
 
   const deploy = async () => {
     [
@@ -186,7 +189,9 @@ describe("DataRegistry", () => {
         .connect(user1)
         .addFile("file1")
         .should.emit(dataRegistry, "FileAdded")
-        .withArgs(1, user1, "file1");
+        .withArgs(1, user1, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user1, "file1", 0);
 
       (await dataRegistry.filesCount()).should.eq(1);
 
@@ -205,19 +210,25 @@ describe("DataRegistry", () => {
         .connect(user1)
         .addFile("file1")
         .should.emit(dataRegistry, "FileAdded")
-        .withArgs(1, user1, "file1");
+        .withArgs(1, user1, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user1, "file1", 0);
 
       await dataRegistry
         .connect(user2)
         .addFile("file2")
         .should.emit(dataRegistry, "FileAdded")
-        .withArgs(2, user2, "file2");
+        .withArgs(2, user2, "file2")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(2, user2, "file2", 0);
 
       await dataRegistry
         .connect(user1)
         .addFile("file3")
         .should.emit(dataRegistry, "FileAdded")
-        .withArgs(3, user1, "file3");
+        .withArgs(3, user1, "file3")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(3, user1, "file3", 0);
 
       (await dataRegistry.filesCount()).should.eq(3);
 
@@ -251,7 +262,9 @@ describe("DataRegistry", () => {
         .connect(user1)
         .addFile("file1")
         .should.emit(dataRegistry, "FileAdded")
-        .withArgs(1, user1, "file1");
+        .withArgs(1, user1, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user1, "file1", 0);
 
       await dataRegistry
         .connect(user2)
@@ -488,8 +501,13 @@ describe("DataRegistry", () => {
   });
 
   describe("FilePermission", () => {
+    let dataPortabilityUser: HardhatEthersSigner;
+    
     beforeEach(async () => {
       await deploy();
+      // Get an additional signer for dataPortability tests
+      const signers = await ethers.getSigners();
+      dataPortabilityUser = signers[14];
     });
 
     it("should addFilePermission, one file, one dlp", async function () {
@@ -615,6 +633,47 @@ describe("DataRegistry", () => {
         .should.be.rejectedWith("NotFileOwner()");
     });
 
+    it("should allow addFilePermission when non-owner but has DATA_PORTABILITY_ROLE", async function () {
+      await dataRegistry.connect(user1).addFile("file1");
+      
+      // Grant DATA_PORTABILITY_ROLE to dataPortabilityUser
+      await dataRegistry
+        .connect(owner)
+        .grantRole(DATA_PORTABILITY_ROLE, dataPortabilityUser.address);
+      
+      // dataPortabilityUser should be able to add permission even though they are not the file owner
+      await dataRegistry
+        .connect(dataPortabilityUser)
+        .addFilePermission(1, dlp1, "key1")
+        .should.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, dlp1);
+      
+      (await dataRegistry.filePermissions(1, dlp1)).should.eq("key1");
+    });
+
+    it("should reject addFilePermission when non-owner without DATA_PORTABILITY_ROLE", async function () {
+      await dataRegistry.connect(user1).addFile("file1");
+      
+      // user2 does not have DATA_PORTABILITY_ROLE and is not the file owner
+      await dataRegistry
+        .connect(user2)
+        .addFilePermission(1, dlp1, "key1")
+        .should.be.rejectedWith("NotFileOwner()");
+    });
+
+    it("should allow addFilePermission when caller is the file owner", async function () {
+      await dataRegistry.connect(user1).addFile("file1");
+      
+      // user1 is the file owner, so they should be able to add permission
+      await dataRegistry
+        .connect(user1)
+        .addFilePermission(1, dlp1, "key1")
+        .should.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, dlp1);
+      
+      (await dataRegistry.filePermissions(1, dlp1)).should.eq("key1");
+    });
+
     it("should reject addFilePermission when paused", async function () {
       await dataRegistry.connect(user1).addFile("file1");
       await dataRegistry.connect(owner).pause();
@@ -639,6 +698,8 @@ describe("DataRegistry", () => {
         ])
         .should.emit(dataRegistry, "FileAdded")
         .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 0)
         .and.emit(dataRegistry, "PermissionGranted")
         .withArgs(1, dlp1);
 
@@ -772,6 +833,682 @@ describe("DataRegistry", () => {
     });
   });
 
+  describe("AddFileWithSchema", () => {
+    beforeEach(async () => {
+      await deploy();
+
+      const DLPRegistryMockFactory =
+        await ethers.getContractFactory("DLPRegistryMock");
+      const DLPRegistryMock = await DLPRegistryMockFactory.deploy();
+
+      await DLPRegistryMock.connect(dlp1).registerDlp();
+
+      const dataRefinerRegistryDeploy = await upgrades.deployProxy(
+        await ethers.getContractFactory("DataRefinerRegistryImplementation"),
+        [owner.address, DLPRegistryMock.target],
+        {
+          kind: "uups",
+        },
+      );
+
+      dataRefinerRegistry = await ethers.getContractAt(
+        "DataRefinerRegistryImplementation",
+        dataRefinerRegistryDeploy.target,
+      );
+
+      await dataRegistry
+        .connect(owner)
+        .updateDataRefinerRegistry(dataRefinerRegistry.target);
+    });
+
+    it("should addFileWithSchema with valid schemaId", async function () {
+      await dataRefinerRegistry
+        .connect(user1)
+        .addSchema("Schema1", "JSON", "https://example.com/schema1.json");
+
+      await dataRegistry
+        .connect(user1)
+        .addFileWithSchema("file1", 1)
+        .should.emit(dataRegistry, "FileAdded")
+        .withArgs(1, user1, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user1, "file1", 1);
+
+      (await dataRegistry.filesCount()).should.eq(1);
+
+      const file1 = await dataRegistry.files(1);
+      file1.id.should.eq(1);
+      file1.ownerAddress.should.eq(user1.address);
+      file1.url.should.eq("file1");
+      file1.addedAtBlock.should.eq(await getCurrentBlockNumber());
+
+      (await dataRegistry.fileIdByUrl("file1")).should.eq(1);
+    });
+
+    it("should addFileWithSchema with schemaId 0 (no schema)", async function () {
+      await dataRegistry
+        .connect(user1)
+        .addFileWithSchema("file1", 0)
+        .should.emit(dataRegistry, "FileAdded")
+        .withArgs(1, user1, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user1, "file1", 0);
+
+      (await dataRegistry.filesCount()).should.eq(1);
+
+      const file1 = await dataRegistry.files(1);
+      file1.id.should.eq(1);
+      file1.ownerAddress.should.eq(user1.address);
+      file1.url.should.eq("file1");
+    });
+
+    it("should reject addFileWithSchema with invalid schemaId", async function () {
+      await dataRegistry
+        .connect(user1)
+        .addFileWithSchema("file1", 999)
+        .should.be.rejectedWith("InvalidSchemaId(999)");
+    });
+
+    it("should reject addFileWithSchema with duplicate URL", async function () {
+      await dataRefinerRegistry
+        .connect(user1)
+        .addSchema("Schema1", "JSON", "https://example.com/schema1.json");
+
+      await dataRegistry
+        .connect(user1)
+        .addFileWithSchema("file1", 1)
+        .should.emit(dataRegistry, "FileAdded")
+        .withArgs(1, user1, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user1, "file1", 1);
+
+      await dataRegistry
+        .connect(user2)
+        .addFileWithSchema("file1", 1)
+        .should.be.rejectedWith("FileUrlAlreadyUsed()");
+    });
+
+    it("should reject addFileWithSchema when paused", async function () {
+      await dataRegistry.connect(owner).pause();
+
+      await dataRegistry
+        .connect(user1)
+        .addFileWithSchema("file1", 0)
+        .should.be.rejectedWith("EnforcedPause()");
+    });
+
+    it("should addFile (without schema) as backward compatibility", async function () {
+      await dataRegistry
+        .connect(user1)
+        .addFile("file1")
+        .should.emit(dataRegistry, "FileAdded")
+        .withArgs(1, user1, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user1, "file1", 0);
+
+      (await dataRegistry.filesCount()).should.eq(1);
+
+      const file1 = await dataRegistry.files(1);
+      file1.id.should.eq(1);
+      file1.ownerAddress.should.eq(user1.address);
+      file1.url.should.eq("file1");
+    });
+  });
+
+  describe("AddFileWithPermissionsAndSchema", () => {
+    beforeEach(async () => {
+      await deploy();
+
+      const DLPRegistryMockFactory =
+        await ethers.getContractFactory("DLPRegistryMock");
+      const DLPRegistryMock = await DLPRegistryMockFactory.deploy();
+
+      await DLPRegistryMock.connect(dlp1).registerDlp();
+
+      const dataRefinerRegistryDeploy = await upgrades.deployProxy(
+        await ethers.getContractFactory("DataRefinerRegistryImplementation"),
+        [owner.address, DLPRegistryMock.target],
+        {
+          kind: "uups",
+        },
+      );
+
+      dataRefinerRegistry = await ethers.getContractAt(
+        "DataRefinerRegistryImplementation",
+        dataRefinerRegistryDeploy.target,
+      );
+
+      await dataRegistry
+        .connect(owner)
+        .updateDataRefinerRegistry(dataRefinerRegistry.target);
+    });
+
+    it("should addFileWithPermissionsAndSchema with valid schemaId", async function () {
+      await dataRefinerRegistry
+        .connect(user1)
+        .addSchema("Schema1", "JSON", "https://example.com/schema1.json");
+
+      await dataRegistry
+        .connect(user1)
+        .addFileWithPermissionsAndSchema("file1", user2, [
+          { account: dlp1, key: "key1" },
+          { account: dlp2, key: "key2" },
+        ], 1)
+        .should.emit(dataRegistry, "FileAdded")
+        .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 1)
+        .and.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, dlp1)
+        .and.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, dlp2);
+
+      const file1 = await dataRegistry.files(1);
+      file1.id.should.eq(1);
+      file1.ownerAddress.should.eq(user2.address);
+      file1.url.should.eq("file1");
+      file1.addedAtBlock.should.eq(await getCurrentBlockNumber());
+
+      (await dataRegistry.filePermissions(1, dlp1)).should.eq("key1");
+      (await dataRegistry.filePermissions(1, dlp2)).should.eq("key2");
+      (await dataRegistry.filePermissions(1, dlp3)).should.eq("");
+    });
+
+    it("should addFileWithPermissionsAndSchema with schemaId 0 (no schema)", async function () {
+      await dataRegistry
+        .connect(user1)
+        .addFileWithPermissionsAndSchema("file1", user2, [
+          { account: dlp1, key: "key1" },
+        ], 0)
+        .should.emit(dataRegistry, "FileAdded")
+        .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 0)
+        .and.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, dlp1);
+
+      const file1 = await dataRegistry.files(1);
+      file1.id.should.eq(1);
+      file1.ownerAddress.should.eq(user2.address);
+      file1.url.should.eq("file1");
+
+      (await dataRegistry.filePermissions(1, dlp1)).should.eq("key1");
+    });
+
+    it("should reject addFileWithPermissionsAndSchema with invalid schemaId", async function () {
+      await dataRegistry
+        .connect(user1)
+        .addFileWithPermissionsAndSchema("file1", user2, [
+          { account: dlp1, key: "key1" },
+        ], 999)
+        .should.be.rejectedWith("InvalidSchemaId(999)");
+    });
+
+    it("should reject addFileWithPermissionsAndSchema with duplicate URL", async function () {
+      await dataRefinerRegistry
+        .connect(user1)
+        .addSchema("Schema1", "JSON", "https://example.com/schema1.json");
+
+      await dataRegistry
+        .connect(user1)
+        .addFileWithPermissionsAndSchema("file1", user2, [
+          { account: dlp1, key: "key1" },
+        ], 1)
+        .should.emit(dataRegistry, "FileAdded")
+        .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 1);
+
+      await dataRegistry
+        .connect(user2)
+        .addFileWithPermissionsAndSchema("file1", user3, [
+          { account: dlp2, key: "key2" },
+        ], 1)
+        .should.be.rejectedWith("FileUrlAlreadyUsed()");
+    });
+
+    it("should reject addFileWithPermissionsAndSchema when paused", async function () {
+      await dataRegistry.connect(owner).pause();
+
+      await dataRegistry
+        .connect(user1)
+        .addFileWithPermissionsAndSchema("file1", user2, [
+          { account: dlp1, key: "key1" },
+        ], 0)
+        .should.be.rejectedWith("EnforcedPause()");
+    });
+
+    it("should addFileWithPermissions (without schema) as backward compatibility", async function () {
+      await dataRegistry
+        .connect(user1)
+        .addFileWithPermissions("file1", user2, [
+          { account: dlp1, key: "key1" },
+        ])
+        .should.emit(dataRegistry, "FileAdded")
+        .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 0)
+        .and.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, dlp1);
+
+      const file1 = await dataRegistry.files(1);
+      file1.id.should.eq(1);
+      file1.ownerAddress.should.eq(user2.address);
+      file1.url.should.eq("file1");
+
+      (await dataRegistry.filePermissions(1, dlp1)).should.eq("key1");
+    });
+
+    it("should handle empty permissions array", async function () {
+      await dataRefinerRegistry
+        .connect(user1)
+        .addSchema("Schema1", "JSON", "https://example.com/schema1.json");
+
+      await dataRegistry
+        .connect(user1)
+        .addFileWithPermissionsAndSchema("file1", user2, [], 1)
+        .should.emit(dataRegistry, "FileAdded")
+        .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 1);
+
+      const file1 = await dataRegistry.files(1);
+      file1.id.should.eq(1);
+      file1.ownerAddress.should.eq(user2.address);
+      file1.url.should.eq("file1");
+
+      (await dataRegistry.filePermissions(1, dlp1)).should.eq("");
+    });
+
+    it("should handle multiple permissions for same file", async function () {
+      await dataRefinerRegistry
+        .connect(user1)
+        .addSchema("Schema1", "JSON", "https://example.com/schema1.json");
+
+      await dataRegistry
+        .connect(user1)
+        .addFileWithPermissionsAndSchema("file1", user2, [
+          { account: dlp1, key: "key1" },
+          { account: dlp2, key: "key2" },
+          { account: dlp3, key: "key3" },
+          { account: queryEngine, key: "key4" },
+        ], 1)
+        .should.emit(dataRegistry, "FileAdded")
+        .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 1)
+        .and.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, dlp1)
+        .and.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, dlp2)
+        .and.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, dlp3)
+        .and.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, queryEngine);
+
+      (await dataRegistry.filePermissions(1, dlp1)).should.eq("key1");
+      (await dataRegistry.filePermissions(1, dlp2)).should.eq("key2");
+      (await dataRegistry.filePermissions(1, dlp3)).should.eq("key3");
+      (await dataRegistry.filePermissions(1, queryEngine)).should.eq("key4");
+    });
+  });
+
+  describe("AddFilePermissionsAndSchema", () => {
+    beforeEach(async () => {
+      await deploy();
+
+      const DLPRegistryMockFactory =
+        await ethers.getContractFactory("DLPRegistryMock");
+      const DLPRegistryMock = await DLPRegistryMockFactory.deploy();
+
+      await DLPRegistryMock.connect(dlp1).registerDlp();
+
+      const dataRefinerRegistryDeploy = await upgrades.deployProxy(
+        await ethers.getContractFactory("DataRefinerRegistryImplementation"),
+        [owner.address, DLPRegistryMock.target],
+        {
+          kind: "uups",
+        },
+      );
+
+      dataRefinerRegistry = await ethers.getContractAt(
+        "DataRefinerRegistryImplementation",
+        dataRefinerRegistryDeploy.target,
+      );
+
+      await dataRegistry
+        .connect(owner)
+        .updateDataRefinerRegistry(dataRefinerRegistry.target);
+    });
+
+    it("should allow file owner to add permissions and schema to existing file", async function () {
+      // First add a file
+      await dataRegistry
+        .connect(user1)
+        .addFile("file1", user1);
+      
+      // Add schema
+      await dataRefinerRegistry
+        .connect(user1)
+        .addSchema("Schema1", "JSON", "https://example.com/schema1.json");
+
+      // Now add permissions and schema to the existing file as the owner
+      await dataRegistry
+        .connect(user1)
+        .addFilePermissionsAndSchema(1, [
+          { account: dlp1, key: "key1" },
+          { account: dlp2, key: "key2" },
+        ], 1)
+        .should.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user1, "file1", 1)
+        .and.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, dlp1)
+        .and.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, dlp2);
+
+      const file1 = await dataRegistry.files(1);
+      file1.schemaId.should.eq(1);
+      (await dataRegistry.filePermissions(1, dlp1)).should.eq("key1");
+      (await dataRegistry.filePermissions(1, dlp2)).should.eq("key2");
+    });
+
+    it("should allow user with DATA_PORTABILITY_ROLE to add permissions and schema to any existing file", async function () {
+      // Grant DATA_PORTABILITY_ROLE to user2
+      await dataRegistry
+        .connect(owner)
+        .grantRole(DATA_PORTABILITY_ROLE, user2.address);
+
+      // First add a file as user1
+      await dataRegistry
+        .connect(user1)
+        .addFile("file1", user1);
+      
+      // Add schema
+      await dataRefinerRegistry
+        .connect(user1)
+        .addSchema("Schema1", "JSON", "https://example.com/schema1.json");
+
+      // Now user2 with DATA_PORTABILITY_ROLE can add permissions and schema to user1's file
+      await dataRegistry
+        .connect(user2)
+        .addFilePermissionsAndSchema(1, [
+          { account: dlp1, key: "key1" },
+          { account: dlp2, key: "key2" },
+        ], 1)
+        .should.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user1, "file1", 1)
+        .and.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, dlp1)
+        .and.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, dlp2);
+
+      const file1 = await dataRegistry.files(1);
+      file1.schemaId.should.eq(1);
+      file1.ownerAddress.should.eq(user1.address); // Owner should still be user1
+      (await dataRegistry.filePermissions(1, dlp1)).should.eq("key1");
+      (await dataRegistry.filePermissions(1, dlp2)).should.eq("key2");
+    });
+
+    it("should reject addFilePermissionsAndSchema when caller is not owner and doesn't have DATA_PORTABILITY_ROLE", async function () {
+      // First add a file as user1
+      await dataRegistry
+        .connect(user1)
+        .addFile("file1", user1);
+      
+      // Add schema
+      await dataRefinerRegistry
+        .connect(user1)
+        .addSchema("Schema1", "JSON", "https://example.com/schema1.json");
+
+      // user2 without DATA_PORTABILITY_ROLE and not being the owner should fail
+      await dataRegistry
+        .connect(user2)
+        .addFilePermissionsAndSchema(1, [
+          { account: dlp1, key: "key1" },
+        ], 1)
+        .should.be.rejectedWith("NotFileOwner()");
+
+      // Verify no changes were made
+      const file1 = await dataRegistry.files(1);
+      file1.schemaId.should.eq(0);
+      (await dataRegistry.filePermissions(1, dlp1)).should.eq("");
+    });
+
+    it("should handle adding permissions and schema with schemaId 0 (no schema)", async function () {
+      // First add a file
+      await dataRegistry
+        .connect(user1)
+        .addFile("file1", user1);
+
+      // Add permissions with no schema (schemaId = 0)
+      await dataRegistry
+        .connect(user1)
+        .addFilePermissionsAndSchema(1, [
+          { account: dlp1, key: "key1" },
+        ], 0)
+        .should.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user1, "file1", 0)
+        .and.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, dlp1);
+
+      const file1 = await dataRegistry.files(1);
+      file1.schemaId.should.eq(0);
+      (await dataRegistry.filePermissions(1, dlp1)).should.eq("key1");
+    });
+
+    it("should reject addFilePermissionsAndSchema with invalid schemaId", async function () {
+      // First add a file
+      await dataRegistry
+        .connect(user1)
+        .addFile("file1", user1);
+
+      // Try to add permissions with invalid schemaId
+      await dataRegistry
+        .connect(user1)
+        .addFilePermissionsAndSchema(1, [
+          { account: dlp1, key: "key1" },
+        ], 999)
+        .should.be.rejectedWith("InvalidSchemaId(999)");
+    });
+
+    it("should reject addFilePermissionsAndSchema when paused", async function () {
+      // First add a file
+      await dataRegistry
+        .connect(user1)
+        .addFile("file1", user1);
+
+      // Pause the contract
+      await dataRegistry.connect(owner).pause();
+
+      // Try to add permissions and schema while paused
+      await dataRegistry
+        .connect(user1)
+        .addFilePermissionsAndSchema(1, [
+          { account: dlp1, key: "key1" },
+        ], 0)
+        .should.be.rejectedWith("EnforcedPause()");
+    });
+
+    it("should handle empty permissions array", async function () {
+      // First add a file
+      await dataRegistry
+        .connect(user1)
+        .addFile("file1", user1);
+      
+      // Add schema
+      await dataRefinerRegistry
+        .connect(user1)
+        .addSchema("Schema1", "JSON", "https://example.com/schema1.json");
+
+      // Add schema without permissions
+      await dataRegistry
+        .connect(user1)
+        .addFilePermissionsAndSchema(1, [], 1)
+        .should.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user1, "file1", 1);
+
+      const file1 = await dataRegistry.files(1);
+      file1.schemaId.should.eq(1);
+      (await dataRegistry.filePermissions(1, dlp1)).should.eq("");
+    });
+
+    it("should overwrite existing schema when adding new schema", async function () {
+      // First add a file with a schema
+      await dataRefinerRegistry
+        .connect(user1)
+        .addSchema("Schema1", "JSON", "https://example.com/schema1.json");
+      
+      await dataRefinerRegistry
+        .connect(user1)
+        .addSchema("Schema2", "XML", "https://example.com/schema2.xml");
+
+      await dataRegistry
+        .connect(user1)
+        .addFileWithPermissionsAndSchema("file1", user1, [], 1);
+
+      // Verify initial schema
+      let file1 = await dataRegistry.files(1);
+      file1.schemaId.should.eq(1);
+
+      // Update to a different schema
+      await dataRegistry
+        .connect(user1)
+        .addFilePermissionsAndSchema(1, [], 2)
+        .should.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user1, "file1", 2);
+
+      // Verify schema was updated
+      file1 = await dataRegistry.files(1);
+      file1.schemaId.should.eq(2);
+    });
+  });
+
+  describe("EmitLegacyEvents", () => {
+    beforeEach(async () => {
+      await deploy();
+
+      const DLPRegistryMockFactory =
+        await ethers.getContractFactory("DLPRegistryMock");
+      const DLPRegistryMock = await DLPRegistryMockFactory.deploy();
+
+      await DLPRegistryMock.connect(dlp1).registerDlp();
+
+      const dataRefinerRegistryDeploy = await upgrades.deployProxy(
+        await ethers.getContractFactory("DataRefinerRegistryImplementation"),
+        [owner.address, DLPRegistryMock.target],
+        {
+          kind: "uups",
+        },
+      );
+
+      dataRefinerRegistry = await ethers.getContractAt(
+        "DataRefinerRegistryImplementation",
+        dataRefinerRegistryDeploy.target,
+      );
+
+      await dataRegistry
+        .connect(owner)
+        .updateDataRefinerRegistry(dataRefinerRegistry.target);
+    });
+
+    it("should only emit FileAddedV2 when emitLegacyEvents is false", async function () {
+      // Disable legacy events
+      await dataRegistry.connect(owner).updateEmitLegacyEvents(false);
+
+      await dataRegistry
+        .connect(user1)
+        .addFile("file1")
+        .should.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user1, "file1", 0)
+        .and.not.emit(dataRegistry, "FileAdded");
+
+      (await dataRegistry.filesCount()).should.eq(1);
+    });
+
+    it("should only emit FileAddedV2 when emitLegacyEvents is false with schema", async function () {
+      // Disable legacy events
+      await dataRegistry.connect(owner).updateEmitLegacyEvents(false);
+
+      await dataRefinerRegistry
+        .connect(user1)
+        .addSchema("Schema1", "JSON", "https://example.com/schema1.json");
+
+      await dataRegistry
+        .connect(user1)
+        .addFileWithSchema("file1", 1)
+        .should.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user1, "file1", 1)
+        .and.not.emit(dataRegistry, "FileAdded");
+
+      (await dataRegistry.filesCount()).should.eq(1);
+    });
+
+    it("should only emit FileAddedV2 when emitLegacyEvents is false with permissions", async function () {
+      // Disable legacy events
+      await dataRegistry.connect(owner).updateEmitLegacyEvents(false);
+
+      await dataRegistry
+        .connect(user1)
+        .addFileWithPermissions("file1", user2, [
+          { account: dlp1, key: "key1" },
+        ])
+        .should.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 0)
+        .and.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, dlp1)
+        .and.not.emit(dataRegistry, "FileAdded");
+
+      (await dataRegistry.filesCount()).should.eq(1);
+    });
+
+    it("should only emit FileAddedV2 when emitLegacyEvents is false with permissions and schema", async function () {
+      // Disable legacy events
+      await dataRegistry.connect(owner).updateEmitLegacyEvents(false);
+
+      await dataRefinerRegistry
+        .connect(user1)
+        .addSchema("Schema1", "JSON", "https://example.com/schema1.json");
+
+      await dataRegistry
+        .connect(user1)
+        .addFileWithPermissionsAndSchema("file1", user2, [
+          { account: dlp1, key: "key1" },
+        ], 1)
+        .should.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 1)
+        .and.emit(dataRegistry, "PermissionGranted")
+        .withArgs(1, dlp1)
+        .and.not.emit(dataRegistry, "FileAdded");
+
+      (await dataRegistry.filesCount()).should.eq(1);
+    });
+
+    it("should emit both events when emitLegacyEvents is re-enabled", async function () {
+      // First disable legacy events
+      await dataRegistry.connect(owner).updateEmitLegacyEvents(false);
+
+      await dataRegistry
+        .connect(user1)
+        .addFile("file1")
+        .should.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user1, "file1", 0)
+        .and.not.emit(dataRegistry, "FileAdded");
+
+      // Re-enable legacy events
+      await dataRegistry.connect(owner).updateEmitLegacyEvents(true);
+
+      await dataRegistry
+        .connect(user2)
+        .addFile("file2")
+        .should.emit(dataRegistry, "FileAdded")
+        .withArgs(2, user2, "file2")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(2, user2, "file2", 0);
+
+      (await dataRegistry.filesCount()).should.eq(2);
+    });
+  });
+
   describe("AddRefinementWithPermission", () => {
     let refinementService: HardhatEthersSigner;
 
@@ -824,6 +1561,8 @@ describe("DataRegistry", () => {
         ])
         .should.emit(dataRegistry, "FileAdded")
         .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 0)
         .and.emit(dataRegistry, "PermissionGranted")
         .withArgs(1, dlp1);
 
@@ -858,6 +1597,8 @@ describe("DataRegistry", () => {
         ])
         .should.emit(dataRegistry, "FileAdded")
         .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 0)
         .and.emit(dataRegistry, "PermissionGranted")
         .withArgs(1, dlp1);
 
@@ -879,11 +1620,16 @@ describe("DataRegistry", () => {
         .addRefinementService(1, dlpRefinementService.address)
         .should.be.fulfilled;
 
+      // Add schema first
+      await dataRefinerRegistry
+        .connect(user1)
+        .addSchema("Schema1", "JSON", "https://example.com/schema1.json");
+
       await dataRefinerRegistry
         .connect(dlp1)
-        .addRefiner(1, "refiner1", "schema1", "instruction1")
+        .addRefinerWithSchemaId(1, "refiner1", 1, "instruction1")
         .should.emit(dataRefinerRegistry, "RefinerAdded")
-        .withArgs(1, 1, "refiner1", "schema1", "instruction1");
+        .withArgs(1, 1, "refiner1", 1, "https://example.com/schema1.json", "instruction1");
 
       (await dataRefinerRegistry.isRefinementService(1, dlpRefinementService.address)).should.be.true;
 
@@ -907,6 +1653,8 @@ describe("DataRegistry", () => {
         ])
         .should.emit(dataRegistry, "FileAdded")
         .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 0)
         .and.emit(dataRegistry, "PermissionGranted")
         .withArgs(1, dlp1);
 
@@ -932,6 +1680,8 @@ describe("DataRegistry", () => {
         ])
         .should.emit(dataRegistry, "FileAdded")
         .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 0)
         .and.emit(dataRegistry, "PermissionGranted")
         .withArgs(1, dlp1);
 
@@ -971,6 +1721,8 @@ describe("DataRegistry", () => {
         ])
         .should.emit(dataRegistry, "FileAdded")
         .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 0)
         .and.emit(dataRegistry, "PermissionGranted")
         .withArgs(1, dlp1);
 
@@ -996,6 +1748,8 @@ describe("DataRegistry", () => {
         ])
         .should.emit(dataRegistry, "FileAdded")
         .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 0)
         .and.emit(dataRegistry, "PermissionGranted")
         .withArgs(1, dlp1);
 
@@ -1036,6 +1790,8 @@ describe("DataRegistry", () => {
         ])
         .should.emit(dataRegistry, "FileAdded")
         .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 0)
         .and.emit(dataRegistry, "PermissionGranted")
         .withArgs(1, dlp1);
 
@@ -1056,6 +1812,8 @@ describe("DataRegistry", () => {
         ])
         .should.emit(dataRegistry, "FileAdded")
         .withArgs(1, user2, "file1")
+        .and.emit(dataRegistry, "FileAddedV2")
+        .withArgs(1, user2, "file1", 0)
         .and.emit(dataRegistry, "PermissionGranted")
         .withArgs(1, dlp1);
 
