@@ -67,7 +67,7 @@ describe("BuyAndBurnOrchestrator", function () {
     const actualDlpId = dlpCount - 1n; // DLP IDs are 0-indexed in the mock
 
     // Get the DLP info to verify
-    const dlpInfo = await dlpRegistry.dlps(actualDlpId);
+    // const dlpInfo = await dlpRegistry.dlps(actualDlpId);
 
     // Deploy UniversalDLPTreasury
     const TreasuryFactory = await ethers.getContractFactory(
