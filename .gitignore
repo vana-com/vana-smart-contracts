@@ -26,3 +26,7 @@ test/dlpRewards/dlpReward2.ts
 
 
 ./CLAUDE.md
+
+deployments-official/*
+depositInitialization.ts
+abis/*
