@@ -26,7 +26,6 @@ describe("BuyAndBurnOrchestrator", function () {
     ethers.toUtf8Bytes("DATA_ACCESS_ROLE")
   );
 
-  const DLP_ID = 1;
   const EPOCH_BLOCKS = 100;
 
   beforeEach(async function () {
