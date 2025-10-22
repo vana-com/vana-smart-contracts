@@ -2,7 +2,7 @@ import "@uniswap/v3-core/contracts/libraries/FixedPoint96.sol";
 import "@uniswap/v3-core/contracts/libraries/UnsafeMath.sol";
 import "@uniswap/v3-core/contracts/libraries/SafeCast.sol";
 
-import {FullMath} from "./libraries/FullMath.sol";
+import {FullMath} from "./FullMath.sol";
 
 /// @title Functions based on Q64.96 sqrt price and liquidity
 /// @notice Contains the math that uses square root of price as a Q64.96 and liquidity to compute deltas

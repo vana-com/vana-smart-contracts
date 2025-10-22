@@ -1,4 +1,4 @@
-import {FullMath} from "./libraries/FullMath.sol";
+import {FullMath} from "./FullMath.sol";
 import {SqrtPriceMath} from "./SqrtPriceMath.sol";
 
 /// @title Computes the result of a swap within ticks
