@@ -122,7 +122,6 @@ contract BuyAndBurnSwapImplementation is
 
     function quoteLpSwap(QuoteLpSwapParams memory params) internal view returns (LpSwapQuote memory res) {
         require(params.amountIn > 0, BuyAndBurnSwap__ZeroAmount());
-        require(params.tokenOut != address(0), BuyAndBurnSwap__ZeroAddress());
         require(params.sqrtRatioLowerX96 <= params.sqrtRatioUpperX96, BuyAndBurnSwap__InvalidRange());
 
         IWVANA WVANA = swapHelper.WVANA();
@@ -420,8 +419,13 @@ contract BuyAndBurnSwapImplementation is
         returns (uint128 liquidityDelta, uint256 spareIn, uint256 spareOut)
     {
         require(params.amountIn > 0, BuyAndBurnSwap__ZeroAmount());
+
+        // Handle token transfer based on tokenIn type
         if (params.tokenIn == VANA) {
             require(msg.value >= params.amountIn, BuyAndBurnSwap__InsufficientAmount(VANA, params.amountIn, msg.value));
+        } else {
+            // Transfer ERC20 tokens from caller to this contract
+            IERC20(params.tokenIn).safeTransferFrom(msg.sender, address(this), params.amountIn);
         }
 
         (, , , , , int24 tickLower, int24 tickUpper, , , , , ) = positionManager.positions(params.lpTokenId);
@@ -445,6 +449,13 @@ contract BuyAndBurnSwapImplementation is
         uint256 amountSwapOut;
 
         if (quote.amountSwapIn > 0) {
+            // Approve swapHelper if tokenIn is ERC20
+            if (params.tokenIn != VANA) {
+                IERC20(params.tokenIn).forceApprove(address(swapHelper), quote.amountSwapIn);
+            }
+
+            // Execute swap - only pass value if tokenIn is VANA
+            if (params.tokenIn == VANA) {
             (amountSwapInUsed, amountSwapOut) = swapHelper.slippageExactInputSingle{value: quote.amountSwapIn}(
                 ISwapHelper.SlippageSwapParams({
                     tokenIn: params.tokenIn,
@@ -453,8 +464,19 @@ contract BuyAndBurnSwapImplementation is
                     recipient: address(this),
                     amountIn: quote.amountSwapIn,
                     maximumSlippagePercentage: params.maximumSlippagePercentage
-                })
-            );
+                    })
+                );
+            } else {
+                (amountSwapInUsed, amountSwapOut) = swapHelper.slippageExactInputSingle(
+                    ISwapHelper.SlippageSwapParams({
+                        tokenIn: params.tokenIn,
+                        tokenOut: params.tokenOut,
+                        fee: params.fee,
+                        recipient: address(this),
+                        amountIn: quote.amountSwapIn,
+                        maximumSlippagePercentage: params.maximumSlippagePercentage
+                }));
+            }
         }
         require(amountSwapInUsed == quote.amountSwapIn, BuyAndBurnSwap__LPAmountMismatch());
 
@@ -466,6 +488,10 @@ contract BuyAndBurnSwapImplementation is
         uint256 amountLpIn = params.amountIn - amountSwapInUsed;
         if (params.tokenIn == VANA) {
             WVANA.deposit{value: amountLpIn}();
+        }
+
+        if (params.tokenOut == VANA && amountSwapOut > 0) {
+            WVANA.deposit{value: amountSwapOut}();
         }
 
         address token0 = zeroForOne ? tokenIn : tokenOut;
