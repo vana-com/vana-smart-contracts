@@ -156,7 +156,8 @@ describe("BuyAndBurnSwap", () => {
   const VANA = ethers.ZeroAddress;
 
   const NUM_RUNS = 100; // Reduce for faster tests, increase for thorough testing
-  const SLIPPAGE_TOLERANCE = parseEther(2); // 2%
+  const SINGLE_BATCH_IMPACT_THRESHOLD = parseEther(2); // 2% price impact threshold
+  const PER_SWAP_SLIPPAGE_CAP = parseEther(0.5); // 0.5% slippage cap
 
   let deployer: HardhatEthersSigner;
   let owner: HardhatEthersSigner;
@@ -433,6 +434,11 @@ describe("BuyAndBurnSwap", () => {
       await positionManager
         .connect(user1)
         .transferFrom(user1.address, user2.address, lpTokenId);
+
+      // Approve BuyAndBurnSwap to manage the NFT position
+      await positionManager
+        .connect(user2)
+        .approve(buyAndBurnSwap.target, lpTokenId);
     });
 
     afterEach(async () => {
@@ -453,7 +459,8 @@ describe("BuyAndBurnSwap", () => {
             tokenOutRecipient: tokenOutRecipient.address,
             spareTokenInRecipient: spareTokenInRecipient.address,
             amountIn: amountIn,
-            maximumSlippagePercentage: SLIPPAGE_TOLERANCE,
+            singleBatchImpactThreshold: SINGLE_BATCH_IMPACT_THRESHOLD,
+            perSwapSlippageCap: PER_SWAP_SLIPPAGE_CAP,
             lpTokenId: lpTokenId,
           },
           { value: amountIn },
@@ -476,7 +483,8 @@ describe("BuyAndBurnSwap", () => {
             tokenOutRecipient: tokenOutRecipient.address,
             spareTokenInRecipient: spareTokenInRecipient.address,
             amountIn: amountIn,
-            maximumSlippagePercentage: SLIPPAGE_TOLERANCE,
+            singleBatchImpactThreshold: SINGLE_BATCH_IMPACT_THRESHOLD,
+            perSwapSlippageCap: PER_SWAP_SLIPPAGE_CAP,
             lpTokenId: lpTokenId,
           },
           { value: amountIn },
@@ -512,6 +520,11 @@ describe("BuyAndBurnSwap", () => {
       await positionManager
         .connect(user1)
         .transferFrom(user1.address, user2.address, lpTokenId);
+
+      // Approve BuyAndBurnSwap to manage the NFT position
+      await positionManager
+        .connect(user2)
+        .approve(buyAndBurnSwap.target, lpTokenId);
     });
 
     afterEach(async () => {
@@ -540,7 +553,8 @@ describe("BuyAndBurnSwap", () => {
           tokenOutRecipient: tokenOutRecipient.address,
           spareTokenInRecipient: spareTokenInRecipient.address,
           amountIn: amountIn,
-          maximumSlippagePercentage: SLIPPAGE_TOLERANCE,
+          singleBatchImpactThreshold: SINGLE_BATCH_IMPACT_THRESHOLD,
+          perSwapSlippageCap: PER_SWAP_SLIPPAGE_CAP,
           lpTokenId: lpTokenId,
         },
         { value: amountIn },
@@ -579,7 +593,8 @@ describe("BuyAndBurnSwap", () => {
             tokenOutRecipient: tokenOutRecipient.address,
             spareTokenInRecipient: spareTokenInRecipient.address,
             amountIn: amountIn,
-            maximumSlippagePercentage: SLIPPAGE_TOLERANCE,
+            singleBatchImpactThreshold: SINGLE_BATCH_IMPACT_THRESHOLD,
+            perSwapSlippageCap: PER_SWAP_SLIPPAGE_CAP,
             lpTokenId: lpTokenId,
           },
           { value: amountIn },
@@ -593,7 +608,8 @@ describe("BuyAndBurnSwap", () => {
           tokenOutRecipient: tokenOutRecipient.address,
           spareTokenInRecipient: spareTokenInRecipient.address,
           amountIn: amountIn,
-          maximumSlippagePercentage: SLIPPAGE_TOLERANCE,
+          singleBatchImpactThreshold: SINGLE_BATCH_IMPACT_THRESHOLD,
+          perSwapSlippageCap: PER_SWAP_SLIPPAGE_CAP,
           lpTokenId: lpTokenId,
         },
         { value: amountIn },
@@ -628,7 +644,8 @@ describe("BuyAndBurnSwap", () => {
             tokenOutRecipient: tokenOutRecipient.address,
             spareTokenInRecipient: spareTokenInRecipient.address,
             amountIn: amountIn,
-            maximumSlippagePercentage: SLIPPAGE_TOLERANCE,
+            singleBatchImpactThreshold: SINGLE_BATCH_IMPACT_THRESHOLD,
+            perSwapSlippageCap: PER_SWAP_SLIPPAGE_CAP,
             lpTokenId: lpTokenId,
           },
           { value: amountIn },
@@ -642,7 +659,8 @@ describe("BuyAndBurnSwap", () => {
           tokenOutRecipient: tokenOutRecipient.address,
           spareTokenInRecipient: spareTokenInRecipient.address,
           amountIn: amountIn,
-          maximumSlippagePercentage: SLIPPAGE_TOLERANCE,
+          singleBatchImpactThreshold: SINGLE_BATCH_IMPACT_THRESHOLD,
+          perSwapSlippageCap: PER_SWAP_SLIPPAGE_CAP,
           lpTokenId: lpTokenId,
         },
         { value: amountIn },
@@ -661,22 +679,42 @@ describe("BuyAndBurnSwap", () => {
     });
 
     it("should execute with ERC20 as tokenIn", async () => {
-      // First get some ERC20 tokens
-      const swapAmount = parseEther(100);
-      await swapHelper.connect(user2).exactInputSingle(
+      // Give user1 extra funds for this test since they already spent a lot creating the LP
+      await network.provider.send("hardhat_setBalance", [
+        user1.address,
+        toHex(parseEther(20000)), // Give plenty of balance
+      ]);
+
+      // Get a substantial amount of ERC20 for user1
+      const largeSwapAmount = parseEther(10000); // Use 10,000 VANA to get meaningful ERC20
+      await swapHelper.connect(user1).exactInputSingle(
         {
           tokenIn: VANA,
           tokenOut: ERC20Token.target,
           fee: FeeAmount.MEDIUM,
-          recipient: user2.address,
-          amountIn: swapAmount,
+          recipient: user1.address,
+          amountIn: largeSwapAmount,
           amountOutMinimum: 0,
         },
-        { value: swapAmount },
+        { value: largeSwapAmount },
       );
 
-      const amountIn = await ERC20Token.balanceOf(user2.address);
-      const tokenBalanceBefore = await ERC20Token.balanceOf(user2.address);
+      const user1Balance = await ERC20Token.balanceOf(user1.address);
+      console.log("User1 ERC20 balance:", ethers.formatEther(user1Balance));
+
+      // Transfer a good amount to user2
+      const transferAmount = user1Balance / 2n;
+      console.log("Transferring to user2:", ethers.formatEther(transferAmount));
+
+      await ERC20Token.connect(user1).transfer(user2.address, transferAmount);
+      console.log("Direct transfer successful");
+
+      const user2Balance = await ERC20Token.balanceOf(user2.address);
+      console.log("User2 ERC20 balance after transfer:", ethers.formatEther(user2Balance));
+
+      // Use a good portion for the test
+      const amountIn = (transferAmount * 80n) / 100n; // Use 80% to ensure meaningful liquidity
+      console.log("Amount to use for LP:", ethers.formatEther(amountIn));
 
       await ERC20Token.connect(user2).approve(buyAndBurnSwap.target, amountIn);
 
@@ -689,20 +727,19 @@ describe("BuyAndBurnSwap", () => {
         fee: FeeAmount.MEDIUM,
         tokenOutRecipient: tokenOutRecipient.address,
         spareTokenInRecipient: spareTokenInRecipient.address,
-        amountIn: amountIn / 2n, // Use half
-        maximumSlippagePercentage: SLIPPAGE_TOLERANCE,
+        amountIn: amountIn,
+        singleBatchImpactThreshold: SINGLE_BATCH_IMPACT_THRESHOLD,
+        perSwapSlippageCap: PER_SWAP_SLIPPAGE_CAP,
         lpTokenId: lpTokenId,
       });
 
       const positionAfter = await positionManager.positions(lpTokenId);
       const liquidityAfter = positionAfter.liquidity;
 
-      // Verify liquidity increased
       liquidityAfter.should.be.gt(liquidityBefore);
 
-      // Verify tokens were spent
       const tokenBalanceAfter = await ERC20Token.balanceOf(user2.address);
-      tokenBalanceAfter.should.be.lt(tokenBalanceBefore);
+      tokenBalanceAfter.should.be.lt(user2Balance);
     });
   });
 
@@ -734,6 +771,11 @@ describe("BuyAndBurnSwap", () => {
       await positionManager
         .connect(user1)
         .transferFrom(user1.address, user2.address, lpTokenId);
+
+      // Approve BuyAndBurnSwap to manage the NFT position
+      await positionManager
+        .connect(user2)
+        .approve(buyAndBurnSwap.target, lpTokenId);
     });
 
     afterEach(async () => {
@@ -750,7 +792,8 @@ describe("BuyAndBurnSwap", () => {
           tokenOutRecipient: tokenOutRecipient.address,
           spareTokenInRecipient: spareTokenInRecipient.address,
           amountIn: 0,
-          maximumSlippagePercentage: SLIPPAGE_TOLERANCE,
+          singleBatchImpactThreshold: SINGLE_BATCH_IMPACT_THRESHOLD,
+          perSwapSlippageCap: PER_SWAP_SLIPPAGE_CAP,
           lpTokenId: lpTokenId,
         })
         .should.be.rejectedWith("BuyAndBurnSwap__ZeroAmount");
@@ -768,7 +811,8 @@ describe("BuyAndBurnSwap", () => {
             tokenOutRecipient: tokenOutRecipient.address,
             spareTokenInRecipient: spareTokenInRecipient.address,
             amountIn: amountIn,
-            maximumSlippagePercentage: SLIPPAGE_TOLERANCE,
+            singleBatchImpactThreshold: SINGLE_BATCH_IMPACT_THRESHOLD,
+            perSwapSlippageCap: PER_SWAP_SLIPPAGE_CAP,
             lpTokenId: lpTokenId,
           },
           { value: amountIn / 2n }, // Send less than amountIn
@@ -789,7 +833,8 @@ describe("BuyAndBurnSwap", () => {
             tokenOutRecipient: tokenOutRecipient.address,
             spareTokenInRecipient: spareTokenInRecipient.address,
             amountIn: amountIn,
-            maximumSlippagePercentage: SLIPPAGE_TOLERANCE,
+            singleBatchImpactThreshold: SINGLE_BATCH_IMPACT_THRESHOLD,
+            perSwapSlippageCap: PER_SWAP_SLIPPAGE_CAP,
             lpTokenId: lpTokenId,
           },
           { value: amountIn },
@@ -819,7 +864,8 @@ describe("BuyAndBurnSwap", () => {
           tokenOutRecipient: tokenOutRecipient.address,
           spareTokenInRecipient: spareTokenInRecipient.address,
           amountIn: amountIn,
-          maximumSlippagePercentage: SLIPPAGE_TOLERANCE,
+          singleBatchImpactThreshold: SINGLE_BATCH_IMPACT_THRESHOLD,
+          perSwapSlippageCap: PER_SWAP_SLIPPAGE_CAP,
           lpTokenId: lpTokenId,
         },
         { value: amountIn },
@@ -859,6 +905,11 @@ describe("BuyAndBurnSwap", () => {
       await positionManager
         .connect(user1)
         .transferFrom(user1.address, user2.address, lpTokenId);
+
+      // Approve BuyAndBurnSwap to manage the NFT position
+      await positionManager
+        .connect(user2)
+        .approve(buyAndBurnSwap.target, lpTokenId);
     });
 
     it("should handle random amounts (fuzzing)", async () => {
@@ -888,7 +939,8 @@ describe("BuyAndBurnSwap", () => {
                   tokenOutRecipient: tokenOutRecipient.address,
                   spareTokenInRecipient: spareTokenInRecipient.address,
                   amountIn: amountIn,
-                  maximumSlippagePercentage: SLIPPAGE_TOLERANCE,
+                  singleBatchImpactThreshold: SINGLE_BATCH_IMPACT_THRESHOLD,
+                  perSwapSlippageCap: PER_SWAP_SLIPPAGE_CAP,
                   lpTokenId: lpTokenId,
                 },
                 { value: amountIn },
@@ -910,7 +962,8 @@ describe("BuyAndBurnSwap", () => {
                 tokenOutRecipient: tokenOutRecipient.address,
                 spareTokenInRecipient: spareTokenInRecipient.address,
                 amountIn: amountIn,
-                maximumSlippagePercentage: SLIPPAGE_TOLERANCE,
+                singleBatchImpactThreshold: SINGLE_BATCH_IMPACT_THRESHOLD,
+                perSwapSlippageCap: PER_SWAP_SLIPPAGE_CAP,
                 lpTokenId: lpTokenId,
               },
               { value: amountIn },
@@ -968,6 +1021,11 @@ describe("BuyAndBurnSwap", () => {
       await positionManager
         .connect(user1)
         .transferFrom(user1.address, user2.address, lpTokenId);
+
+      // Approve BuyAndBurnSwap to manage the NFT position
+      await positionManager
+        .connect(user2)
+        .approve(buyAndBurnSwap.target, lpTokenId);
     });
 
     afterEach(async () => {
@@ -997,7 +1055,8 @@ describe("BuyAndBurnSwap", () => {
             tokenOutRecipient: burnAddress.address, // Burn spare DLP
             spareTokenInRecipient: spareTokenInRecipient.address, // Return spare VANA to treasury
             amountIn: dlpShare,
-            maximumSlippagePercentage: SLIPPAGE_TOLERANCE,
+            singleBatchImpactThreshold: SINGLE_BATCH_IMPACT_THRESHOLD,
+            perSwapSlippageCap: PER_SWAP_SLIPPAGE_CAP,
             lpTokenId: lpTokenId,
           },
           { value: dlpShare },
@@ -1011,33 +1070,227 @@ describe("BuyAndBurnSwap", () => {
           tokenOutRecipient: burnAddress.address,
           spareTokenInRecipient: spareTokenInRecipient.address,
           amountIn: dlpShare,
-          maximumSlippagePercentage: SLIPPAGE_TOLERANCE,
+          singleBatchImpactThreshold: SINGLE_BATCH_IMPACT_THRESHOLD,
+          perSwapSlippageCap: PER_SWAP_SLIPPAGE_CAP,
           lpTokenId: lpTokenId,
         },
         { value: dlpShare },
       );
 
+      const burnAddressBalanceAfter = await ERC20Token.balanceOf(
+        burnAddress.address,
+      );
+      const treasuryBalanceAfter = await ethers.provider.getBalance(
+        spareTokenInRecipient.address,
+      );
+
       // Verify spare DLP was sent to burn address
       if (spareOut > 0n) {
-        const burnAddressBalanceAfter = await ERC20Token.balanceOf(
-          burnAddress.address,
-        );
-        burnAddressBalanceAfter.should.equal(
-          burnAddressBalanceBefore + spareOut,
-        );
-        console.log(`✓ Burned ${spareOut} DLP tokens`);
+        burnAddressBalanceAfter.should.equal(burnAddressBalanceBefore + spareOut);
       }
 
-      // Verify spare VANA was returned to treasury
+      // Verify spare VANA was sent to treasury
       if (spareIn > 0n) {
-        const treasuryBalanceAfter = await ethers.provider.getBalance(
-          spareTokenInRecipient.address,
-        );
         treasuryBalanceAfter.should.equal(treasuryBalanceBefore + spareIn);
-        console.log(`✓ Returned ${spareIn} spare VANA to treasury`);
       }
 
-      console.log(`✓ Added ${liquidityDelta} liquidity to VANA/DLP pool`);
+      console.log("\n=== Buy-and-Burn Simulation ===");
+      console.log(`Data Access Fee (80% DLP share): ${ethers.formatEther(dlpShare)} VANA`);
+      console.log(`Liquidity Added: ${liquidityDelta}`);
+      console.log(`Spare VANA (to treasury): ${ethers.formatEther(spareIn)}`);
+      console.log(`Spare DLP (to burn): ${ethers.formatEther(spareOut)}`);
+    });
+
+    it("should handle multiple buy-and-burn iterations", async () => {
+      let totalLiquidityAdded = 0n;
+      let totalSpareVANA = 0n;
+      let totalSpareDLP = 0n;
+
+      // Simulate 3 sequential buy-and-burn operations
+      for (let i = 0; i < 3; i++) {
+        const amount = parseEther(50 + i * 25); // 50, 75, 100 VANA
+
+        const { liquidityDelta, spareIn, spareOut } = await buyAndBurnSwap
+          .connect(user2)
+          .swapAndAddLiquidity.staticCall(
+            {
+              tokenIn: VANA,
+              tokenOut: ERC20Token.target,
+              fee: FeeAmount.MEDIUM,
+              tokenOutRecipient: burnAddress.address,
+              spareTokenInRecipient: spareTokenInRecipient.address,
+              amountIn: amount,
+              singleBatchImpactThreshold: SINGLE_BATCH_IMPACT_THRESHOLD,
+              perSwapSlippageCap: PER_SWAP_SLIPPAGE_CAP,
+              lpTokenId: lpTokenId,
+            },
+            { value: amount },
+          );
+
+        await buyAndBurnSwap.connect(user2).swapAndAddLiquidity(
+          {
+            tokenIn: VANA,
+            tokenOut: ERC20Token.target,
+            fee: FeeAmount.MEDIUM,
+            tokenOutRecipient: burnAddress.address,
+            spareTokenInRecipient: spareTokenInRecipient.address,
+            amountIn: amount,
+            singleBatchImpactThreshold: SINGLE_BATCH_IMPACT_THRESHOLD,
+            perSwapSlippageCap: PER_SWAP_SLIPPAGE_CAP,
+            lpTokenId: lpTokenId,
+          },
+          { value: amount },
+        );
+
+        totalLiquidityAdded += liquidityDelta;
+        totalSpareVANA += spareIn;
+        totalSpareDLP += spareOut;
+
+        console.log(`\nIteration ${i + 1}:`);
+        console.log(`  Amount In: ${ethers.formatEther(amount)} VANA`);
+        console.log(`  Liquidity Added: ${liquidityDelta}`);
+        console.log(`  Spare VANA: ${ethers.formatEther(spareIn)}`);
+        console.log(`  Spare DLP: ${ethers.formatEther(spareOut)}`);
+      }
+
+      console.log("\n=== Multiple Iteration Summary ===");
+      console.log(`Total Liquidity Added: ${totalLiquidityAdded}`);
+      console.log(`Total Spare VANA: ${ethers.formatEther(totalSpareVANA)}`);
+      console.log(`Total Spare DLP: ${ethers.formatEther(totalSpareDLP)}`);
+    });
+  });
+
+  describe("Parameter Testing", () => {
+    let snapshotId: any;
+    let lpTokenId: bigint;
+
+    beforeEach(async () => {
+      snapshotId = await network.provider.send("evm_snapshot");
+      await deploy();
+
+      // Give user1 enough balance
+      await network.provider.send("hardhat_setBalance", [
+        user1.address,
+        toHex(parseEther(10000)),
+      ]);
+
+      // Create LP position
+      lpTokenId = await createLPPosition(
+        user1,
+        positionManager,
+        WVANA,
+        ERC20Token,
+        swapHelper,
+        parseEther(1000),
+        parseEther(100),
+      );
+
+      await positionManager
+        .connect(user1)
+        .transferFrom(user1.address, user2.address, lpTokenId);
+
+      // Approve BuyAndBurnSwap to manage the NFT position
+      await positionManager
+        .connect(user2)
+        .approve(buyAndBurnSwap.target, lpTokenId);
+    });
+
+    afterEach(async () => {
+      await network.provider.send("evm_revert", [snapshotId]);
+    });
+
+    it("should respect singleBatchImpactThreshold", async () => {
+      const amountIn = parseEther(100);
+
+      // Test with strict threshold (1%)
+      const strictThreshold = parseEther(1);
+      const { spareIn: strictSpareIn } = await buyAndBurnSwap
+        .connect(user2)
+        .swapAndAddLiquidity.staticCall(
+          {
+            tokenIn: VANA,
+            tokenOut: ERC20Token.target,
+            fee: FeeAmount.MEDIUM,
+            tokenOutRecipient: tokenOutRecipient.address,
+            spareTokenInRecipient: spareTokenInRecipient.address,
+            amountIn: amountIn,
+            singleBatchImpactThreshold: strictThreshold,
+            perSwapSlippageCap: PER_SWAP_SLIPPAGE_CAP,
+            lpTokenId: lpTokenId,
+          },
+          { value: amountIn },
+        );
+
+      // Test with loose threshold (5%)
+      const looseThreshold = parseEther(5);
+      const { spareIn: looseSpareIn } = await buyAndBurnSwap
+        .connect(user2)
+        .swapAndAddLiquidity.staticCall(
+          {
+            tokenIn: VANA,
+            tokenOut: ERC20Token.target,
+            fee: FeeAmount.MEDIUM,
+            tokenOutRecipient: tokenOutRecipient.address,
+            spareTokenInRecipient: spareTokenInRecipient.address,
+            amountIn: amountIn,
+            singleBatchImpactThreshold: looseThreshold,
+            perSwapSlippageCap: PER_SWAP_SLIPPAGE_CAP,
+            lpTokenId: lpTokenId,
+          },
+          { value: amountIn },
+        );
+
+      console.log("\n=== Threshold Comparison ===");
+      console.log(`Strict (1%): spareIn = ${ethers.formatEther(strictSpareIn)} VANA`);
+      console.log(`Loose (5%): spareIn = ${ethers.formatEther(looseSpareIn)} VANA`);
+
+      // Strict threshold should result in more spare (less swapped)
+      // when the amount is large enough to exceed 1% impact
+      if (strictSpareIn > 0n || looseSpareIn > 0n) {
+        strictSpareIn.should.be.gte(looseSpareIn);
+      }
+    });
+
+    it("should work with different perSwapSlippageCap values", async () => {
+      const amountIn = parseEther(50);
+
+      // Test with tight slippage cap (0.2%)
+      const tightCap = parseEther(0.2);
+      await buyAndBurnSwap
+        .connect(user2)
+        .swapAndAddLiquidity(
+          {
+            tokenIn: VANA,
+            tokenOut: ERC20Token.target,
+            fee: FeeAmount.MEDIUM,
+            tokenOutRecipient: tokenOutRecipient.address,
+            spareTokenInRecipient: spareTokenInRecipient.address,
+            amountIn: amountIn,
+            singleBatchImpactThreshold: SINGLE_BATCH_IMPACT_THRESHOLD,
+            perSwapSlippageCap: tightCap,
+            lpTokenId: lpTokenId,
+          },
+          { value: amountIn },
+        ).should.not.be.rejected;
+
+      // Test with loose slippage cap (2%)
+      const looseCap = parseEther(2);
+      await buyAndBurnSwap
+        .connect(user2)
+        .swapAndAddLiquidity(
+          {
+            tokenIn: VANA,
+            tokenOut: ERC20Token.target,
+            fee: FeeAmount.MEDIUM,
+            tokenOutRecipient: tokenOutRecipient.address,
+            spareTokenInRecipient: spareTokenInRecipient.address,
+            amountIn: amountIn,
+            singleBatchImpactThreshold: SINGLE_BATCH_IMPACT_THRESHOLD,
+            perSwapSlippageCap: looseCap,
+            lpTokenId: lpTokenId,
+          },
+          { value: amountIn },
+        ).should.not.be.rejected;
     });
   });
 });
