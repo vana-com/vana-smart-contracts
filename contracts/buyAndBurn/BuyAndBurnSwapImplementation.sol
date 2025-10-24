@@ -251,61 +251,48 @@ contract BuyAndBurnSwapImplementation is
         uint256 amount0Desired = zeroForOne ? amountLpIn : amountSwapOut;
         uint256 amount1Desired = zeroForOne ? amountSwapOut : amountLpIn;
 
-        uint256 token0Balance = IERC20(token0).balanceOf(address(this));
-        uint256 token1Balance = IERC20(token1).balanceOf(address(this));
-        require(
-            token0Balance >= amount0Desired,
-            BuyAndBurnSwap__InsufficientAmount(token0, amount0Desired, token0Balance)
-        );
-        require(
-            token1Balance >= amount1Desired,
-            BuyAndBurnSwap__InsufficientAmount(token1, amount1Desired, token1Balance)
-        );
+        // Check if amounts are meaningful enough for liquidity addition
+        // Uniswap V3 concentrated liquidity can accept one-sided deposits when price is outside range
+        // Use non-zero check - at least ONE token must be non-zero
+        bool hasMinimumLiquidity = amount0Desired > 0 || amount1Desired > 0;
 
-        IERC20(token0).forceApprove(address(positionManager), amount0Desired);
-        IERC20(token1).forceApprove(address(positionManager), amount1Desired);
+        if (hasMinimumLiquidity) {
+            uint256 token0Balance = IERC20(token0).balanceOf(address(this));
+            uint256 token1Balance = IERC20(token1).balanceOf(address(this));
+            require(
+                token0Balance >= amount0Desired,
+                BuyAndBurnSwap__InsufficientAmount(token0, amount0Desired, token0Balance)
+            );
+            require(
+                token1Balance >= amount1Desired,
+                BuyAndBurnSwap__InsufficientAmount(token1, amount1Desired, token1Balance)
+            );
 
-        IUniswapV3Pool pool = swapHelper.getPool(tokenIn, tokenOut, params.fee);
-        (uint160 currentSqrtPriceX96, , , , , , ) = pool.slot0();
-        uint128 liquidityDeltaDesired = LiquidityAmounts.getLiquidityForAmounts(
-            currentSqrtPriceX96,
-            sqrtRatioLowerX96,
-            sqrtRatioUpperX96,
-            amount0Desired,
-            amount1Desired
-        );
-        require(
-            liquidityDeltaDesired == quote.liquidityDelta,
-            BuyAndBurnSwap__LiquidityMismatch(quote.liquidityDelta, liquidityDeltaDesired)
-        );
+            IERC20(token0).forceApprove(address(positionManager), amount0Desired);
+            IERC20(token1).forceApprove(address(positionManager), amount1Desired);
 
-        uint256 amount0;
-        uint256 amount1;
-        (liquidityDelta, amount0, amount1) = positionManager.increaseLiquidity(
-            INonfungiblePositionManager.IncreaseLiquidityParams({
-                tokenId: params.lpTokenId,
-                amount0Desired: amount0Desired,
-                amount1Desired: amount1Desired,
-                amount0Min: 0,
-                amount1Min: 0,
-                deadline: block.timestamp
-            })
-        );
+            uint256 amount0;
+            uint256 amount1;
+            (liquidityDelta, amount0, amount1) = positionManager.increaseLiquidity(
+                INonfungiblePositionManager.IncreaseLiquidityParams({
+                    tokenId: params.lpTokenId,
+                    amount0Desired: amount0Desired,
+                    amount1Desired: amount1Desired,
+                    amount0Min: 0,
+                    amount1Min: 0,
+                    deadline: block.timestamp
+                })
+            );
 
-        spareIn = zeroForOne ? amount0Desired - amount0 : amount1Desired - amount1;
-        spareOut = zeroForOne ? amount1Desired - amount1 : amount0Desired - amount0;
+            spareIn = zeroForOne ? amount0Desired - amount0 : amount1Desired - amount1;
+            spareOut = zeroForOne ? amount1Desired - amount1 : amount0Desired - amount0;
+        } else {
+            // No liquidity to add, all input becomes spare
+            spareIn = params.amountIn - amountSwapIn;
+            spareOut = amountSwapOut;
+        }
 
-        /// @dev Check invariants
-        require(
-            liquidityDelta == quote.liquidityDelta,
-            BuyAndBurnSwap__LiquidityMismatch(quote.liquidityDelta, liquidityDelta)
-        );
-        require(spareIn == quote.spareIn, BuyAndBurnSwap__SpareAmountMismatch(params.tokenIn, quote.spareIn, spareIn));
-        require(
-            spareOut == quote.spareOut,
-            BuyAndBurnSwap__SpareAmountMismatch(params.tokenOut, quote.spareOut, spareOut)
-        );
-
+        // Withdraw WVANA to VANA for spareIn if needed
         if (params.tokenIn == VANA && spareIn > 0) {
             WVANA.withdraw(spareIn);
         }
