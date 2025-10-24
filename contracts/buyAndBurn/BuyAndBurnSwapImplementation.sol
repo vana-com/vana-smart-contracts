@@ -153,66 +153,96 @@ contract BuyAndBurnSwapImplementation is
         uint160 sqrtRatioLowerX96 = TickMath.getSqrtRatioAtTick(tickLower);
         uint160 sqrtRatioUpperX96 = TickMath.getSqrtRatioAtTick(tickUpper);
 
-        LpSwapQuote memory quote = quoteLpSwap(
-            QuoteLpSwapParams({
-                amountIn: params.amountIn,
-                tokenIn: params.tokenIn,
-                tokenOut: params.tokenOut,
-                fee: params.fee,
-                maximumSlippagePercentage: params.maximumSlippagePercentage,
-                sqrtRatioLowerX96: sqrtRatioLowerX96,
-                sqrtRatioUpperX96: sqrtRatioUpperX96
-            })
-        );
-        require(quote.liquidityDelta > 0, BuyAndBurnSwap__ZeroLiquidity());
-
-        uint256 amountSwapInUsed;
-        uint256 amountSwapOut;
-
-        if (quote.amountSwapIn > 0) {
-            // Approve swapHelper if tokenIn is ERC20
-            if (params.tokenIn != VANA) {
-                IERC20(params.tokenIn).forceApprove(address(swapHelper), quote.amountSwapIn);
-            }
-
-            // Execute swap - only pass value if tokenIn is VANA
-            if (params.tokenIn == VANA) {
-            (amountSwapInUsed, amountSwapOut) = swapHelper.slippageExactInputSingle{value: quote.amountSwapIn}(
-                ISwapHelper.SlippageSwapParams({
-                    tokenIn: params.tokenIn,
-                    tokenOut: params.tokenOut,
-                    fee: params.fee,
-                    recipient: address(this),
-                    amountIn: quote.amountSwapIn,
-                    maximumSlippagePercentage: params.maximumSlippagePercentage
-                    })
-                );
-            } else {
-                (amountSwapInUsed, amountSwapOut) = swapHelper.slippageExactInputSingle(
-                    ISwapHelper.SlippageSwapParams({
-                        tokenIn: params.tokenIn,
-                        tokenOut: params.tokenOut,
-                        fee: params.fee,
-                        recipient: address(this),
-                        amountIn: quote.amountSwapIn,
-                        maximumSlippagePercentage: params.maximumSlippagePercentage
-                }));
-            }
-        }
-        require(amountSwapInUsed == quote.amountSwapIn, BuyAndBurnSwap__LPAmountMismatch());
-
         IWVANA WVANA = swapHelper.WVANA();
         address tokenIn = params.tokenIn == VANA ? address(WVANA) : params.tokenIn;
         address tokenOut = params.tokenOut == VANA ? address(WVANA) : params.tokenOut;
+
+        IUniswapV3Pool pool = swapHelper.getPool(tokenIn, tokenOut, params.fee);
+        (uint160 currentSqrtPriceX96, , , , , , ) = pool.slot0();
+        uint128 currentLiquidity = pool.liquidity();
+
         bool zeroForOne = tokenIn < tokenOut;
 
-        uint256 amountLpIn = params.amountIn - amountSwapInUsed;
-        if (params.tokenIn == VANA) {
+        uint256 amountSwapIn;
+        uint256 amountSwapOut;
+
+        // Track WVANA balance before swap to detect if we receive WVANA or native VANA
+        uint256 wvanaBalanceBefore = params.tokenOut == VANA ? IERC20(address(WVANA)).balanceOf(address(this)) : 0;
+
+        // Calculate optimal swap amount based on position-aware heuristic
+        uint256 targetSwapAmount = calculateSwapAmount(
+            params.amountIn,
+            currentSqrtPriceX96,
+            sqrtRatioLowerX96,
+            sqrtRatioUpperX96,
+            zeroForOne
+        );
+
+        if (targetSwapAmount > 0) {
+            // Quote the swap with the calculated target amount
+            ISwapHelper.Quote memory quote = swapHelper.quoteSlippageExactInputSingle(
+                ISwapHelper.QuoteSlippageExactInputSingleParams({
+                    tokenIn: tokenIn,           // Use wrapped address for quoting
+                    tokenOut: tokenOut,         // Use wrapped address for quoting
+                    fee: params.fee,
+                    amountIn: targetSwapAmount,
+                    sqrtPriceX96: currentSqrtPriceX96,
+                    liquidity: currentLiquidity,
+                    maximumSlippagePercentage: params.singleBatchImpactThreshold
+                })
+            );
+
+            // Use the amount from quote (respects slippage limits)
+            amountSwapIn = quote.amountToPay;
+
+            // Execute swap if we have a valid amount
+            if (amountSwapIn > 0) {
+                // Approve swapHelper if tokenIn is ERC20
+                if (params.tokenIn != VANA) {
+                    IERC20(params.tokenIn).forceApprove(address(swapHelper), amountSwapIn);
+                }
+
+                // Execute swap - SwapHelper handles both VANA and ERC20
+                // Use original addresses (params.tokenIn/tokenOut) for execution
+                (uint256 amountSwapInUsed, uint256 amountReceived) = swapHelper.slippageExactInputSingle{
+                        value: params.tokenIn == VANA ? amountSwapIn : 0
+                    }(
+                    ISwapHelper.SlippageSwapParams({
+                        tokenIn: params.tokenIn,    // Use original address for execution
+                        tokenOut: params.tokenOut,  // Use original address for execution
+                        fee: params.fee,
+                        recipient: address(this),
+                        amountIn: amountSwapIn,
+                        maximumSlippagePercentage: params.perSwapSlippageCap
+                    })
+                );
+                amountSwapIn = amountSwapInUsed;
+                amountSwapOut = amountReceived;
+            }
+        }
+
+        uint256 amountLpIn = params.amountIn - amountSwapIn;
+
+        // Wrap VANA for tokenIn if needed
+        if (params.tokenIn == VANA && amountLpIn > 0) {
             WVANA.deposit{value: amountLpIn}();
         }
 
+        // Handle VANA wrapping for tokenOut based on what SwapHelper returned
         if (params.tokenOut == VANA && amountSwapOut > 0) {
-            WVANA.deposit{value: amountSwapOut}();
+            // Check WVANA balance after swap to see if we received WVANA
+            uint256 wvanaBalanceAfter = IERC20(address(WVANA)).balanceOf(address(this));
+            uint256 wvanaReceived = wvanaBalanceAfter > wvanaBalanceBefore ? wvanaBalanceAfter - wvanaBalanceBefore : 0;
+
+            // If we received WVANA from the swap, no wrapping needed
+            if (wvanaReceived >= amountSwapOut) {
+                // Already have WVANA, nothing to do
+            } else {
+                // We must have received native VANA, wrap it
+                uint256 ethToWrap = amountSwapOut - wvanaReceived;
+                require(address(this).balance >= ethToWrap, "Insufficient ETH received from swap");
+                WVANA.deposit{value: ethToWrap}();
+            }
         }
 
         address token0 = zeroForOne ? tokenIn : tokenOut;
