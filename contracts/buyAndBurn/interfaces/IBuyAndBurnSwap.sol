@@ -48,7 +48,8 @@ interface IBuyAndBurnSwap {
         address tokenOutRecipient;
         address spareTokenInRecipient;
         uint256 amountIn;
-        uint256 maximumSlippagePercentage;
+        uint256 singleBatchImpactThreshold;  // Max price impact (e.g., 2e18 = 2%)
+        uint256 perSwapSlippageCap;          // Max slippage (e.g., 5e17 = 0.5%)
         uint256 lpTokenId;
     }
 
