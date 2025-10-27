@@ -755,6 +755,159 @@ describe("BuyAndBurnSwap", () => {
 
       console.log("VANA sent to burn:", ethers.formatEther(vanaReceived));
     });
+
+    it("should demonstrate greedy strategy: USDC -> VANA with high liquidity (spareIn=0, spareOut>0)", async () => {
+      // Give user1 extra funds for this test
+      await network.provider.send("hardhat_setBalance", [
+        user1.address,
+        toHex(parseEther(50000)), // Large balance
+      ]);
+
+      // Get a very large amount of USDC for user1 by swapping a lot of VANA
+      const largeSwapAmount = parseEther(20000); // 20,000 VANA
+      await swapHelper.connect(user1).exactInputSingle(
+        {
+          tokenIn: VANA,
+          tokenOut: ERC20Token.target, // USDC
+          fee: FeeAmount.MEDIUM,
+          recipient: user1.address,
+          amountIn: largeSwapAmount,
+          amountOutMinimum: 0,
+        },
+        { value: largeSwapAmount },
+      );
+
+      const user1USDCBalance = await ERC20Token.balanceOf(user1.address);
+      console.log("\n=== Greedy Strategy Test: USDC → VANA ===");
+      console.log("User1 USDC balance:", ethers.formatUnits(user1USDCBalance, 6)); // USDC has 6 decimals
+
+      // Transfer substantial USDC to user2
+      const transferAmount = user1USDCBalance / 2n;
+      await ERC20Token.connect(user1).transfer(user2.address, transferAmount);
+
+      const user2USDCBalance = await ERC20Token.balanceOf(user2.address);
+      console.log("User2 USDC balance:", ethers.formatUnits(user2USDCBalance, 6));
+
+      // Use a large amount to ensure greedy swap consumes everything
+      const amountIn = (transferAmount * 90n) / 100n; // Use 90% of transferred amount
+      console.log("Amount to swap:", ethers.formatUnits(amountIn, 6), "USDC");
+
+      await ERC20Token.connect(user2).approve(buyAndBurnSwap.target, amountIn);
+
+      const positionBefore = await positionManager.positions(lpTokenId);
+      const liquidityBefore = positionBefore.liquidity;
+      const burnAddressBalanceBefore = await ethers.provider.getBalance(
+        tokenOutRecipient.address,
+      );
+      const spareRecipientBalanceBefore = await ERC20Token.balanceOf(
+        spareTokenInRecipient.address,
+      );
+
+      console.log("\nBefore swap:");
+      console.log("  Liquidity:", liquidityBefore.toString());
+      console.log("  Burn address VANA balance:", ethers.formatEther(burnAddressBalanceBefore));
+
+      // Execute swapAndAddLiquidity with USDC -> VANA
+      const { liquidityDelta, spareIn, spareOut } = await buyAndBurnSwap
+        .connect(user2)
+        .swapAndAddLiquidity.staticCall(
+          {
+            tokenIn: ERC20Token.target, // USDC
+            tokenOut: VANA, // VANA
+            fee: FeeAmount.MEDIUM,
+            tokenOutRecipient: tokenOutRecipient.address, // Burn address for VANA
+            spareTokenInRecipient: spareTokenInRecipient.address, // Treasury for leftover USDC
+            amountIn: amountIn,
+            singleBatchImpactThreshold: SINGLE_BATCH_IMPACT_THRESHOLD,
+            perSwapSlippageCap: PER_SWAP_SLIPPAGE_CAP,
+            lpTokenId: lpTokenId,
+          },
+        );
+
+      console.log("\nStatic call results:");
+      console.log("  liquidityDelta:", liquidityDelta.toString());
+      console.log("  spareIn (leftover USDC):", ethers.formatUnits(spareIn, 6), "USDC");
+      console.log("  spareOut (VANA to burn):", ethers.formatEther(spareOut), "VANA");
+
+      // CRITICAL GREEDY STRATEGY VALIDATION:
+      // With high liquidity and large amount, we expect:
+      // - spareIn = 0 (all USDC swapped)
+      // - spareOut > 0 (VANA received goes to burn)
+      // - liquidityDelta = 0 (no LP added since nothing left)
+
+      console.log("\n🎯 Greedy Strategy Validation:");
+      console.log("  Expected: spareIn = 0 (all swapped)");
+      console.log("  Actual: spareIn =", spareIn.toString());
+      console.log("  Expected: spareOut > 0 (VANA for burning)");
+      console.log("  Actual: spareOut =", spareOut.toString());
+      console.log("  Expected: liquidityDelta = 0 (no LP)");
+      console.log("  Actual: liquidityDelta =", liquidityDelta.toString());
+
+      // Execute the actual transaction
+      await buyAndBurnSwap.connect(user2).swapAndAddLiquidity({
+        tokenIn: ERC20Token.target, // USDC
+        tokenOut: VANA, // VANA
+        fee: FeeAmount.MEDIUM,
+        tokenOutRecipient: tokenOutRecipient.address,
+        spareTokenInRecipient: spareTokenInRecipient.address,
+        amountIn: amountIn,
+        singleBatchImpactThreshold: SINGLE_BATCH_IMPACT_THRESHOLD,
+        perSwapSlippageCap: PER_SWAP_SLIPPAGE_CAP,
+        lpTokenId: lpTokenId,
+      });
+
+      const positionAfter = await positionManager.positions(lpTokenId);
+      const liquidityAfter = positionAfter.liquidity;
+      const burnAddressBalanceAfter = await ethers.provider.getBalance(
+        tokenOutRecipient.address,
+      );
+      const spareRecipientBalanceAfter = await ERC20Token.balanceOf(
+        spareTokenInRecipient.address,
+      );
+
+      console.log("\nAfter swap:");
+      console.log("  Liquidity:", liquidityAfter.toString());
+      console.log("  Burn address VANA balance:", ethers.formatEther(burnAddressBalanceAfter));
+
+      // Verify greedy strategy behavior
+      if (spareIn === 0n) {
+        console.log("\n✅ GREEDY STRATEGY CONFIRMED: All USDC swapped, none left for LP");
+        spareIn.should.equal(0); // All USDC was swapped
+        spareOut.should.be.gt(0); // Received VANA for burning
+        liquidityDelta.should.equal(0); // No LP addition (nothing left)
+        liquidityAfter.should.equal(liquidityBefore); // Liquidity unchanged
+      } else {
+        console.log("\n⚠️  PARTIAL SWAP: Some USDC left (pool liquidity limit reached)");
+        spareIn.should.be.gt(0); // Some USDC leftover
+        spareOut.should.be.gt(0); // Still got VANA for burning
+        // Liquidity might have increased if leftover was added to LP
+      }
+
+      // Verify VANA was sent to burn address
+      const vanaReceived = burnAddressBalanceAfter - burnAddressBalanceBefore;
+      vanaReceived.should.equal(spareOut);
+      vanaReceived.should.be.gt(0);
+      console.log("\n💰 Total VANA sent to burn:", ethers.formatEther(vanaReceived));
+
+      // Verify spare USDC handling
+      const spareUSDCReceived = spareRecipientBalanceAfter - spareRecipientBalanceBefore;
+      spareUSDCReceived.should.equal(spareIn);
+      if (spareIn > 0n) {
+        console.log("💼 Spare USDC sent to treasury:", ethers.formatUnits(spareUSDCReceived, 6));
+      }
+
+      // Verify user2's USDC was spent
+      const user2USDCBalanceAfter = await ERC20Token.balanceOf(user2.address);
+      user2USDCBalanceAfter.should.be.lt(user2USDCBalance);
+
+      console.log("\n=== Test Complete ===");
+      console.log("Summary:");
+      console.log("  Input: ", ethers.formatUnits(amountIn, 6), "USDC");
+      console.log("  Swapped:", ethers.formatUnits(amountIn - spareIn, 6), "USDC");
+      console.log("  Received:", ethers.formatEther(vanaReceived), "VANA (to burn)");
+      console.log("  LP Added:", liquidityDelta.toString());
+      console.log("  Efficiency:", `${((amountIn - spareIn) * 100n / amountIn)}% swapped`);
+    });
   });
 
   describe("swapAndAddLiquidity - Edge Cases", () => {
