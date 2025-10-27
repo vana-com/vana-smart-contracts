@@ -125,12 +125,12 @@ BuyAndBurnSwapStorageV1
     /// @return spareOut Amount of output token not used for liquidity (sent to tokenOutRecipient for burning)
     /// @dev GREEDY STRATEGY:
     ///      1. Quote swapping the ENTIRE params.amountIn within singleBatchImpactThreshold
-    ///      2. Execute swap for maximum possible amount (priority: maximize tokenOut)
-    ///      3. If tokenIn remains after swap, try to add it to LP position
-    ///      4. Send all remaining tokenOut to burn address (tokenOutRecipient)
+    ///      2a. If quote accepts full amount: Execute swap with singleBatchImpactThreshold and RETURN (no LP)
+    ///      2b. If quote is partial: Execute swap with perSwapSlippageCap, then try to add leftover to LP
+    ///      3. Send all tokenOut to burn address (tokenOutRecipient)
     ///
     /// Example scenarios:
-    /// - Good liquidity: Entire amount swapped → all tokenOut to burn, no LP
+    /// - Good liquidity: Entire amount swapped → all tokenOut to burn, no LP, early return
     /// - Limited liquidity: Partial swap → leftover tokenIn added to LP, rest tokenOut to burn
     /// - LP fails: Leftover tokenIn treated as spare, sent to spareTokenInRecipient
     ///
@@ -160,7 +160,7 @@ BuyAndBurnSwapStorageV1
             IERC20(params.tokenIn).safeTransferFrom(msg.sender, address(this), params.amountIn);
         }
 
-        // Get LP position details
+        // Get LP position details (needed for LP logic later)
         (, , , , , int24 tickLower, int24 tickUpper, , , , , ) = positionManager.positions(params.lpTokenId);
 
         // Convert VANA to WVANA addresses for pool interactions
@@ -199,14 +199,75 @@ BuyAndBurnSwapStorageV1
         // The quote returns the maximum amount we can swap within price impact limits
         amountSwapIn = quote.amountToPay;  // This will be ≤ params.amountIn
 
-        // Execute swap if we have a valid amount
-        if (amountSwapIn > 0) {
+        // CRITICAL BRANCHING: Check if we can swap the ENTIRE amount
+        if (amountSwapIn == params.amountIn) {
+            // YES PATH: No unused TokenIn - entire amount can be swapped within impact threshold
+            // This is the pure greedy case: maximum burn, no LP needed
+
             // Approve swapHelper if tokenIn is ERC20
             if (params.tokenIn != VANA) {
                 IERC20(params.tokenIn).forceApprove(address(swapHelper), amountSwapIn);
             }
 
-            // Execute swap with slippage protection using perSwapSlippageCap
+            // Execute swap with singleBatchImpactThreshold (same as quote)
+            (uint256 amountSwapInUsed, uint256 amountReceived) = swapHelper.slippageExactInputSingle{
+                    value: params.tokenIn == VANA ? amountSwapIn : 0
+                }(
+                ISwapHelper.SlippageSwapParams({
+                    tokenIn: params.tokenIn,    // Use original address (VANA or ERC20)
+                    tokenOut: params.tokenOut,  // Use original address (VANA or ERC20)
+                    fee: params.fee,
+                    recipient: address(this),
+                    amountIn: amountSwapIn,
+                    maximumSlippagePercentage: params.singleBatchImpactThreshold  // ✅ Use same threshold
+                })
+            );
+
+            amountSwapIn = amountSwapInUsed;
+            amountSwapOut = amountReceived;
+
+            // Handle WVANA wrapping for tokenOut based on what SwapHelper returned
+            if (params.tokenOut == VANA && amountSwapOut > 0) {
+                // Check if swap returned WVANA or native VANA
+                uint256 wvanaBalanceAfter = IERC20(address(WVANA)).balanceOf(address(this));
+                uint256 wvanaReceived = wvanaBalanceAfter > wvanaBalanceBefore ? wvanaBalanceAfter - wvanaBalanceBefore : 0;
+
+                // If we received less WVANA than expected, wrap the native VANA we received
+                if (wvanaReceived < amountSwapOut) {
+                    uint256 ethToWrap = amountSwapOut - wvanaReceived;
+                    require(address(this).balance >= ethToWrap, "Insufficient ETH received from swap");
+                    WVANA.deposit{value: ethToWrap}();
+                }
+            }
+
+            // Set return values for pure greedy case
+            spareIn = 0;              // All tokenIn was swapped
+            spareOut = amountSwapOut; // All tokenOut goes to burn
+            liquidityDelta = 0;       // No LP added
+
+            // Transfer all tokenOut to burn address
+            if (spareOut > 0) {
+                if (params.tokenOut == VANA) {
+                    WVANA.withdraw(spareOut);
+                    payable(params.tokenOutRecipient).sendValue(spareOut);
+                } else {
+                    IERC20(params.tokenOut).safeTransfer(params.tokenOutRecipient, spareOut);
+                }
+            }
+
+            // Early return - no LP logic needed
+            return (liquidityDelta, spareIn, spareOut);
+
+        } else if (amountSwapIn > 0) {
+            // NO PATH: Some TokenIn unused - quote was partial
+            // Use perSwapSlippageCap for tighter slippage control on partial swap
+
+            // Approve swapHelper if tokenIn is ERC20
+            if (params.tokenIn != VANA) {
+                IERC20(params.tokenIn).forceApprove(address(swapHelper), amountSwapIn);
+            }
+
+            // Execute swap with perSwapSlippageCap (tighter protection for partial swap)
             (uint256 amountSwapInUsed, uint256 amountReceived) = swapHelper.slippageExactInputSingle{
                     value: params.tokenIn == VANA ? amountSwapIn : 0
                 }(
@@ -222,6 +283,8 @@ BuyAndBurnSwapStorageV1
             amountSwapIn = amountSwapInUsed;
             amountSwapOut = amountReceived;
         }
+
+        // If we reach here, we have leftover tokenIn to handle
 
         // Calculate leftover tokenIn (what wasn't swapped)
         uint256 amountLpIn = params.amountIn - amountSwapIn;
