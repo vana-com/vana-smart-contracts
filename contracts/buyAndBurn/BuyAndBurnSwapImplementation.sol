@@ -15,20 +15,17 @@ import "./interfaces/BuyAndBurnSwapStorageV1.sol";
 
 /**
  * @title BuyAndBurnSwapImplementation
- * @notice Implements a buy-and-burn mechanism that swaps tokens and adds liquidity to Uniswap V3 positions
+ * @notice Implements a buy-and-burn mechanism with greedy swap strategy and optional LP addition
  * @dev This contract facilitates the conversion of data access fees into DLP token burns by:
  *      1. Taking VANA tokens as input
- *      2. Swapping a calculated portion to DLP tokens
- *      3. Adding both tokens as liquidity to a Uniswap V3 position
- *      4. Sending spare DLP tokens to a burn address
- *      5. Returning spare VANA to a treasury
+ *      2. GREEDILY swapping as much as possible to DLP tokens (within price impact limits)
+ *      3. If VANA remains, adding it as liquidity to a Uniswap V3 position
+ *      4. Sending all remaining DLP tokens to a burn address
  *
- * Key features:
- * - Position-aware swap calculation optimizes token ratios based on pool price and LP range
- * - Supports both native VANA and ERC20 tokens as input/output
- * - Handles WVANA wrapping/unwrapping automatically
- * - Protects against excessive price impact and slippage
- * - Upgradeable via UUPS pattern
+ * Key Strategy - GREEDY BUY-AND-BURN:
+ * - Priority: Maximize tokenOut (DLP) for burning
+ * - Secondary: Use leftover tokenIn (VANA) for LP if any remains
+ * - If pool has sufficient liquidity, entire amount can be swapped → no LP needed
  *
  * Access control:
  * - DEFAULT_ADMIN_ROLE: Can upgrade contract and grant roles
@@ -121,69 +118,21 @@ BuyAndBurnSwapStorageV1
         positionManager = newPositionManager;
     }
 
-    /// @notice Calculates optimal swap amount based on pool price position and LP range
-    /// @param amountIn Total input amount available for swapping and LP
-    /// @param currentSqrtPriceX96 Current pool price in sqrt(price) * 2^96 format
-    /// @param sqrtRatioLowerX96 Lower bound of LP position range in sqrt(price) * 2^96
-    /// @param sqrtRatioUpperX96 Upper bound of LP position range in sqrt(price) * 2^96
-    /// @param zeroForOne Swap direction: true = token0→token1, false = token1→token0
-    /// @return Recommended amount to swap (remainder goes directly to LP)
-    /// @dev Strategy:
-    ///      - Price outside range in favorable direction: 0% swap (no swap needed)
-    ///      - Price below range: 25% swap if token0→token1, 75% if token1→token0
-    ///      - Price above range: 75% swap if token0→token1, 25% if token1→token0
-    ///      - Price in range: 50% swap (balanced approach)
-    function calculateSwapAmount(
-        uint256 amountIn,
-        uint160 currentSqrtPriceX96,
-        uint160 sqrtRatioLowerX96,
-        uint160 sqrtRatioUpperX96,
-        bool zeroForOne
-    ) internal pure returns (uint256) {
-        // No swap needed if price is outside range in the "right" direction
-        // (already have the token the position needs most)
-        if ((currentSqrtPriceX96 <= sqrtRatioLowerX96 && zeroForOne) ||
-            (currentSqrtPriceX96 >= sqrtRatioUpperX96 && !zeroForOne)) {
-            return 0;
-        }
-
-        // Determine optimal swap percentage based on price position and direction
-        if (currentSqrtPriceX96 < sqrtRatioLowerX96) {
-            // Price below range → LP position needs more token0
-            if (zeroForOne) {
-                // Swapping token0→token1: keep most token0, swap 25%
-                return amountIn / 4;
-            } else {
-                // Swapping token1→token0: need to acquire token0, swap 75%
-                return (amountIn * 3) / 4;
-            }
-        } else if (currentSqrtPriceX96 > sqrtRatioUpperX96) {
-            // Price above range → LP position needs more token1
-            if (zeroForOne) {
-                // Swapping token0→token1: need to acquire token1, swap 75%
-                return (amountIn * 3) / 4;
-            } else {
-                // Swapping token1→token0: keep most token1, swap 25%
-                return amountIn / 4;
-            }
-        } else {
-            // Price in range → need both tokens relatively balanced, swap 50%
-            return amountIn / 2;
-        }
-    }
-
-    /// @notice Swaps tokens and adds liquidity to a Uniswap V3 position in a single transaction
+    /// @notice Swaps tokens using greedy strategy and optionally adds liquidity
     /// @param params Struct containing all parameters for the operation
-    /// @return liquidityDelta Amount of liquidity added to the position
-    /// @return spareIn Amount of input token not used for liquidity (sent to spareTokenInRecipient)
-    /// @return spareOut Amount of output token not used for liquidity (sent to tokenOutRecipient)
-    /// @dev Process flow:
-    ///      1. Transfer input tokens from caller
-    ///      2. Calculate optimal swap amount based on pool price and LP position range
-    ///      3. Execute swap with slippage protection
-    ///      4. Handle WVANA wrapping/unwrapping as needed
-    ///      5. Add liquidity to the specified LP position
-    ///      6. Send spare tokens to designated recipients
+    /// @return liquidityDelta Amount of liquidity added to the position (0 if no LP added)
+    /// @return spareIn Amount of input token not used (sent to spareTokenInRecipient)
+    /// @return spareOut Amount of output token not used for liquidity (sent to tokenOutRecipient for burning)
+    /// @dev GREEDY STRATEGY:
+    ///      1. Quote swapping the ENTIRE params.amountIn within singleBatchImpactThreshold
+    ///      2. Execute swap for maximum possible amount (priority: maximize tokenOut)
+    ///      3. If tokenIn remains after swap, try to add it to LP position
+    ///      4. Send all remaining tokenOut to burn address (tokenOutRecipient)
+    ///
+    /// Example scenarios:
+    /// - Good liquidity: Entire amount swapped → all tokenOut to burn, no LP
+    /// - Limited liquidity: Partial swap → leftover tokenIn added to LP, rest tokenOut to burn
+    /// - LP fails: Leftover tokenIn treated as spare, sent to spareTokenInRecipient
     ///
     /// Requirements:
     /// - Caller must approve this contract for the LP position NFT
@@ -211,17 +160,15 @@ BuyAndBurnSwapStorageV1
             IERC20(params.tokenIn).safeTransferFrom(msg.sender, address(this), params.amountIn);
         }
 
-        // Get LP position details to determine tick range
+        // Get LP position details
         (, , , , , int24 tickLower, int24 tickUpper, , , , , ) = positionManager.positions(params.lpTokenId);
-        uint160 sqrtRatioLowerX96 = TickMath.getSqrtRatioAtTick(tickLower);
-        uint160 sqrtRatioUpperX96 = TickMath.getSqrtRatioAtTick(tickUpper);
 
         // Convert VANA to WVANA addresses for pool interactions
         IWVANA WVANA = swapHelper.WVANA();
         address tokenIn = params.tokenIn == VANA ? address(WVANA) : params.tokenIn;
         address tokenOut = params.tokenOut == VANA ? address(WVANA) : params.tokenOut;
 
-        // Get current pool state for swap calculation
+        // Get current pool state for swap
         IUniswapV3Pool pool = swapHelper.getPool(tokenIn, tokenOut, params.fee);
         (uint160 currentSqrtPriceX96, , , , , , ) = pool.slot0();
         uint128 currentLiquidity = pool.liquidity();
@@ -232,63 +179,51 @@ BuyAndBurnSwapStorageV1
         uint256 amountSwapIn;
         uint256 amountSwapOut;
 
-        // Track WVANA balance before swap to detect what format swap returns (WVANA vs native VANA)
+        // Track WVANA balance before swap to detect return format (WVANA vs native VANA)
         uint256 wvanaBalanceBefore = params.tokenOut == VANA ? IERC20(address(WVANA)).balanceOf(address(this)) : 0;
 
-        // Calculate optimal swap amount based on pool price position relative to LP range
-        uint256 targetSwapAmount = calculateSwapAmount(
-            params.amountIn,
-            currentSqrtPriceX96,
-            sqrtRatioLowerX96,
-            sqrtRatioUpperX96,
-            zeroForOne
+        // GREEDY STRATEGY: Quote swapping the ENTIRE amount to maximize tokenOut
+        // The quote will respect singleBatchImpactThreshold and return the max swappable amount
+        ISwapHelper.Quote memory quote = swapHelper.quoteSlippageExactInputSingle(
+            ISwapHelper.QuoteSlippageExactInputSingleParams({
+                tokenIn: tokenIn,
+                tokenOut: tokenOut,
+                fee: params.fee,
+                amountIn: params.amountIn,  // Quote the FULL amount (greedy)
+                sqrtPriceX96: currentSqrtPriceX96,
+                liquidity: currentLiquidity,
+                maximumSlippagePercentage: params.singleBatchImpactThreshold
+            })
         );
 
-        if (targetSwapAmount > 0) {
-            // Quote the swap to check price impact and get actual executable amount
-            // Uses singleBatchImpactThreshold to limit price impact
-            ISwapHelper.Quote memory quote = swapHelper.quoteSlippageExactInputSingle(
-                ISwapHelper.QuoteSlippageExactInputSingleParams({
-                    tokenIn: tokenIn,           // Use wrapped address for quoting
-                    tokenOut: tokenOut,         // Use wrapped address for quoting
+        // The quote returns the maximum amount we can swap within price impact limits
+        amountSwapIn = quote.amountToPay;  // This will be ≤ params.amountIn
+
+        // Execute swap if we have a valid amount
+        if (amountSwapIn > 0) {
+            // Approve swapHelper if tokenIn is ERC20
+            if (params.tokenIn != VANA) {
+                IERC20(params.tokenIn).forceApprove(address(swapHelper), amountSwapIn);
+            }
+
+            // Execute swap with slippage protection using perSwapSlippageCap
+            (uint256 amountSwapInUsed, uint256 amountReceived) = swapHelper.slippageExactInputSingle{
+                    value: params.tokenIn == VANA ? amountSwapIn : 0
+                }(
+                ISwapHelper.SlippageSwapParams({
+                    tokenIn: params.tokenIn,    // Use original address (VANA or ERC20)
+                    tokenOut: params.tokenOut,  // Use original address (VANA or ERC20)
                     fee: params.fee,
-                    amountIn: targetSwapAmount,
-                    sqrtPriceX96: currentSqrtPriceX96,
-                    liquidity: currentLiquidity,
-                    maximumSlippagePercentage: params.singleBatchImpactThreshold
+                    recipient: address(this),
+                    amountIn: amountSwapIn,
+                    maximumSlippagePercentage: params.perSwapSlippageCap
                 })
             );
-
-            // Use the amount from quote (may be reduced if price impact too high)
-            amountSwapIn = quote.amountToPay;
-
-            // Execute swap if we have a valid amount
-            if (amountSwapIn > 0) {
-                // Approve swapHelper if tokenIn is ERC20
-                if (params.tokenIn != VANA) {
-                    IERC20(params.tokenIn).forceApprove(address(swapHelper), amountSwapIn);
-                }
-
-                // Execute swap with slippage protection using perSwapSlippageCap
-                // SwapHelper handles both VANA and ERC20 tokens appropriately
-                (uint256 amountSwapInUsed, uint256 amountReceived) = swapHelper.slippageExactInputSingle{
-                        value: params.tokenIn == VANA ? amountSwapIn : 0
-                    }(
-                    ISwapHelper.SlippageSwapParams({
-                        tokenIn: params.tokenIn,    // Use original address (VANA or ERC20)
-                        tokenOut: params.tokenOut,  // Use original address (VANA or ERC20)
-                        fee: params.fee,
-                        recipient: address(this),
-                        amountIn: amountSwapIn,
-                        maximumSlippagePercentage: params.perSwapSlippageCap
-                    })
-                );
-                amountSwapIn = amountSwapInUsed;
-                amountSwapOut = amountReceived;
-            }
+            amountSwapIn = amountSwapInUsed;
+            amountSwapOut = amountReceived;
         }
 
-        // Calculate amount going directly to LP (not swapped)
+        // Calculate leftover tokenIn (what wasn't swapped)
         uint256 amountLpIn = params.amountIn - amountSwapIn;
 
         // Wrap VANA to WVANA for LP if tokenIn is native VANA
@@ -310,22 +245,22 @@ BuyAndBurnSwapStorageV1
             }
         }
 
-        // Determine token0 and token1 based on swap direction (Uniswap ordering)
-        address token0 = zeroForOne ? tokenIn : tokenOut;
-        address token1 = zeroForOne ? tokenOut : tokenIn;
+        // Try to add liquidity with leftover tokenIn (if any)
+        if (amountLpIn > 0) {
+            // Determine token0 and token1 based on swap direction
+            address token0 = zeroForOne ? tokenIn : tokenOut;
+            address token1 = zeroForOne ? tokenOut : tokenIn;
 
-        // Calculate amounts for each token in Uniswap V3 position
-        uint256 amount0Desired = zeroForOne ? amountLpIn : amountSwapOut;
-        uint256 amount1Desired = zeroForOne ? amountSwapOut : amountLpIn;
+            // We only add the leftover tokenIn to LP (greedy strategy prioritizes burn over LP)
+            // Uniswap V3 can handle one-sided liquidity when price is outside range
+            uint256 amount0Desired = zeroForOne ? amountLpIn : 0;
+            uint256 amount1Desired = zeroForOne ? 0 : amountLpIn;
 
-        // Check if we have meaningful amounts for liquidity addition
-        // Uniswap V3 concentrated liquidity can accept one-sided deposits when price is outside range
-        bool hasMinimumLiquidity = amount0Desired > 0 || amount1Desired > 0;
-
-        if (hasMinimumLiquidity) {
-            // Verify we have sufficient balances
+            // Check balances
             uint256 token0Balance = IERC20(token0).balanceOf(address(this));
             uint256 token1Balance = IERC20(token1).balanceOf(address(this));
+
+            // Verify we have sufficient balance for what we're trying to add
             require(
                 token0Balance >= amount0Desired,
                 BuyAndBurnSwap__InsufficientAmount(token0, amount0Desired, token0Balance)
@@ -336,14 +271,17 @@ BuyAndBurnSwapStorageV1
             );
 
             // Approve position manager to spend tokens
-            IERC20(token0).forceApprove(address(positionManager), amount0Desired);
-            IERC20(token1).forceApprove(address(positionManager), amount1Desired);
+            if (amount0Desired > 0) {
+                IERC20(token0).forceApprove(address(positionManager), amount0Desired);
+            }
+            if (amount1Desired > 0) {
+                IERC20(token1).forceApprove(address(positionManager), amount1Desired);
+            }
 
-            // Add liquidity to the position
-            // Position manager will use as much as it can based on current price
-            uint256 amount0;
-            uint256 amount1;
-            (liquidityDelta, amount0, amount1) = positionManager.increaseLiquidity(
+            // Try to add liquidity with leftover tokenIn
+            // This may fail if amount is too small or position requires both tokens
+            // In that case, we'll just treat the leftover as spare (aligned with greedy strategy)
+            try positionManager.increaseLiquidity(
                 INonfungiblePositionManager.IncreaseLiquidityParams({
                     tokenId: params.lpTokenId,
                     amount0Desired: amount0Desired,
@@ -352,16 +290,27 @@ BuyAndBurnSwapStorageV1
                     amount1Min: 0, // No minimum to allow price movement
                     deadline: block.timestamp
                 })
-            );
+            ) returns (uint128 liquidity, uint256 amount0, uint256 amount1) {
+                // Successfully added liquidity
+                liquidityDelta = liquidity;
 
-            // Calculate spare amounts (what wasn't used for liquidity)
-            spareIn = zeroForOne ? amount0Desired - amount0 : amount1Desired - amount1;
-            spareOut = zeroForOne ? amount1Desired - amount1 : amount0Desired - amount0;
+                // Calculate spare tokenIn (what wasn't used for LP)
+                spareIn = zeroForOne ? amount0Desired - amount0 : amount1Desired - amount1;
+            } catch {
+                // Failed to add liquidity (amount too small, position constraints, etc.)
+                // Treat all leftover tokenIn as spare - this aligns with greedy strategy
+                // where LP is optional and burn is the priority
+                spareIn = amountLpIn;
+                liquidityDelta = 0;
+            }
         } else {
-            // No liquidity to add, all becomes spare
-            spareIn = params.amountIn - amountSwapIn;
-            spareOut = amountSwapOut;
+            // No leftover tokenIn, so nothing to add to LP
+            spareIn = 0;
+            liquidityDelta = 0;
         }
+
+        // ALL tokenOut goes to burn (not used for LP in greedy strategy)
+        spareOut = amountSwapOut;
 
         // Unwrap WVANA to native VANA for spareIn if needed
         if (params.tokenIn == VANA && spareIn > 0) {
@@ -377,7 +326,7 @@ BuyAndBurnSwapStorageV1
             }
         }
 
-        // Transfer spare output tokens to designated recipient
+        // Transfer all tokenOut to burn address (greedy strategy: maximize burn)
         if (spareOut > 0) {
             if (params.tokenOut == VANA) {
                 WVANA.withdraw(spareOut);

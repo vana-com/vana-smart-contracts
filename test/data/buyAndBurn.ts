@@ -531,15 +531,12 @@ describe("BuyAndBurnSwap", () => {
       await network.provider.send("evm_revert", [snapshotId]);
     });
 
-    it("should execute swapAndAddLiquidity with VANA as tokenIn", async () => {
+    it("should execute swapAndAddLiquidity with VANA as tokenIn (greedy strategy)", async () => {
       const amountIn = parseEther(100);
 
       const balanceBefore = await ethers.provider.getBalance(user2.address);
       const tokenOutRecipientBalanceBefore = await ERC20Token.balanceOf(
         tokenOutRecipient.address,
-      );
-      const spareRecipientBalanceBefore = await ethers.provider.getBalance(
-        spareTokenInRecipient.address,
       );
 
       const positionBefore = await positionManager.positions(lpTokenId);
@@ -563,20 +560,28 @@ describe("BuyAndBurnSwap", () => {
       const receipt = await getReceipt(tx);
 
       const balanceAfter = await ethers.provider.getBalance(user2.address);
+      const tokenOutRecipientBalanceAfter = await ERC20Token.balanceOf(
+        tokenOutRecipient.address,
+      );
       const positionAfter = await positionManager.positions(lpTokenId);
       const liquidityAfter = positionAfter.liquidity;
 
-      // Verify liquidity increased
-      liquidityAfter.should.be.gt(liquidityBefore);
+      // With greedy strategy, liquidity may or may not increase (depends on pool liquidity)
+      // It's OK if liquidityDelta = 0 (all swapped, nothing left for LP)
+      liquidityAfter.should.be.gte(liquidityBefore);
 
       // Verify user2 paid amountIn + gas
       balanceAfter.should.equal(balanceBefore - amountIn - receipt.fee);
 
-      // Verify spare tokens were transferred
+      // CRITICAL: Verify tokenOut went to burn address (greedy strategy priority)
+      const tokenOutReceived = tokenOutRecipientBalanceAfter - tokenOutRecipientBalanceBefore;
+      tokenOutReceived.should.be.gt(0); // Should have received some DLP tokens for burning
+
+      console.log("TokenOut (DLP) sent to burn:", ethers.formatEther(tokenOutReceived));
       console.log("Liquidity added:", liquidityAfter - liquidityBefore);
     });
 
-    it("should transfer spare tokenOut to tokenOutRecipient", async () => {
+    it("should transfer spare tokenOut to tokenOutRecipient (burn address)", async () => {
       const amountIn = parseEther(50);
 
       const tokenOutRecipientBalanceBefore = await ERC20Token.balanceOf(
@@ -619,15 +624,14 @@ describe("BuyAndBurnSwap", () => {
         tokenOutRecipient.address,
       );
 
-      // Verify spare tokenOut was transferred
-      if (spareOut > 0n) {
-        tokenOutRecipientBalanceAfter.should.equal(
-          tokenOutRecipientBalanceBefore + spareOut,
-        );
-      }
+      // With greedy strategy, ALL tokenOut goes to burn (not used for LP)
+      spareOut.should.be.gt(0);
+      tokenOutRecipientBalanceAfter.should.equal(
+        tokenOutRecipientBalanceBefore + spareOut,
+      );
     });
 
-    it("should transfer spare tokenIn to spareTokenInRecipient", async () => {
+    it("should transfer spare tokenIn to spareTokenInRecipient (if any left)", async () => {
       const amountIn = parseEther(50);
 
       const spareRecipientBalanceBefore = await ethers.provider.getBalance(
@@ -670,23 +674,25 @@ describe("BuyAndBurnSwap", () => {
         spareTokenInRecipient.address,
       );
 
-      // Verify spare tokenIn was transferred
+      // With greedy strategy, spareIn may be 0 (all swapped) or > 0 (leftover added to LP)
       if (spareIn > 0n) {
         spareRecipientBalanceAfter.should.equal(
           spareRecipientBalanceBefore + spareIn,
         );
+      } else {
+        spareRecipientBalanceAfter.should.equal(spareRecipientBalanceBefore);
       }
     });
 
-    it("should execute with ERC20 as tokenIn", async () => {
-      // Give user1 extra funds for this test since they already spent a lot creating the LP
+    it("should execute with ERC20 as tokenIn (greedy strategy)", async () => {
+      // Give user1 extra funds for this test
       await network.provider.send("hardhat_setBalance", [
         user1.address,
-        toHex(parseEther(20000)), // Give plenty of balance
+        toHex(parseEther(20000)),
       ]);
 
       // Get a substantial amount of ERC20 for user1
-      const largeSwapAmount = parseEther(10000); // Use 10,000 VANA to get meaningful ERC20
+      const largeSwapAmount = parseEther(10000);
       await swapHelper.connect(user1).exactInputSingle(
         {
           tokenIn: VANA,
@@ -700,24 +706,21 @@ describe("BuyAndBurnSwap", () => {
       );
 
       const user1Balance = await ERC20Token.balanceOf(user1.address);
-      console.log("User1 ERC20 balance:", ethers.formatEther(user1Balance));
 
       // Transfer a good amount to user2
       const transferAmount = user1Balance / 2n;
-      console.log("Transferring to user2:", ethers.formatEther(transferAmount));
-
       await ERC20Token.connect(user1).transfer(user2.address, transferAmount);
-      console.log("Direct transfer successful");
 
       const user2Balance = await ERC20Token.balanceOf(user2.address);
-      console.log("User2 ERC20 balance after transfer:", ethers.formatEther(user2Balance));
 
       // Use a good portion for the test
-      const amountIn = (transferAmount * 80n) / 100n; // Use 80% to ensure meaningful liquidity
-      console.log("Amount to use for LP:", ethers.formatEther(amountIn));
+      const amountIn = (transferAmount * 80n) / 100n;
 
       await ERC20Token.connect(user2).approve(buyAndBurnSwap.target, amountIn);
 
+      const tokenOutRecipientBalanceBefore = await ethers.provider.getBalance(
+        tokenOutRecipient.address,
+      );
       const positionBefore = await positionManager.positions(lpTokenId);
       const liquidityBefore = positionBefore.liquidity;
 
@@ -735,11 +738,22 @@ describe("BuyAndBurnSwap", () => {
 
       const positionAfter = await positionManager.positions(lpTokenId);
       const liquidityAfter = positionAfter.liquidity;
+      const tokenOutRecipientBalanceAfter = await ethers.provider.getBalance(
+        tokenOutRecipient.address,
+      );
 
-      liquidityAfter.should.be.gt(liquidityBefore);
+      // With greedy strategy, liquidity may or may not increase
+      liquidityAfter.should.be.gte(liquidityBefore);
 
+      // Verify tokens were spent
       const tokenBalanceAfter = await ERC20Token.balanceOf(user2.address);
       tokenBalanceAfter.should.be.lt(user2Balance);
+
+      // CRITICAL: Verify VANA was sent to burn address (greedy strategy)
+      const vanaReceived = tokenOutRecipientBalanceAfter - tokenOutRecipientBalanceBefore;
+      vanaReceived.should.be.gt(0);
+
+      console.log("VANA sent to burn:", ethers.formatEther(vanaReceived));
     });
   });
 
@@ -820,8 +834,12 @@ describe("BuyAndBurnSwap", () => {
         .should.be.rejectedWith("BuyAndBurnSwap__InsufficientAmount");
     });
 
-    it("should handle small amounts", async () => {
+    it("should handle small amounts (greedy swap, may not add LP)", async () => {
       const amountIn = parseEther(0.001); // Very small amount
+
+      const tokenOutRecipientBalanceBefore = await ERC20Token.balanceOf(
+        tokenOutRecipient.address,
+      );
 
       const { liquidityDelta, spareIn, spareOut } = await buyAndBurnSwap
         .connect(user2)
@@ -840,11 +858,32 @@ describe("BuyAndBurnSwap", () => {
           { value: amountIn },
         );
 
-      // Should still add some liquidity
-      liquidityDelta.should.be.gt(0);
+      await buyAndBurnSwap.connect(user2).swapAndAddLiquidity(
+        {
+          tokenIn: VANA,
+          tokenOut: ERC20Token.target,
+          fee: FeeAmount.MEDIUM,
+          tokenOutRecipient: tokenOutRecipient.address,
+          spareTokenInRecipient: spareTokenInRecipient.address,
+          amountIn: amountIn,
+          singleBatchImpactThreshold: SINGLE_BATCH_IMPACT_THRESHOLD,
+          perSwapSlippageCap: PER_SWAP_SLIPPAGE_CAP,
+          lpTokenId: lpTokenId,
+        },
+        { value: amountIn },
+      );
+
+      const tokenOutRecipientBalanceAfter = await ERC20Token.balanceOf(
+        tokenOutRecipient.address,
+      );
+
+      // With greedy strategy, small amounts likely swap entirely (liquidityDelta = 0 is OK)
+      // The important thing is that tokenOut was sent to burn address
+      const tokenOutReceived = tokenOutRecipientBalanceAfter - tokenOutRecipientBalanceBefore;
+      tokenOutReceived.should.be.gt(0); // Should have swapped to some DLP for burning
     });
 
-    it("should handle large amounts", async () => {
+    it("should handle large amounts (greedy swap priority)", async () => {
       // Give user2 a large balance
       await network.provider.send("hardhat_setBalance", [
         user2.address,
@@ -855,6 +894,9 @@ describe("BuyAndBurnSwap", () => {
 
       const positionBefore = await positionManager.positions(lpTokenId);
       const liquidityBefore = positionBefore.liquidity;
+      const tokenOutRecipientBalanceBefore = await ERC20Token.balanceOf(
+        tokenOutRecipient.address,
+      );
 
       await buyAndBurnSwap.connect(user2).swapAndAddLiquidity(
         {
@@ -873,8 +915,19 @@ describe("BuyAndBurnSwap", () => {
 
       const positionAfter = await positionManager.positions(lpTokenId);
       const liquidityAfter = positionAfter.liquidity;
+      const tokenOutRecipientBalanceAfter = await ERC20Token.balanceOf(
+        tokenOutRecipient.address,
+      );
 
-      liquidityAfter.should.be.gt(liquidityBefore);
+      // Liquidity may or may not increase (greedy swaps as much as possible)
+      liquidityAfter.should.be.gte(liquidityBefore);
+
+      // CRITICAL: Large amount should produce significant tokenOut for burning
+      const tokenOutReceived = tokenOutRecipientBalanceAfter - tokenOutRecipientBalanceBefore;
+      tokenOutReceived.should.be.gt(0);
+
+      console.log("Large swap - TokenOut to burn:", ethers.formatEther(tokenOutReceived));
+      console.log("Large swap - Liquidity delta:", liquidityAfter - liquidityBefore);
     });
   });
 
@@ -912,7 +965,7 @@ describe("BuyAndBurnSwap", () => {
         .approve(buyAndBurnSwap.target, lpTokenId);
     });
 
-    it("should handle random amounts (fuzzing)", async () => {
+    it("should handle random amounts (fuzzing) - greedy strategy", async () => {
       await fc.assert(
         fc.asyncProperty(fc.integer({ min: 1, max: 100 }), async (amount) => {
           const testSnapshotId = await network.provider.send("evm_snapshot");
@@ -928,6 +981,9 @@ describe("BuyAndBurnSwap", () => {
 
             const positionBefore = await positionManager.positions(lpTokenId);
             const liquidityBefore = positionBefore.liquidity;
+            const tokenOutRecipientBalanceBefore = await ERC20Token.balanceOf(
+              tokenOutRecipient.address,
+            );
 
             const { liquidityDelta, spareIn, spareOut } = await buyAndBurnSwap
               .connect(user2)
@@ -946,12 +1002,15 @@ describe("BuyAndBurnSwap", () => {
                 { value: amountIn },
               );
 
-            // Verify liquidity is positive
-            liquidityDelta.should.be.gt(0);
+            // With greedy strategy, liquidityDelta CAN be 0 (all swapped)
+            liquidityDelta.should.be.gte(0);
 
             // Verify spare amounts are within bounds
             spareIn.should.be.lte(amountIn);
             spareOut.should.be.gte(0);
+
+            // CRITICAL: spareOut (tokenOut for burning) should be positive for greedy strategy
+            spareOut.should.be.gt(0);
 
             // Actually execute the transaction
             await buyAndBurnSwap.connect(user2).swapAndAddLiquidity(
@@ -971,12 +1030,19 @@ describe("BuyAndBurnSwap", () => {
 
             const positionAfter = await positionManager.positions(lpTokenId);
             const liquidityAfter = positionAfter.liquidity;
+            const tokenOutRecipientBalanceAfter = await ERC20Token.balanceOf(
+              tokenOutRecipient.address,
+            );
 
-            // Verify liquidity increased
-            liquidityAfter.should.be.gt(liquidityBefore);
+            // Liquidity may stay same or increase (greedy swaps as much as possible)
+            liquidityAfter.should.be.gte(liquidityBefore);
+
+            // Verify tokenOut was sent to burn address
+            const tokenOutReceived = tokenOutRecipientBalanceAfter - tokenOutRecipientBalanceBefore;
+            tokenOutReceived.should.equal(spareOut);
 
             console.log(
-              `✓ Amount: ${amount} VANA, Liquidity: ${liquidityDelta}, SpareIn: ${spareIn}, SpareOut: ${spareOut}`,
+              `✓ Amount: ${amount} VANA, Liquidity: ${liquidityDelta}, SpareIn: ${spareIn}, SpareOut (burn): ${spareOut}`,
             );
           } catch (err) {
             console.error("❌ Failed with input:", amount, err);
@@ -1084,31 +1150,33 @@ describe("BuyAndBurnSwap", () => {
         spareTokenInRecipient.address,
       );
 
-      // Verify spare DLP was sent to burn address
-      if (spareOut > 0n) {
-        burnAddressBalanceAfter.should.equal(burnAddressBalanceBefore + spareOut);
-      }
+      // CRITICAL: With greedy strategy, ALL DLP goes to burn (spareOut)
+      const dlpBurned = burnAddressBalanceAfter - burnAddressBalanceBefore;
+      dlpBurned.should.equal(spareOut);
+      dlpBurned.should.be.gt(0); // Should have burned some DLP
 
-      // Verify spare VANA was sent to treasury
+      // Verify spare VANA was sent to treasury (if any leftover)
       if (spareIn > 0n) {
         treasuryBalanceAfter.should.equal(treasuryBalanceBefore + spareIn);
       }
 
-      console.log("\n=== Buy-and-Burn Simulation ===");
+      console.log("\n=== Buy-and-Burn Simulation (Greedy Strategy) ===");
       console.log(`Data Access Fee (80% DLP share): ${ethers.formatEther(dlpShare)} VANA`);
       console.log(`Liquidity Added: ${liquidityDelta}`);
       console.log(`Spare VANA (to treasury): ${ethers.formatEther(spareIn)}`);
-      console.log(`Spare DLP (to burn): ${ethers.formatEther(spareOut)}`);
+      console.log(`DLP Burned: ${ethers.formatEther(dlpBurned)}`);
     });
 
     it("should handle multiple buy-and-burn iterations", async () => {
       let totalLiquidityAdded = 0n;
       let totalSpareVANA = 0n;
-      let totalSpareDLP = 0n;
+      let totalDLPBurned = 0n;
 
       // Simulate 3 sequential buy-and-burn operations
       for (let i = 0; i < 3; i++) {
         const amount = parseEther(50 + i * 25); // 50, 75, 100 VANA
+
+        const burnBalanceBefore = await ERC20Token.balanceOf(burnAddress.address);
 
         const { liquidityDelta, spareIn, spareOut } = await buyAndBurnSwap
           .connect(user2)
@@ -1142,21 +1210,27 @@ describe("BuyAndBurnSwap", () => {
           { value: amount },
         );
 
+        const burnBalanceAfter = await ERC20Token.balanceOf(burnAddress.address);
+        const dlpBurned = burnBalanceAfter - burnBalanceBefore;
+
         totalLiquidityAdded += liquidityDelta;
         totalSpareVANA += spareIn;
-        totalSpareDLP += spareOut;
+        totalDLPBurned += BigInt(dlpBurned);
 
         console.log(`\nIteration ${i + 1}:`);
         console.log(`  Amount In: ${ethers.formatEther(amount)} VANA`);
         console.log(`  Liquidity Added: ${liquidityDelta}`);
         console.log(`  Spare VANA: ${ethers.formatEther(spareIn)}`);
-        console.log(`  Spare DLP: ${ethers.formatEther(spareOut)}`);
+        console.log(`  DLP Burned: ${ethers.formatEther(dlpBurned)}`);
       }
 
-      console.log("\n=== Multiple Iteration Summary ===");
+      console.log("\n=== Multiple Iteration Summary (Greedy Strategy) ===");
       console.log(`Total Liquidity Added: ${totalLiquidityAdded}`);
       console.log(`Total Spare VANA: ${ethers.formatEther(totalSpareVANA)}`);
-      console.log(`Total Spare DLP: ${ethers.formatEther(totalSpareDLP)}`);
+      console.log(`Total DLP Burned: ${ethers.formatEther(totalDLPBurned)}`);
+
+      // With greedy strategy, we should have burned significant DLP
+      totalDLPBurned.should.be.gt(0);
     });
   });
 
@@ -1199,12 +1273,12 @@ describe("BuyAndBurnSwap", () => {
       await network.provider.send("evm_revert", [snapshotId]);
     });
 
-    it("should respect singleBatchImpactThreshold", async () => {
+    it("should respect singleBatchImpactThreshold (greedy up to threshold)", async () => {
       const amountIn = parseEther(100);
 
       // Test with strict threshold (1%)
       const strictThreshold = parseEther(1);
-      const { spareIn: strictSpareIn } = await buyAndBurnSwap
+      const { spareOut: strictSpareOut } = await buyAndBurnSwap
         .connect(user2)
         .swapAndAddLiquidity.staticCall(
           {
@@ -1223,7 +1297,7 @@ describe("BuyAndBurnSwap", () => {
 
       // Test with loose threshold (5%)
       const looseThreshold = parseEther(5);
-      const { spareIn: looseSpareIn } = await buyAndBurnSwap
+      const { spareOut: looseSpareOut } = await buyAndBurnSwap
         .connect(user2)
         .swapAndAddLiquidity.staticCall(
           {
@@ -1240,15 +1314,16 @@ describe("BuyAndBurnSwap", () => {
           { value: amountIn },
         );
 
-      console.log("\n=== Threshold Comparison ===");
-      console.log(`Strict (1%): spareIn = ${ethers.formatEther(strictSpareIn)} VANA`);
-      console.log(`Loose (5%): spareIn = ${ethers.formatEther(looseSpareIn)} VANA`);
+      console.log("\n=== Threshold Comparison (Greedy Strategy) ===");
+      console.log(`Strict (1%): spareOut (burn) = ${ethers.formatEther(strictSpareOut)} DLP`);
+      console.log(`Loose (5%): spareOut (burn) = ${ethers.formatEther(looseSpareOut)} DLP`);
 
-      // Strict threshold should result in more spare (less swapped)
-      // when the amount is large enough to exceed 1% impact
-      if (strictSpareIn > 0n || looseSpareIn > 0n) {
-        strictSpareIn.should.be.gte(looseSpareIn);
-      }
+      // With greedy strategy, both should produce tokenOut for burning
+      strictSpareOut.should.be.gt(0);
+      looseSpareOut.should.be.gt(0);
+
+      // Looser threshold should allow more swapping → more burn
+      looseSpareOut.should.be.gte(strictSpareOut);
     });
 
     it("should work with different perSwapSlippageCap values", async () => {
