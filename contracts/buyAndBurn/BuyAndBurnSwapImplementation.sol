@@ -294,19 +294,10 @@ BuyAndBurnSwapStorageV1
             WVANA.deposit{value: amountLpIn}();
         }
 
-        // Handle WVANA wrapping for tokenOut based on what SwapHelper returned
-        if (params.tokenOut == VANA && amountSwapOut > 0) {
-            // Check if swap returned WVANA or native VANA
-            uint256 wvanaBalanceAfter = IERC20(address(WVANA)).balanceOf(address(this));
-            uint256 wvanaReceived = wvanaBalanceAfter > wvanaBalanceBefore ? wvanaBalanceAfter - wvanaBalanceBefore : 0;
-
-            // If we received less WVANA than expected, wrap the native VANA we received
-            if (wvanaReceived < amountSwapOut) {
-                uint256 ethToWrap = amountSwapOut - wvanaReceived;
-                require(address(this).balance >= ethToWrap, "Insufficient ETH received from swap");
-                WVANA.deposit{value: ethToWrap}();
+            // Wrap tokenOut if needed (SwapHelper returns native VANA)
+            if (params.tokenOut == VANA && amountSwapOut > 0) {
+                WVANA.deposit{value: amountSwapOut}();
             }
-        }
 
         // Try to add liquidity with leftover tokenIn (if any)
         if (amountLpIn > 0) {
@@ -372,15 +363,7 @@ BuyAndBurnSwapStorageV1
             liquidityDelta = 0;
         }
 
-        // ALL tokenOut goes to burn (not used for LP in greedy strategy)
-        spareOut = amountSwapOut;
-
-        // Unwrap WVANA to native VANA for spareIn if needed
-        if (params.tokenIn == VANA && spareIn > 0) {
-            WVANA.withdraw(spareIn);
-        }
-
-        // Transfer spare input tokens to designated recipient
+        // Transfer spare tokenIn to treasury
         if (spareIn > 0) {
             if (params.tokenIn == VANA) {
                 payable(params.spareTokenInRecipient).sendValue(spareIn);
