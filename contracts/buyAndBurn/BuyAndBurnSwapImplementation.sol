@@ -226,11 +226,9 @@ BuyAndBurnSwapStorageV1
             amountSwapIn = amountSwapInUsed;
             amountSwapOut = amountReceived;
 
-            // Handle WVANA wrapping for tokenOut based on what SwapHelper returned
-            if (params.tokenOut == VANA && amountSwapOut > 0) {
-                // Check if swap returned WVANA or native VANA
-                uint256 wvanaBalanceAfter = IERC20(address(WVANA)).balanceOf(address(this));
-                uint256 wvanaReceived = wvanaBalanceAfter > wvanaBalanceBefore ? wvanaBalanceAfter - wvanaBalanceBefore : 0;
+            // Verify all tokenIn was swapped (YES path invariant)
+            spareIn = params.amountIn - amountSwapIn;
+            require(spareIn == 0, "BuyAndBurnSwap: not all swapped in YES path");
 
                 // If we received less WVANA than expected, wrap the native VANA we received
                 if (wvanaReceived < amountSwapOut) {
@@ -258,9 +256,8 @@ BuyAndBurnSwapStorageV1
             // Early return - no LP logic needed
             return (liquidityDelta, spareIn, spareOut);
 
-        } else if (amountSwapIn > 0) {
-            // NO PATH: Some TokenIn unused - quote was partial
-            // Use perSwapSlippageCap for tighter slippage control on partial swap
+        } else if (quote.amountToPay < params.amountIn) {
+            // NO PATH: Quote is partial - swap full amount then handle leftover
 
             // Approve swapHelper if tokenIn is ERC20
             if (params.tokenIn != VANA) {
@@ -282,6 +279,10 @@ BuyAndBurnSwapStorageV1
             );
             amountSwapIn = amountSwapInUsed;
             amountSwapOut = amountReceived;
+        } else {
+            // No swap (quote returned 0)
+            amountSwapIn = 0;
+            amountSwapOut = 0;
         }
 
         // If we reach here, we have leftover tokenIn to handle
@@ -372,7 +373,7 @@ BuyAndBurnSwapStorageV1
             }
         }
 
-        // Transfer all tokenOut to burn address (greedy strategy: maximize burn)
+        // Transfer spare tokenOut to burn address
         if (spareOut > 0) {
             if (params.tokenOut == VANA) {
                 WVANA.withdraw(spareOut);
