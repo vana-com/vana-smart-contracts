@@ -246,7 +246,6 @@ BuyAndBurnSwapStorageV1
             // Transfer all tokenOut to burn address
             if (spareOut > 0) {
                 if (params.tokenOut == VANA) {
-                    WVANA.withdraw(spareOut);
                     payable(params.tokenOutRecipient).sendValue(spareOut);
                 } else {
                     IERC20(params.tokenOut).safeTransfer(params.tokenOutRecipient, spareOut);
@@ -285,9 +284,7 @@ BuyAndBurnSwapStorageV1
             amountSwapOut = 0;
         }
 
-        // If we reach here, we have leftover tokenIn to handle
-
-        // Calculate leftover tokenIn (what wasn't swapped)
+        // NO PATH continuation: Handle leftover tokenIn for LP
         uint256 amountLpIn = params.amountIn - amountSwapIn;
 
         // Only wrap to WVANA if we have leftover tokenIn for LP
@@ -359,6 +356,8 @@ BuyAndBurnSwapStorageV1
         // Transfer spare tokenIn to treasury
         if (spareIn > 0) {
             if (params.tokenIn == VANA) {
+                // Unwrap and send native VANA
+                WVANA.withdraw(spareIn);
                 payable(params.spareTokenInRecipient).sendValue(spareIn);
             } else {
                 IERC20(params.tokenIn).safeTransfer(params.spareTokenInRecipient, spareIn);
@@ -368,6 +367,7 @@ BuyAndBurnSwapStorageV1
         // Transfer spare tokenOut to burn address
         if (spareOut > 0) {
             if (params.tokenOut == VANA) {
+                // Unwrap and send native VANA
                 WVANA.withdraw(spareOut);
                 payable(params.tokenOutRecipient).sendValue(spareOut);
             } else {
