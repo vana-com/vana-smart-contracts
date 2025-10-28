@@ -290,28 +290,27 @@ BuyAndBurnSwapStorageV1
         // Calculate leftover tokenIn (what wasn't swapped)
         uint256 amountLpIn = params.amountIn - amountSwapIn;
 
-        // Wrap VANA to WVANA for LP if tokenIn is native VANA
-        if (params.tokenIn == VANA && amountLpIn > 0) {
-            WVANA.deposit{value: amountLpIn}();
-        }
+        // Only wrap to WVANA if we have leftover tokenIn for LP
+        if (amountLpIn > 0) {
+            // Wrap tokenIn if needed
+            if (params.tokenIn == VANA) {
+                WVANA.deposit{value: amountLpIn}();
+            }
 
             // Wrap tokenOut if needed (SwapHelper returns native VANA)
             if (params.tokenOut == VANA && amountSwapOut > 0) {
                 WVANA.deposit{value: amountSwapOut}();
             }
 
-        // Try to add liquidity with leftover tokenIn (if any)
-        if (amountLpIn > 0) {
-            // Determine token0 and token1 based on swap direction
+            // Determine token0 and token1
             address token0 = zeroForOne ? tokenIn : tokenOut;
             address token1 = zeroForOne ? tokenOut : tokenIn;
 
-            // We only add the leftover tokenIn to LP (greedy strategy prioritizes burn over LP)
-            // Uniswap V3 can handle one-sided liquidity when price is outside range
-            uint256 amount0Desired = zeroForOne ? amountLpIn : 0;
-            uint256 amount1Desired = zeroForOne ? 0 : amountLpIn;
+            // Calculate amounts for LP (both tokens needed)
+            uint256 amount0Desired = zeroForOne ? amountLpIn : amountSwapOut;
+            uint256 amount1Desired = zeroForOne ? amountSwapOut : amountLpIn;
 
-            // Check balances
+            // Verify balances
             uint256 token0Balance = IERC20(token0).balanceOf(address(this));
             uint256 token1Balance = IERC20(token1).balanceOf(address(this));
 
@@ -325,42 +324,35 @@ BuyAndBurnSwapStorageV1
                 BuyAndBurnSwap__InsufficientAmount(token1, amount1Desired, token1Balance)
             );
 
-            // Approve position manager to spend tokens
-            if (amount0Desired > 0) {
-                IERC20(token0).forceApprove(address(positionManager), amount0Desired);
-            }
-            if (amount1Desired > 0) {
-                IERC20(token1).forceApprove(address(positionManager), amount1Desired);
-            }
+            // Approve position manager
+            IERC20(token0).forceApprove(address(positionManager), amount0Desired);
+            IERC20(token1).forceApprove(address(positionManager), amount1Desired);
 
-            // Try to add liquidity with leftover tokenIn
-            // This may fail if amount is too small or position requires both tokens
-            // In that case, we'll just treat the leftover as spare (aligned with greedy strategy)
-            try positionManager.increaseLiquidity(
+            // Add liquidity (NO try-catch - let errors surface)
+            uint256 amount0Used;
+            uint256 amount1Used;
+            (liquidityDelta, amount0Used, amount1Used) = positionManager.increaseLiquidity(
                 INonfungiblePositionManager.IncreaseLiquidityParams({
                     tokenId: params.lpTokenId,
                     amount0Desired: amount0Desired,
                     amount1Desired: amount1Desired,
-                    amount0Min: 0, // No minimum to allow price movement
-                    amount1Min: 0, // No minimum to allow price movement
+                    amount0Min: 0,
+                    amount1Min: 0,
                     deadline: block.timestamp
                 })
-            ) returns (uint128 liquidity, uint256 amount0, uint256 amount1) {
-                // Successfully added liquidity
-                liquidityDelta = liquidity;
+            );
 
-                // Calculate spare tokenIn (what wasn't used for LP)
-                spareIn = zeroForOne ? amount0Desired - amount0 : amount1Desired - amount1;
-            } catch {
-                // Failed to add liquidity (amount too small, position constraints, etc.)
-                // Treat all leftover tokenIn as spare - this aligns with greedy strategy
-                // where LP is optional and burn is the priority
-                spareIn = amountLpIn;
-                liquidityDelta = 0;
-            }
+            // Calculate spares based on what was actually used
+            uint256 spareToken0 = amount0Desired - amount0Used;
+            uint256 spareToken1 = amount1Desired - amount1Used;
+
+            spareIn = zeroForOne ? spareToken0 : spareToken1;
+            spareOut = zeroForOne ? spareToken1 : spareToken0;
+
         } else {
-            // No leftover tokenIn, so nothing to add to LP
+            // No leftover tokenIn for LP
             spareIn = 0;
+            spareOut = amountSwapOut;
             liquidityDelta = 0;
         }
 
