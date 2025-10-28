@@ -123,16 +123,17 @@ BuyAndBurnSwapStorageV1
     /// @return liquidityDelta Amount of liquidity added to the position (0 if no LP added)
     /// @return spareIn Amount of input token not used (sent to spareTokenInRecipient)
     /// @return spareOut Amount of output token not used for liquidity (sent to tokenOutRecipient for burning)
-    /// @dev GREEDY STRATEGY:
-    ///      1. Quote swapping the ENTIRE params.amountIn within singleBatchImpactThreshold
-    ///      2a. If quote accepts full amount: Execute swap with singleBatchImpactThreshold and RETURN (no LP)
-    ///      2b. If quote is partial: Execute swap with perSwapSlippageCap, then try to add leftover to LP
-    ///      3. Send all tokenOut to burn address (tokenOutRecipient)
-    ///
-    /// Example scenarios:
-    /// - Good liquidity: Entire amount swapped → all tokenOut to burn, no LP, early return
-    /// - Limited liquidity: Partial swap → leftover tokenIn added to LP, rest tokenOut to burn
-    /// - LP fails: Leftover tokenIn treated as spare, sent to spareTokenInRecipient
+    /// @dev GREEDY STRATEGY
+    ///      1. Quote full amount with singleBatchImpactThreshold
+    ///      2a. If quote accepts full amount (YES path):
+    ///          - Swap FULL params.amountIn with singleBatchImpactThreshold
+    ///          - Verify all was swapped (spareIn must be 0)
+    ///          - Send all tokenOut to burn
+    ///          - Return early (no LP)
+    ///      2b. If quote is partial (NO path):
+    ///          - Swap FULL params.amountIn with singleBatchImpactThreshold
+    ///          - Leftover tokenIn tries to add to LP
+    ///          - Send remaining tokenOut to burn
     ///
     /// Requirements:
     /// - Caller must approve this contract for the LP position NFT
@@ -179,11 +180,7 @@ BuyAndBurnSwapStorageV1
         uint256 amountSwapIn;
         uint256 amountSwapOut;
 
-        // Track WVANA balance before swap to detect return format (WVANA vs native VANA)
-        uint256 wvanaBalanceBefore = params.tokenOut == VANA ? IERC20(address(WVANA)).balanceOf(address(this)) : 0;
-
-        // GREEDY STRATEGY: Quote swapping the ENTIRE amount to maximize tokenOut
-        // The quote will respect singleBatchImpactThreshold and return the max swappable amount
+        // STEP 1: Quote full amount with singleBatchImpactThreshold
         ISwapHelper.Quote memory quote = swapHelper.quoteSlippageExactInputSingle(
             ISwapHelper.QuoteSlippageExactInputSingleParams({
                 tokenIn: tokenIn,
@@ -196,15 +193,11 @@ BuyAndBurnSwapStorageV1
             })
         );
 
-        // The quote returns the maximum amount we can swap within price impact limits
-        amountSwapIn = quote.amountToPay;  // This will be ≤ params.amountIn
+        // STEP 2: Decision point
+        if (quote.amountToPay == params.amountIn) {
+            // YES PATH: Quote accepts full amount - swap everything and return
 
-        // CRITICAL BRANCHING: Check if we can swap the ENTIRE amount
-        if (amountSwapIn == params.amountIn) {
-            // YES PATH: No unused TokenIn - entire amount can be swapped within impact threshold
-            // This is the pure greedy case: maximum burn, no LP needed
-
-            // Approve swapHelper if tokenIn is ERC20
+            // Approve if ERC20
             if (params.tokenIn != VANA) {
                 IERC20(params.tokenIn).forceApprove(address(swapHelper), amountSwapIn);
             }
