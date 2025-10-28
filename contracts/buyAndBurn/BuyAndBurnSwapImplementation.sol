@@ -186,7 +186,7 @@ BuyAndBurnSwapStorageV1
                 tokenIn: tokenIn,
                 tokenOut: tokenOut,
                 fee: params.fee,
-                amountIn: params.amountIn,  // Quote the FULL amount (greedy)
+                amountIn: params.amountIn,
                 sqrtPriceX96: currentSqrtPriceX96,
                 liquidity: currentLiquidity,
                 maximumSlippagePercentage: params.singleBatchImpactThreshold
@@ -199,20 +199,20 @@ BuyAndBurnSwapStorageV1
 
             // Approve if ERC20
             if (params.tokenIn != VANA) {
-                IERC20(params.tokenIn).forceApprove(address(swapHelper), amountSwapIn);
+                IERC20(params.tokenIn).forceApprove(address(swapHelper), params.amountIn);
             }
 
-            // Execute swap with singleBatchImpactThreshold (same as quote)
+            // Swap FULL amount with singleBatchImpactThreshold
             (uint256 amountSwapInUsed, uint256 amountReceived) = swapHelper.slippageExactInputSingle{
-                    value: params.tokenIn == VANA ? amountSwapIn : 0
+                    value: params.tokenIn == VANA ? params.amountIn : 0
                 }(
                 ISwapHelper.SlippageSwapParams({
-                    tokenIn: params.tokenIn,    // Use original address (VANA or ERC20)
-                    tokenOut: params.tokenOut,  // Use original address (VANA or ERC20)
+                    tokenIn: params.tokenIn,
+                    tokenOut: params.tokenOut,
                     fee: params.fee,
                     recipient: address(this),
-                    amountIn: amountSwapIn,
-                    maximumSlippagePercentage: params.singleBatchImpactThreshold  // ✅ Use same threshold
+                    amountIn: params.amountIn,
+                    maximumSlippagePercentage: params.singleBatchImpactThreshold
                 })
             );
 
@@ -223,20 +223,12 @@ BuyAndBurnSwapStorageV1
             spareIn = params.amountIn - amountSwapIn;
             require(spareIn == 0, "BuyAndBurnSwap: not all swapped in YES path");
 
-                // If we received less WVANA than expected, wrap the native VANA we received
-                if (wvanaReceived < amountSwapOut) {
-                    uint256 ethToWrap = amountSwapOut - wvanaReceived;
-                    require(address(this).balance >= ethToWrap, "Insufficient ETH received from swap");
-                    WVANA.deposit{value: ethToWrap}();
-                }
-            }
+            // All tokenOut goes to burn
+            spareOut = amountSwapOut;
+            liquidityDelta = 0;
 
-            // Set return values for pure greedy case
-            spareIn = 0;              // All tokenIn was swapped
-            spareOut = amountSwapOut; // All tokenOut goes to burn
-            liquidityDelta = 0;       // No LP added
-
-            // Transfer all tokenOut to burn address
+            // Transfer tokenOut to burn address
+            // Note: SwapHelper returns native VANA when tokenOut == VANA
             if (spareOut > 0) {
                 if (params.tokenOut == VANA) {
                     payable(params.tokenOutRecipient).sendValue(spareOut);
@@ -245,30 +237,31 @@ BuyAndBurnSwapStorageV1
                 }
             }
 
-            // Early return - no LP logic needed
+            // Early return - no LP logic
             return (liquidityDelta, spareIn, spareOut);
 
         } else if (quote.amountToPay < params.amountIn) {
             // NO PATH: Quote is partial - swap full amount then handle leftover
 
-            // Approve swapHelper if tokenIn is ERC20
+            // Approve if ERC20
             if (params.tokenIn != VANA) {
-                IERC20(params.tokenIn).forceApprove(address(swapHelper), amountSwapIn);
+                IERC20(params.tokenIn).forceApprove(address(swapHelper), params.amountIn);
             }
 
-            // Execute swap with perSwapSlippageCap (tighter protection for partial swap)
+            // Swap FULL amount with singleBatchImpactThreshold (not quoted amount!)
             (uint256 amountSwapInUsed, uint256 amountReceived) = swapHelper.slippageExactInputSingle{
-                    value: params.tokenIn == VANA ? amountSwapIn : 0
+                    value: params.tokenIn == VANA ? params.amountIn : 0
                 }(
                 ISwapHelper.SlippageSwapParams({
-                    tokenIn: params.tokenIn,    // Use original address (VANA or ERC20)
-                    tokenOut: params.tokenOut,  // Use original address (VANA or ERC20)
+                    tokenIn: params.tokenIn,
+                    tokenOut: params.tokenOut,
                     fee: params.fee,
                     recipient: address(this),
-                    amountIn: amountSwapIn,
-                    maximumSlippagePercentage: params.perSwapSlippageCap
+                    amountIn: params.amountIn,  // Swap FULL amount
+                    maximumSlippagePercentage: params.singleBatchImpactThreshold
                 })
             );
+
             amountSwapIn = amountSwapInUsed;
             amountSwapOut = amountReceived;
         } else {
