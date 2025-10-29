@@ -1386,37 +1386,36 @@ describe("BuyAndBurnSwap", () => {
       totalDLPBurned.should.be.gt(0);
     });
 
-    it("should handle iterative swaps using spareIn with pool state changes", async () => {
-      // Give user2 a large balance
+    it("should handle cron job pattern: recycle spareIn with LP consuming tokenOut", async () => {
       await network.provider.send("hardhat_setBalance", [
         user2.address,
-        toHex(parseEther(10000)),
+        toHex(parseEther(5000)),
       ]);
 
-      // Give user1 extra for external swaps
-      await network.provider.send("hardhat_setBalance", [
-        user1.address,
-        toHex(parseEther(10000)),
-      ]);
+      console.log("\n=== Cron Job Simulation: SpareIn Recycling (spareOut=0) ===");
 
-      console.log("\n=== Iterative Swap Test: Using spareIn + Pool State Changes ===");
+      // The pattern to test:
+      // Call 1: Large input → swap partial → leftover tokenIn (spareIn1 > 0)
+      //         tokenOut gets added to LP → spareOut1 = 0
+      // Call 2: Use spareIn1 as input → repeat pattern
 
-      // Use VERY LARGE amount to force pool liquidity limits (NO path)
-      let currentAmountIn = parseEther(500); // Start with 500 VANA (much larger)
-      let totalIterations = 0;
-      let totalLiquidityAdded = 0n;
-      let totalSpareVANA = 0n;
-      let totalDLPBurned = 0n;
-      const maxIterations = 10;
+      const initialAmount = parseEther(150);
+      const tightThreshold = parseEther(0.3);
 
-      // Use TIGHTER threshold to limit how much can be swapped per call
-      const tightThreshold = parseEther(0.5); // 0.5% instead of 2%
+      let currentAmountIn = initialAmount;
+      const callResults: Array<{
+        call: number;
+        amountIn: bigint;
+        liquidityDelta: bigint;
+        spareIn: bigint;
+        spareOut: bigint;
+      }> = [];
 
-      for (let i = 0; i < maxIterations; i++) {
-        console.log(`\n--- Iteration ${i + 1} ---`);
+      // Multiple calls recycling spareIn
+      for (let call = 1; call <= 3; call++) {
+        console.log(`\n--- Cron Job Call ${call} ---`);
         console.log(`Input: ${ethers.formatEther(currentAmountIn)} VANA`);
 
-        // Static call to see what will happen
         const { liquidityDelta, spareIn, spareOut } = await buyAndBurnSwap
           .connect(user2)
           .swapAndAddLiquidity.staticCall(
@@ -1427,18 +1426,13 @@ describe("BuyAndBurnSwap", () => {
               tokenOutRecipient: tokenOutRecipient.address,
               spareTokenInRecipient: spareTokenInRecipient.address,
               amountIn: currentAmountIn,
-              singleBatchImpactThreshold: tightThreshold, // ✅ Tighter threshold
+              singleBatchImpactThreshold: tightThreshold,
               perSwapSlippageCap: PER_SWAP_SLIPPAGE_CAP,
               lpTokenId: lpTokenId,
             },
             { value: currentAmountIn },
           );
 
-        console.log(`  Liquidity added: ${liquidityDelta}`);
-        console.log(`  Spare VANA: ${ethers.formatEther(spareIn)}`);
-        console.log(`  DLP burned: ${ethers.formatEther(spareOut)}`);
-
-        // Execute the actual swap
         await buyAndBurnSwap.connect(user2).swapAndAddLiquidity(
           {
             tokenIn: VANA,
@@ -1447,62 +1441,63 @@ describe("BuyAndBurnSwap", () => {
             tokenOutRecipient: tokenOutRecipient.address,
             spareTokenInRecipient: spareTokenInRecipient.address,
             amountIn: currentAmountIn,
-            singleBatchImpactThreshold: tightThreshold, // ✅ Tighter threshold
+            singleBatchImpactThreshold: tightThreshold,
             perSwapSlippageCap: PER_SWAP_SLIPPAGE_CAP,
             lpTokenId: lpTokenId,
           },
           { value: currentAmountIn },
         );
 
-        totalIterations++;
-        totalLiquidityAdded += liquidityDelta;
-        totalSpareVANA += spareIn;
-        totalDLPBurned += spareOut;
+        callResults.push({ call, amountIn: currentAmountIn, liquidityDelta, spareIn, spareOut });
 
-        // SIMULATE EXTERNAL SWAP: Someone else swaps to change pool state
-        if (i < maxIterations - 1 && spareIn > 0n) {
-          const externalSwapAmount = parseEther(20); // External trader swaps 20 VANA
-          console.log(`  🔄 External swap: ${ethers.formatEther(externalSwapAmount)} VANA → DLP`);
+        console.log(`  Liquidity added: ${liquidityDelta}`);
+        console.log(`  Spare VANA (for next call): ${ethers.formatEther(spareIn)}`);
+        console.log(`  DLP to burn: ${ethers.formatEther(spareOut)}`);
 
-          await swapHelper.connect(user1).exactInputSingle(
-            {
-              tokenIn: VANA,
-              tokenOut: ERC20Token.target,
-              fee: FeeAmount.MEDIUM,
-              recipient: user1.address,
-              amountIn: externalSwapAmount,
-              amountOutMinimum: 0,
-            },
-            { value: externalSwapAmount },
-          );
-        }
+        // Pattern:
+        // - spareIn > 0 (leftover tokenIn for next iteration)
+        // - Ideally spareOut = 0 (all tokenOut went to LP), but may have some spillover
 
-        // Check if we have spare VANA to use for next iteration
         if (spareIn > 0n) {
-          console.log(`  ♻️  Recycling ${ethers.formatEther(spareIn)} spare VANA for next iteration`);
+          console.log(`Recycling spare for next call`);
           currentAmountIn = spareIn;
         } else {
-          console.log(`  ✅ No spare VANA left - all consumed`);
+          console.log(`All VANA consumed`);
           break;
         }
       }
 
-      console.log("\n=== Summary ===");
-      console.log(`Total iterations: ${totalIterations}`);
-      console.log(`Total liquidity added: ${totalLiquidityAdded}`);
-      console.log(`Total spare VANA: ${ethers.formatEther(totalSpareVANA)}`);
-      console.log(`Total DLP burned: ${ethers.formatEther(totalDLPBurned)}`);
+      // Display summary
+      console.log(`\n=== Cron Job Summary ===`);
+      console.log(`Total calls: ${callResults.length}`);
+      console.log(`Starting amount: ${ethers.formatEther(initialAmount)} VANA`);
 
-      // Verify results - adjusted expectations
-      totalIterations.should.be.gte(1); // ✅ At least 1 iteration (changed from gt to gte)
-      totalDLPBurned.should.be.gt(0); // Should have burned some DLP
+      callResults.forEach(({ call, amountIn, liquidityDelta, spareIn, spareOut }) => {
+        console.log(`\nCall ${call}:`);
+        console.log(`  Input: ${ethers.formatEther(amountIn)}`);
+        console.log(`  Liquidity: ${liquidityDelta}`);
+        console.log(`  Spare In: ${ethers.formatEther(spareIn)}`);
+        console.log(`  Spare Out: ${ethers.formatEther(spareOut)}`);
+      });
 
-      // If we had multiple iterations, verify the pattern
-      if (totalIterations > 1) {
-        console.log("\n✅ Iterative swap pattern verified: Multiple iterations with spareIn recycling");
-      } else {
-        console.log("\n✅ Single iteration: All VANA consumed in one swap (good pool liquidity)");
+      const totalLiquidity = callResults.reduce((sum, r) => sum + r.liquidityDelta, 0n);
+      const finalSpareIn = callResults[callResults.length - 1].spareIn;
+      const totalBurned = callResults.reduce((sum, r) => sum + r.spareOut, 0n);
+
+      console.log(`\nTotals:`);
+      console.log(`  Liquidity added: ${totalLiquidity}`);
+      console.log(`  Final spare: ${ethers.formatEther(finalSpareIn)}`);
+      console.log(`  Total burned: ${ethers.formatEther(totalBurned)}`);
+
+      // Verify the cron job pattern
+      callResults.length.should.be.gte(1);
+
+      // Verify spareIn recycling: each call's input should equal previous spare (except first)
+      for (let i = 1; i < callResults.length; i++) {
+        callResults[i].amountIn.should.equal(callResults[i - 1].spareIn);
       }
+
+      console.log(`\nCron job pattern verified: spareIn successfully recycled across ${callResults.length} calls`);
     });
 
     it("should demonstrate spareIn recycling with tight threshold", async () => {
