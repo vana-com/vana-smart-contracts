@@ -240,34 +240,37 @@ BuyAndBurnSwapStorageV1
             // Early return - no LP logic
             return (liquidityDelta, spareIn, spareOut);
 
-        } else if (quote.amountToPay < params.amountIn) {
-            // NO PATH: Quote is partial - swap full amount then handle leftover
-
-            // Approve if ERC20
-            if (params.tokenIn != VANA) {
-                IERC20(params.tokenIn).forceApprove(address(swapHelper), params.amountIn);
-            }
-
-            // Swap FULL amount with singleBatchImpactThreshold (not quoted amount!)
-            (uint256 amountSwapInUsed, uint256 amountReceived) = swapHelper.slippageExactInputSingle{
-                    value: params.tokenIn == VANA ? params.amountIn : 0
-                }(
-                ISwapHelper.SlippageSwapParams({
-                    tokenIn: params.tokenIn,
-                    tokenOut: params.tokenOut,
-                    fee: params.fee,
-                    recipient: address(this),
-                    amountIn: params.amountIn,  // Swap FULL amount
-                    maximumSlippagePercentage: params.singleBatchImpactThreshold
-                })
-            );
-
-            amountSwapIn = amountSwapInUsed;
-            amountSwapOut = amountReceived;
         } else {
-            // No swap (quote returned 0)
-            amountSwapIn = 0;
-            amountSwapOut = 0;
+            // NO PATH: Quote is partial or zero
+            if (quote.amountToPay > 0) {
+                // Partial swap case
+
+                // Approve if ERC20
+                if (params.tokenIn != VANA) {
+                    IERC20(params.tokenIn).forceApprove(address(swapHelper), params.amountIn);
+                }
+
+                // Swap FULL amount with singleBatchImpactThreshold (not quoted amount!)
+                (uint256 amountSwapInUsed, uint256 amountReceived) = swapHelper.slippageExactInputSingle{
+                        value: params.tokenIn == VANA ? params.amountIn : 0
+                    }(
+                    ISwapHelper.SlippageSwapParams({
+                        tokenIn: params.tokenIn,
+                        tokenOut: params.tokenOut,
+                        fee: params.fee,
+                        recipient: address(this),
+                        amountIn: params.amountIn,  // Swap FULL amount
+                        maximumSlippagePercentage: params.singleBatchImpactThreshold
+                    })
+                );
+
+                amountSwapIn = amountSwapInUsed;
+                amountSwapOut = amountReceived;
+            } else {
+                // No swap case (quote returned 0)
+                amountSwapIn = 0;
+                amountSwapOut = 0;
+            }
         }
 
         // NO PATH continuation: Handle leftover tokenIn for LP
