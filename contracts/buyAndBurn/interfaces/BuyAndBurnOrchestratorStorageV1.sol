@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.24;
+pragma solidity >= 0.8.26;
 
-import {IDataAccessTreasury} from "../../data/dataAccessTreasury/interfaces/IDataAccessTreasury.sol";
 import {IBuyAndBurnSwap} from "./IBuyAndBurnSwap.sol";
 
 /**
@@ -19,7 +18,7 @@ abstract contract BuyAndBurnOrchestratorStorageV1 {
     address public constant BURN_ADDRESS = address(0);
 
     /// @notice Data Access Treasury contract
-    IDataAccessTreasury public dataAccessTreasury;
+    address public dataAccessTreasury;
 
     /// @notice BuyAndBurnSwap contract for executing swaps
     IBuyAndBurnSwap public buyAndBurnSwap;

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.24;
+pragma solidity >= 0.8.26;
 
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
@@ -12,7 +12,13 @@ import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {BuyAndBurnOrchestratorStorageV1} from "./interfaces/BuyAndBurnOrchestratorStorageV1.sol";
 import {IBuyAndBurnOrchestrator} from "./interfaces/IBuyAndBurnOrchestrator.sol";
 import {IBuyAndBurnSwap} from "./interfaces/IBuyAndBurnSwap.sol";
-import {IDataAccessTreasury} from "../data/dataAccessTreasury/interfaces/IDataAccessTreasury.sol";
+
+/**
+ * @notice Minimal interface for DataAccessTreasury withdraw function
+ */
+interface IDataAccessTreasuryMinimal {
+    function withdraw(address token, uint256 amount) external;
+}
 
 /**
  * @title BuyAndBurnOrchestratorImplementation
@@ -65,7 +71,7 @@ IBuyAndBurnOrchestrator
 
         _grantRole(DEFAULT_ADMIN_ROLE, msg.sender);
 
-        dataAccessTreasury = IDataAccessTreasury(_dataAccessTreasury);
+        dataAccessTreasury = _dataAccessTreasury;
         buyAndBurnSwap = IBuyAndBurnSwap(_buyAndBurnSwap);
         protocolTreasury = _protocolTreasury;
         protocolSharePercentage = _protocolSharePercentage;
@@ -266,12 +272,10 @@ IBuyAndBurnOrchestrator
      * @param amount Amount to pull
      */
     function _pullFunds(address token, uint256 amount) internal {
-        if (token == VANA) {
-            // Pull native VANA from treasury
-            dataAccessTreasury.withdraw(token, amount);
-        } else {
-            // Pull ERC20 from treasury
-            dataAccessTreasury.withdraw(token, amount);
+        IDataAccessTreasuryMinimal(dataAccessTreasury).withdraw(token, amount);
+
+        if (token != VANA) {
+            // Verify we received the ERC20 tokens
             require(
                 IERC20(token).balanceOf(address(this)) >= amount,
                 BuyAndBurnOrchestrator__InsufficientBalance()
