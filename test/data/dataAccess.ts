@@ -338,7 +338,7 @@ describe("DataAccessV1", () => {
     it("should revert when non-governance tries to update", async () => {
       await protocolConfig
         .connect(user1)
-        .updatePGEPublicKey("0x123")
+        .updatePGEPublicKey("0x1234")
         .should.be.rejectedWith(
           `AccessControlUnauthorizedAccount("${user1.address}", "${PROTOCOL_GOVERNANCE_ROLE}")`,
         );
@@ -1038,10 +1038,13 @@ describe("DataAccessV1", () => {
         "DatasetRegistryImplementation",
       );
 
-      await upgrades.upgradeProxy(datasetRegistry.target, DatasetRegistryV2);
+      // await upgrades.upgradeProxy(datasetRegistry.target, DatasetRegistryV2);
+      const upgraded = await upgrades.upgradeProxy(datasetRegistry.target, DatasetRegistryV2);
+      const upgradedDatasetRegistry = upgraded as unknown as DatasetRegistryImplementation;
+
 
       // Verify contract still works after upgrade
-      await datasetRegistry
+      await upgradedDatasetRegistry
         .connect(admin)
         .createDataset(datasetOwner.address, TEST_SCHEMA_ID);
 
