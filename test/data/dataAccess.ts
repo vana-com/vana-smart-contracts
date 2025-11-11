@@ -1034,33 +1034,49 @@ describe("DataAccessV1", () => {
     });
 
     it("should upgrade DatasetRegistry", async () => {
-      const DatasetRegistryV2 = await ethers.getContractFactory(
-        "DatasetRegistryImplementation",
-      );
-
-      // await upgrades.upgradeProxy(datasetRegistry.target, DatasetRegistryV2);
-      const upgraded = await upgrades.upgradeProxy(datasetRegistry.target, DatasetRegistryV2);
-      const upgradedDatasetRegistry = upgraded as unknown as DatasetRegistryImplementation;
-
-
-      // Verify contract still works after upgrade
-      await upgradedDatasetRegistry
+      // Create a dataset before upgrade to verify state persistence
+      await datasetRegistry
         .connect(admin)
         .createDataset(datasetOwner.address, TEST_SCHEMA_ID);
 
-      const dataset = await datasetRegistry.getDataset(1);
-      dataset.owner.should.equal(datasetOwner.address);
+      const datasetBeforeUpgrade = await datasetRegistry.getDataset(1);
+      datasetBeforeUpgrade.owner.should.equal(datasetOwner.address);
+
+      // Upgrade the contract
+      const DatasetRegistryV2 = await ethers.getContractFactory(
+        "DatasetRegistryImplementation",
+        admin,
+      );
+
+      await upgrades.upgradeProxy(
+        await datasetRegistry.getAddress(),
+        DatasetRegistryV2,
+      );
+
+
+      // Verify state was preserved after upgrade
+      const datasetAfterUpgrade = await datasetRegistry.getDataset(1);
+      datasetAfterUpgrade.owner.should.equal(datasetOwner.address);
+
+      // Verify contract still works after upgrade - create another dataset
+      await datasetRegistry
+        .connect(admin)
+        .createDataset(user1.address, TEST_SCHEMA_ID);
+
+      const newDataset = await datasetRegistry.getDataset(2);
+      newDataset.owner.should.equal(user1.address);
     });
 
     it("should revert upgrade by non-admin", async () => {
       const DatasetRegistryV2 = await ethers.getContractFactory(
         "DatasetRegistryImplementation",
+        user1, // Non-admin signer
       );
 
       await upgrades
         .upgradeProxy(
-          datasetRegistry.target,
-          DatasetRegistryV2.connect(user1),
+          await datasetRegistry.getAddress(),
+          DatasetRegistryV2,
         )
         .should.be.rejected;
     });
