@@ -6,7 +6,7 @@ import { deployProxy, verifyProxy } from "./helpers";
 const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const [deployer] = await ethers.getSigners();
 
-  console.log("\n🚀 Starting Data Access V1 deployment...");
+  console.log("\n🚀 Starting Data Access V1 deployment (without DLP Registry)...");
   console.log("═".repeat(80));
   console.log("Deployer address:", deployer.address);
   console.log(
@@ -23,16 +23,18 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     process.env.INITIAL_PGE_PUBLIC_KEY ??
     "0x" + "04".repeat(65); // 65 bytes for uncompressed EC public key
   const initialCommittee = process.env.COMMITTEE_ADDRESSES?.split(",") ?? [];
+  const existingDlpRegistry = process.env.DLP_REGISTRY_PROXY_ADDRESS;
 
   console.log("\nConfiguration:");
   console.log("─".repeat(80));
   console.log("Owner address:", ownerAddress);
   console.log("Security Council:", securityCouncilAddress);
   console.log("Committee members:", initialCommittee.length);
+  console.log("Existing DLP Registry:", existingDlpRegistry || "Not set (will deploy new)");
   console.log("═".repeat(80) + "\n");
 
   // 1. Deploy ProtocolConfig
-  console.log("📦 [1/7] Deploying ProtocolConfig...");
+  console.log("📦 [1/6] Deploying ProtocolConfig...");
   const protocolConfigDeploy = await deployProxy(
     deployer,
     "ProtocolConfigProxy",
@@ -54,7 +56,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   );
 
   // 2. Deploy AttestationPolicy
-  console.log("\n📦 [2/7] Deploying AttestationPolicy...");
+  console.log("\n📦 [2/6] Deploying AttestationPolicy...");
   const attestationPolicyDeploy = await deployProxy(
     deployer,
     "AttestationPolicyProxy",
@@ -83,7 +85,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   console.log("✅ ProtocolConfig updated");
 
   // 3. Deploy DatasetRegistry
-  console.log("\n📦 [3/7] Deploying DatasetRegistry...");
+  console.log("\n📦 [3/6] Deploying DatasetRegistry...");
   const datasetRegistryDeploy = await deployProxy(
     deployer,
     "DatasetRegistryProxy",
@@ -100,7 +102,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   );
 
   // 4. Deploy VanaRuntimeServers
-  console.log("\n📦 [4/7] Deploying VanaRuntimeServers...");
+  console.log("\n📦 [4/6] Deploying VanaRuntimeServers...");
   const runtimeServersDeploy = await deployProxy(
     deployer,
     "VanaRuntimeServersProxy",
@@ -117,7 +119,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   );
 
   // 5. Deploy VanaRuntimePermissions
-  console.log("\n📦 [5/7] Deploying VanaRuntimePermissions...");
+  console.log("\n📦 [5/6] Deploying VanaRuntimePermissions...");
   const runtimePermissionsDeploy = await deployProxy(
     deployer,
     "VanaRuntimePermissionsProxy",
@@ -134,7 +136,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   );
 
   // 6. Deploy AccessSettlement
-  console.log("\n📦 [6/7] Deploying AccessSettlement...");
+  console.log("\n📦 [6/6] Deploying AccessSettlement...");
   const accessSettlementDeploy = await deployProxy(
     deployer,
     "AccessSettlementProxy",
@@ -150,19 +152,15 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     accessSettlementDeploy.implementationAddress,
   );
 
-  // 7. Deploy DLPRegistryV1
-  console.log("\n📦 [7/7] Deploying DLPRegistryV1...");
-  const dlpRegistryDeploy = await deployProxy(
-    deployer,
-    "DLPRegistryV1Proxy",
-    "DLPRegistryV1Implementation",
-    [ownerAddress],
-  );
-  console.log(
-    "✅ DLPRegistryV1 deployed at:",
-    dlpRegistryDeploy.proxyAddress,
-  );
-  console.log("   Implementation:", dlpRegistryDeploy.implementationAddress);
+  // 7. DLP Registry - SKIPPED (will upgrade separately)
+  console.log("\n⏭️  [7/7] Skipping DLP Registry deployment");
+  if (existingDlpRegistry) {
+    console.log("   Existing proxy:", existingDlpRegistry);
+    console.log("   Run dlpRegistry-upgrade.ts to upgrade to V2");
+  } else {
+    console.log("   ⚠️  Warning: DLP_REGISTRY_PROXY_ADDRESS not set!");
+    console.log("   Set this before running upgrade script");
+  }
 
   // Verification
   console.log("\n🔍 Starting contract verification...");
@@ -210,16 +208,9 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     "contracts/data/dataAccessV1/AccessSettlementProxy.sol:AccessSettlementProxy",
   );
 
-  await verifyProxy(
-    dlpRegistryDeploy.proxyAddress,
-    dlpRegistryDeploy.implementationAddress,
-    dlpRegistryDeploy.initializeData,
-    "contracts/data/dataAccessV1/DLPRegistryV1Proxy.sol:DLPRegistryV1Proxy",
-  );
-
   // Summary
   console.log("\n" + "═".repeat(80));
-  console.log("🎉 DATA ACCESS V1 DEPLOYMENT COMPLETE!");
+  console.log("🎉 DATA ACCESS V1 NEW CONTRACTS DEPLOYED!");
   console.log("═".repeat(80));
   console.log("\n📋 Contract Addresses:");
   console.log("─".repeat(80));
@@ -247,9 +238,25 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     "AccessSettlement:         ",
     accessSettlementDeploy.proxyAddress,
   );
-  console.log("DLPRegistryV1:            ", dlpRegistryDeploy.proxyAddress);
+  if (existingDlpRegistry) {
+    console.log("DLPRegistry (existing):   ", existingDlpRegistry);
+  }
 
-  console.log("\n📝 Next Steps:");
+  console.log("\n📝 CRITICAL NEXT STEP:");
+  console.log("─".repeat(80));
+  console.log("🔄 UPGRADE DLP REGISTRY:");
+  console.log("\n1. Set environment variable:");
+  console.log("   export DLP_REGISTRY_PROXY_ADDRESS=" + (existingDlpRegistry || "0x..."));
+  console.log("\n2. Run upgrade script:");
+  console.log("   SKIP_CONFIRMATION=true npx hardhat deploy \\");
+  console.log("     --network moksha \\");
+  console.log("     --tags DLPRegistryUpgrade");
+  console.log("\n   This will:");
+  console.log("   ✓ Preserve all existing DLP data");
+  console.log("   ✓ Add dataset linking functionality");
+  console.log("   ✓ Upgrade to version 2");
+
+  console.log("\n📝 After Upgrade - Configuration Steps:");
   console.log("─".repeat(80));
   console.log("1. Add trusted TEE pools to AttestationPolicy");
   console.log("   → attestationPolicy.trustTeePool(teePoolAddress)");
@@ -257,13 +264,9 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   console.log("   → attestationPolicy.trustVanaRuntimeImage(imageVersion)");
   console.log("\n3. Grant VANA_RUNTIME_ROLE to runtime addresses");
   console.log("   → accessSettlement.grantRole(VANA_RUNTIME_ROLE, runtimeAddress)");
-  console.log("\n4. Register DLPs and create datasets");
-  console.log("   → dlpRegistry.registerDLP(...)");
-  console.log("   → datasetRegistry.createDataset(...)");
-  console.log("\n5. Test the full data contribution and access flow");
 
   console.log("\n" + "═".repeat(80));
-  console.log("✨ All systems ready for Data Access V1!");
+  console.log("✨ New contracts ready! Next: Upgrade DLP Registry");
   console.log("═".repeat(80) + "\n");
 
   // Save deployment info
@@ -299,9 +302,10 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
         proxy: accessSettlementDeploy.proxyAddress,
         implementation: accessSettlementDeploy.implementationAddress,
       },
-      dlpRegistryV1: {
-        proxy: dlpRegistryDeploy.proxyAddress,
-        implementation: dlpRegistryDeploy.implementationAddress,
+      dlpRegistry: {
+        proxy: existingDlpRegistry || "NOT_DEPLOYED_YET",
+        implementation: "NEEDS_UPGRADE",
+        note: "Run dlpRegistry-upgrade.ts to upgrade existing registry",
       },
     },
   };
@@ -315,7 +319,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     fs.mkdirSync(deploymentsDir, { recursive: true });
   }
 
-  const filename = `dataAccessV1-${hre.network.name}-${Date.now()}.json`;
+  const filename = `dataAccessV1-new-${hre.network.name}-${Date.now()}.json`;
   fs.writeFileSync(
     path.join(deploymentsDir, filename),
     JSON.stringify(deploymentInfo, null, 2),
@@ -325,5 +329,5 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 };
 
 export default func;
-func.tags = ["DataAccessV1", "DataAccessV1Deploy"];
-func.dependencies = []; // Add any dependencies if needed
+func.tags = ["DataAccessV1"];
+func.dependencies = [];
