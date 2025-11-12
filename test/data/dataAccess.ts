@@ -162,10 +162,16 @@ describe("DataAccessV1", () => {
     const DLPRegistry = await ethers.getContractFactory(
       "DLPRegistryV1Implementation",
     );
-    dlpRegistry = (await upgrades.deployProxy(DLPRegistry, [admin.address], {
+    const dlpRegistryProxy = await upgrades.deployProxy(DLPRegistry, [admin.address], {
       kind: "uups",
-    })) as unknown as DLPRegistryV1Implementation;
-    await dlpRegistry.waitForDeployment();
+    });
+    await dlpRegistryProxy.waitForDeployment();
+
+    // Get the contract at the proxy address with the correct ABI
+    dlpRegistry = await ethers.getContractAt(
+      "DLPRegistryV1Implementation",
+      await dlpRegistryProxy.getAddress()
+    ) as unknown as DLPRegistryV1Implementation;
   }
 
   describe("DatasetRegistry", () => {
@@ -762,102 +768,201 @@ describe("DataAccessV1", () => {
   });
 
   describe("DLPRegistryV1", () => {
+    let vanaEpoch: any;
+    let treasury: any;
+
     beforeEach(async () => {
       await deployContracts();
+
       // Create a dataset for DLP linking
       await datasetRegistry
         .connect(admin)
         .createDataset(datasetOwner.address, TEST_SCHEMA_ID);
+
+      // Deploy MockVanaEpoch (lightweight mock for testing)
+      const MockVanaEpoch = await ethers.getContractFactory("MockVanaEpoch");
+      vanaEpoch = await MockVanaEpoch.deploy();
+      await vanaEpoch.waitForDeployment();
+
+      // Deploy Treasury
+      const Treasury = await ethers.getContractFactory("TreasuryImplementation");
+      treasury = await upgrades.deployProxy(
+        Treasury,
+        [admin.address, admin.address], // ownerAddress, initCustodian
+        { kind: "uups" }
+      );
+      await treasury.waitForDeployment();
+
+      // Configure DLP Registry
+      await dlpRegistry.connect(admin).updateVanaEpoch(await vanaEpoch.getAddress());
+      await dlpRegistry.connect(admin).updateTreasury(await treasury.getAddress());
+      await dlpRegistry.connect(admin).updateDlpRegistrationDepositAmount(parseEther(1));
     });
 
-    it("should register a DLP with dataset", async () => {
+    it("should register a DLP", async () => {
       const dlpAddress = ethers.Wallet.createRandom().address;
-      const name = "Test DLP";
-      const datasetId = 1;
+      const registrationInfo = {
+        dlpAddress: dlpAddress,
+        ownerAddress: dlpOwner.address,
+        treasuryAddress: dlpOwner.address,
+        name: "Test DLP",
+        iconUrl: "https://icon.url",
+        website: "https://website.url",
+        metadata: "{}",
+      };
 
       await dlpRegistry
         .connect(dlpOwner)
-        .registerDLP(dlpAddress, dlpOwner.address, name, datasetId);
+        .registerDlp(registrationInfo, { value: parseEther(1) });
 
-      const dlp = await dlpRegistry.getDLP(1);
+      const dlp = await dlpRegistry.dlps(1);
       dlp.dlpAddress.should.equal(dlpAddress);
       dlp.ownerAddress.should.equal(dlpOwner.address);
-      dlp.name.should.equal(name);
-      dlp.datasetId.should.equal(BigInt(datasetId));
-      dlp.isActive.should.be.true;
+      dlp.name.should.equal("Test DLP");
+
+      // Check dataset separately (datasetId not in DlpInfo struct)
+      const datasetId = await dlpRegistry.getDlpDataset(1);
+      datasetId.should.equal(0); // Initially 0
+    });
+
+    it("should link DLP to dataset", async () => {
+      const dlpAddress = ethers.Wallet.createRandom().address;
+      const registrationInfo = {
+        dlpAddress: dlpAddress,
+        ownerAddress: dlpOwner.address,
+        treasuryAddress: dlpOwner.address,
+        name: "Test DLP",
+        iconUrl: "https://icon.url",
+        website: "https://website.url",
+        metadata: "{}",
+      };
+
+      await dlpRegistry
+        .connect(dlpOwner)
+        .registerDlp(registrationInfo, { value: parseEther(1) });
+
+      // Link to dataset
+      await dlpRegistry.connect(dlpOwner).updateDlpDataset(1, 1);
+
+      const datasetId = await dlpRegistry.getDlpDataset(1);
+      datasetId.should.equal(1);
+
+      // Verify DLP info is correct
+      const dlp = await dlpRegistry.dlps(1);
+      dlp.dlpAddress.should.not.equal(ethers.ZeroAddress);
     });
 
     it("should update DLP dataset", async () => {
       const dlpAddress = ethers.Wallet.createRandom().address;
-      const name = "Test DLP";
+      const registrationInfo = {
+        dlpAddress: dlpAddress,
+        ownerAddress: dlpOwner.address,
+        treasuryAddress: dlpOwner.address,
+        name: "Test DLP",
+        iconUrl: "https://icon.url",
+        website: "https://website.url",
+        metadata: "{}",
+      };
 
       await dlpRegistry
         .connect(dlpOwner)
-        .registerDLP(dlpAddress, dlpOwner.address, name, 0);
+        .registerDlp(registrationInfo, { value: parseEther(1) });
 
-      await dlpRegistry.connect(dlpOwner).updateDLPDataset(1, 1);
+      await dlpRegistry.connect(dlpOwner).updateDlpDataset(1, 1);
 
-      const datasetId = await dlpRegistry.getDLPDataset(1);
+      const datasetId = await dlpRegistry.getDlpDataset(1);
       datasetId.should.equal(1);
     });
 
-    it("should deactivate a DLP", async () => {
+    it("should remove DLP dataset link", async () => {
       const dlpAddress = ethers.Wallet.createRandom().address;
-      const name = "Test DLP";
+      const registrationInfo = {
+        dlpAddress: dlpAddress,
+        ownerAddress: dlpOwner.address,
+        treasuryAddress: dlpOwner.address,
+        name: "Test DLP",
+        iconUrl: "https://icon.url",
+        website: "https://website.url",
+        metadata: "{}",
+      };
 
       await dlpRegistry
         .connect(dlpOwner)
-        .registerDLP(dlpAddress, dlpOwner.address, name, 0);
+        .registerDlp(registrationInfo, { value: parseEther(1) });
 
-      await dlpRegistry.connect(dlpOwner).deactivateDLP(1);
+      await dlpRegistry.connect(dlpOwner).updateDlpDataset(1, 1);
 
-      const isActive = await dlpRegistry.isDLPActive(1);
-      isActive.should.be.false;
+      // Remove link by setting to 0
+      await dlpRegistry.connect(dlpOwner).updateDlpDataset(1, 0);
+
+      const datasetId = await dlpRegistry.getDlpDataset(1);
+      datasetId.should.equal(0);
     });
 
-    it("should reactivate a DLP", async () => {
+    it("should revert when non-owner tries to update dataset", async () => {
       const dlpAddress = ethers.Wallet.createRandom().address;
-      const name = "Test DLP";
+      const registrationInfo = {
+        dlpAddress: dlpAddress,
+        ownerAddress: dlpOwner.address,
+        treasuryAddress: dlpOwner.address,
+        name: "Test DLP",
+        iconUrl: "https://icon.url",
+        website: "https://website.url",
+        metadata: "{}",
+      };
 
       await dlpRegistry
         .connect(dlpOwner)
-        .registerDLP(dlpAddress, dlpOwner.address, name, 0);
+        .registerDlp(registrationInfo, { value: parseEther(1) });
 
-      await dlpRegistry.connect(dlpOwner).deactivateDLP(1);
-      await dlpRegistry.connect(dlpOwner).reactivateDLP(1);
-
-      const isActive = await dlpRegistry.isDLPActive(1);
-      isActive.should.be.true;
+      await dlpRegistry
+        .connect(user1)
+        .updateDlpDataset(1, 1)
+        .should.be.rejected;
     });
 
-    it("should get DLPs by owner", async () => {
-      const dlpAddress1 = ethers.Wallet.createRandom().address;
-      const dlpAddress2 = ethers.Wallet.createRandom().address;
+    it("should deregister a DLP", async () => {
+      const dlpAddress = ethers.Wallet.createRandom().address;
+      const registrationInfo = {
+        dlpAddress: dlpAddress,
+        ownerAddress: dlpOwner.address,
+        treasuryAddress: dlpOwner.address,
+        name: "Test DLP",
+        iconUrl: "https://icon.url",
+        website: "https://website.url",
+        metadata: "{}",
+      };
 
       await dlpRegistry
         .connect(dlpOwner)
-        .registerDLP(dlpAddress1, dlpOwner.address, "DLP 1", 0);
+        .registerDlp(registrationInfo, { value: parseEther(1) });
 
-      await dlpRegistry
-        .connect(dlpOwner)
-        .registerDLP(dlpAddress2, dlpOwner.address, "DLP 2", 0);
+      await dlpRegistry.connect(dlpOwner).deregisterDlp(1);
 
-      const dlps = await dlpRegistry.getDLPsByOwner(dlpOwner.address);
-      dlps.length.should.equal(2);
+      const dlp = await dlpRegistry.dlps(1);
+      dlp.status.should.equal(3); // Deregistered status
     });
 
     it("should revert when registering duplicate DLP address", async () => {
       const dlpAddress = ethers.Wallet.createRandom().address;
-      const name = "Test DLP";
+      const registrationInfo = {
+        dlpAddress: dlpAddress,
+        ownerAddress: dlpOwner.address,
+        treasuryAddress: dlpOwner.address,
+        name: "Test DLP",
+        iconUrl: "https://icon.url",
+        website: "https://website.url",
+        metadata: "{}",
+      };
 
       await dlpRegistry
         .connect(dlpOwner)
-        .registerDLP(dlpAddress, dlpOwner.address, name, 0);
+        .registerDlp(registrationInfo, { value: parseEther(1) });
 
       await dlpRegistry
         .connect(dlpOwner)
-        .registerDLP(dlpAddress, dlpOwner.address, name, 0)
-        .should.be.rejectedWith("DLP already registered");
+        .registerDlp(registrationInfo, { value: parseEther(1) })
+        .should.be.rejected;
     });
   });
 
@@ -865,9 +970,28 @@ describe("DataAccessV1", () => {
     let datasetId: number;
     let permissionId: number;
     let runtimeAddress: string;
+    let vanaEpoch: any;
+    let treasury: any;
 
     beforeEach(async () => {
       await deployContracts();
+
+      // Deploy MockVanaEpoch (lightweight mock for testing)
+      const MockVanaEpoch = await ethers.getContractFactory("MockVanaEpoch");
+      vanaEpoch = await MockVanaEpoch.deploy();
+      await vanaEpoch.waitForDeployment();
+
+      const Treasury = await ethers.getContractFactory("TreasuryImplementation");
+      treasury = await upgrades.deployProxy(
+        Treasury,
+        [admin.address, admin.address], // ownerAddress, initCustodian
+        { kind: "uups" }
+      );
+      await treasury.waitForDeployment();
+
+      await dlpRegistry.connect(admin).updateVanaEpoch(await vanaEpoch.getAddress());
+      await dlpRegistry.connect(admin).updateTreasury(await treasury.getAddress());
+      await dlpRegistry.connect(admin).updateDlpRegistrationDepositAmount(parseEther(1));
 
       // 1. Create dataset
       await datasetRegistry
@@ -875,15 +999,24 @@ describe("DataAccessV1", () => {
         .createDataset(datasetOwner.address, TEST_SCHEMA_ID);
       datasetId = 1;
 
-      // 2. Register DLP with dataset
+      // 2. Register DLP
+      const dlpAddress = ethers.Wallet.createRandom().address;
+      const registrationInfo = {
+        dlpAddress: dlpAddress,
+        ownerAddress: dlpOwner.address,
+        treasuryAddress: dlpOwner.address,
+        name: "Integration DLP",
+        iconUrl: "https://icon.url",
+        website: "https://website.url",
+        metadata: "{}",
+      };
+
       await dlpRegistry
         .connect(dlpOwner)
-        .registerDLP(
-          ethers.Wallet.createRandom().address,
-          dlpOwner.address,
-          "Integration DLP",
-          datasetId,
-        );
+        .registerDlp(registrationInfo, { value: parseEther(1) });
+
+      // Link DLP to dataset
+      await dlpRegistry.connect(dlpOwner).updateDlpDataset(1, datasetId);
 
       // 3. Register runtime server
       runtimeAddress = ethers.Wallet.createRandom().address;
@@ -1053,7 +1186,6 @@ describe("DataAccessV1", () => {
         DatasetRegistryV2,
       );
 
-
       // Verify state was preserved after upgrade
       const datasetAfterUpgrade = await datasetRegistry.getDataset(1);
       datasetAfterUpgrade.owner.should.equal(datasetOwner.address);
@@ -1074,10 +1206,7 @@ describe("DataAccessV1", () => {
       );
 
       await upgrades
-        .upgradeProxy(
-          await datasetRegistry.getAddress(),
-          DatasetRegistryV2,
-        )
+        .upgradeProxy(await datasetRegistry.getAddress(), DatasetRegistryV2)
         .should.be.rejected;
     });
   });

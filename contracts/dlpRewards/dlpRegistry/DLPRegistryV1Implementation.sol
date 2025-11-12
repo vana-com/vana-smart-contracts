@@ -10,12 +10,8 @@ import {IDLPRootCore} from "./interfaces/IDLPRootCore.sol";
 
 /**
  * @title DLPRegistryV1Implementation
- * @notice DLP Registry V2 with Data Access V1 dataset linking support
- * @dev Upgraded from DLPRegistryImplementation with dataset references
- *
- * Version History:
- * - V1 (DLPRegistryImplementation): Original implementation
- * - V2 (DLPRegistryV1Implementation): Adds dataset linking for Data Access V1
+ * @notice DLP Registry with Data Access V1 dataset linking support
+ * @dev Version 2 of DLPRegistry - adds dataset references while maintaining backward compatibility
  */
 contract DLPRegistryV1Implementation is
 UUPSUpgradeable,
@@ -30,7 +26,7 @@ DLPRegistryStorageV2
 
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
 
-    // Key events for DLP lifecycle and operations
+    // Events
     event DlpRegistered(
         uint256 indexed dlpId,
         address indexed dlpAddress,
@@ -39,8 +35,7 @@ DLPRegistryStorageV2
         string name,
         string iconUrl,
         string website,
-        string metadata,
-        uint256 datasetId  // NEW: Dataset reference in event
+        string metadata
     );
 
     event DlpUpdated(
@@ -54,14 +49,12 @@ DLPRegistryStorageV2
         string metadata
     );
 
-    event DlpStatusUpdated(uint256 indexed dlpId, DlpStatus newStatus);
+    event DlpStatusUpdated(uint256 indexed dlpId, IDLPRegistry.DlpStatus newStatus);
     event DlpVerificationUpdated(uint256 indexed dlpId, bool verified);
     event DlpVerificationBlockUpdated(uint256 indexed dlpId, uint256 verificationBlockNumber);
     event DlpRegistrationDepositAmountUpdated(uint256 newDlpRegistrationDepositAmount);
     event DlpTokenUpdated(uint256 indexed dlpId, address tokenAddress);
     event DlpLpTokenIdUpdated(uint256 indexed dlpId, uint256 lpTokenId);
-
-    // NEW: Dataset management event
     event DlpDatasetUpdated(uint256 indexed dlpId, uint256 indexed datasetId);
 
     error InvalidDlpStatus();
@@ -77,7 +70,6 @@ DLPRegistryStorageV2
     error DlpAddressCannotBeChanged();
     error TransferFailed();
     error LastEpochMustBeFinalized();
-    error InvalidDatasetId();  // NEW
 
     modifier onlyDlpOwner(uint256 dlpId) {
         if (_dlps[dlpId].ownerAddress != msg.sender) {
@@ -104,11 +96,15 @@ DLPRegistryStorageV2
     function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     function version() external pure virtual override returns (uint256) {
-        return 2;  // Version 2 with dataset support
+        return 2;
     }
 
+    /**
+     * @notice Get DLP info (V1 compatible - no datasetId)
+     * @dev Returns DlpInfo struct from IDLPRegistry interface
+     */
     function dlps(uint256 dlpId) public view override returns (DlpInfo memory) {
-        Dlp storage dlp = _dlps[dlpId];
+        DlpWithDataset storage dlp = _dlps[dlpId];
 
         return
             DlpInfo({
@@ -125,9 +121,17 @@ DLPRegistryStorageV2
             registrationBlockNumber: dlp.registrationBlockNumber,
             depositAmount: dlp.depositAmount,
             lpTokenId: dlp.lpTokenId,
-            verificationBlockNumber: dlp.verificationBlockNumber,
-            datasetId: dlp.datasetId  // NEW: Include dataset ID
+            verificationBlockNumber: dlp.verificationBlockNumber
         });
+    }
+
+    /**
+     * @notice Get dataset ID for a DLP (V2 function)
+     * @param dlpId The DLP identifier
+     * @return datasetId The dataset identifier (0 if none)
+     */
+    function getDlpDataset(uint256 dlpId) external view returns (uint256) {
+        return _dlps[dlpId].datasetId;
     }
 
     function dlpsByAddress(address dlpAddress) external view override returns (DlpInfo memory) {
@@ -152,11 +156,6 @@ DLPRegistryStorageV2
 
     function isEligibleDlp(uint256 dlpId) external view override returns (bool) {
         return _eligibleDlpsList.contains(dlpId);
-    }
-
-    // NEW: Get dataset ID for a DLP
-    function getDlpDataset(uint256 dlpId) external view override returns (uint256) {
-        return _dlps[dlpId].datasetId;
     }
 
     function pause() external override onlyRole(MAINTAINER_ROLE) {
@@ -189,26 +188,36 @@ DLPRegistryStorageV2
         _registerDlp(registrationInfo);
     }
 
-    // NEW: Update DLP's dataset reference
+    /**
+     * @notice Update DLP's dataset reference (V2 function)
+     * @param dlpId The DLP ID to update
+     * @param datasetId The dataset ID (0 to remove)
+     */
     function updateDlpDataset(
         uint256 dlpId,
         uint256 datasetId
-    ) external override whenNotPaused nonReentrant {
-        Dlp storage dlp = _dlps[dlpId];
+    ) external whenNotPaused nonReentrant {
+        DlpWithDataset storage dlp = _dlps[dlpId];
 
         // Only DLP owner or maintainer can update dataset
         if (dlp.ownerAddress != msg.sender && !hasRole(MAINTAINER_ROLE, msg.sender)) {
             revert NotDlpOwner();
         }
 
-        _updateDlpDataset(dlpId, datasetId);
+        // Verify DLP exists
+        if (dlp.id == 0) {
+            revert InvalidDlpStatus();
+        }
+
+        dlp.datasetId = datasetId;
+        emit DlpDatasetUpdated(dlpId, datasetId);
     }
 
     function updateDlpVerificationBlock(
         uint256 dlpId,
         uint256 verificationBlockNumber
     ) external override onlyRole(MAINTAINER_ROLE) {
-        Dlp storage dlp = _dlps[dlpId];
+        DlpWithDataset storage dlp = _dlps[dlpId];
 
         dlp.verificationBlockNumber = verificationBlockNumber;
         emit DlpVerificationBlockUpdated(dlpId, verificationBlockNumber);
@@ -217,7 +226,7 @@ DLPRegistryStorageV2
     }
 
     function unverifyDlp(uint256 dlpId) external override onlyRole(MAINTAINER_ROLE) {
-        Dlp storage dlp = _dlps[dlpId];
+        DlpWithDataset storage dlp = _dlps[dlpId];
 
         dlp.verificationBlockNumber = 0;
         emit DlpVerificationBlockUpdated(dlpId, 0);
@@ -230,7 +239,7 @@ DLPRegistryStorageV2
         address tokenAddress,
         uint256 lpTokenId
     ) external override onlyRole(MAINTAINER_ROLE) {
-        Dlp storage dlp = _dlps[dlpId];
+        DlpWithDataset storage dlp = _dlps[dlpId];
 
         dlp.tokenAddress = tokenAddress;
         dlp.lpTokenId = lpTokenId;
@@ -247,7 +256,7 @@ DLPRegistryStorageV2
         uint256 lpTokenId,
         uint256 verificationBlockNumber
     ) external override onlyRole(MAINTAINER_ROLE) {
-        Dlp storage dlp = _dlps[dlpId];
+        DlpWithDataset storage dlp = _dlps[dlpId];
 
         dlp.tokenAddress = tokenAddress;
         dlp.lpTokenId = lpTokenId;
@@ -260,10 +269,6 @@ DLPRegistryStorageV2
         _setDlpEligibility(dlp);
     }
 
-    /**
-     * @notice Updates DLP information
-     * @dev Only DLP owner can update
-     */
     function updateDlp(
         uint256 dlpId,
         DlpRegistration calldata dlpUpdateInfo
@@ -274,9 +279,8 @@ DLPRegistryStorageV2
             revert InvalidAddress();
         }
 
-        Dlp storage dlp = _dlps[dlpId];
+        DlpWithDataset storage dlp = _dlps[dlpId];
 
-        // we force the DLP address to remain the same to prevent potential issues with DLP address changes
         if (dlp.dlpAddress != dlpUpdateInfo.dlpAddress) {
             revert DlpAddressCannotBeChanged();
         }
@@ -320,22 +324,18 @@ DLPRegistryStorageV2
             revert LastEpochMustBeFinalized();
         }
 
-        Dlp storage dlp = _dlps[dlpId];
+        DlpWithDataset storage dlp = _dlps[dlpId];
 
-        if (dlp.status == DlpStatus.None || dlp.status == DlpStatus.Deregistered) {
+        if (dlp.status == IDLPRegistry.DlpStatus.None || dlp.status == IDLPRegistry.DlpStatus.Deregistered) {
             revert InvalidDlpStatus();
         }
 
-        dlp.status = DlpStatus.Deregistered;
+        dlp.status = IDLPRegistry.DlpStatus.Deregistered;
         _eligibleDlpsList.remove(dlpId);
 
-        emit DlpStatusUpdated(dlpId, DlpStatus.Deregistered);
+        emit DlpStatusUpdated(dlpId, IDLPRegistry.DlpStatus.Deregistered);
     }
 
-    /**
-     * @notice Internal function to register a new DLP
-     * @return dlpId The ID of the newly registered DLP
-     */
     function _registerDlp(DlpRegistration calldata registrationInfo) internal returns (uint256) {
         if (registrationInfo.ownerAddress == address(0) || registrationInfo.treasuryAddress == address(0)) {
             revert InvalidAddress();
@@ -354,7 +354,7 @@ DLPRegistryStorageV2
         }
 
         uint256 dlpId = ++dlpsCount;
-        Dlp storage dlp = _dlps[dlpId];
+        DlpWithDataset storage dlp = _dlps[dlpId];
 
         dlp.id = dlpId;
         dlp.dlpAddress = registrationInfo.dlpAddress;
@@ -366,8 +366,8 @@ DLPRegistryStorageV2
         dlp.metadata = registrationInfo.metadata;
         dlp.registrationBlockNumber = block.number;
         dlp.depositAmount = msg.value;
-        dlp.status = DlpStatus.Registered;
-        dlp.datasetId = 0;  // NEW: Initialize with no dataset
+        dlp.status = IDLPRegistry.DlpStatus.Registered;
+        dlp.datasetId = 0; // Initialize with no dataset
 
         dlpIds[registrationInfo.dlpAddress] = dlpId;
         dlpNameToId[registrationInfo.name] = dlpId;
@@ -380,11 +380,10 @@ DLPRegistryStorageV2
             registrationInfo.name,
             registrationInfo.iconUrl,
             registrationInfo.website,
-            registrationInfo.metadata,
-            0  // NEW: Dataset ID in event
+            registrationInfo.metadata
         );
 
-        emit DlpStatusUpdated(dlpId, DlpStatus.Registered);
+        emit DlpStatusUpdated(dlpId, IDLPRegistry.DlpStatus.Registered);
 
         (bool success, ) = payable(address(treasury)).call{value: msg.value}("");
         if (!success) {
@@ -394,31 +393,12 @@ DLPRegistryStorageV2
         return dlpId;
     }
 
-    /**
-     * @notice Internal function to update DLP's dataset reference
-     * @param dlpId The DLP ID to update
-     * @param datasetId The dataset ID to associate (0 to remove association)
-     */
-    function _updateDlpDataset(uint256 dlpId, uint256 datasetId) internal {
-        Dlp storage dlp = _dlps[dlpId];
-
-        // Verify DLP exists
-        if (dlp.id == 0) {
-            revert InvalidDlpStatus();
-        }
-
-        dlp.datasetId = datasetId;
-
-        emit DlpDatasetUpdated(dlpId, datasetId);
-    }
-
     function _validateDlpNameLength(string memory str) internal pure returns (bool) {
         bytes memory strBytes = bytes(str);
         uint256 count = 0;
 
         for (uint256 i = 0; i < strBytes.length; i++) {
             if (strBytes[i] != 0x20) {
-                // 0x20 is the ASCII space character
                 count++;
             }
         }
@@ -435,7 +415,7 @@ DLPRegistryStorageV2
 
         for (uint256 dlpId = startDlpId; dlpId <= endDlpId; ) {
             IDLPRootCore.DlpInfo memory dlpInfo = dlpRootCore.dlps(dlpId);
-            Dlp storage dlp = _dlps[dlpId];
+            DlpWithDataset storage dlp = _dlps[dlpId];
 
             dlp.id = dlpInfo.id;
             dlp.dlpAddress = dlpInfo.dlpAddress;
@@ -445,9 +425,9 @@ DLPRegistryStorageV2
             dlp.iconUrl = dlpInfo.iconUrl;
             dlp.website = dlpInfo.website;
             dlp.metadata = dlpInfo.metadata;
-            dlp.status = DlpStatus.Registered;
+            dlp.status = IDLPRegistry.DlpStatus.Registered;
             dlp.registrationBlockNumber = dlpInfo.registrationBlockNumber;
-            dlp.datasetId = 0;  // NEW: Initialize migrated DLPs with no dataset
+            dlp.datasetId = 0; // Initialize with no dataset
 
             dlpIds[dlpInfo.dlpAddress] = dlpId;
             dlpNameToId[dlpInfo.name] = dlpId;
@@ -460,8 +440,7 @@ DLPRegistryStorageV2
                 dlpInfo.name,
                 dlpInfo.iconUrl,
                 dlpInfo.website,
-                dlpInfo.metadata,
-                0  // NEW: Dataset ID in event
+                dlpInfo.metadata
             );
 
             ++dlpsCount;
@@ -472,26 +451,26 @@ DLPRegistryStorageV2
         }
     }
 
-    function _setDlpEligibility(Dlp storage dlp) internal {
+    function _setDlpEligibility(DlpWithDataset storage dlp) internal {
         vanaEpoch.createEpochs();
 
-        DlpStatus currentStatus = dlp.status;
+        IDLPRegistry.DlpStatus currentStatus = dlp.status;
 
-        if (currentStatus == DlpStatus.None || currentStatus == DlpStatus.Deregistered) {
+        if (currentStatus == IDLPRegistry.DlpStatus.None || currentStatus == IDLPRegistry.DlpStatus.Deregistered) {
             return;
         }
 
-        DlpStatus newStatus = currentStatus;
+        IDLPRegistry.DlpStatus newStatus = currentStatus;
 
         if (
-            (currentStatus == DlpStatus.Registered || currentStatus == DlpStatus.Eligible) &&
+            (currentStatus == IDLPRegistry.DlpStatus.Registered || currentStatus == IDLPRegistry.DlpStatus.Eligible) &&
             dlp.lpTokenId != 0 &&
             dlp.tokenAddress != address(0) &&
             dlp.verificationBlockNumber > 0
         ) {
-            newStatus = DlpStatus.Eligible;
+            newStatus = IDLPRegistry.DlpStatus.Eligible;
         } else {
-            newStatus = DlpStatus.Registered;
+            newStatus = IDLPRegistry.DlpStatus.Registered;
         }
 
         if (newStatus != currentStatus) {
@@ -502,7 +481,7 @@ DLPRegistryStorageV2
 
             dlp.status = newStatus;
 
-            if (newStatus == DlpStatus.Eligible) {
+            if (newStatus == IDLPRegistry.DlpStatus.Eligible) {
                 _eligibleDlpsList.add(dlp.id);
             } else {
                 _eligibleDlpsList.remove(dlp.id);
