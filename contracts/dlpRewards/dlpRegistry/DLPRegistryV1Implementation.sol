@@ -5,20 +5,24 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
-import "./interfaces/DLPRegistryStorageV1.sol";
+import "./interfaces/DLPRegistryStorageV2.sol";
 import {IDLPRootCore} from "./interfaces/IDLPRootCore.sol";
 
 /**
- * @title DLPRegistryImplementation
- * @notice Updated DLP Registry with Data Access V1 dataset linking support
- * @dev Extends DLP functionality to reference associated datasets
+ * @title DLPRegistryV1Implementation
+ * @notice DLP Registry V2 with Data Access V1 dataset linking support
+ * @dev Upgraded from DLPRegistryImplementation with dataset references
+ *
+ * Version History:
+ * - V1 (DLPRegistryImplementation): Original implementation
+ * - V2 (DLPRegistryV1Implementation): Adds dataset linking for Data Access V1
  */
-contract DLPRegistryImplementation is
+contract DLPRegistryV1Implementation is
 UUPSUpgradeable,
 PausableUpgradeable,
 AccessControlUpgradeable,
 ReentrancyGuardUpgradeable,
-DLPRegistryStorageV1
+DLPRegistryStorageV2
 {
     using EnumerableSet for EnumerableSet.UintSet;
     using EnumerableSet for EnumerableSet.AddressSet;
@@ -36,7 +40,7 @@ DLPRegistryStorageV1
         string iconUrl,
         string website,
         string metadata,
-        uint256 datasetId
+        uint256 datasetId  // NEW: Dataset reference in event
     );
 
     event DlpUpdated(
@@ -57,6 +61,7 @@ DLPRegistryStorageV1
     event DlpTokenUpdated(uint256 indexed dlpId, address tokenAddress);
     event DlpLpTokenIdUpdated(uint256 indexed dlpId, uint256 lpTokenId);
 
+    // NEW: Dataset management event
     event DlpDatasetUpdated(uint256 indexed dlpId, uint256 indexed datasetId);
 
     error InvalidDlpStatus();
@@ -72,7 +77,7 @@ DLPRegistryStorageV1
     error DlpAddressCannotBeChanged();
     error TransferFailed();
     error LastEpochMustBeFinalized();
-    error InvalidDatasetId();
+    error InvalidDatasetId();  // NEW
 
     modifier onlyDlpOwner(uint256 dlpId) {
         if (_dlps[dlpId].ownerAddress != msg.sender) {
@@ -99,7 +104,7 @@ DLPRegistryStorageV1
     function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     function version() external pure virtual override returns (uint256) {
-        return 2;
+        return 2;  // Version 2 with dataset support
     }
 
     function dlps(uint256 dlpId) public view override returns (DlpInfo memory) {
@@ -121,7 +126,7 @@ DLPRegistryStorageV1
             depositAmount: dlp.depositAmount,
             lpTokenId: dlp.lpTokenId,
             verificationBlockNumber: dlp.verificationBlockNumber,
-            datasetId: dlp.datasetId
+            datasetId: dlp.datasetId  // NEW: Include dataset ID
         });
     }
 
@@ -149,7 +154,8 @@ DLPRegistryStorageV1
         return _eligibleDlpsList.contains(dlpId);
     }
 
-    function getDlpDataset(uint256 dlpId) external view returns (uint256) {
+    // NEW: Get dataset ID for a DLP
+    function getDlpDataset(uint256 dlpId) external view override returns (uint256) {
         return _dlps[dlpId].datasetId;
     }
 
@@ -183,10 +189,11 @@ DLPRegistryStorageV1
         _registerDlp(registrationInfo);
     }
 
+    // NEW: Update DLP's dataset reference
     function updateDlpDataset(
         uint256 dlpId,
         uint256 datasetId
-    ) external whenNotPaused nonReentrant {
+    ) external override whenNotPaused nonReentrant {
         Dlp storage dlp = _dlps[dlpId];
 
         // Only DLP owner or maintainer can update dataset
@@ -360,7 +367,7 @@ DLPRegistryStorageV1
         dlp.registrationBlockNumber = block.number;
         dlp.depositAmount = msg.value;
         dlp.status = DlpStatus.Registered;
-        dlp.datasetId = 0;
+        dlp.datasetId = 0;  // NEW: Initialize with no dataset
 
         dlpIds[registrationInfo.dlpAddress] = dlpId;
         dlpNameToId[registrationInfo.name] = dlpId;
@@ -374,7 +381,7 @@ DLPRegistryStorageV1
             registrationInfo.iconUrl,
             registrationInfo.website,
             registrationInfo.metadata,
-            0
+            0  // NEW: Dataset ID in event
         );
 
         emit DlpStatusUpdated(dlpId, DlpStatus.Registered);
@@ -440,14 +447,10 @@ DLPRegistryStorageV1
             dlp.metadata = dlpInfo.metadata;
             dlp.status = DlpStatus.Registered;
             dlp.registrationBlockNumber = dlpInfo.registrationBlockNumber;
-            dlp.datasetId = 0;
+            dlp.datasetId = 0;  // NEW: Initialize migrated DLPs with no dataset
 
             dlpIds[dlpInfo.dlpAddress] = dlpId;
             dlpNameToId[dlpInfo.name] = dlpId;
-
-            //            if (DlpStatus(uint256(dlpInfo.status)) == DlpStatus.Eligible) {
-            //                _eligibleDlpsList.add(dlpId);
-            //            }
 
             emit DlpRegistered(
                 dlpId,
@@ -458,7 +461,7 @@ DLPRegistryStorageV1
                 dlpInfo.iconUrl,
                 dlpInfo.website,
                 dlpInfo.metadata,
-                0
+                0  // NEW: Dataset ID in event
             );
 
             ++dlpsCount;

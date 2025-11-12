@@ -6,7 +6,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "./interfaces/IVanaRuntimePermissions.sol";
-import "./interfaces/IDatasetRegistry.sol";
+import "../datasetRegistry/interfaces/IDatasetRegistry.sol";
 
 /**
  * @title VanaRuntimePermissionsImplementation
