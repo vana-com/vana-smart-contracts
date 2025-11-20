@@ -230,11 +230,15 @@ export async function createServerFilesAndPermissionSignature(
   contractAddress: string | Addressable,
   signer: HardhatEthersSigner,
 ): Promise<string> {
+  const addressString = typeof contractAddress === 'string'
+    ? contractAddress
+    : await contractAddress.getAddress();
+
   const domain = {
     name: "VanaDataPortabilityPermissions",
     version: "1",
     chainId: await ethers.provider.getNetwork().then((n) => n.chainId),
-    verifyingContract: contractAddress,
+    verifyingContract: addressString,
   };
 
   const types = {
@@ -283,13 +287,17 @@ export async function recoverServerFilesAndPermissionSigner(
   contractAddress: string | Addressable,
   signature: string,
   chainId?: number,
-): Promise<string | Addressable> {
+): Promise<string> {
+  const addressString = typeof contractAddress === 'string'
+    ? contractAddress
+    : await contractAddress.getAddress();
+
   const domain = {
     name: "VanaDataPortabilityPermissions",
     version: "1",
     chainId:
       chainId ?? (await ethers.provider.getNetwork().then((n) => n.chainId)),
-    verifyingContract: contractAddress,
+    verifyingContract: addressString,
   };
 
   const types = {
