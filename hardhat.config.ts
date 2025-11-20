@@ -71,9 +71,10 @@ const config: HardhatUserConfig = {
     hardhat: {
       allowUnlimitedContractSize: true,
       chainId: 1480,
+      // Uncomment to enable forking for fork tests
       // forking: {
       //   url: process.env.VANA_RPC_URL || "",
-      //   blockNumber: 1283121,
+      //   blockNumber: 5840988,  // Latest block with deployed contracts
       //   // url: process.env.MOKSHA_RPC_URL || "",
       //   // blockNumber: 2_569_780,
       // },

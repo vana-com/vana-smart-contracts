@@ -530,8 +530,19 @@ describe("DLP fork tests", () => {
       return parts.join(" ");
     }
 
-    it.only("simulate reward distribution", async function () {
-      const epochId = 7; //await vanaEpoch.epochsCount();
+    it("simulate reward distribution", async function () {
+      // ============================================================================
+      // GET CURRENT EPOCH ID (BEFORE UPGRADE)
+      // ============================================================================
+
+      const epochsCount = await vanaEpoch.epochsCount();
+      if (epochsCount === 0n) {
+        throw new Error("No epochs found. Make sure forking is enabled in hardhat.config.ts");
+      }
+
+      // Use the most recent epoch (convert to number for function compatibility)
+      const epochId = Number(epochsCount);
+      console.log(`Using epoch ${epochId} (latest of ${epochsCount} total epochs)`);
 
       // ============================================================================
       // CONTRACT UPGRADES

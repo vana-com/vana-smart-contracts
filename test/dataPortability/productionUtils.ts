@@ -53,7 +53,7 @@ describe("Data Portability Production Utils", () => {
     );
   });
 
-  it.only("should create signature for addAndTrustServer using deployer wallet", async function () {
+  it("should create signature for addAndTrustServer using deployer wallet", async function () {
     // Mock permission data structure
     const permission: PermissionData = {
       nonce: 0n,

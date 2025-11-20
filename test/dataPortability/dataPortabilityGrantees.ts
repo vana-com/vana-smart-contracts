@@ -53,8 +53,8 @@ describe("DataPortabilityGrantees", () => {
 
     beforeEach(async () => {
       // Register a grantee
-      const tx = await granteesContract.connect(user1).registerGrantee(
-        user1.address,
+      const tx = await granteesContract.connect(granteeAddress1).registerGrantee(
+        granteeAddress1.address,
         granteeAddress1.address,
         publicKey
       );
@@ -153,8 +153,8 @@ describe("DataPortabilityGrantees", () => {
 
     it("should return empty array for grantee with no permissions", async () => {
       // Register another grantee with no permissions
-      const tx = await granteesContract.connect(user2).registerGrantee(
-        user2.address,
+      const tx = await granteesContract.connect(granteeAddress2).registerGrantee(
+        granteeAddress2.address,
         granteeAddress2.address,
         "another-public-key"
       );
@@ -310,9 +310,9 @@ describe("DataPortabilityGrantees", () => {
 
   describe("Edge cases and stress tests", () => {
     it("should handle pagination with exactly matching boundaries", async () => {
-      // Register a grantee
-      const tx = await granteesContract.connect(user1).registerGrantee(
-        user1.address,
+      // Register a grantee (owner must equal granteeAddress when called by non-maintainer)
+      const tx = await granteesContract.connect(granteeAddress1).registerGrantee(
+        granteeAddress1.address,
         granteeAddress1.address,
         "test-key"
       );
@@ -340,9 +340,9 @@ describe("DataPortabilityGrantees", () => {
     });
 
     it("should handle sequential pagination correctly", async () => {
-      // Register a grantee
-      const tx = await granteesContract.connect(user1).registerGrantee(
-        user1.address,
+      // Register a grantee (owner must equal granteeAddress when called by non-maintainer)
+      const tx = await granteesContract.connect(granteeAddress1).registerGrantee(
+        granteeAddress1.address,
         granteeAddress1.address,
         "test-key"
       );
@@ -385,8 +385,8 @@ describe("DataPortabilityGrantees", () => {
 
     beforeEach(async () => {
       // Register a grantee
-      const tx = await granteesContract.connect(user1).registerGrantee(
-        user1.address,
+      const tx = await granteesContract.connect(granteeAddress1).registerGrantee(
+        granteeAddress1.address,
         granteeAddress1.address,
         publicKey
       );
@@ -406,7 +406,7 @@ describe("DataPortabilityGrantees", () => {
       it("should return grantee info with permissions count", async () => {
         const granteeInfo = await granteesContract.granteesV2(granteeId);
 
-        expect(granteeInfo.owner).to.equal(user1.address);
+        expect(granteeInfo.owner).to.equal(granteeAddress1.address);
         expect(granteeInfo.granteeAddress).to.equal(granteeAddress1.address);
         expect(granteeInfo.publicKey).to.equal(publicKey);
         expect(granteeInfo.permissionsCount).to.equal(15);
@@ -432,9 +432,9 @@ describe("DataPortabilityGrantees", () => {
       });
 
       it("should return zero permissions count for grantee with no permissions", async () => {
-        // Register new grantee without permissions
-        const tx = await granteesContract.connect(user2).registerGrantee(
-          user2.address,
+        // Register new grantee without permissions (owner must equal granteeAddress when called by non-maintainer)
+        const tx = await granteesContract.connect(granteeAddress2).registerGrantee(
+          granteeAddress2.address,
           granteeAddress2.address,
           "another-key"
         );
@@ -460,7 +460,7 @@ describe("DataPortabilityGrantees", () => {
       it("should return grantee info with permissions count", async () => {
         const granteeInfo = await granteesContract.granteeInfoV2(granteeId);
 
-        expect(granteeInfo.owner).to.equal(user1.address);
+        expect(granteeInfo.owner).to.equal(granteeAddress1.address);
         expect(granteeInfo.granteeAddress).to.equal(granteeAddress1.address);
         expect(granteeInfo.publicKey).to.equal(publicKey);
         expect(granteeInfo.permissionsCount).to.equal(15);
@@ -497,7 +497,7 @@ describe("DataPortabilityGrantees", () => {
       it("should return grantee info by address with permissions count", async () => {
         const granteeInfo = await granteesContract.granteeByAddressV2(granteeAddress1.address);
 
-        expect(granteeInfo.owner).to.equal(user1.address);
+        expect(granteeInfo.owner).to.equal(granteeAddress1.address);
         expect(granteeInfo.granteeAddress).to.equal(granteeAddress1.address);
         expect(granteeInfo.publicKey).to.equal(publicKey);
         expect(granteeInfo.permissionsCount).to.equal(15);
@@ -524,9 +524,9 @@ describe("DataPortabilityGrantees", () => {
       });
 
       it("should work with multiple grantees", async () => {
-        // Register second grantee
-        const tx = await granteesContract.connect(user2).registerGrantee(
-          user2.address,
+        // Register second grantee (owner must equal granteeAddress when called by non-maintainer)
+        const tx = await granteesContract.connect(granteeAddress2).registerGrantee(
+          granteeAddress2.address,
           granteeAddress2.address,
           "second-key"
         );
@@ -545,10 +545,10 @@ describe("DataPortabilityGrantees", () => {
         const info1 = await granteesContract.granteeByAddressV2(granteeAddress1.address);
         const info2 = await granteesContract.granteeByAddressV2(granteeAddress2.address);
 
-        expect(info1.owner).to.equal(user1.address);
+        expect(info1.owner).to.equal(granteeAddress1.address);
         expect(info1.permissionsCount).to.equal(15);
 
-        expect(info2.owner).to.equal(user2.address);
+        expect(info2.owner).to.equal(granteeAddress2.address);
         expect(info2.permissionsCount).to.equal(6);
       });
     });
@@ -645,8 +645,8 @@ describe("DataPortabilityGrantees", () => {
 
     beforeEach(async () => {
       // Register a grantee
-      const tx = await granteesContract.connect(user1).registerGrantee(
-        user1.address,
+      const tx = await granteesContract.connect(granteeAddress1).registerGrantee(
+        granteeAddress1.address,
         granteeAddress1.address,
         publicKey
       );

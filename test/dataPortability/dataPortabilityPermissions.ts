@@ -314,7 +314,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const permission = {
         nonce: 0n,
@@ -367,7 +367,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const permission = {
         nonce: 1n, // Wrong nonce - should be 0
@@ -392,7 +392,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const permission = {
         nonce: 0n,
@@ -415,7 +415,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const permission1 = {
         nonce: 0n,
@@ -465,7 +465,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const permission1 = {
         nonce: 0n,
@@ -546,10 +546,10 @@ describe("DataPortabilityPermissions", () => {
       // First register grantees for both users
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
       await granteesContract
         .connect(testUser2)
-        .registerGrantee(testUser2.address, testUser1.address, "publicKey2");
+        .registerGrantee(testUser1.address, testUser1.address, "publicKey2");
 
       const permission1 = {
         nonce: 0n,
@@ -604,13 +604,13 @@ describe("DataPortabilityPermissions", () => {
       // First register grantees for all users
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
       await granteesContract
         .connect(testUser2)
-        .registerGrantee(testUser2.address, user3.address, "publicKey2");
+        .registerGrantee(user3.address, user3.address, "publicKey2");
       await granteesContract
         .connect(user3)
-        .registerGrantee(user3.address, maintainer.address, "publicKey3");
+        .registerGrantee(maintainer.address, maintainer.address, "publicKey3");
 
       const permissions = [
         { nonce: 0n, granteeId: 1n, grant: "ipfs://grant1", fileIds: [] },
@@ -652,7 +652,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const permission = {
         nonce: 0n,
@@ -679,10 +679,10 @@ describe("DataPortabilityPermissions", () => {
       // First register grantees for both users
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
       await granteesContract
         .connect(testUser2)
-        .registerGrantee(testUser2.address, testUser1.address, "publicKey2");
+        .registerGrantee(testUser1.address, testUser1.address, "publicKey2");
 
       const permission1 = {
         nonce: 0n,
@@ -747,7 +747,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const permission = {
         nonce: 0n,
@@ -769,7 +769,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const permissions = [
         { nonce: 0n, granteeId: 1n, grant: "ipfs://grant1", fileIds: [] },
@@ -804,10 +804,10 @@ describe("DataPortabilityPermissions", () => {
       // First register grantees for both users
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
       await granteesContract
         .connect(testUser2)
-        .registerGrantee(testUser2.address, testUser1.address, "publicKey2");
+        .registerGrantee(testUser1.address, testUser1.address, "publicKey2");
 
       const permission1 = {
         nonce: 0n,
@@ -866,7 +866,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const permission = {
         nonce: 0n,
@@ -902,7 +902,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const validPermission = {
         nonce: 0n,
@@ -928,7 +928,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const longGrant = "ipfs://" + "a".repeat(1000); // Very long grant
       const permission = {
@@ -951,7 +951,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const permission = {
         nonce: 0n,
@@ -973,7 +973,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const permission = {
         nonce: 0n,
@@ -1005,7 +1005,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const permission = {
         nonce: 0n,
@@ -1139,7 +1139,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // First add a permission
         const permission = {
@@ -1187,7 +1187,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // User1 adds a permission
         const permission = {
@@ -1219,7 +1219,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Add and revoke a permission
         const permission = {
@@ -1249,7 +1249,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Add multiple permissions
         const permissions = [
@@ -1294,7 +1294,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Add a permission first
         const permission = {
@@ -1346,7 +1346,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Add a permission
         const permission = {
@@ -1388,10 +1388,10 @@ describe("DataPortabilityPermissions", () => {
         // First register grantees for both users
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
         await granteesContract
           .connect(testUser2)
-          .registerGrantee(testUser2.address, testUser1.address, "publicKey2");
+          .registerGrantee(testUser1.address, testUser1.address, "publicKey2");
 
         // User1 adds a permission
         const permission1 = {
@@ -1437,7 +1437,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Add permission
         const permission = {
@@ -1487,7 +1487,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Add 3 permissions
         const permissions = [
@@ -1543,7 +1543,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Add permission
         const permission = {
@@ -1598,7 +1598,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Add permission 1
         const perm1 = {
@@ -1652,7 +1652,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Add a permission
         const permission = {
@@ -1697,7 +1697,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Initial nonce
         (await dataPermission.userNonce(testUser1.address)).should.eq(0);
@@ -1749,7 +1749,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Add a permission
         const permission = {
@@ -1848,10 +1848,10 @@ describe("DataPortabilityPermissions", () => {
       // First register grantees
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
       await granteesContract
         .connect(testUser2)
-        .registerGrantee(testUser2.address, user3.address, "publicKey2");
+        .registerGrantee(user3.address, user3.address, "publicKey2");
 
       const permission = {
         nonce: 0n,
@@ -1901,7 +1901,7 @@ describe("DataPortabilityPermissions", () => {
       // First register a grantee
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
       const permissions = [];
       const signatures = [];
@@ -3093,7 +3093,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Add a permission
         const permission = {
@@ -3267,7 +3267,7 @@ describe("DataPortabilityPermissions", () => {
         // First register grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Set up files owned by testUser1
         await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
@@ -3325,7 +3325,7 @@ describe("DataPortabilityPermissions", () => {
         // First register grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Set up files owned by different users
         await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
@@ -3355,7 +3355,7 @@ describe("DataPortabilityPermissions", () => {
         // First register grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         const permission = {
           nonce: 0n,
@@ -3384,7 +3384,7 @@ describe("DataPortabilityPermissions", () => {
         // First register grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
         await dataRegistry.setFile(2, testUser1.address, "ipfs://file2");
@@ -3420,7 +3420,7 @@ describe("DataPortabilityPermissions", () => {
         // First register grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
 
@@ -3471,7 +3471,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
         await dataRegistry.setFile(2, testUser1.address, "ipfs://file2");
@@ -3521,7 +3521,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
         await dataRegistry.setFile(2, testUser1.address, "ipfs://file2");
@@ -3563,7 +3563,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Set up 100 files owned by testUser1
         const fileCount = 100;
@@ -3608,7 +3608,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Only set up file 1
         await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
@@ -3636,7 +3636,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         await dataRegistry.setFile(1, testUser1.address, "ipfs://file1");
         await dataRegistry.setFile(2, testUser1.address, "ipfs://file2");
@@ -3729,7 +3729,7 @@ describe("DataPortabilityPermissions", () => {
         // First register a grantee
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+          .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
 
         // Add a permission for testUser1
         const permission = {
@@ -4828,15 +4828,15 @@ describe("DataPortabilityPermissions", () => {
       it("should register a new grantee", async () => {
         const tx = await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, grantee1.address, "publicKey1");
+          .registerGrantee(grantee1.address, grantee1.address, "publicKey1");
 
         await expect(tx)
           .to.emit(granteesContract, "GranteeRegistered")
-          .withArgs(1, testUser1.address, grantee1.address, "publicKey1");
+          .withArgs(1, grantee1.address, grantee1.address, "publicKey1");
 
         // Verify grantee was registered
         const granteeInfo = await granteesContract.grantees(1);
-        expect(granteeInfo.owner).to.equal(testUser1.address);
+        expect(granteeInfo.owner).to.equal(grantee1.address);
         expect(granteeInfo.granteeAddress).to.equal(grantee1.address);
         expect(granteeInfo.publicKey).to.equal("publicKey1");
         expect(granteeInfo.permissionIds).to.deep.equal([]);
@@ -4849,7 +4849,7 @@ describe("DataPortabilityPermissions", () => {
         await expect(
           granteesContract
             .connect(testUser1)
-            .registerGrantee(testUser1.address, grantee1.address, ""),
+            .registerGrantee(grantee1.address, grantee1.address, ""),
         ).to.be.revertedWithCustomError(granteesContract, "EmptyPublicKey");
       });
 
@@ -4858,7 +4858,7 @@ describe("DataPortabilityPermissions", () => {
           granteesContract
             .connect(testUser1)
             .registerGrantee(
-              testUser1.address,
+              ethers.ZeroAddress,
               ethers.ZeroAddress,
               "publicKey1",
             ),
@@ -4871,7 +4871,7 @@ describe("DataPortabilityPermissions", () => {
             .connect(testUser1)
             .registerGrantee(
               ethers.ZeroAddress,
-              grantee1.address,
+              ethers.ZeroAddress,
               "publicKey1",
             ),
         ).to.be.revertedWithCustomError(granteesContract, "ZeroAddress");
@@ -4880,12 +4880,12 @@ describe("DataPortabilityPermissions", () => {
       it("should reject duplicate grantee registration", async () => {
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, grantee1.address, "publicKey1");
+          .registerGrantee(grantee1.address, grantee1.address, "publicKey1");
 
         await expect(
           granteesContract
             .connect(testUser2)
-            .registerGrantee(testUser2.address, grantee1.address, "publicKey2"),
+            .registerGrantee(grantee1.address, grantee1.address, "publicKey2"),
         ).to.be.revertedWithCustomError(
           granteesContract,
           "GranteeAlreadyRegistered",
@@ -4895,20 +4895,20 @@ describe("DataPortabilityPermissions", () => {
       it("should register multiple grantees", async () => {
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, grantee1.address, "publicKey1");
+          .registerGrantee(grantee1.address, grantee1.address, "publicKey1");
 
         await granteesContract
           .connect(testUser2)
-          .registerGrantee(testUser2.address, grantee2.address, "publicKey2");
+          .registerGrantee(grantee2.address, grantee2.address, "publicKey2");
 
         expect(await granteesContract.granteesCount()).to.equal(2);
 
         const grantee1Info = await granteesContract.grantees(1);
-        expect(grantee1Info.owner).to.equal(testUser1.address);
+        expect(grantee1Info.owner).to.equal(grantee1.address);
         expect(grantee1Info.granteeAddress).to.equal(grantee1.address);
 
         const grantee2Info = await granteesContract.grantees(2);
-        expect(grantee2Info.owner).to.equal(testUser2.address);
+        expect(grantee2Info.owner).to.equal(grantee2.address);
         expect(grantee2Info.granteeAddress).to.equal(grantee2.address);
       });
     });
@@ -4917,15 +4917,15 @@ describe("DataPortabilityPermissions", () => {
       beforeEach(async () => {
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, grantee1.address, "publicKey1");
+          .registerGrantee(grantee1.address, grantee1.address, "publicKey1");
         await granteesContract
           .connect(testUser2)
-          .registerGrantee(testUser2.address, grantee2.address, "publicKey2");
+          .registerGrantee(grantee2.address, grantee2.address, "publicKey2");
       });
 
       it("should return grantee info", async () => {
         const granteeInfo = await granteesContract.grantees(1);
-        expect(granteeInfo.owner).to.equal(testUser1.address);
+        expect(granteeInfo.owner).to.equal(grantee1.address);
         expect(granteeInfo.granteeAddress).to.equal(grantee1.address);
         expect(granteeInfo.publicKey).to.equal("publicKey1");
         expect(granteeInfo.permissionIds).to.deep.equal([]);
@@ -4933,7 +4933,7 @@ describe("DataPortabilityPermissions", () => {
 
       it("should return grantee info by granteeInfo method", async () => {
         const granteeInfo = await granteesContract.granteeInfo(1);
-        expect(granteeInfo.owner).to.equal(testUser1.address);
+        expect(granteeInfo.owner).to.equal(grantee1.address);
         expect(granteeInfo.granteeAddress).to.equal(grantee1.address);
         expect(granteeInfo.publicKey).to.equal("publicKey1");
       });
@@ -4942,7 +4942,7 @@ describe("DataPortabilityPermissions", () => {
         const granteeInfo = await granteesContract.granteeByAddress(
           grantee1.address,
         );
-        expect(granteeInfo.owner).to.equal(testUser1.address);
+        expect(granteeInfo.owner).to.equal(grantee1.address);
         expect(granteeInfo.granteeAddress).to.equal(grantee1.address);
         expect(granteeInfo.publicKey).to.equal("publicKey1");
       });
@@ -4974,7 +4974,7 @@ describe("DataPortabilityPermissions", () => {
       beforeEach(async () => {
         await granteesContract
           .connect(testUser1)
-          .registerGrantee(testUser1.address, grantee1.address, "publicKey1");
+          .registerGrantee(grantee1.address, grantee1.address, "publicKey1");
 
         // Grant permission manager role to deployOwner for testing
         const PERMISSION_MANAGER_ROLE =
@@ -5066,8 +5066,8 @@ describe("DataPortabilityPermissions", () => {
 
         await expect(
           granteesContract
-            .connect(testUser1)
-            .registerGrantee(testUser1.address, grantee1.address, "publicKey1"),
+            .connect(grantee1)
+            .registerGrantee(grantee1.address, grantee1.address, "publicKey1"),
         ).to.not.be.reverted;
       });
 
@@ -5470,7 +5470,7 @@ describe("DataPortabilityPermissions", () => {
       // Register a grantee for testing
       await granteesContract
         .connect(testUser1)
-        .registerGrantee(testUser1.address, testUser2.address, "publicKey1");
+        .registerGrantee(testUser2.address, testUser2.address, "publicKey1");
     });
 
     it("should add server, files, and permissions in one transaction", async function () {
@@ -5479,6 +5479,7 @@ describe("DataPortabilityPermissions", () => {
         granteeId: 1n,
         grant: "ipfs://grant1",
         fileUrls: ["https://file1.example.com", "https://file2.example.com"],
+        schemaIds: [1n, 1n], // Schema IDs for each file
         serverAddress: testServer1.address,
         serverUrl: "https://server1.example.com",
         serverPublicKey: "publicKey1",
@@ -5557,6 +5558,9 @@ describe("DataPortabilityPermissions", () => {
         "https://existing-file.example.com",
       );
 
+      console.log(testUser1.address);
+      console.log(await dataRegistry.files(existingFileId));
+
       const serverFilesAndPermissionInput = {
         nonce: 0n,
         granteeId: 1n,
@@ -5565,6 +5569,7 @@ describe("DataPortabilityPermissions", () => {
           "https://existing-file.example.com",
           "https://new-file.example.com",
         ],
+        schemaIds: [1n, 1n],
         serverAddress: testServer1.address,
         serverUrl: "https://server1.example.com",
         serverPublicKey: "publicKey1",
@@ -5603,6 +5608,7 @@ describe("DataPortabilityPermissions", () => {
         granteeId: 1n,
         grant: "ipfs://grant1",
         fileUrls: ["https://other-user-file.example.com"],
+        schemaIds: [1n],
         serverAddress: testServer1.address,
         serverUrl: "https://server1.example.com",
         serverPublicKey: "publicKey1",
@@ -5631,6 +5637,7 @@ describe("DataPortabilityPermissions", () => {
         granteeId: 1n,
         grant: "ipfs://grant1",
         fileUrls: ["https://file1.example.com"],
+        schemaIds: [1n],
         serverAddress: testServer1.address,
         serverUrl: "https://server1.example.com",
         serverPublicKey: "publicKey1",
@@ -5661,6 +5668,7 @@ describe("DataPortabilityPermissions", () => {
         granteeId: 1n,
         grant: "",
         fileUrls: ["https://file1.example.com"],
+        schemaIds: [1n],
         serverAddress: testServer1.address,
         serverUrl: "https://server1.example.com",
         serverPublicKey: "publicKey1",
@@ -5689,6 +5697,7 @@ describe("DataPortabilityPermissions", () => {
         granteeId: 999n, // Non-existent grantee
         grant: "ipfs://grant1",
         fileUrls: ["https://file1.example.com"],
+        schemaIds: [1n],
         serverAddress: testServer1.address,
         serverUrl: "https://server1.example.com",
         serverPublicKey: "publicKey1",
@@ -5717,6 +5726,7 @@ describe("DataPortabilityPermissions", () => {
         granteeId: 1n,
         grant: "ipfs://grant1",
         fileUrls: ["https://file1.example.com"],
+        schemaIds: [1n],
         serverAddress: testServer1.address,
         serverUrl: "https://server1.example.com",
         serverPublicKey: "",
@@ -5745,6 +5755,7 @@ describe("DataPortabilityPermissions", () => {
         granteeId: 1n,
         grant: "ipfs://grant1",
         fileUrls: ["https://file1.example.com"],
+        schemaIds: [1n],
         serverAddress: testServer1.address,
         serverUrl: "",
         serverPublicKey: "publicKey1",
@@ -5773,6 +5784,7 @@ describe("DataPortabilityPermissions", () => {
         granteeId: 1n,
         grant: "ipfs://grant1",
         fileUrls: [], // Empty array
+        schemaIds: [],
         serverAddress: testServer1.address,
         serverUrl: "https://server1.example.com",
         serverPublicKey: "publicKey1",
@@ -5810,6 +5822,7 @@ describe("DataPortabilityPermissions", () => {
         granteeId: 1n,
         grant: "ipfs://grant1",
         fileUrls: ["https://file1.example.com", "https://file2.example.com"],
+        schemaIds: [1n, 1n],
         serverAddress: testServer1.address,
         serverUrl: "https://server1.example.com",
         serverPublicKey: "publicKey1",
@@ -5844,6 +5857,7 @@ describe("DataPortabilityPermissions", () => {
         granteeId: 1n,
         grant: "ipfs://grant1",
         fileUrls: ["https://file1.example.com", "https://file2.example.com"],
+        schemaIds: [1n, 1n],
         serverAddress: testServer1.address,
         serverUrl: "https://server1.example.com",
         serverPublicKey: "publicKey1",
@@ -5877,6 +5891,7 @@ describe("DataPortabilityPermissions", () => {
         granteeId: 1n,
         grant: "ipfs://grant1",
         fileUrls: ["https://file1.example.com", "https://file2.example.com"],
+        schemaIds: [1n, 1n],
         serverAddress: testServer1.address,
         serverUrl: "https://server1.example.com",
         serverPublicKey: "publicKey1",

@@ -211,6 +211,7 @@ export interface ServerFilesAndPermissionData {
   granteeId: bigint;
   grant: string;
   fileUrls: string[];
+  schemaIds: bigint[];
   serverAddress: string;
   serverUrl: string;
   serverPublicKey: string;
@@ -242,6 +243,7 @@ export async function createServerFilesAndPermissionSignature(
       { name: "granteeId", type: "uint256" },
       { name: "grant", type: "string" },
       { name: "fileUrls", type: "string[]" },
+      { name: "schemaIds", type: "uint256[]" },
       { name: "serverAddress", type: "address" },
       { name: "serverUrl", type: "string" },
       { name: "serverPublicKey", type: "string" },
@@ -258,6 +260,7 @@ export async function createServerFilesAndPermissionSignature(
     granteeId: serverFilesAndPermissionInput.granteeId,
     grant: serverFilesAndPermissionInput.grant,
     fileUrls: serverFilesAndPermissionInput.fileUrls,
+    schemaIds: serverFilesAndPermissionInput.schemaIds,
     serverAddress: serverFilesAndPermissionInput.serverAddress,
     serverUrl: serverFilesAndPermissionInput.serverUrl,
     serverPublicKey: serverFilesAndPermissionInput.serverPublicKey,
@@ -295,6 +298,7 @@ export async function recoverServerFilesAndPermissionSigner(
       { name: "granteeId", type: "uint256" },
       { name: "grant", type: "string" },
       { name: "fileUrls", type: "string[]" },
+      { name: "schemaIds", type: "uint256[]" },
       { name: "serverAddress", type: "address" },
       { name: "serverUrl", type: "string" },
       { name: "serverPublicKey", type: "string" },
@@ -311,6 +315,7 @@ export async function recoverServerFilesAndPermissionSigner(
     granteeId: serverFilesAndPermissionInput.granteeId,
     grant: serverFilesAndPermissionInput.grant,
     fileUrls: serverFilesAndPermissionInput.fileUrls,
+    schemaIds: serverFilesAndPermissionInput.schemaIds,
     serverAddress: serverFilesAndPermissionInput.serverAddress,
     serverUrl: serverFilesAndPermissionInput.serverUrl,
     serverPublicKey: serverFilesAndPermissionInput.serverPublicKey,

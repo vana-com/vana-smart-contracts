@@ -69,10 +69,20 @@ contract MockDataRegistry is IDataRegistry {
     function addFileWithPermissionsAndSchema(
         string memory url,
         address ownerAddress,
-        Permission[] memory,
-        uint256
+        Permission[] memory permissions,
+        uint256 schemaId
     ) external override returns (uint256) {
-        return _addFile(url, ownerAddress);
+        uint256 fileId = _addFile(url, ownerAddress);
+
+        // Update schema
+        _files[fileId].schemaId = schemaId;
+
+        // Add permissions
+        for (uint256 i = 0; i < permissions.length; i++) {
+            _filePermissions[fileId][permissions[i].account] = permissions[i].key;
+        }
+
+        return fileId;
     }
 
     function addFilePermissionsAndSchema(
