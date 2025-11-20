@@ -13,7 +13,7 @@ describe("Run on-chain", () => {
     [deployer] = await ethers.getSigners();
   });
 
-  it.only("should call method", async function () {
+  it("should call method", async function () {
     console.log(deployer.address);
     const dlpRegistry = await ethers.getContractAt(
       "DLPRegistryImplementation",

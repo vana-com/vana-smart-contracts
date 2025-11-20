@@ -1,10 +1,10 @@
 import { deployments, ethers, upgrades } from "hardhat";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { DeployFunction } from "hardhat-deploy/types";
-import { verifyContract, verifyProxy } from "./helpers";
+import { verifyContract } from "../helpers";
 
-const implementationContractName = "ComputeEngineImplementation";
-const proxyContractName = "ComputeEngineProxy";
+const implementationContractName = "DataRegistryImplementation";
+const previousImplementationContractName = "DataRegistryImplementationOld";
 
 const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const [deployer] = await ethers.getSigners();
@@ -16,6 +16,11 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   console.log(`**************************************************************`);
   console.log(`**************************************************************`);
   console.log(`********** Deploy new ${implementationContractName} **********`);
+
+  // await upgrades.validateUpgrade(
+  //   await ethers.getContractFactory(previousImplementationContractName),
+  //   await ethers.getContractFactory(implementationContractName),
+  // );
 
   const implementationDeploy = await deployments.deploy(
     implementationContractName,
@@ -29,17 +34,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   console.log(implementationContractName, implementationDeploy.address);
 
   await verifyContract(implementationDeploy.address, []);
-
-  console.log(`***************************************************`);
-  console.log(`***************************************************`);
-  console.log(`***************************************************`);
-  console.log(`********** Upgrade to new implementation **********`);
-
-  const proxyAddress = (await deployments.get(proxyContractName)).address;
-  const proxy = await ethers.getContractAt(implementationContractName, proxyAddress);
-
-  await proxy.upgradeToAndCall(implementationDeploy.address, "0x", { from: deployer.address });
 };
 
 export default func;
-func.tags = ["ComputeEngineUpgrade"];
+func.tags = ["DataRegistryImplementation"];

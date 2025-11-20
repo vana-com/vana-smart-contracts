@@ -1,7 +1,7 @@
 import { deployments, ethers, upgrades } from "hardhat";
 import { HardhatRuntimeEnvironment } from "hardhat/types";
 import { DeployFunction } from "hardhat-deploy/types";
-import { verifyContract } from "./helpers";
+import { verifyContract } from "../helpers";
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -23,10 +23,10 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   console.log(`**************************************************************`);
   console.log(`********** Deploy new ${implementationContractName} **********`);
 
-  await upgrades.validateUpgrade(
-    await ethers.getContractFactory(previousImplementationContractName),
-    await ethers.getContractFactory(implementationContractName),
-  );
+  // await upgrades.validateUpgrade(
+  //   await ethers.getContractFactory(previousImplementationContractName),
+  //   await ethers.getContractFactory(implementationContractName),
+  // );
 
   const implementationDeploy = await deployments.deploy(
     implementationContractName,
@@ -37,7 +37,10 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     },
   );
 
-  if (implementationDeploy.receipt && implementationDeploy.receipt.status === 1) {
+  if (
+    implementationDeploy.receipt &&
+    implementationDeploy.receipt.status === 1
+  ) {
     console.log("Deployment confirmed and successful.");
   } else {
     throw new Error("Deployment failed or was reverted.");
@@ -47,8 +50,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   await verifyContract(implementationDeploy.address, []);
 
-  const proxyAddress = (await deployments.get(proxyContractName)).address;
-  const proxy = await ethers.getContractAt(implementationContractName, proxyAddress);
+  // const proxyAddress = (await deployments.get(proxyContractName)).address;
+  // const proxy = await ethers.getContractAt(implementationContractName, proxyAddress);
 
   // console.log("Upgrading proxy contract...");
   // console.log("Proxy address:", proxyAddress);

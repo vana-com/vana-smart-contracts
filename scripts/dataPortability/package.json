@@ -1,0 +1,33 @@
+{
+  "name": "vana-data-portability-scripts",
+  "version": "1.0.0",
+  "description": "Vana Data Portability Scripts - EIP-712 signature utilities for data portability permissions",
+  "main": "dist/common.js",
+  "scripts": {
+    "build": "tsc",
+    "sign": "ts-node src/signAddServerFilesAndPermissions.ts",
+    "test": "ts-node src/testAddServerFilesAndPermissions.ts",
+    "clean": "rm -rf dist node_modules"
+  },
+  "keywords": [
+    "vana",
+    "data-portability",
+    "eip-712",
+    "ethereum",
+    "typescript"
+  ],
+  "author": "Vana",
+  "license": "MIT",
+  "dependencies": {
+    "ethers": "^6.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.0",
+    "typescript": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "yarn": ">=1.22.0"
+  }
+}

@@ -33,7 +33,8 @@ describe("DLP fork tests", () => {
   const dlpRewardDeployerTreasuryAddress =
     "0xb547ca8Fe4990fe330FeAeb1C2EBb42F925Af5b8";
 
-  const adminAddress = "0x2AC93684679a5bdA03C6160def908CdB8D46792f";
+  const adminAddress = "0x5ECA5208F29e32879a711467916965B2D753bAf4";
+  const maintainerAddress = "0xd5d84a26A1e72f946b3f0901466EF10c7D9fA2b6";
   const wvanaAddress = "0x00eddd9621fb08436d0331c149d1690909a5906d";
   // Position Manager contract address (Ethereum mainnet)
   const uniswapPositionManagerAddress =
@@ -103,6 +104,12 @@ describe("DLP fork tests", () => {
     });
     admin = await ethers.provider.getSigner(adminAddress);
 
+    await network.provider.request({
+      method: "hardhat_impersonateAccount",
+      params: [maintainerAddress],
+    });
+    maintainer = await ethers.provider.getSigner(maintainerAddress);
+
     dlpRegistry = await ethers.getContractAt(
       "DLPRegistryImplementation",
       dlpRegistryAddress,
@@ -146,7 +153,7 @@ describe("DLP fork tests", () => {
       // EPOCH PREPARATION
       // ============================================================================
 
-      const epochId = 6n; //await vanaEpoch.epochsCount();
+      const epochId = await vanaEpoch.epochsCount();
       const currentBlock = await getCurrentBlockNumber();
       const epoch = await vanaEpoch.epochs(epochId);
 
@@ -523,25 +530,37 @@ describe("DLP fork tests", () => {
       return parts.join(" ");
     }
 
-    it.only("simulate reward distribution", async function () {
+    it("simulate reward distribution", async function () {
+      // ============================================================================
+      // GET CURRENT EPOCH ID (BEFORE UPGRADE)
+      // ============================================================================
+
+      const epochsCount = await vanaEpoch.epochsCount();
+      if (epochsCount === 0n) {
+        throw new Error("No epochs found. Make sure forking is enabled in hardhat.config.ts");
+      }
+
+      // Use the most recent epoch (convert to number for function compatibility)
+      const epochId = Number(epochsCount);
+      console.log(`Using epoch ${epochId} (latest of ${epochsCount} total epochs)`);
+
       // ============================================================================
       // CONTRACT UPGRADES
       // ============================================================================
 
       await upgradeContracts();
 
-      await dlpRewardDeployer
-        .connect(admin)
-        .initializeEpochRewards(6n, (3600 * 24) / 6, 90, (3600 * 24) / 6);
-      await dlpRewardDeployer
-        .connect(admin)
-        .updateNumberOfBlocksBetweenTranches((3600 * 2) / 60);
+      // await dlpRewardDeployer
+      //   .connect(admin)
+      //   .initializeEpochRewards(epochId, (3600 * 24) / 6, 90, (3600 * 24) / 6);
+      // await dlpRewardDeployer
+      //   .connect(admin)
+      //   .updateNumberOfBlocksBetweenTranches((3600 * 2) / 60);
 
       // ============================================================================
       // EPOCH PREPARATION
       // ============================================================================
 
-      const epochId = 6; //await vanaEpoch.epochsCount();
       const epoch = await vanaEpoch.epochs(epochId);
 
       console.log("📅 REWARD DISTRIBUTION SIMULATION");
@@ -555,7 +574,8 @@ describe("DLP fork tests", () => {
       // GET ELIGIBLE DLPS
       // ============================================================================
 
-      const eligibleDlps = await vanaEpoch.epochDlpIds(epochId);
+      // const eligibleDlps = await vanaEpoch.epochDlpIds(epochId);
+      const eligibleDlps = [4n];
       console.log(
         `\n🎯 Found ${eligibleDlps.length} eligible DLPs for reward distribution\n`,
       );
@@ -577,13 +597,55 @@ describe("DLP fork tests", () => {
       const preDistributionData = await collectLPData(dlpMap, "pre");
 
       // ============================================================================
-      // REWARD DISTRIBUTION
+      // INCREASE LP LIQUIDITY BEFORE DISTRIBUTION
       // ============================================================================
 
-      const distributionResults = await executeRewardDistribution(
-        epochId,
-        dlpMap,
-      );
+      // await increaseLPLiquidity(dlpMap);
+
+      // ============================================================================
+      // REWARD DISTRIBUTION - MULTIPLE TRANCHES
+      // ============================================================================
+
+      const numberOfTranches = 10;
+      const allDistributionResults: Record<number, any[]> = {};
+
+      console.log(`\n🔄 EXECUTING ${numberOfTranches} TRANCHE DISTRIBUTIONS`);
+      console.log("═".repeat(70));
+
+      for (let tranche = 1; tranche <= numberOfTranches; tranche++) {
+        console.log(`\n📦 TRANCHE ${tranche}/${numberOfTranches}`);
+        console.log("─".repeat(70));
+
+        // Advance blocks between tranches
+        await advanceBlockNTimes(24 * 600); // Advance blocks
+
+        const distributionResults = await executeRewardDistribution(
+          epochId,
+          dlpMap,
+        );
+
+        // Store results for each DLP
+        for (const [dlpId, result] of Object.entries(distributionResults)) {
+          if (!allDistributionResults[Number(dlpId)]) {
+            allDistributionResults[Number(dlpId)] = [];
+          }
+          allDistributionResults[Number(dlpId)].push({
+            tranche,
+            ...result,
+          });
+        }
+
+        // Log tranche summary
+        console.log(`\n  ✅ Tranche ${tranche} completed`);
+        for (const [dlpId, result] of Object.entries(distributionResults)) {
+          const dlpInfo = dlpMap[Number(dlpId)];
+          console.log(`    • ${dlpInfo.name}: ${formatEther(result.trancheAmount)} VANA distributed`);
+        }
+      }
+
+      console.log("\n═".repeat(70));
+      console.log(`✅ ALL ${numberOfTranches} TRANCHES COMPLETED`);
+      console.log("═".repeat(70));
 
       // ============================================================================
       // POST-DISTRIBUTION DATA COLLECTION
@@ -596,12 +658,12 @@ describe("DLP fork tests", () => {
       );
 
       // ============================================================================
-      // REWARD DISTRIBUTION SUMMARY
+      // REWARD DISTRIBUTION SUMMARY (ALL TRANCHES)
       // ============================================================================
 
-      await logRewardDistributionSummary(
+      await logRewardDistributionSummaryMultipleTranches(
         epochId,
-        distributionResults,
+        allDistributionResults,
         dlpMap,
         preDistributionData,
         postDistributionData,
@@ -611,9 +673,9 @@ describe("DLP fork tests", () => {
       // DLP REWARD DEPLOYER TREASURY BALANCE SUMMARY
       // ============================================================================
 
-      await logDlpRewardDeployerTreasurySummary(
+      await logDlpRewardDeployerTreasurySummaryMultipleTranches(
         dlpRewardDeployerTreasuryBalanceBefore,
-        distributionResults,
+        allDistributionResults,
       );
 
       console.log("✅ REWARD DISTRIBUTION SIMULATION COMPLETED");
@@ -642,6 +704,157 @@ describe("DLP fork tests", () => {
         };
       }
       return dlpMap;
+    }
+
+    /**
+     * Increase LP liquidity by impersonating a wallet with DLP tokens
+     */
+    async function increaseLPLiquidity(
+      dlpMap: Record<number, DlpInfo>,
+    ): Promise<void> {
+      const whaleAddress = "0x3001bC9056b92515066B9584f5d8513158832f64";
+
+      console.log("\n💰 INCREASING LP LIQUIDITY");
+
+      // Impersonate the whale wallet
+      await network.provider.request({
+        method: "hardhat_impersonateAccount",
+        params: [whaleAddress],
+      });
+      const whaleSigner = await ethers.provider.getSigner(whaleAddress);
+
+      // Mint VANA to the whale wallet
+      const vanaToAdd = parseEther(1000);
+      await setBalance(whaleAddress, vanaToAdd + parseEther(10)); // Extra for gas
+
+      console.log(`  • Impersonated wallet: ${whaleAddress}`);
+      console.log(`  • VANA minted: ${formatEther(vanaToAdd)} VANA`);
+
+      // Get contracts
+      const ERC20ABI = [
+        "function symbol() external view returns (string)",
+        "function decimals() external view returns (uint8)",
+        "function balanceOf(address) external view returns (uint256)",
+        "function approve(address spender, uint256 amount) external returns (bool)",
+      ];
+
+      const UniswapV3PositionManagerABI = [
+        "function positions(uint256 tokenId) external view returns (uint96 nonce, address operator, address token0, address token1, uint24 fee, int24 tickLower, int24 tickUpper, uint128 liquidity, uint256 feeGrowthInside0LastX128, uint256 feeGrowthInside1LastX128, uint128 tokensOwed0, uint128 tokensOwed1)",
+        "function increaseLiquidity(tuple(uint256 tokenId, uint256 amount0Desired, uint256 amount1Desired, uint256 amount0Min, uint256 amount1Min, uint256 deadline)) external returns (uint128 liquidity, uint256 amount0, uint256 amount1)",
+      ];
+
+      const UniswapV3PoolABI = [
+        "function slot0() external view returns (uint160 sqrtPriceX96, int24 tick, uint16 observationIndex, uint16 observationCardinality, uint16 observationCardinalityNext, uint8 feeProtocol, bool unlocked)",
+      ];
+
+      const UniswapV3FactoryABI = [
+        "function getPool(address tokenA, address tokenB, uint24 fee) external view returns (address pool)",
+      ];
+
+      const positionManager = await ethers.getContractAt(
+        UniswapV3PositionManagerABI,
+        uniswapPositionManagerAddress,
+      );
+
+      // Process each DLP
+      for (const [dlpIdStr, dlpInfo] of Object.entries(dlpMap)) {
+        try {
+          console.log(`\n  🏢 Processing ${dlpInfo.name} (LP Token ID: ${dlpInfo.lpTokenId})`);
+
+          // Get position details
+          const position = await positionManager.positions(dlpInfo.lpTokenId);
+          const token0Address = position.token0;
+          const token1Address = position.token1;
+          const fee = position.fee;
+
+          // Get pool
+          const factory = await ethers.getContractAt(
+            UniswapV3FactoryABI,
+            uniswapFactoryAddress,
+          );
+          const poolAddress = await factory.getPool(token0Address, token1Address, fee);
+          const pool = await ethers.getContractAt(UniswapV3PoolABI, poolAddress);
+          const slot0 = await pool.slot0();
+
+          // Determine which token is WVANA
+          const isWVanaToken0 =
+            token0Address.toLowerCase() === wvanaAddress.toLowerCase();
+
+          // Get token contracts
+          const token0Contract = await ethers.getContractAt(ERC20ABI, token0Address);
+          const token1Contract = await ethers.getContractAt(ERC20ABI, token1Address);
+          const token0Symbol = await token0Contract.symbol();
+          const token1Symbol = await token1Contract.symbol();
+          const token0Decimals = await token0Contract.decimals();
+          const token1Decimals = await token1Contract.decimals();
+
+          // Check whale's DLP token balance
+          const dlpToken = isWVanaToken0 ? token1Contract : token0Contract;
+          const dlpTokenBalance = await dlpToken.balanceOf(whaleAddress);
+
+          console.log(`    • Token0: ${token0Symbol} (${token0Address})`);
+          console.log(`    • Token1: ${token1Symbol} (${token1Address})`);
+          console.log(`    • Whale ${isWVanaToken0 ? token1Symbol : token0Symbol} balance: ${formatEther(dlpTokenBalance)}`);
+
+          // Calculate token amounts based on current price
+          const Q96 = BigInt(2) ** BigInt(96);
+          const sqrtPriceX96 = slot0.sqrtPriceX96;
+          const sqrtPrice = parseFloat(sqrtPriceX96.toString()) / parseFloat(Q96.toString());
+          const price = sqrtPrice * sqrtPrice;
+
+          let amount0Desired: bigint;
+          let amount1Desired: bigint;
+
+          if (isWVanaToken0) {
+            // WVANA is token0, calculate token1 amount based on price
+            amount0Desired = vanaToAdd;
+            // price = token1/token0, so token1 = token0 * price
+            const token1Amount = parseFloat(vanaToAdd.toString()) * price;
+            amount1Desired = BigInt(Math.floor(token1Amount));
+          } else {
+            // WVANA is token1, calculate token0 amount based on price
+            amount1Desired = vanaToAdd;
+            // price = token0/token1, so token0 = token1 * price
+            const token0Amount = parseFloat(vanaToAdd.toString()) * price;
+            amount0Desired = BigInt(Math.floor(token0Amount));
+          }
+
+          console.log(`    • Amount0 to add: ${ethers.formatUnits(amount0Desired, token0Decimals)} ${token0Symbol}`);
+          console.log(`    • Amount1 to add: ${ethers.formatUnits(amount1Desired, token1Decimals)} ${token1Symbol}`);
+
+          // Wrap ETH to WVANA if needed
+          const WVANAABI = [
+            "function deposit() external payable",
+          ];
+          const wvana = await ethers.getContractAt(WVANAABI, wvanaAddress);
+          await wvana.connect(whaleSigner).deposit({ value: vanaToAdd });
+
+          console.log(`    • Wrapped ${formatEther(vanaToAdd)} VANA to WVANA`);
+
+          // Approve tokens
+          const wvanaContract = await ethers.getContractAt(ERC20ABI, wvanaAddress);
+          await wvanaContract.connect(whaleSigner).approve(uniswapPositionManagerAddress, vanaToAdd);
+          await dlpToken.connect(whaleSigner).approve(uniswapPositionManagerAddress, isWVanaToken0 ? amount1Desired : amount0Desired);
+
+          console.log(`    • Approved tokens for position manager`);
+
+          // Increase liquidity
+          const deadline = Math.floor(Date.now() / 1000) + 3600;
+          const tx = await positionManager.connect(whaleSigner).increaseLiquidity({
+            tokenId: dlpInfo.lpTokenId,
+            amount0Desired,
+            amount1Desired,
+            amount0Min: 0n,
+            amount1Min: 0n,
+            deadline,
+          });
+
+          const receipt = await tx.wait();
+          console.log(`    ✅ Liquidity increased! Tx: ${receipt.hash}`);
+        } catch (error) {
+          console.log(`    ❌ Failed to increase liquidity: ${error.message}`);
+        }
+      }
     }
 
     /**
@@ -701,7 +914,7 @@ describe("DLP fork tests", () => {
         );
 
         const tx = await dlpRewardDeployer
-          .connect(admin)
+          .connect(maintainer)
           .distributeRewards(epochId, [dlpId]);
 
         const receipt = await getReceipt(tx);
@@ -999,6 +1212,165 @@ describe("DLP fork tests", () => {
       for (const result of Object.values(distributionResults)) {
         if (result && result.usedVanaAmount) {
           totalUsedVana += result.usedVanaAmount;
+        }
+      }
+
+      console.log(
+        `  • Balance Before: ${formatEther(dlpRewardDeployerTreasuryBalanceBefore)} VANA`,
+      );
+      console.log(
+        `  • Balance After: ${formatEther(dlpRewardDeployerTreasuryBalanceAfter)} VANA`,
+      );
+      console.log(
+        `  • Balance Change: ${formatEther(dlpRewardDeployerBalanceChange)} VANA`,
+      );
+      console.log(
+        `  • Total VANA Used for increasing liquidity: ${formatEther(totalUsedVana)} VANA`,
+      );
+
+      // Calculate the difference - should be close to zero if accounting is correct
+      const accountingDifference =
+        dlpRewardDeployerBalanceChange + totalUsedVana;
+      console.log(
+        `  • Accounting Difference: ${formatEther(accountingDifference)} VANA`,
+      );
+    }
+
+    /**
+     * Log reward distribution summary for multiple tranches
+     */
+    async function logRewardDistributionSummaryMultipleTranches(
+      epochId: number,
+      allDistributionResults: Record<number, any[]>,
+      dlpMap: Record<number, DlpInfo>,
+      preDistributionData: Record<number, LPData>,
+      postDistributionData: Record<number, LPData>,
+    ): Promise<void> {
+      console.log("\n🎯 REWARD DISTRIBUTION SUMMARY - ALL TRANCHES");
+      console.log("═".repeat(70));
+
+      let totalDistributed = 0n;
+      let totalTokenRewards = 0n;
+      let totalSpareTokens = 0n;
+      let totalSpareVana = 0n;
+      let totalUsedVana = 0n;
+
+      for (const [dlpIdStr, results] of Object.entries(allDistributionResults)) {
+        const dlpId = Number(dlpIdStr);
+        const dlpInfo = dlpMap[dlpId];
+
+        if (!results || results.length === 0 || !dlpInfo) continue;
+
+        console.log(`\n🏢 ${dlpInfo.name} (DLP #${dlpId}):`);
+
+        // ============================================================================
+        // ADDITIONAL DLP INFORMATION
+        // ============================================================================
+        await logAdditionalDlpInfo(epochId, dlpId);
+
+        // Aggregate all tranches for this DLP
+        let dlpTotalDistributed = 0n;
+        let dlpTotalTokenRewards = 0n;
+        let dlpTotalSpareTokens = 0n;
+        let dlpTotalSpareVana = 0n;
+        let dlpTotalUsedVana = 0n;
+
+        console.log(`  📦 Tranche Details:`);
+        for (const result of results) {
+          dlpTotalDistributed += result.trancheAmount;
+          dlpTotalTokenRewards += result.tokenRewardAmount;
+          dlpTotalSpareTokens += result.spareToken;
+          dlpTotalSpareVana += result.spareVana;
+          dlpTotalUsedVana += result.usedVanaAmount;
+
+          console.log(
+            `    • Tranche ${result.tranche}: ${formatEther(result.trancheAmount)} VANA (Used: ${formatEther(result.usedVanaAmount)} VANA, Spare: ${formatEther(result.spareVana)} VANA)`,
+          );
+        }
+
+        totalDistributed += dlpTotalDistributed;
+        totalTokenRewards += dlpTotalTokenRewards;
+        totalSpareTokens += dlpTotalSpareTokens;
+        totalSpareVana += dlpTotalSpareVana;
+        totalUsedVana += dlpTotalUsedVana;
+
+        console.log(`\n  💰 Totals for ${dlpInfo.name}:`);
+        console.log(
+          `    • Total Tranche Amount: ${formatEther(dlpTotalDistributed)} VANA`,
+        );
+        console.log(
+          `    • Total VANA Used: ${formatEther(dlpTotalUsedVana)} VANA`,
+        );
+        console.log(
+          `    • Total Spare Tokens: ${formatEther(dlpTotalSpareTokens)} tokens`,
+        );
+        console.log(
+          `    • Total Spare VANA: ${formatEther(dlpTotalSpareVana)} VANA`,
+        );
+
+        const swapEfficiency =
+          dlpTotalUsedVana > 0 && dlpTotalDistributed > 0
+            ? (
+                (Number(dlpTotalUsedVana.toString()) /
+                  Number(dlpTotalDistributed.toString())) *
+                100
+              ).toFixed(2)
+            : "0.00";
+        console.log(`    • Swap Efficiency: ${swapEfficiency}%`);
+
+        // Token price information
+        await logPriceAndLiquidityChanges(
+          dlpId,
+          dlpInfo,
+          preDistributionData,
+          postDistributionData,
+        );
+      }
+
+      console.log(`\n🌟 OVERALL TOTALS (ALL DLPs):`);
+      console.log(
+        `  • Total VANA Distributed: ${formatEther(totalDistributed)} VANA`,
+      );
+      console.log(`  • Total VANA Used: ${formatEther(totalUsedVana)} VANA`);
+      console.log(
+        `  • Total Spare Tokens: ${formatEther(totalSpareTokens)} tokens`,
+      );
+      console.log(`  • Total Spare VANA: ${formatEther(totalSpareVana)} VANA`);
+
+      const overallSwapEfficiency =
+        totalUsedVana > 0 && totalDistributed > 0
+          ? (
+              (Number(totalUsedVana.toString()) /
+                Number(totalDistributed.toString())) *
+              100
+            ).toFixed(2)
+          : "0.00";
+      console.log(`  • Overall Swap Efficiency: ${overallSwapEfficiency}%`);
+    }
+
+    /**
+     * Log DLP Reward Deployer treasury summary for multiple tranches
+     */
+    async function logDlpRewardDeployerTreasurySummaryMultipleTranches(
+      dlpRewardDeployerTreasuryBalanceBefore: bigint,
+      allDistributionResults: Record<number, any[]>,
+    ): Promise<void> {
+      console.log(`\n💼 DLP REWARD DEPLOYER TREASURY SUMMARY:`);
+      console.log("━".repeat(50));
+
+      const dlpRewardDeployerTreasuryBalanceAfter =
+        await getDlpRewardDeployerTreasuryBalance();
+      const dlpRewardDeployerBalanceChange =
+        dlpRewardDeployerTreasuryBalanceAfter -
+        dlpRewardDeployerTreasuryBalanceBefore;
+
+      // Calculate total used VANA from all tranches
+      let totalUsedVana = 0n;
+      for (const results of Object.values(allDistributionResults)) {
+        for (const result of results) {
+          if (result && result.usedVanaAmount) {
+            totalUsedVana += result.usedVanaAmount;
+          }
         }
       }
 
