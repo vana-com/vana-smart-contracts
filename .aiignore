@@ -38,3 +38,10 @@ deployments-official/
 
 package-lock.json
 yarn.lock
+
+# ============================================================================
+# 📄 AUDIT REPORTS (PDFs)
+# ============================================================================
+# External audit PDFs - large binary files not useful for AI context
+
+audits/*.pdf
