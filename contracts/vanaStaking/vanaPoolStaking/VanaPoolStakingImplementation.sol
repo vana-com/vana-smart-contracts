@@ -428,6 +428,26 @@ contract VanaPoolStakingImplementation is
         // Reduce cost basis proportionally
         stakerEntity.costBasis -= proportionalCostBasis;
 
+        // Anti-gaming logic for partial unstaking during bonding period
+        // Extends remaining bonding time using inverse weighted average formula:
+        // new_remaining_time = current_remaining_time * (amount_before / amount_after)
+        // This prevents "wash attacks" where users use old bonded capital to accelerate new capital vesting
+        if (currentTimestamp < stakerEntity.rewardEligibilityTimestamp && stakerEntity.shares > shareAmount) {
+            uint256 remainingTime = stakerEntity.rewardEligibilityTimestamp - currentTimestamp;
+            uint256 amountBefore = stakerEntity.shares;
+            uint256 amountAfter = stakerEntity.shares - shareAmount;
+
+            // Calculate extended time: remainingTime * (amountBefore / amountAfter)
+            uint256 extendedTime = (remainingTime * amountBefore) / amountAfter;
+
+            // Cap at full bonding period
+            if (extendedTime > bondingPeriod) {
+                extendedTime = bondingPeriod;
+            }
+
+            stakerEntity.rewardEligibilityTimestamp = currentTimestamp + extendedTime;
+        }
+
         if (vanaToReturn < vanaAmountMin) {
             revert InvalidSlippage();
         }
