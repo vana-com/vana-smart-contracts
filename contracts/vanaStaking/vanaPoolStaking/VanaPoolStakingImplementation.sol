@@ -143,7 +143,7 @@ contract VanaPoolStakingImplementation is
      * @notice Returns the version of the contract
      */
     function version() external pure virtual override returns (uint256) {
-        return 1;
+        return 2;
     }
 
     /**
@@ -154,7 +154,7 @@ contract VanaPoolStakingImplementation is
      * @return uint256                         shares owned by staker in the entity
      */
     function stakerEntities(address staker, uint256 entityId) external view override returns (StakerEntity memory) {
-        return StakerEntity({shares: _stakers[staker].entities[entityId].shares});
+        return _stakers[staker].entities[entityId];
     }
 
     function activeStakersListCount() external view returns (uint256) {
@@ -196,6 +196,30 @@ contract VanaPoolStakingImplementation is
     }
 
     /**
+     * @notice Get the unrealized interest for a staker in a specific entity
+     * @dev Unrealized interest = current VANA value of shares - cost basis
+     *
+     * @param staker                            address of the staker
+     * @param entityId                          ID of the entity
+     * @return uint256                          unrealized interest in VANA (0 if negative or no shares)
+     */
+    function getUnrealizedInterest(address staker, uint256 entityId) external view override returns (uint256) {
+        StakerEntity storage stakerEntity = _stakers[staker].entities[entityId];
+        if (stakerEntity.shares == 0) {
+            return 0;
+        }
+
+        uint256 shareToVana = vanaPoolEntity.entityShareToVana(entityId);
+        uint256 currentValue = (stakerEntity.shares * shareToVana) / 1e18;
+
+        if (currentValue <= stakerEntity.costBasis) {
+            return 0;
+        }
+
+        return currentValue - stakerEntity.costBasis;
+    }
+
+    /**
      * @dev Pauses the contract
      */
     function pause() external override onlyRole(MAINTAINER_ROLE) {
@@ -217,6 +241,15 @@ contract VanaPoolStakingImplementation is
     function updateMinStakeAmount(uint256 newMinStake) external override onlyRole(MAINTAINER_ROLE) {
         minStakeAmount = newMinStake;
         emit MinStakeUpdated(newMinStake);
+    }
+
+    /**
+     * @notice Update the bonding period
+     *
+     * @param newBondingPeriod                  new bonding period in seconds
+     */
+    function updateBondingPeriod(uint256 newBondingPeriod) external onlyRole(MAINTAINER_ROLE) {
+        bondingPeriod = newBondingPeriod;
     }
 
     /**
@@ -297,8 +330,31 @@ contract VanaPoolStakingImplementation is
             revert InvalidSlippage();
         }
 
-        // Update recipient's position instead of the sender's
-        _stakers[recipient].entities[entityId].shares += sharesIssued;
+        // Update recipient's position
+        StakerEntity storage stakerEntity = _stakers[recipient].entities[entityId];
+        uint256 currentTimestamp = block.timestamp;
+        uint256 shareToVana = vanaPoolEntity.entityShareToVana(entityId);
+
+        // Calculate new total shares and their VANA value after this stake
+        uint256 newTotalShares = stakerEntity.shares + sharesIssued;
+        uint256 newTotalValue = (newTotalShares * shareToVana) / 1e18;
+
+        if (stakerEntity.rewardEligibilityTimestamp <= currentTimestamp) {
+            // Reward eligible (or first stake): all current value becomes vested cost basis
+            // Weighted time: only new stake contributes (old stake has 0 remaining time)
+            stakerEntity.costBasis = newTotalValue;
+            stakerEntity.rewardEligibilityTimestamp = currentTimestamp + (stakeAmount * bondingPeriod) / newTotalValue;
+        } else {
+            // Still in bonding period: add new stake to cost basis, calculate weighted average time
+            stakerEntity.costBasis += stakeAmount;
+
+            uint256 oldValue = (stakerEntity.shares * shareToVana) / 1e18;
+            uint256 remainingTime = stakerEntity.rewardEligibilityTimestamp - currentTimestamp;
+            uint256 weightedTime = (oldValue * remainingTime + stakeAmount * bondingPeriod) / newTotalValue;
+            stakerEntity.rewardEligibilityTimestamp = currentTimestamp + weightedTime;
+        }
+
+        stakerEntity.shares = newTotalShares;
 
         _addStaker(recipient);
 
@@ -349,11 +405,30 @@ contract VanaPoolStakingImplementation is
         //        }
 
         uint256 shareToVana = vanaPoolEntity.entityShareToVana(entityId);
+        uint256 shareValue = (shareAmount * shareToVana) / 1e18;
+        uint256 currentTimestamp = block.timestamp;
 
-        // Store the exact VANA amount corresponding to shares at this point
-        uint256 exactVanaAmount = (shareAmount * shareToVana) / 1e18;
+        // Calculate the VANA amount to return based on reward eligibility
+        uint256 vanaToReturn;
+        uint256 proportionalCostBasis = (stakerEntity.costBasis * shareAmount) / stakerEntity.shares;
+        uint256 forfeitedRewards = 0;
 
-        if (exactVanaAmount < vanaAmountMin) {
+        if (currentTimestamp >= stakerEntity.rewardEligibilityTimestamp) {
+            // Reward eligible: user receives full value (principal + rewards)
+            vanaToReturn = shareValue;
+        } else {
+            // Still in bonding period: user receives only principal (forfeits rewards)
+            vanaToReturn = proportionalCostBasis;
+            // Calculate forfeited rewards (difference between share value and cost basis)
+            if (shareValue > proportionalCostBasis) {
+                forfeitedRewards = shareValue - proportionalCostBasis;
+            }
+        }
+
+        // Reduce cost basis proportionally
+        stakerEntity.costBasis -= proportionalCostBasis;
+
+        if (vanaToReturn < vanaAmountMin) {
             revert InvalidSlippage();
         }
 
@@ -363,14 +438,19 @@ contract VanaPoolStakingImplementation is
         _removeStaker(_msgSender());
 
         // Update entity staking data in VanaPoolEntity contract
-        vanaPoolEntity.updateEntityPool(entityId, shareAmount, exactVanaAmount, false);
+        vanaPoolEntity.updateEntityPool(entityId, shareAmount, shareValue, false);
 
-        bool success = vanaPoolTreasury.transferVana(payable(_msgSender()), exactVanaAmount);
+        // Return forfeited rewards to the locked reward pool for gradual redistribution
+        if (forfeitedRewards > 0) {
+            vanaPoolEntity.returnForfeitedRewards(entityId, forfeitedRewards);
+        }
+
+        bool success = vanaPoolTreasury.transferVana(payable(_msgSender()), vanaToReturn);
         if (!success) {
             revert TransferFailed();
         }
 
-        emit Unstaked(entityId, _msgSender(), exactVanaAmount, shareAmount);
+        emit Unstaked(entityId, _msgSender(), vanaToReturn, shareAmount);
     }
 
     /**
