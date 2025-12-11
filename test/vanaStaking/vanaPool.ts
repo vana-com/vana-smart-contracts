@@ -157,7 +157,7 @@ describe("VanaPool", () => {
       (
         await vanaPoolStaking.hasRole(MAINTAINER_ROLE, maintainer.address)
       ).should.eq(true);
-      (await vanaPoolStaking.version()).should.eq(1);
+      (await vanaPoolStaking.version()).should.eq(2);
       (await vanaPoolStaking.minStakeAmount()).should.eq(minStakeAmount);
       (await vanaPoolStaking.vanaPoolEntity()).should.eq(vanaPoolEntity.target);
       (await vanaPoolStaking.vanaPoolTreasury()).should.eq(
@@ -437,7 +437,7 @@ describe("VanaPool", () => {
       await vanaPoolEntity
         .connect(user2)
         .updateEntity(1, updatedInfo)
-        .should.rejectedWith("NotEntityOwner()");
+        .should.be.revertedWithCustomError(vanaPoolEntity, "NotEntityOwner");
     });
 
     // The removeEntity() function is commented out in the interface, so these tests are commented too
@@ -738,6 +738,1637 @@ describe("VanaPool", () => {
     });
   });
 
+  describe("Bonding Period", () => {
+    const bondingPeriod = 5 * day; // 5 days bonding period
+
+    beforeEach(async () => {
+      await deploy();
+
+      // Set bonding period to 5 days
+      await vanaPoolStaking.connect(owner).updateBondingPeriod(bondingPeriod);
+
+      // Create an entity for testing
+      await vanaPoolEntity.connect(maintainer).createEntity(
+        {
+          ownerAddress: user1.address,
+          name: "Test Entity",
+        },
+        { value: minRegistrationStake },
+      );
+    });
+
+    it("should set rewardEligibilityTimestamp on first stake", async function () {
+      const stakeAmount = parseEther(2);
+      const timestampBefore = await getCurrentBlockTimestamp();
+
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: stakeAmount });
+
+      const stakerEntity = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // Cost basis should equal stake amount
+      stakerEntity.costBasis.should.eq(stakeAmount);
+
+      // Shares should be issued
+      stakerEntity.shares.should.gt(0n);
+
+      // Reward eligibility timestamp should be current time + bonding period
+      // (accounting for the 1 second block advancement)
+      const expectedEligibility = timestampBefore + bondingPeriod + 1;
+      stakerEntity.rewardEligibilityTimestamp.should.eq(expectedEligibility);
+    });
+
+    it("should calculate weighted average bonding time for second stake during bonding period", async function () {
+      // First stake: 2 ETH
+      const firstStake = parseEther(2);
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: firstStake });
+
+      const afterFirstStake = await getCurrentBlockTimestamp();
+      const firstStakerEntity = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // Verify first stake state
+      firstStakerEntity.costBasis.should.eq(firstStake);
+      const firstEligibility = Number(firstStakerEntity.rewardEligibilityTimestamp);
+
+      // Wait 2 days (still within bonding period)
+      await helpers.time.increase(2 * day);
+      const beforeSecondStake = await getCurrentBlockTimestamp();
+
+      // Second stake: 3 ETH during bonding period
+      const secondStake = parseEther(3);
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: secondStake });
+
+      const afterSecondStake = await getCurrentBlockTimestamp();
+      const secondStakerEntity = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // Cost basis should be sum of both stakes
+      secondStakerEntity.costBasis.should.eq(firstStake + secondStake);
+
+      // Shares should increase
+      secondStakerEntity.shares.should.gt(firstStakerEntity.shares);
+
+      // Calculate expected weighted average bonding time:
+      // old_remaining_time = firstEligibility - afterSecondStake = ~3 days remaining
+      // new_remaining_time = (old_amount * old_remaining + new_amount * full_period) / total_amount
+      // = (2 * 3 days + 3 * 5 days) / 5 = (6 + 15) / 5 = 4.2 days
+      const oldRemainingTime = firstEligibility - afterSecondStake;
+      const oldValue = firstStake; // At 1:1 share price, oldValue equals first stake
+      const totalValue = firstStake + secondStake;
+      const expectedWeightedTime = (Number(oldValue) * oldRemainingTime + Number(secondStake) * bondingPeriod) / Number(totalValue);
+      const expectedNewEligibility = afterSecondStake + expectedWeightedTime;
+
+      // Allow 1 second tolerance for block timing
+      const actualEligibility = Number(secondStakerEntity.rewardEligibilityTimestamp);
+      actualEligibility.should.be.closeTo(expectedNewEligibility, 2);
+
+      // The new eligibility should be between old remaining and full bonding period from now
+      actualEligibility.should.be.gt(afterSecondStake + oldRemainingTime);
+      actualEligibility.should.be.lt(afterSecondStake + bondingPeriod);
+    });
+
+    it("should start fresh bonding period for second stake after bonding period ends", async function () {
+      // First stake: 2 ETH
+      const firstStake = parseEther(2);
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: firstStake });
+
+      const firstStakerEntity = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      const firstCostBasis = firstStakerEntity.costBasis;
+      const firstShares = firstStakerEntity.shares;
+
+      // Wait for bonding period to end (6 days > 5 days bonding)
+      await helpers.time.increase(6 * day);
+      const beforeSecondStake = await getCurrentBlockTimestamp();
+
+      // Second stake: 3 ETH after bonding period
+      const secondStake = parseEther(3);
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: secondStake });
+
+      const afterSecondStake = await getCurrentBlockTimestamp();
+      const secondStakerEntity = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // Shares should increase
+      secondStakerEntity.shares.should.gt(firstShares);
+
+      // After bonding period ends, cost basis is reset to current total value
+      // At 1:1 share price (no rewards processed), total value = first stake + second stake
+      const shareToVana = await vanaPoolEntity.entityShareToVana(1);
+      const totalShares = secondStakerEntity.shares;
+      const expectedTotalValue = (totalShares * shareToVana) / parseEther(1);
+      secondStakerEntity.costBasis.should.eq(expectedTotalValue);
+
+      // New bonding period is proportional: (stakeAmount * bondingPeriod) / totalValue
+      // Since stakeAmount < totalValue, the new bonding period is less than full
+      const expectedNewBondingTime = (Number(secondStake) * bondingPeriod) / Number(expectedTotalValue);
+      const expectedEligibility = afterSecondStake + expectedNewBondingTime;
+
+      const actualEligibility = Number(secondStakerEntity.rewardEligibilityTimestamp);
+      actualEligibility.should.be.closeTo(expectedEligibility, 2);
+
+      // New bonding time should be less than full bonding period since it's weighted by stake ratio
+      actualEligibility.should.be.lt(afterSecondStake + bondingPeriod);
+      actualEligibility.should.be.gt(afterSecondStake);
+    });
+
+    it("should forfeit rewards when unstaking before reward eligibility", async function () {
+      // Add rewards to the entity first
+      await vanaPoolEntity.connect(user3).addRewards(1, { value: parseEther(1) });
+
+      // Process rewards
+      await helpers.time.increase(day);
+      await vanaPoolEntity.processRewards(1);
+
+      // User2 stakes
+      const stakeAmount = parseEther(2);
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: stakeAmount });
+
+      const stakerEntity = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      const costBasis = stakerEntity.costBasis;
+      const shares = stakerEntity.shares;
+
+      // Wait 2 days (still in bonding period of 5 days)
+      await helpers.time.increase(2 * day);
+
+      // Check share value - should have accrued some rewards
+      const shareToVana = await vanaPoolEntity.entityShareToVana(1);
+      const shareValue = (shares * shareToVana) / parseEther(1);
+
+      // Share value should be >= cost basis (rewards may have accrued)
+      shareValue.should.gte(costBasis);
+
+      // Get user balance before unstake
+      const balanceBefore = await ethers.provider.getBalance(user2.address);
+
+      // Unstake during bonding period - should only get cost basis back
+      const tx = await vanaPoolStaking.connect(user2).unstake(1, shares, 0);
+      const receipt = await getReceipt(tx);
+      const gasUsed = receipt.gasUsed * tx.gasPrice!;
+
+      // Get user balance after unstake
+      const balanceAfter = await ethers.provider.getBalance(user2.address);
+
+      // User should receive cost basis, not full share value
+      const received = balanceAfter - balanceBefore + gasUsed;
+
+      // Should receive proportional cost basis (unstaking all shares = full cost basis)
+      received.should.eq(costBasis);
+    });
+
+    it("should receive full rewards when unstaking after reward eligibility", async function () {
+      // Add rewards to the entity first
+      await vanaPoolEntity.connect(user3).addRewards(1, { value: parseEther(1) });
+
+      // Process rewards
+      await helpers.time.increase(day);
+      await vanaPoolEntity.processRewards(1);
+
+      // User2 stakes
+      const stakeAmount = parseEther(2);
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: stakeAmount });
+
+      const stakerEntity = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      const shares = stakerEntity.shares;
+
+      // Wait for bonding period to end (6 days > 5 days)
+      await helpers.time.increase(6 * day);
+
+      // Process more rewards
+      await vanaPoolEntity.processRewards(1);
+
+      // Check share value after bonding
+      const shareToVana = await vanaPoolEntity.entityShareToVana(1);
+      const shareValue = (shares * shareToVana) / parseEther(1);
+
+      // Get user balance before unstake
+      const balanceBefore = await ethers.provider.getBalance(user2.address);
+
+      // Unstake after bonding period - should get full share value
+      const tx = await vanaPoolStaking.connect(user2).unstake(1, shares, 0);
+      const receipt = await getReceipt(tx);
+      const gasUsed = receipt.gasUsed * tx.gasPrice!;
+
+      // Get user balance after unstake
+      const balanceAfter = await ethers.provider.getBalance(user2.address);
+
+      // User should receive full share value
+      const received = balanceAfter - balanceBefore + gasUsed;
+
+      // Should receive full share value (with small tolerance for rounding)
+      const diff = received > shareValue ? received - shareValue : shareValue - received;
+      diff.should.be.lt(parseEther(0.0001)); // Allow tiny rounding difference
+    });
+
+    it("should extend bonding time on partial unstake during bonding period (anti-gaming)", async function () {
+      // User2 stakes 10 ETH
+      const stakeAmount = parseEther(10);
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: stakeAmount });
+
+      const stakerEntityAfterStake = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      const initialEligibility = Number(stakerEntityAfterStake.rewardEligibilityTimestamp);
+      const initialShares = stakerEntityAfterStake.shares;
+
+      // Wait 2.5 days (half of 5-day bonding period)
+      await helpers.time.increase(2.5 * day);
+      const beforeUnstake = await getCurrentBlockTimestamp();
+
+      // Remaining time should be ~2.5 days
+      const remainingTimeBefore = initialEligibility - beforeUnstake;
+
+      // Partial unstake: withdraw 50% of shares
+      const unstakeShares = initialShares / 2n;
+      await vanaPoolStaking.connect(user2).unstake(1, unstakeShares, 0);
+
+      const afterUnstake = await getCurrentBlockTimestamp();
+      const stakerEntityAfterUnstake = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // Shares should be reduced by half
+      stakerEntityAfterUnstake.shares.should.eq(initialShares - unstakeShares);
+
+      // Anti-gaming: new_remaining_time = old_remaining * (amount_before / amount_after)
+      // = 2.5 days * (10 / 5) = 5 days (but capped at bondingPeriod = 5 days)
+      const expectedExtendedTime = Math.min(
+        remainingTimeBefore * 2, // 50% withdrawal doubles the time
+        bondingPeriod
+      );
+      const expectedNewEligibility = afterUnstake + expectedExtendedTime;
+
+      const actualNewEligibility = Number(stakerEntityAfterUnstake.rewardEligibilityTimestamp);
+
+      // Allow small tolerance for block timing
+      actualNewEligibility.should.be.closeTo(expectedNewEligibility, 3);
+
+      // The new eligibility should be later than what it would have been without anti-gaming
+      actualNewEligibility.should.be.gt(afterUnstake + remainingTimeBefore);
+    });
+
+    it("should cap extended bonding time at full bonding period", async function () {
+      // User2 stakes 10 ETH
+      const stakeAmount = parseEther(10);
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: stakeAmount });
+
+      const stakerEntityAfterStake = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      const initialShares = stakerEntityAfterStake.shares;
+
+      // Wait only 1 day (4 days remaining in 5-day bonding)
+      await helpers.time.increase(day);
+
+      // Partial unstake: withdraw 90% of shares (very aggressive withdrawal)
+      // This would extend time by 10x: 4 days * 10 = 40 days
+      // But it should be capped at 5 days (bondingPeriod)
+      const unstakeShares = (initialShares * 9n) / 10n;
+      await vanaPoolStaking.connect(user2).unstake(1, unstakeShares, 0);
+
+      const afterUnstake = await getCurrentBlockTimestamp();
+      const stakerEntityAfterUnstake = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // New eligibility should be capped at bondingPeriod from now
+      const actualNewEligibility = Number(stakerEntityAfterUnstake.rewardEligibilityTimestamp);
+      const maxEligibility = afterUnstake + bondingPeriod;
+
+      // Should be capped at full bonding period
+      actualNewEligibility.should.be.closeTo(maxEligibility, 2);
+    });
+
+    it("should not extend bonding time on full unstake", async function () {
+      // User2 stakes
+      const stakeAmount = parseEther(10);
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: stakeAmount });
+
+      const stakerEntityAfterStake = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      const initialShares = stakerEntityAfterStake.shares;
+
+      // Wait 2 days
+      await helpers.time.increase(2 * day);
+
+      // Full unstake: withdraw all shares
+      await vanaPoolStaking.connect(user2).unstake(1, initialShares, 0);
+
+      const stakerEntityAfterUnstake = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // All shares should be gone
+      stakerEntityAfterUnstake.shares.should.eq(0n);
+
+      // No need to check eligibility timestamp since user has no stake left
+    });
+
+    it("should not extend bonding time when unstaking after eligibility", async function () {
+      // User2 stakes
+      const stakeAmount = parseEther(10);
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: stakeAmount });
+
+      const stakerEntityAfterStake = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      const initialShares = stakerEntityAfterStake.shares;
+      const originalEligibility = stakerEntityAfterStake.rewardEligibilityTimestamp;
+
+      // Wait for bonding period to end (6 days > 5 days)
+      await helpers.time.increase(6 * day);
+
+      // Partial unstake after eligibility
+      const unstakeShares = initialShares / 2n;
+      await vanaPoolStaking.connect(user2).unstake(1, unstakeShares, 0);
+
+      const stakerEntityAfterUnstake = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // Eligibility timestamp should not change (no anti-gaming needed after eligibility)
+      stakerEntityAfterUnstake.rewardEligibilityTimestamp.should.eq(originalEligibility);
+    });
+  });
+
+  describe("Bonding Period - Exact Number Tracking", () => {
+    const bondingPeriod = 5 * day; // 5 days = 432000 seconds
+
+    beforeEach(async () => {
+      await deploy();
+
+      // Set bonding period to 5 days
+      await vanaPoolStaking.connect(owner).updateBondingPeriod(bondingPeriod);
+
+      // Create an entity for testing
+      await vanaPoolEntity.connect(maintainer).createEntity(
+        {
+          ownerAddress: user1.address,
+          name: "Test Entity",
+        },
+        { value: minRegistrationStake },
+      );
+    });
+
+    it("should track exact costBasis and eligibility: single stake", async function () {
+      const stakeAmount = parseEther(5);
+
+      const tx = await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: stakeAmount });
+      const block = await ethers.provider.getBlock(tx.blockNumber!);
+      const stakeTimestamp = block!.timestamp;
+
+      const stakerEntity = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // Exact values
+      stakerEntity.costBasis.should.eq(stakeAmount);
+      stakerEntity.shares.should.eq(stakeAmount); // 1:1 ratio initially
+      stakerEntity.rewardEligibilityTimestamp.should.eq(stakeTimestamp + bondingPeriod);
+    });
+
+    it("should track exact values: stake -> partial unstake during bonding", async function () {
+      // Step 1: Stake 10 ETH
+      const stakeAmount = parseEther(10);
+      const stakeTx = await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: stakeAmount });
+      const stakeBlock = await ethers.provider.getBlock(stakeTx.blockNumber!);
+      const stakeTimestamp = stakeBlock!.timestamp;
+
+      const afterStake = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      afterStake.costBasis.should.eq(stakeAmount);
+      afterStake.shares.should.eq(stakeAmount);
+      afterStake.rewardEligibilityTimestamp.should.eq(stakeTimestamp + bondingPeriod);
+
+      // Step 2: Wait 2 days (172800 seconds)
+      const waitTime = 2 * day;
+      await helpers.time.increase(waitTime);
+
+      // Step 3: Unstake 4 ETH (40% of shares)
+      const unstakeShares = parseEther(4);
+      const unstakeTx = await vanaPoolStaking.connect(user2).unstake(1, unstakeShares, 0);
+      const unstakeBlock = await ethers.provider.getBlock(unstakeTx.blockNumber!);
+      const unstakeTimestamp = unstakeBlock!.timestamp;
+
+      const afterUnstake = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // Cost basis reduced proportionally: 10 - (10 * 4 / 10) = 6 ETH
+      const expectedCostBasis = stakeAmount - (stakeAmount * unstakeShares) / afterStake.shares;
+      afterUnstake.costBasis.should.eq(expectedCostBasis);
+      afterUnstake.costBasis.should.eq(parseEther(6));
+
+      // Shares reduced: 10 - 4 = 6 ETH
+      afterUnstake.shares.should.eq(parseEther(6));
+
+      // Anti-gaming: remaining time before unstake
+      const remainingTimeBefore = stakeTimestamp + bondingPeriod - unstakeTimestamp;
+      // new_time = remaining * (before / after) = remaining * (10 / 6)
+      const amountBefore = stakeAmount;
+      const amountAfter = stakeAmount - unstakeShares;
+      let extendedTime = (BigInt(remainingTimeBefore) * amountBefore) / amountAfter;
+      // Cap at bondingPeriod
+      if (extendedTime > BigInt(bondingPeriod)) {
+        extendedTime = BigInt(bondingPeriod);
+      }
+      const expectedEligibility = BigInt(unstakeTimestamp) + extendedTime;
+      afterUnstake.rewardEligibilityTimestamp.should.eq(expectedEligibility);
+    });
+
+    it("should track exact values: stake -> stake during bonding (weighted average)", async function () {
+      // Step 1: Stake 6 ETH
+      const firstStake = parseEther(6);
+      const firstTx = await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: firstStake });
+      const firstBlock = await ethers.provider.getBlock(firstTx.blockNumber!);
+      const firstTimestamp = firstBlock!.timestamp;
+
+      const afterFirst = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      afterFirst.costBasis.should.eq(firstStake);
+      afterFirst.rewardEligibilityTimestamp.should.eq(firstTimestamp + bondingPeriod);
+
+      // Step 2: Wait 3 days (259200 seconds) - 2 days remaining in bonding
+      const waitTime = 3 * day;
+      await helpers.time.increase(waitTime);
+
+      // Step 3: Stake 4 ETH during bonding period
+      const secondStake = parseEther(4);
+      const secondTx = await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: secondStake });
+      const secondBlock = await ethers.provider.getBlock(secondTx.blockNumber!);
+      const secondTimestamp = secondBlock!.timestamp;
+
+      const afterSecond = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // Cost basis = first + second = 6 + 4 = 10 ETH
+      afterSecond.costBasis.should.eq(firstStake + secondStake);
+      afterSecond.costBasis.should.eq(parseEther(10));
+
+      // Shares = 6 + 4 = 10 (at 1:1 ratio)
+      afterSecond.shares.should.eq(parseEther(10));
+
+      // Weighted average bonding time:
+      // oldValue = 6 ETH (shares at 1:1)
+      // remainingTime = (firstTimestamp + bondingPeriod) - secondTimestamp
+      const oldValue = firstStake;
+      const remainingTime = BigInt(firstTimestamp + bondingPeriod - secondTimestamp);
+      const totalValue = firstStake + secondStake;
+      // weightedTime = (oldValue * remainingTime + newStake * bondingPeriod) / totalValue
+      const weightedTime = (oldValue * remainingTime + secondStake * BigInt(bondingPeriod)) / totalValue;
+      const expectedEligibility = BigInt(secondTimestamp) + weightedTime;
+      afterSecond.rewardEligibilityTimestamp.should.eq(expectedEligibility);
+    });
+
+    it("should track exact values: stake -> wait -> stake after bonding ends", async function () {
+      // Step 1: Stake 5 ETH
+      const firstStake = parseEther(5);
+      const firstTx = await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: firstStake });
+      const firstBlock = await ethers.provider.getBlock(firstTx.blockNumber!);
+      const firstTimestamp = firstBlock!.timestamp;
+
+      const afterFirst = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      afterFirst.costBasis.should.eq(firstStake);
+      afterFirst.rewardEligibilityTimestamp.should.eq(firstTimestamp + bondingPeriod);
+
+      // Step 2: Wait 6 days (bonding period ends after 5 days)
+      await helpers.time.increase(6 * day);
+
+      // Step 3: Stake 3 ETH after bonding ended
+      const secondStake = parseEther(3);
+      const secondTx = await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: secondStake });
+      const secondBlock = await ethers.provider.getBlock(secondTx.blockNumber!);
+      const secondTimestamp = secondBlock!.timestamp;
+
+      const afterSecond = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // After bonding ends: costBasis = newTotalValue (reset)
+      // At 1:1 share price: totalValue = totalShares = 5 + 3 = 8 ETH
+      const totalShares = firstStake + secondStake;
+      afterSecond.shares.should.eq(totalShares);
+      afterSecond.costBasis.should.eq(totalShares); // At 1:1, costBasis = totalValue = totalShares
+
+      // New eligibility: currentTimestamp + (stakeAmount * bondingPeriod) / totalValue
+      // = secondTimestamp + (3 * 432000) / 8 = secondTimestamp + 162000
+      const expectedBondingTime = (secondStake * BigInt(bondingPeriod)) / totalShares;
+      const expectedEligibility = BigInt(secondTimestamp) + expectedBondingTime;
+      afterSecond.rewardEligibilityTimestamp.should.eq(expectedEligibility);
+    });
+
+    it("should track exact values: stake -> partial unstake -> stake sequence", async function () {
+      // Step 1: Stake 10 ETH
+      const firstStake = parseEther(10);
+      const firstTx = await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: firstStake });
+      const firstBlock = await ethers.provider.getBlock(firstTx.blockNumber!);
+      const firstTimestamp = firstBlock!.timestamp;
+
+      // Step 2: Wait 1 day (4 days remaining)
+      await helpers.time.increase(day);
+
+      // Step 3: Unstake 5 ETH (50%)
+      const unstakeShares = parseEther(5);
+      const unstakeTx = await vanaPoolStaking.connect(user2).unstake(1, unstakeShares, 0);
+      const unstakeBlock = await ethers.provider.getBlock(unstakeTx.blockNumber!);
+      const unstakeTimestamp = unstakeBlock!.timestamp;
+
+      const afterUnstake = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // Cost basis: 10 - 5 = 5 ETH
+      afterUnstake.costBasis.should.eq(parseEther(5));
+      afterUnstake.shares.should.eq(parseEther(5));
+
+      // Anti-gaming: remaining * (10/5) = remaining * 2, capped at bondingPeriod
+      const remainingBeforeUnstake = BigInt(firstTimestamp + bondingPeriod - unstakeTimestamp);
+      let extendedTime = (remainingBeforeUnstake * firstStake) / (firstStake - unstakeShares);
+      if (extendedTime > BigInt(bondingPeriod)) {
+        extendedTime = BigInt(bondingPeriod);
+      }
+      const eligibilityAfterUnstake = BigInt(unstakeTimestamp) + extendedTime;
+      afterUnstake.rewardEligibilityTimestamp.should.eq(eligibilityAfterUnstake);
+
+      // Step 4: Wait 1 day
+      await helpers.time.increase(day);
+
+      // Step 5: Stake 3 ETH (still in bonding due to extension)
+      const thirdStake = parseEther(3);
+      const thirdTx = await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: thirdStake });
+      const thirdBlock = await ethers.provider.getBlock(thirdTx.blockNumber!);
+      const thirdTimestamp = thirdBlock!.timestamp;
+
+      const afterThirdStake = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // Cost basis: 5 + 3 = 8 ETH (still in bonding, so add to existing)
+      afterThirdStake.costBasis.should.eq(parseEther(8));
+      afterThirdStake.shares.should.eq(parseEther(8));
+
+      // Weighted average time
+      const oldValue = parseEther(5); // shares * shareToVana at 1:1
+      const newTotal = parseEther(8);
+      const remainingAfterUnstake = eligibilityAfterUnstake - BigInt(thirdTimestamp);
+      const weightedTime = (oldValue * remainingAfterUnstake + thirdStake * BigInt(bondingPeriod)) / newTotal;
+      const expectedFinalEligibility = BigInt(thirdTimestamp) + weightedTime;
+      afterThirdStake.rewardEligibilityTimestamp.should.eq(expectedFinalEligibility);
+    });
+
+    it("should track exact values: multiple stakes accumulating during bonding", async function () {
+      // Stake 1: 2 ETH
+      const stake1 = parseEther(2);
+      const tx1 = await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: stake1 });
+      const block1 = await ethers.provider.getBlock(tx1.blockNumber!);
+      const ts1 = block1!.timestamp;
+
+      const after1 = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      after1.costBasis.should.eq(stake1);
+      after1.shares.should.eq(stake1);
+      const elig1 = ts1 + bondingPeriod;
+      after1.rewardEligibilityTimestamp.should.eq(elig1);
+
+      // Wait 1 day
+      await helpers.time.increase(day);
+
+      // Stake 2: 3 ETH
+      const stake2 = parseEther(3);
+      const tx2 = await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: stake2 });
+      const block2 = await ethers.provider.getBlock(tx2.blockNumber!);
+      const ts2 = block2!.timestamp;
+
+      const after2 = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      after2.costBasis.should.eq(stake1 + stake2);
+      after2.shares.should.eq(stake1 + stake2);
+
+      // Weighted: (2 * remaining + 3 * 5days) / 5
+      const remaining2 = BigInt(elig1 - ts2);
+      const weighted2 = (stake1 * remaining2 + stake2 * BigInt(bondingPeriod)) / (stake1 + stake2);
+      const elig2 = BigInt(ts2) + weighted2;
+      after2.rewardEligibilityTimestamp.should.eq(elig2);
+
+      // Wait 1 day
+      await helpers.time.increase(day);
+
+      // Stake 3: 5 ETH
+      const stake3 = parseEther(5);
+      const tx3 = await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: stake3 });
+      const block3 = await ethers.provider.getBlock(tx3.blockNumber!);
+      const ts3 = block3!.timestamp;
+
+      const after3 = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      after3.costBasis.should.eq(stake1 + stake2 + stake3);
+      after3.costBasis.should.eq(parseEther(10));
+      after3.shares.should.eq(parseEther(10));
+
+      // Weighted: (5 * remaining + 5 * 5days) / 10
+      const remaining3 = elig2 - BigInt(ts3);
+      const oldValue3 = stake1 + stake2; // 5 ETH
+      const totalValue3 = stake1 + stake2 + stake3; // 10 ETH
+      const weighted3 = (oldValue3 * remaining3 + stake3 * BigInt(bondingPeriod)) / totalValue3;
+      const elig3 = BigInt(ts3) + weighted3;
+      after3.rewardEligibilityTimestamp.should.eq(elig3);
+    });
+
+    it("should track exact values: full unstake resets everything", async function () {
+      // Stake 8 ETH
+      const stakeAmount = parseEther(8);
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: stakeAmount });
+
+      const afterStake = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      afterStake.costBasis.should.eq(stakeAmount);
+      afterStake.shares.should.eq(stakeAmount);
+
+      // Wait 2 days
+      await helpers.time.increase(2 * day);
+
+      // Full unstake
+      await vanaPoolStaking.connect(user2).unstake(1, stakeAmount, 0);
+
+      const afterUnstake = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      afterUnstake.costBasis.should.eq(0);
+      afterUnstake.shares.should.eq(0);
+      // rewardEligibilityTimestamp is not reset but doesn't matter since shares = 0
+
+      // Stake again: 4 ETH (fresh start)
+      const newStake = parseEther(4);
+      const newTx = await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: newStake });
+      const newBlock = await ethers.provider.getBlock(newTx.blockNumber!);
+      const newTimestamp = newBlock!.timestamp;
+
+      const afterNewStake = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      afterNewStake.costBasis.should.eq(newStake);
+      afterNewStake.shares.should.eq(newStake);
+      // Fresh bonding period since previous was fully unstaked (eligibility was in past or shares were 0)
+      afterNewStake.rewardEligibilityTimestamp.should.eq(newTimestamp + bondingPeriod);
+    });
+
+    it("should track exact values: partial unstake reducing cost basis proportionally", async function () {
+      // Stake 12 ETH
+      const stakeAmount = parseEther(12);
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: stakeAmount });
+
+      // Wait 6 days (bonding ended)
+      await helpers.time.increase(6 * day);
+
+      const beforeUnstake = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // Partial unstake: 3 ETH (25%)
+      const unstakeShares = parseEther(3);
+      await vanaPoolStaking.connect(user2).unstake(1, unstakeShares, 0);
+
+      const afterUnstake = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // Cost basis reduced proportionally: 12 * (1 - 3/12) = 12 * 0.75 = 9 ETH
+      // Or: 12 - (12 * 3 / 12) = 12 - 3 = 9 ETH
+      const proportionalReduction = (beforeUnstake.costBasis * unstakeShares) / beforeUnstake.shares;
+      const expectedCostBasis = beforeUnstake.costBasis - proportionalReduction;
+      afterUnstake.costBasis.should.eq(expectedCostBasis);
+      afterUnstake.costBasis.should.eq(parseEther(9));
+
+      // Shares: 12 - 3 = 9
+      afterUnstake.shares.should.eq(parseEther(9));
+
+      // Eligibility unchanged (unstaked after bonding ended)
+      afterUnstake.rewardEligibilityTimestamp.should.eq(beforeUnstake.rewardEligibilityTimestamp);
+    });
+  });
+
+  describe("Earned Rewards Tracking", () => {
+    const bondingPeriod = 5 * day;
+
+    beforeEach(async () => {
+      await deploy();
+
+      // Set bonding period to 5 days
+      await vanaPoolStaking.connect(owner).updateBondingPeriod(bondingPeriod);
+
+      // Create an entity for testing
+      await vanaPoolEntity.connect(maintainer).createEntity(
+        {
+          ownerAddress: user1.address,
+          name: "Test Entity",
+        },
+        { value: minRegistrationStake },
+      );
+    });
+
+    it("should return 0 earned rewards immediately after stake", async function () {
+      const stakeAmount = parseEther(100);
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: stakeAmount });
+
+      const earnedRewards = await vanaPoolStaking.getEarnedRewards(user2.address, 1);
+      earnedRewards.should.eq(0);
+    });
+
+    it("should track unrealized rewards as share price increases", async function () {
+      // User2 stakes 100 VANA
+      const stakeAmount = parseEther(100);
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: stakeAmount });
+
+      // Add rewards to entity and process them
+      await vanaPoolEntity.connect(user3).addRewards(1, { value: parseEther(10) });
+      await helpers.time.increase(30 * day);
+      await vanaPoolEntity.processRewards(1);
+
+      // Check earned rewards (should be unrealized since no unstake yet)
+      const earnedRewards = await vanaPoolStaking.getEarnedRewards(user2.address, 1);
+
+      // Should have some unrealized rewards > 0
+      earnedRewards.should.be.gt(0);
+
+      // Unrealized interest should equal earned rewards at this point (no realized yet)
+      const unrealizedInterest = await vanaPoolStaking.getAccruingInterest(user2.address, 1);
+      earnedRewards.should.eq(unrealizedInterest);
+
+      // realizedRewards should still be 0
+      const stakerEntity = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      stakerEntity.realizedRewards.should.eq(0);
+    });
+
+    it("should track realized rewards after unstaking (after eligibility)", async function () {
+      // User2 stakes 100 VANA
+      const stakeAmount = parseEther(100);
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: stakeAmount });
+
+      // Add rewards and process
+      await vanaPoolEntity.connect(user3).addRewards(1, { value: parseEther(20) });
+      await helpers.time.increase(30 * day); // Well past bonding period
+      await vanaPoolEntity.processRewards(1);
+
+      // Get share value before unstake
+      const shareToVana = await vanaPoolEntity.entityShareToVana(1);
+      const stakerBefore = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // Unstake 40% of shares (after eligibility)
+      const unstakeShares = (stakerBefore.shares * 40n) / 100n;
+      await vanaPoolStaking.connect(user2).unstake(1, unstakeShares, 0);
+
+      const stakerAfter = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // realizedRewards should now be > 0 (the rewards portion of what was unstaked)
+      stakerAfter.realizedRewards.should.be.gt(0);
+
+      // Calculate expected realized rewards
+      // Note: There may be tiny rounding differences due to share price updates during unstake
+      const proportionalCostBasis = (stakerBefore.costBasis * unstakeShares) / stakerBefore.shares;
+      const shareValueUnstaked = (unstakeShares * shareToVana) / parseEther(1);
+      const expectedRealizedRewards = shareValueUnstaked - proportionalCostBasis;
+
+      // Allow small rounding difference (< 0.0001 ETH)
+      const diff = stakerAfter.realizedRewards > expectedRealizedRewards
+        ? stakerAfter.realizedRewards - expectedRealizedRewards
+        : expectedRealizedRewards - stakerAfter.realizedRewards;
+      diff.should.be.lt(parseEther(0.0001));
+
+      // Total earned rewards should be consistent
+      const earnedRewardsAfter = await vanaPoolStaking.getEarnedRewards(user2.address, 1);
+      const unrealizedAfter = await vanaPoolStaking.getAccruingInterest(user2.address, 1);
+      earnedRewardsAfter.should.eq(unrealizedAfter + stakerAfter.realizedRewards);
+    });
+
+    it("should NOT track realized rewards when unstaking before eligibility (forfeited)", async function () {
+      // User2 stakes 100 VANA
+      const stakeAmount = parseEther(100);
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: stakeAmount });
+
+      // Add rewards and process
+      await vanaPoolEntity.connect(user3).addRewards(1, { value: parseEther(20) });
+      await helpers.time.increase(day); // Only 1 day, still in bonding
+      await vanaPoolEntity.processRewards(1);
+
+      const stakerBefore = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // Unstake 40% of shares (before eligibility - rewards are forfeited)
+      const unstakeShares = (stakerBefore.shares * 40n) / 100n;
+      await vanaPoolStaking.connect(user2).unstake(1, unstakeShares, 0);
+
+      const stakerAfter = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // realizedRewards should still be 0 (rewards were forfeited, not realized)
+      stakerAfter.realizedRewards.should.eq(0);
+    });
+
+    it("should accumulate realized rewards across multiple unstakes", async function () {
+      // User2 stakes 100 VANA
+      const stakeAmount = parseEther(100);
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: stakeAmount });
+
+      // Add rewards and wait past bonding
+      await vanaPoolEntity.connect(user3).addRewards(1, { value: parseEther(30) });
+      await helpers.time.increase(30 * day);
+      await vanaPoolEntity.processRewards(1);
+
+      const staker1 = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // First unstake: 30% of shares
+      const unstake1Shares = (staker1.shares * 30n) / 100n;
+      await vanaPoolStaking.connect(user2).unstake(1, unstake1Shares, 0);
+
+      const stakerAfter1 = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      const realized1 = stakerAfter1.realizedRewards;
+      realized1.should.be.gt(0);
+
+      // Second unstake: 50% of remaining shares
+      const staker2 = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      const unstake2Shares = staker2.shares / 2n;
+      await vanaPoolStaking.connect(user2).unstake(1, unstake2Shares, 0);
+
+      const stakerAfter2 = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // realizedRewards should have increased
+      stakerAfter2.realizedRewards.should.be.gt(realized1);
+    });
+
+    it("should preserve total earned rewards after full unstake", async function () {
+      // User2 stakes 100 VANA
+      const stakeAmount = parseEther(100);
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: stakeAmount });
+
+      // Add rewards and wait past bonding
+      await vanaPoolEntity.connect(user3).addRewards(1, { value: parseEther(20) });
+      await helpers.time.increase(30 * day);
+      await vanaPoolEntity.processRewards(1);
+
+      // Get total earned before full unstake
+      const earnedBefore = await vanaPoolStaking.getEarnedRewards(user2.address, 1);
+      earnedBefore.should.be.gt(0);
+
+      // Full unstake
+      const staker = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      await vanaPoolStaking.connect(user2).unstake(1, staker.shares, 0);
+
+      // After full unstake, earned rewards should be preserved in realizedRewards
+      // Note: Small rounding differences may occur due to share price updates during unstake
+      const earnedAfter = await vanaPoolStaking.getEarnedRewards(user2.address, 1);
+
+      // Allow small rounding difference (< 0.0001 ETH)
+      const diff = earnedAfter > earnedBefore
+        ? earnedAfter - earnedBefore
+        : earnedBefore - earnedAfter;
+      diff.should.be.lt(parseEther(0.0001));
+
+      // All rewards are now realized
+      const stakerAfter = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      stakerAfter.shares.should.eq(0);
+
+      // realizedRewards should be close to earnedBefore
+      const realizedDiff = stakerAfter.realizedRewards > earnedBefore
+        ? stakerAfter.realizedRewards - earnedBefore
+        : earnedBefore - stakerAfter.realizedRewards;
+      realizedDiff.should.be.lt(parseEther(0.0001));
+    });
+
+    it("should track rewards correctly across stake -> unstake -> stake sequence", async function () {
+      // User2 stakes 100 VANA
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: parseEther(100) });
+
+      // Add rewards and wait past bonding
+      await vanaPoolEntity.connect(user3).addRewards(1, { value: parseEther(20) });
+      await helpers.time.increase(30 * day);
+      await vanaPoolEntity.processRewards(1);
+
+      // Partial unstake (50%)
+      const staker1 = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      await vanaPoolStaking.connect(user2).unstake(1, staker1.shares / 2n, 0);
+
+      const realizedAfterUnstake = (await vanaPoolStaking.stakerEntities(user2.address, 1)).realizedRewards;
+      realizedAfterUnstake.should.be.gt(0);
+
+      // Stake more VANA while reward-eligible
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: parseEther(50) });
+
+      // With separate tracking: vestedRewards captures unrealized when staking while eligible
+      // realizedRewards only tracks actual withdrawals
+      const stakerAfterStake = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      stakerAfterStake.vestedRewards.should.be.gt(0n); // Captured unrealized into vested
+      stakerAfterStake.realizedRewards.should.eq(realizedAfterUnstake); // Unchanged (no new unstake)
+
+      // getEarnedRewards = accruingInterest + realizedRewards
+      // (accruingInterest already includes vestedRewards)
+      const totalEarned = await vanaPoolStaking.getEarnedRewards(user2.address, 1);
+      const accruingInterest = await vanaPoolStaking.getAccruingInterest(user2.address, 1);
+      totalEarned.should.eq(accruingInterest + stakerAfterStake.realizedRewards);
+    });
+
+    it("should return 0 for address with no stake history", async function () {
+      const earnedRewards = await vanaPoolStaking.getEarnedRewards(user4.address, 1);
+      earnedRewards.should.eq(0);
+    });
+
+    it("should realize rewards when staking while reward-eligible", async function () {
+      // This test verifies that unrealized rewards are captured into vestedRewards
+      // when a user stakes additional amounts while reward-eligible
+
+      // === Step 1: Initial stake of 100 VANA ===
+      const initialStake = parseEther(100);
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: initialStake });
+
+      // Verify initial state
+      let stakerEntity = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      stakerEntity.shares.should.eq(initialStake);
+      stakerEntity.costBasis.should.eq(initialStake);
+      stakerEntity.realizedRewards.should.eq(0n);
+      stakerEntity.vestedRewards.should.eq(0n);
+
+      // === Step 2: Add rewards and wait for bonding period ===
+      const rewardAmount = parseEther(50);
+      await vanaPoolEntity.connect(user3).addRewards(1, { value: rewardAmount });
+      await helpers.time.increase(6 * day); // Past 5-day bonding period
+      await vanaPoolEntity.processRewards(1);
+
+      // Check unrealized rewards before second stake
+      const unrealizedBeforeSecondStake = await vanaPoolStaking.getAccruingInterest(user2.address, 1);
+      unrealizedBeforeSecondStake.should.be.gt(0n);
+
+      const earnedBeforeSecondStake = await vanaPoolStaking.getEarnedRewards(user2.address, 1);
+      earnedBeforeSecondStake.should.eq(unrealizedBeforeSecondStake); // No realized yet
+
+      // === Step 3: Stake 200 more VANA while reward-eligible ===
+      const secondStake = parseEther(200);
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: secondStake });
+
+      // Verify that unrealized rewards were captured into vestedRewards (not realizedRewards)
+      stakerEntity = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // vestedRewards should now be > 0 (previously unrealized rewards captured when staking while eligible)
+      // Note: stake() calls processRewards() internally which may slightly change the share price
+      stakerEntity.vestedRewards.should.be.gt(0n);
+      // realizedRewards should still be 0 (no actual withdrawal)
+      stakerEntity.realizedRewards.should.eq(0n);
+
+      // After staking while eligible, costBasis = newTotalValue, so pending interest should be ~0
+      // getAccruingInterest = pendingInterest + vestedRewards ≈ vestedRewards
+      const accruingAfterSecondStake = await vanaPoolStaking.getAccruingInterest(user2.address, 1);
+      // Accruing should be approximately equal to vested (pending is ~0)
+      // Allow small rounding difference (< 1000 wei)
+      const pendingAfterSecondStake = accruingAfterSecondStake - stakerEntity.vestedRewards;
+      pendingAfterSecondStake.should.be.lt(1000n);
+
+      // Total earned = accruingInterest + realizedRewards = accruingInterest (no realized yet)
+      const earnedAfterSecondStake = await vanaPoolStaking.getEarnedRewards(user2.address, 1);
+      earnedAfterSecondStake.should.eq(accruingAfterSecondStake);
+
+      // === Step 4: Add more rewards and wait ===
+      await vanaPoolEntity.connect(user3).addRewards(1, { value: parseEther(30) });
+      await helpers.time.increase(6 * day);
+      await vanaPoolEntity.processRewards(1);
+
+      // Now we should have new accruing interest (pending + vested)
+      const accruingAfterMoreRewards = await vanaPoolStaking.getAccruingInterest(user2.address, 1);
+      accruingAfterMoreRewards.should.be.gt(accruingAfterSecondStake);
+
+      const earnedAfterMoreRewards = await vanaPoolStaking.getEarnedRewards(user2.address, 1);
+      // Total earned = accruing + realized = accruing (no realized yet)
+      earnedAfterMoreRewards.should.eq(accruingAfterMoreRewards);
+
+      // Total earned should be greater than before (accumulated more rewards)
+      earnedAfterMoreRewards.should.be.gt(earnedAfterSecondStake);
+    });
+
+    it("should accumulate vested rewards across multiple eligible stakes", async function () {
+      // Test that vested rewards accumulate correctly across multiple stake operations
+      // (vestedRewards = rewards rolled into costBasis when staking while eligible)
+
+      // === Stake 1: 100 VANA ===
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: parseEther(100) });
+
+      // Add rewards and wait
+      await vanaPoolEntity.connect(user3).addRewards(1, { value: parseEther(20) });
+      await helpers.time.increase(6 * day);
+      await vanaPoolEntity.processRewards(1);
+
+      const earned1 = await vanaPoolStaking.getEarnedRewards(user2.address, 1);
+      earned1.should.be.gt(0n);
+
+      // === Stake 2: 50 VANA (while eligible) ===
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: parseEther(50) });
+
+      let stakerEntity = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      const vested1 = stakerEntity.vestedRewards;
+      // Vested should capture the earned rewards (stake() calls processRewards() internally,
+      // so vested1 might be slightly different from earned1 due to timing)
+      vested1.should.be.gt(0n);
+      // realizedRewards should be 0 (no unstake yet)
+      stakerEntity.realizedRewards.should.eq(0n);
+
+      // Add more rewards and wait
+      await vanaPoolEntity.connect(user3).addRewards(1, { value: parseEther(20) });
+      await helpers.time.increase(6 * day);
+      await vanaPoolEntity.processRewards(1);
+
+      const earned2 = await vanaPoolStaking.getEarnedRewards(user2.address, 1);
+      earned2.should.be.gt(vested1); // Should have accumulated more
+
+      // === Stake 3: 25 VANA (while eligible again) ===
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: parseEther(25) });
+
+      stakerEntity = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      const vested2 = stakerEntity.vestedRewards;
+
+      // Vested should have increased (accumulated vested1 + new unrealized)
+      vested2.should.be.gt(vested1);
+      // realizedRewards should still be 0 (no unstake yet)
+      stakerEntity.realizedRewards.should.eq(0n);
+
+      // Total earned = accruingInterest + realizedRewards
+      // Since no unstake yet, realizedRewards = 0, so earnedAfterStake3 = accruingInterest
+      const earnedAfterStake3 = await vanaPoolStaking.getEarnedRewards(user2.address, 1);
+      const accruingAfterStake3 = await vanaPoolStaking.getAccruingInterest(user2.address, 1);
+      earnedAfterStake3.should.eq(accruingAfterStake3);
+      // accruingInterest should include vested2 (pendingInterest ~0 after eligible stake)
+      // Allow small rounding difference
+      const pendingAfterStake3 = accruingAfterStake3 - vested2;
+      pendingAfterStake3.should.be.lt(1000n);
+    });
+
+    it("should realize rewards with multiple stakes and unstakes before and after eligibility", async function () {
+      // Comprehensive test with exact calculations for all stake/unstake operations
+
+      // === Phase 1: Stake during bonding period (no rewards realized) ===
+
+      // Stake 1: 100 VANA
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: parseEther(100) });
+
+      let stakerEntity = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      stakerEntity.realizedRewards.should.eq(0n);
+      stakerEntity.vestedRewards.should.eq(0n);
+      stakerEntity.costBasis.should.eq(parseEther(100));
+      stakerEntity.shares.should.eq(parseEther(100)); // 1:1 ratio at start
+
+      // Add rewards (goes to locked pool)
+      await vanaPoolEntity.connect(user3).addRewards(1, { value: parseEther(20) });
+      await helpers.time.increase(2 * day); // Still in bonding (5 days)
+      await vanaPoolEntity.processRewards(1);
+
+      // Stake 2: 50 VANA during bonding period
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: parseEther(50) });
+
+      stakerEntity = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      // During bonding: costBasis += stakeAmount, both rewards counters unchanged
+      stakerEntity.realizedRewards.should.eq(0n);
+      stakerEntity.vestedRewards.should.eq(0n);
+      stakerEntity.costBasis.should.eq(parseEther(150)); // 100 + 50
+
+      // Unstake 30 shares during bonding period (forfeits rewards, no realized)
+      const stakerBeforeUnstake1 = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      const unstakeShares1 = parseEther(30);
+      await vanaPoolStaking.connect(user2).unstake(1, unstakeShares1, 0);
+
+      stakerEntity = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      // During bonding unstake: both rewards counters stay 0 (rewards forfeited)
+      stakerEntity.realizedRewards.should.eq(0n);
+      stakerEntity.vestedRewards.should.eq(0n);
+      // Exact cost basis after unstake
+      const expectedCostBasis1 = stakerBeforeUnstake1.costBasis - (stakerBeforeUnstake1.costBasis * unstakeShares1) / stakerBeforeUnstake1.shares;
+      stakerEntity.costBasis.should.eq(expectedCostBasis1);
+      // Exact shares after unstake
+      stakerEntity.shares.should.eq(stakerBeforeUnstake1.shares - unstakeShares1);
+
+      // === Phase 2: Cross into eligibility ===
+
+      await helpers.time.increase(5 * day); // Now past bonding period
+      await vanaPoolEntity.processRewards(1);
+
+      // Calculate exact pending interest after becoming eligible
+      const shareToVanaAfterEligible = await vanaPoolEntity.entityShareToVana(1);
+      stakerEntity = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      const expectedPendingAfterEligible = (stakerEntity.shares * shareToVanaAfterEligible) / parseEther(1) - stakerEntity.costBasis;
+
+      const accruingAfterEligible = await vanaPoolStaking.getAccruingInterest(user2.address, 1);
+      // accruingInterest = pendingInterest + vestedRewards (vested is 0 at this point)
+      accruingAfterEligible.should.eq(expectedPendingAfterEligible + stakerEntity.vestedRewards);
+
+      const earnedAfterEligible = await vanaPoolStaking.getEarnedRewards(user2.address, 1);
+      earnedAfterEligible.should.eq(accruingAfterEligible + stakerEntity.realizedRewards);
+
+      // === Phase 3: Unstake after eligibility (realizes rewards) ===
+
+      const stakerBeforeUnstake2 = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      const unstakeShares2 = parseEther(40);
+
+      await vanaPoolStaking.connect(user2).unstake(1, unstakeShares2, 0);
+
+      stakerEntity = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // Exact proportional cost basis reduction
+      const proportionalCostBasis2 = (stakerBeforeUnstake2.costBasis * unstakeShares2) / stakerBeforeUnstake2.shares;
+      stakerEntity.costBasis.should.eq(stakerBeforeUnstake2.costBasis - proportionalCostBasis2);
+      // Exact shares
+      stakerEntity.shares.should.eq(stakerBeforeUnstake2.shares - unstakeShares2);
+      // Realized rewards should have increased (we're eligible, and there are unrealized rewards)
+      const realizedAfterUnstake2 = stakerEntity.realizedRewards;
+      realizedAfterUnstake2.should.be.gt(0n);
+      // Vested should still be 0 (only set on stake while eligible)
+      stakerEntity.vestedRewards.should.eq(0n);
+
+      // Verify getEarnedRewards = accruingInterest + realizedRewards
+      const accruingAfterUnstake2 = await vanaPoolStaking.getAccruingInterest(user2.address, 1);
+      const earnedAfterUnstake2 = await vanaPoolStaking.getEarnedRewards(user2.address, 1);
+      earnedAfterUnstake2.should.eq(accruingAfterUnstake2 + realizedAfterUnstake2);
+
+      // === Phase 4: Stake after eligibility (captures unrealized into vested) ===
+
+      await vanaPoolEntity.connect(user3).addRewards(1, { value: parseEther(15) });
+      await helpers.time.increase(3 * day);
+      await vanaPoolEntity.processRewards(1);
+
+      const stakerBeforeStake3 = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      // Calculate unrealized before stake (share price may change slightly during stake due to internal processRewards)
+      const shareToVanaBeforeStake3 = await vanaPoolEntity.entityShareToVana(1);
+      const oldValueBeforeStake3 = (stakerBeforeStake3.shares * shareToVanaBeforeStake3) / parseEther(1);
+      const unrealizedBeforeStake3 = oldValueBeforeStake3 > stakerBeforeStake3.costBasis
+        ? oldValueBeforeStake3 - stakerBeforeStake3.costBasis
+        : 0n;
+
+      // Stake 3: 75 VANA after eligibility
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: parseEther(75) });
+
+      stakerEntity = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // With separate tracking: vestedRewards captures unrealized when staking while eligible
+      // realizedRewards should be unchanged (no new unstake)
+      stakerEntity.realizedRewards.should.eq(realizedAfterUnstake2);
+      stakerEntity.vestedRewards.should.be.gt(0n);
+      const capturedUnrealized3 = stakerEntity.vestedRewards;
+
+      // Verify the vested increase is close to what we calculated (within small rounding due to processRewards)
+      // The difference should be minimal - less than 0.001 VANA
+      const unrealizedDiff = unrealizedBeforeStake3 > capturedUnrealized3
+        ? unrealizedBeforeStake3 - capturedUnrealized3
+        : capturedUnrealized3 - unrealizedBeforeStake3;
+      unrealizedDiff.should.be.lt(parseEther(0.001));
+
+      // Verify costBasis = total value of shares (contract-computed)
+      // After eligible stake, pendingInterest should be ~0 (tiny rounding allowed due to share price updates)
+      // getAccruingInterest = pendingInterest + vestedRewards
+      const accruingAfterStake3 = await vanaPoolStaking.getAccruingInterest(user2.address, 1);
+      // pendingInterest should be ~0, so accruingInterest should be approximately vestedRewards
+      const pendingAfterStake3 = accruingAfterStake3 - stakerEntity.vestedRewards;
+      pendingAfterStake3.should.be.lt(1000n);
+
+      // Verify earnedRewards = accruingInterest + realizedRewards
+      const earnedAfterStake3 = await vanaPoolStaking.getEarnedRewards(user2.address, 1);
+      earnedAfterStake3.should.eq(accruingAfterStake3 + stakerEntity.realizedRewards);
+
+      // === Phase 5: Multiple operations after eligibility ===
+
+      await vanaPoolEntity.connect(user3).addRewards(1, { value: parseEther(25) });
+      await helpers.time.increase(4 * day);
+      await vanaPoolEntity.processRewards(1);
+
+      // Unstake some shares (realizes more rewards)
+      const stakerBeforeUnstake3 = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      const unstakeShares3 = parseEther(20);
+
+      await vanaPoolStaking.connect(user2).unstake(1, unstakeShares3, 0);
+
+      stakerEntity = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // Exact proportional cost basis reduction
+      const proportionalCostBasis3 = (stakerBeforeUnstake3.costBasis * unstakeShares3) / stakerBeforeUnstake3.shares;
+      stakerEntity.costBasis.should.eq(stakerBeforeUnstake3.costBasis - proportionalCostBasis3);
+      // Exact shares
+      stakerEntity.shares.should.eq(stakerBeforeUnstake3.shares - unstakeShares3);
+      // Realized rewards should have increased (unstake realizes rewards + proportional vested)
+      stakerEntity.realizedRewards.should.be.gt(stakerBeforeUnstake3.realizedRewards);
+      // Proportional vested rewards should have moved to realized
+      const proportionalVested3 = (stakerBeforeUnstake3.vestedRewards * unstakeShares3) / stakerBeforeUnstake3.shares;
+      stakerEntity.vestedRewards.should.eq(stakerBeforeUnstake3.vestedRewards - proportionalVested3);
+
+      // Verify getEarnedRewards = accruingInterest + realizedRewards
+      const accruingAfterUnstake3 = await vanaPoolStaking.getAccruingInterest(user2.address, 1);
+      const earnedAfterUnstake3 = await vanaPoolStaking.getEarnedRewards(user2.address, 1);
+      earnedAfterUnstake3.should.eq(accruingAfterUnstake3 + stakerEntity.realizedRewards);
+
+      // Stake again (captures any unrealized into vested)
+      const stakerBeforeStake4 = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      const shareToVanaBeforeStake4 = await vanaPoolEntity.entityShareToVana(1);
+      const oldValueBeforeStake4 = (stakerBeforeStake4.shares * shareToVanaBeforeStake4) / parseEther(1);
+      const unrealizedBeforeStake4 = oldValueBeforeStake4 > stakerBeforeStake4.costBasis
+        ? oldValueBeforeStake4 - stakerBeforeStake4.costBasis
+        : 0n;
+
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: parseEther(30) });
+
+      stakerEntity = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      // realizedRewards should be unchanged (no unstake)
+      stakerEntity.realizedRewards.should.eq(stakerBeforeStake4.realizedRewards);
+      // vestedRewards should have increased (captures unrealized)
+      stakerEntity.vestedRewards.should.be.gte(stakerBeforeStake4.vestedRewards);
+      const capturedUnrealized4 = stakerEntity.vestedRewards - stakerBeforeStake4.vestedRewards;
+
+      // Verify captured unrealized is close to what we calculated
+      const unrealizedDiff4 = unrealizedBeforeStake4 > capturedUnrealized4
+        ? unrealizedBeforeStake4 - capturedUnrealized4
+        : capturedUnrealized4 - unrealizedBeforeStake4;
+      unrealizedDiff4.should.be.lt(parseEther(0.001));
+
+      // After eligible stake, pendingInterest should be ~0 (tiny rounding allowed)
+      // getAccruingInterest = pendingInterest + vestedRewards
+      const accruingAfterStake4 = await vanaPoolStaking.getAccruingInterest(user2.address, 1);
+      const pendingAfterStake4 = accruingAfterStake4 - stakerEntity.vestedRewards;
+      pendingAfterStake4.should.be.lt(1000n);
+
+      // Verify earnedRewards = accruingInterest + realizedRewards
+      const earnedAfterStake4 = await vanaPoolStaking.getEarnedRewards(user2.address, 1);
+      earnedAfterStake4.should.eq(accruingAfterStake4 + stakerEntity.realizedRewards);
+
+      // === Phase 6: Final unstake all ===
+
+      await vanaPoolEntity.connect(user3).addRewards(1, { value: parseEther(10) });
+      await helpers.time.increase(2 * day);
+      await vanaPoolEntity.processRewards(1);
+
+      const stakerBeforeFinal = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      const finalShares = stakerBeforeFinal.shares;
+
+      // Unstake all remaining shares
+      await vanaPoolStaking.connect(user2).unstake(1, finalShares, 0);
+
+      stakerEntity = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // All shares gone
+      stakerEntity.shares.should.eq(0n);
+      stakerEntity.costBasis.should.eq(0n);
+      // Realized rewards should have increased from final unstake (includes unrealized + all vested)
+      stakerEntity.realizedRewards.should.be.gt(stakerBeforeFinal.realizedRewards);
+      // Vested should be 0 after full unstake (all moved to realized)
+      stakerEntity.vestedRewards.should.eq(0n);
+
+      // After full unstake: earnedRewards = realized only (vested moved to realized, no unrealized)
+      const earnedAfterFinal = await vanaPoolStaking.getEarnedRewards(user2.address, 1);
+      earnedAfterFinal.should.eq(stakerEntity.realizedRewards);
+
+      // Unrealized should be exactly 0
+      const unrealizedAfterFinal = await vanaPoolStaking.getAccruingInterest(user2.address, 1);
+      unrealizedAfterFinal.should.eq(0n);
+    });
+
+    it("should track earned rewards through complete scenario: stake -> unstake -> stake -> unstake all", async function () {
+      // This test follows the exact example scenario with precise calculations
+      // All assertions use exact values computed from contract state
+
+      // === Day 0: User stakes 100 VANA ===
+      const initialStake = parseEther(100);
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: initialStake });
+
+      // Get entity state after stake for tracking
+      let entity = await vanaPoolEntity.entities(1);
+      const initialTotalShares = entity.totalShares;
+      const initialActivePool = entity.activeRewardPool;
+      let lastUpdateTimestamp = entity.lastUpdateTimestamp;
+
+      // Verify initial state - exact values
+      let stakerEntity = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      const userInitialShares = stakerEntity.shares;
+      stakerEntity.shares.should.eq(initialStake); // 100 shares at 1:1
+      stakerEntity.costBasis.should.eq(initialStake); // 100 VANA
+      stakerEntity.realizedRewards.should.eq(0n);
+      stakerEntity.vestedRewards.should.eq(0n);
+
+      // getEarnedRewards should return exactly 0
+      let earnedRewards = await vanaPoolStaking.getEarnedRewards(user2.address, 1);
+      earnedRewards.should.eq(0n);
+
+      // === Day 3: Share price rises (still in bonding) ===
+      const rewardAmount1 = parseEther(50);
+      await vanaPoolEntity.connect(user3).addRewards(1, { value: rewardAmount1 });
+      await helpers.time.increase(3 * day);
+
+      // Process rewards and capture exact timestamp
+      let processTx = await vanaPoolEntity.processRewards(1);
+      let processBlock = await ethers.provider.getBlock(processTx.blockNumber!);
+      let processTimestamp = BigInt(processBlock!.timestamp);
+
+      // Calculate exact yield distributed
+      let timeElapsed = processTimestamp - lastUpdateTimestamp;
+      const maxAPY = entity.maxAPY;
+      let expectedYield = await vanaPoolEntity.calculateYield(initialActivePool, maxAPY, timeElapsed);
+      let actualDistributed = expectedYield > rewardAmount1 ? rewardAmount1 : expectedYield;
+
+      // Verify exact share price
+      entity = await vanaPoolEntity.entities(1);
+      const activePoolDay3 = entity.activeRewardPool;
+      activePoolDay3.should.eq(initialActivePool + actualDistributed);
+
+      let shareToVana = await vanaPoolEntity.entityShareToVana(1);
+      const expectedShareToVanaDay3 = (activePoolDay3 * parseEther(1)) / initialTotalShares;
+      shareToVana.should.eq(expectedShareToVanaDay3);
+
+      // Calculate exact unrealized rewards
+      const userValueDay3 = (userInitialShares * shareToVana) / parseEther(1);
+      const expectedUnrealizedDay3 = userValueDay3 - initialStake;
+
+      earnedRewards = await vanaPoolStaking.getEarnedRewards(user2.address, 1);
+      earnedRewards.should.eq(expectedUnrealizedDay3);
+
+      // both rewards counters should still be exactly 0
+      stakerEntity = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      stakerEntity.realizedRewards.should.eq(0n);
+      stakerEntity.vestedRewards.should.eq(0n);
+
+      // === Day 6: User unstakes 40 shares (after eligibility) ===
+      await helpers.time.increase(3 * day); // Now past 5-day bonding period
+
+      // Capture state before unstake
+      const stakerBeforeUnstake1 = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      lastUpdateTimestamp = entity.lastUpdateTimestamp;
+
+      // Unstake 40 shares - this calls processRewards internally
+      const unstakeShares1 = parseEther(40);
+      await vanaPoolStaking.connect(user2).unstake(1, unstakeShares1, 0);
+
+      // Get share price used during unstake (after processRewards)
+      shareToVana = await vanaPoolEntity.entityShareToVana(1);
+
+      // Calculate exact values
+      const proportionalCostBasis1 = (stakerBeforeUnstake1.costBasis * unstakeShares1) / stakerBeforeUnstake1.shares;
+      const shareValue1 = (unstakeShares1 * shareToVana) / parseEther(1);
+      const expectedRealized1 = shareValue1 - proportionalCostBasis1;
+
+      // Verify exact state after unstake
+      stakerEntity = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // Exact shares: 100 - 40 = 60
+      stakerEntity.shares.should.eq(parseEther(60));
+
+      // Exact cost basis: 100 - 40 = 60
+      const expectedCostBasisAfterUnstake1 = stakerBeforeUnstake1.costBasis - proportionalCostBasis1;
+      stakerEntity.costBasis.should.eq(expectedCostBasisAfterUnstake1);
+
+      // Exact realized rewards
+      stakerEntity.realizedRewards.should.eq(expectedRealized1);
+
+      // Verify exact total earned = accruingInterest + realizedRewards
+      const accruingDay6 = await vanaPoolStaking.getAccruingInterest(user2.address, 1);
+      const expectedUserValueDay6 = (stakerEntity.shares * shareToVana) / parseEther(1);
+      const expectedPendingDay6 = expectedUserValueDay6 - stakerEntity.costBasis;
+      // accruingInterest = pendingInterest + vestedRewards (vested is 0 at this point)
+      accruingDay6.should.eq(expectedPendingDay6 + stakerEntity.vestedRewards);
+
+      earnedRewards = await vanaPoolStaking.getEarnedRewards(user2.address, 1);
+      earnedRewards.should.eq(accruingDay6 + stakerEntity.realizedRewards);
+
+      // === Day 8: User stakes 50 more VANA ===
+      await helpers.time.increase(2 * day);
+
+      // Add more rewards
+      const rewardAmount2 = parseEther(20);
+      await vanaPoolEntity.connect(user3).addRewards(1, { value: rewardAmount2 });
+      await vanaPoolEntity.processRewards(1);
+
+      const realizedBeforeStake = stakerEntity.realizedRewards;
+      const vestedBeforeStake = stakerEntity.vestedRewards;
+      const stakerBeforeStake2 = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // Stake 50 VANA
+      const additionalStake = parseEther(50);
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: additionalStake });
+
+      // Get share price after stake
+      shareToVana = await vanaPoolEntity.entityShareToVana(1);
+      const vanaToShare = await vanaPoolEntity.vanaToEntityShare(1);
+
+      // Calculate exact new shares issued
+      const newSharesIssued = (additionalStake * vanaToShare) / parseEther(1);
+      const expectedTotalShares = stakerBeforeStake2.shares + newSharesIssued;
+
+      // Verify exact state after additional stake
+      stakerEntity = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // Exact shares
+      stakerEntity.shares.should.eq(expectedTotalShares);
+
+      // Since user was reward-eligible, costBasis = newTotalValue
+      const expectedCostBasisAfterStake2 = (expectedTotalShares * shareToVana) / parseEther(1);
+      stakerEntity.costBasis.should.eq(expectedCostBasisAfterStake2);
+
+      // With separate tracking: vestedRewards increases when staking while eligible (captures unrealized)
+      // realizedRewards should be unchanged (no unstake)
+      stakerEntity.realizedRewards.should.eq(realizedBeforeStake);
+      stakerEntity.vestedRewards.should.be.gt(vestedBeforeStake);
+
+      // Verify exact total earned = accruingInterest + realizedRewards
+      const accruingDay8 = await vanaPoolStaking.getAccruingInterest(user2.address, 1);
+      earnedRewards = await vanaPoolStaking.getEarnedRewards(user2.address, 1);
+      earnedRewards.should.eq(accruingDay8 + stakerEntity.realizedRewards);
+
+      // === Day 15: User unstakes ALL remaining shares ===
+      await helpers.time.increase(7 * day);
+
+      // Add final rewards
+      const rewardAmount3 = parseEther(30);
+      await vanaPoolEntity.connect(user3).addRewards(1, { value: rewardAmount3 });
+      await vanaPoolEntity.processRewards(1);
+
+      // Capture state before final unstake
+      const stakerBeforeFinal = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      const realizedBeforeFinal = stakerBeforeFinal.realizedRewards;
+
+      // Full unstake - this internally calls processRewards() which may update share price
+      await vanaPoolStaking.connect(user2).unstake(1, stakerBeforeFinal.shares, 0);
+
+      // Verify exact final state
+      stakerEntity = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // All shares gone
+      stakerEntity.shares.should.eq(0n);
+
+      // Cost basis exactly 0
+      stakerEntity.costBasis.should.eq(0n);
+
+      // Realized rewards should have increased (unstake realizes + all remaining vested)
+      stakerEntity.realizedRewards.should.be.gt(realizedBeforeFinal);
+      // Vested should be 0 after full unstake (all moved to realized)
+      stakerEntity.vestedRewards.should.eq(0n);
+
+      // Verify the realized rewards formula: realizedRewards = old_realized + (shareValue - costBasis)
+      // Since we know old_realized and costBasis, we can derive shareValue
+      const derivedShareValue = stakerEntity.realizedRewards - realizedBeforeFinal + stakerBeforeFinal.costBasis;
+      // The derived shareValue should be positive (user made profit)
+      derivedShareValue.should.be.gt(stakerBeforeFinal.costBasis);
+
+      // earnedRewards = accruingInterest + realizedRewards
+      // After full unstake: accruing = 0 (no shares, no vested), so earnedRewards = realizedRewards
+      const earnedAfterFullUnstake = await vanaPoolStaking.getEarnedRewards(user2.address, 1);
+      earnedAfterFullUnstake.should.eq(stakerEntity.realizedRewards);
+
+      // Verify accruingInterest is 0 after full unstake (0 pendingInterest + 0 vestedRewards)
+      const finalAccruing = await vanaPoolStaking.getAccruingInterest(user2.address, 1);
+      finalAccruing.should.eq(0n);
+      earnedAfterFullUnstake.should.eq(finalAccruing + stakerEntity.realizedRewards);
+    });
+
+    it("should compute exact earned rewards using contract's calculateYield", async function () {
+      // This test computes exact expected values by calling the contract's calculateYield
+      // and tracking share prices at each step
+
+      // === Setup: Stake 100 VANA ===
+      const stakeAmount = parseEther(100);
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: stakeAmount });
+
+      // Get initial state
+      const entityAfterStake = await vanaPoolEntity.entities(1);
+      const initialActivePool = entityAfterStake.activeRewardPool;
+      const initialTotalShares = entityAfterStake.totalShares;
+      const initialLastUpdate = entityAfterStake.lastUpdateTimestamp;
+      const userShares = (await vanaPoolStaking.stakerEntities(user2.address, 1)).shares;
+
+      // Verify initial share price is 1:1
+      const initialShareToVana = await vanaPoolEntity.entityShareToVana(1);
+      initialShareToVana.should.eq(parseEther(1)); // 1e18 = 1:1 ratio
+
+      // === Add rewards and process ===
+      const rewardAmount = parseEther(50);
+      await vanaPoolEntity.connect(user3).addRewards(1, { value: rewardAmount });
+
+      // Advance time by 3 days
+      await helpers.time.increase(3 * day);
+
+      // Process rewards and capture the actual timestamp used
+      const processTx = await vanaPoolEntity.processRewards(1);
+      const processBlock = await ethers.provider.getBlock(processTx.blockNumber!);
+      const processTimestamp = BigInt(processBlock!.timestamp);
+
+      // Calculate exact time elapsed as the contract sees it
+      const actualTimeElapsed = processTimestamp - initialLastUpdate;
+
+      // Calculate expected yield using contract's formula with actual time
+      const maxAPY = entityAfterStake.maxAPY;
+      const expectedYield = await vanaPoolEntity.calculateYield(initialActivePool, maxAPY, actualTimeElapsed);
+
+      // Verify the yield was distributed correctly
+      const entityAfterProcess = await vanaPoolEntity.entities(1);
+      const actualDistributed = entityAfterProcess.activeRewardPool - initialActivePool;
+
+      // The actual distributed should equal expected yield (capped by lockedRewardPool)
+      const expectedDistributed = expectedYield > rewardAmount ? rewardAmount : expectedYield;
+      actualDistributed.should.eq(expectedDistributed);
+
+      // === Calculate exact share price after rewards ===
+      const newActivePool = entityAfterProcess.activeRewardPool;
+      const expectedShareToVana = (newActivePool * parseEther(1)) / initialTotalShares;
+      const actualShareToVana = await vanaPoolEntity.entityShareToVana(1);
+      actualShareToVana.should.eq(expectedShareToVana);
+
+      // === Calculate exact user value and pending interest ===
+      const expectedUserValue = (userShares * actualShareToVana) / parseEther(1);
+      const expectedPending = expectedUserValue - stakeAmount; // costBasis is stakeAmount
+
+      // accruingInterest = pendingInterest + vestedRewards (vested is 0 at this point)
+      const stakerEntityNow = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      const actualAccruing = await vanaPoolStaking.getAccruingInterest(user2.address, 1);
+      actualAccruing.should.eq(expectedPending + stakerEntityNow.vestedRewards);
+
+      // getEarnedRewards = accruingInterest + realizedRewards
+      const earnedRewards = await vanaPoolStaking.getEarnedRewards(user2.address, 1);
+      earnedRewards.should.eq(actualAccruing + stakerEntityNow.realizedRewards);
+
+      // === Wait for bonding period and unstake half ===
+      await helpers.time.increase(2 * day); // Past 5-day bonding period
+
+      // Calculate exact values for partial unstake
+      // Note: unstake() calls processRewards() internally, so we need to account for that
+      const unstakeShares = userShares / 2n;
+      const stakerBefore = await vanaPoolStaking.stakerEntities(user2.address, 1);
+
+      // Perform unstake - this processes rewards internally
+      await vanaPoolStaking.connect(user2).unstake(1, unstakeShares, 0);
+
+      // Get the share price that was used during unstake (after processRewards was called)
+      // Since we're right after unstake, the share price is what the contract used
+      const shareToVanaAfterUnstake = await vanaPoolEntity.entityShareToVana(1);
+
+      // Now calculate what the contract calculated
+      const proportionalCostBasis = (stakerBefore.costBasis * unstakeShares) / stakerBefore.shares;
+      const shareValue = (unstakeShares * shareToVanaAfterUnstake) / parseEther(1);
+      const expectedRealized = shareValue - proportionalCostBasis;
+
+      // Verify exact realized rewards
+      const stakerAfter = await vanaPoolStaking.stakerEntities(user2.address, 1);
+      stakerAfter.realizedRewards.should.eq(expectedRealized);
+
+      // Verify exact remaining cost basis
+      const expectedRemainingCostBasis = stakerBefore.costBasis - proportionalCostBasis;
+      stakerAfter.costBasis.should.eq(expectedRemainingCostBasis);
+
+      // Verify exact remaining shares
+      stakerAfter.shares.should.eq(stakerBefore.shares - unstakeShares);
+
+      // === Verify total earned rewards calculation ===
+      const remainingShares = stakerAfter.shares;
+      const currentShareToVana = await vanaPoolEntity.entityShareToVana(1);
+      const currentValue = (remainingShares * currentShareToVana) / parseEther(1);
+      const expectedCurrentUnrealized = currentValue > stakerAfter.costBasis
+        ? currentValue - stakerAfter.costBasis
+        : 0n;
+
+      const expectedTotalEarned = expectedCurrentUnrealized + stakerAfter.realizedRewards;
+      const actualTotalEarned = await vanaPoolStaking.getEarnedRewards(user2.address, 1);
+      actualTotalEarned.should.eq(expectedTotalEarned);
+    });
+  });
+
   describe("Rewards", () => {
     beforeEach(async () => {
       await deploy();
@@ -926,6 +2557,15 @@ describe("VanaPool", () => {
     });
 
     it("should process all rewards if time period is long enough", async function () {
+      // First, stake to increase activeRewardPool
+      // With minRegistrationStake = 1 ETH, 6% APY, and 0.1 ETH rewards,
+      // the max yield in 1 year is only ~0.0618 ETH (capped by APY)
+      // We need a larger stake to allow more rewards to be distributed
+      const stakeAmount = parseEther(10);
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: stakeAmount });
+
       // Add a small amount of rewards
       const rewardAmount = parseEther(0.1);
       await vanaPoolEntity
@@ -942,6 +2582,8 @@ describe("VanaPool", () => {
       const entity = await vanaPoolEntity.entities(1);
 
       // Verify that all or most rewards have been processed
+      // With 11 ETH staked (1 + 10) and 6% APY, max yield in 1 year is ~0.68 ETH
+      // So 0.1 ETH rewards should be fully distributed
       entity.lockedRewardPool.should.lt(parseEther(0.01)); // Less than 10% remaining
     });
 
@@ -1302,12 +2944,11 @@ describe("VanaPool", () => {
       const principal = parseEther(1); // 1 VANA
       const timeInSeconds = 365 * 24 * 60 * 60; // 1 year in seconds
 
-      const compoundedYield =
-        await vanaPoolEntity.calculateContinuousCompoundingYield(
-          apy,
-          principal,
-          timeInSeconds,
-        );
+      const compoundedYield = await vanaPoolEntity.calculateYield(
+        principal,
+        apy,
+        timeInSeconds,
+      );
 
       // For 6% continuous compounding over 1 year, we expect approximately 0.06184 VANA
       // e^(0.06) - 1 ≈ 0.06184
@@ -1628,7 +3269,7 @@ describe("VanaPool", () => {
     });
 
     it("should test", async function () {
-      console.log(await vanaPoolEntity._calculateExponential(parseEther(2)));
+      console.log(await vanaPoolEntity.calculateExponential(parseEther(2)));
     });
   });
 });
