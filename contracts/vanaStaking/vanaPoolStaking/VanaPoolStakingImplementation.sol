@@ -525,7 +525,82 @@ contract VanaPoolStakingImplementation is
         uint256 shareAmount,
         uint256 vanaAmountMin
     ) external override nonReentrant whenNotPaused {
-        StakerEntity storage stakerEntity = _stakers[_msgSender()].entities[entityId];
+        _unstake(_msgSender(), entityId, shareAmount, vanaAmountMin);
+    }
+
+    /**
+     * @notice Unstake a specific VANA amount from an entity
+     * @dev Converts the VANA amount to shares and calls internal unstake.
+     *      During bonding period: calculates shares needed to receive vanaAmount as principal
+     *      After eligibility: calculates shares needed to receive vanaAmount as full value
+     *
+     * @param entityId                          ID of the entity to unstake from
+     * @param vanaAmount                        VANA amount to receive
+     * @param shareAmountMax                    maximum shares to burn (slippage protection, 0 to skip)
+     */
+    function unstakeVana(
+        uint256 entityId,
+        uint256 vanaAmount,
+        uint256 shareAmountMax
+    ) external nonReentrant whenNotPaused {
+        address staker = _msgSender();
+        StakerEntity storage stakerEntity = _stakers[staker].entities[entityId];
+        if (stakerEntity.shares == 0 || vanaAmount == 0) {
+            revert InvalidAmount();
+        }
+
+        // Process rewards to get accurate share prices
+        vanaPoolEntity.processRewards(entityId);
+
+        uint256 vanaToShare = vanaPoolEntity.vanaToEntityShare(entityId);
+        bool isInBondingPeriod = block.timestamp < stakerEntity.rewardEligibilityTimestamp;
+
+        // Calculate shares to unstake based on bonding status
+        uint256 shareAmount;
+        if (isInBondingPeriod) {
+            // In bonding period: user receives proportional cost basis
+            // vanaToReturn = (costBasis * shareAmount) / totalShares
+            // So: shareAmount = (vanaAmount * totalShares) / costBasis
+            if (vanaAmount > stakerEntity.costBasis) {
+                revert InvalidAmount();
+            }
+            shareAmount = (vanaAmount * stakerEntity.shares) / stakerEntity.costBasis;
+        } else {
+            // Reward eligible: user receives share value
+            // vanaToReturn = (shareAmount * shareToVana) / 1e18
+            // So: shareAmount = (vanaAmount * vanaToShare) / 1e18
+            shareAmount = (vanaAmount * vanaToShare) / 1e18;
+        }
+
+        // Ensure we don't exceed user's shares
+        if (shareAmount > stakerEntity.shares) {
+            shareAmount = stakerEntity.shares;
+        }
+
+        // Slippage protection
+        if (shareAmountMax > 0 && shareAmount > shareAmountMax) {
+            revert InvalidSlippage();
+        }
+
+        // Call internal unstake (processRewards returns early since already processed)
+        _unstake(staker, entityId, shareAmount, 0);
+    }
+
+    /**
+     * @notice Internal unstake logic
+     *
+     * @param staker                            address of the staker
+     * @param entityId                          ID of the entity to unstake from
+     * @param shareAmount                       shareAmount to unstake
+     * @param vanaAmountMin                     minimum amount of VANA to receive
+     */
+    function _unstake(
+        address staker,
+        uint256 entityId,
+        uint256 shareAmount,
+        uint256 vanaAmountMin
+    ) internal {
+        StakerEntity storage stakerEntity = _stakers[staker].entities[entityId];
         if (stakerEntity.shares == 0 || shareAmount == 0) {
             revert InvalidAmount();
         }
@@ -539,7 +614,7 @@ contract VanaPoolStakingImplementation is
         //        // Get entity info from VanaPoolEntity
         //        IVanaPoolEntity.EntityInfo memory entityInfo = vanaPoolEntity.entities(entityId);
         //        // If this is the entity owner, ensure they can't unstake below the registration stake
-        //        if (entityInfo.ownerAddress == _msgSender()) {
+        //        if (entityInfo.ownerAddress == staker) {
         //            uint256 ownerMinShares = (vanaToShare * vanaPoolEntity.minRegistrationStake()) / 1e18;
         //
         //            if (stakerShares - shareAmount < ownerMinShares) {
@@ -610,7 +685,7 @@ contract VanaPoolStakingImplementation is
         // Update staker's position
         stakerEntity.shares -= shareAmount;
 
-        _removeStaker(_msgSender());
+        _removeStaker(staker);
 
         // Update entity staking data in VanaPoolEntity contract
         vanaPoolEntity.updateEntityPool(entityId, shareAmount, shareValue, false);
@@ -620,12 +695,12 @@ contract VanaPoolStakingImplementation is
             vanaPoolEntity.returnForfeitedRewards(entityId, forfeitedRewards);
         }
 
-        bool success = vanaPoolTreasury.transferVana(payable(_msgSender()), vanaToReturn);
+        bool success = vanaPoolTreasury.transferVana(payable(staker), vanaToReturn);
         if (!success) {
             revert TransferFailed();
         }
 
-        emit Unstaked(entityId, _msgSender(), vanaToReturn, shareAmount);
+        emit Unstaked(entityId, staker, vanaToReturn, shareAmount);
     }
 
     /**
