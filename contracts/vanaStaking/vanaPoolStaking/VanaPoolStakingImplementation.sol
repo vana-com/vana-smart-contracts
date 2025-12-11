@@ -196,6 +196,113 @@ contract VanaPoolStakingImplementation is
     }
 
     /**
+     * @notice Get the maximum amount of VANA that can be unstaked in a single transaction
+     * @dev Returns the minimum of:
+     *      1. The withdrawable VANA (costBasis if in bonding period, shareValue if eligible)
+     *      2. The entity's activeRewardPool (what the entity has available)
+     *      3. The treasury balance (what can be paid out)
+     *      Note: This simulates processRewards() to get accurate share prices
+     *
+     * @param staker                            address of the staker
+     * @param entityId                          ID of the entity
+     * @return maxVana                          maximum VANA that can be unstaked
+     * @return maxShares                        corresponding shares to unstake for maxVana
+     * @return limitingFactor                   0 = user shares/costBasis, 1 = activeRewardPool, 2 = treasury
+     * @return isInBondingPeriod                true if staker is still in bonding period
+     */
+    function getMaxUnstakeAmount(
+        address staker,
+        uint256 entityId
+    ) external view returns (uint256 maxVana, uint256 maxShares, uint256 limitingFactor, bool isInBondingPeriod) {
+        StakerEntity storage stakerEntity = _stakers[staker].entities[entityId];
+
+        if (stakerEntity.shares == 0) {
+            return (0, 0, 0, false);
+        }
+
+        // Get entity info and simulate processRewards to get accurate values
+        IVanaPoolEntity.EntityInfo memory entityInfo = vanaPoolEntity.entities(entityId);
+
+        // Simulate processRewards: calculate pending rewards to distribute
+        uint256 simulatedActiveRewardPool = entityInfo.activeRewardPool;
+        uint256 timeElapsed = block.timestamp - entityInfo.lastUpdateTimestamp;
+        if (timeElapsed > 0 && entityInfo.lockedRewardPool > 0) {
+            uint256 toDistribute = vanaPoolEntity.calculateYield(simulatedActiveRewardPool, entityInfo.maxAPY, timeElapsed);
+            if (toDistribute > entityInfo.lockedRewardPool) {
+                toDistribute = entityInfo.lockedRewardPool;
+            }
+            simulatedActiveRewardPool += toDistribute;
+        }
+
+        // Calculate share prices using simulated activeRewardPool
+        uint256 shareToVana = entityInfo.totalShares > 0
+            ? (simulatedActiveRewardPool * 1e18) / entityInfo.totalShares
+            : 1e18;
+        uint256 vanaToShare = simulatedActiveRewardPool > 0
+            ? (entityInfo.totalShares * 1e18) / simulatedActiveRewardPool
+            : 1e18;
+
+        // Check if staker is in bonding period
+        isInBondingPeriod = block.timestamp < stakerEntity.rewardEligibilityTimestamp;
+
+        // Constraint 1: User's withdrawable amount
+        // If in bonding period: can only withdraw costBasis (principal)
+        // If reward eligible: can withdraw full share value (principal + rewards)
+        uint256 userShareValue = (stakerEntity.shares * shareToVana) / 1e18;
+        uint256 userWithdrawable;
+
+        if (isInBondingPeriod) {
+            // In bonding period: can only withdraw cost basis (principal)
+            userWithdrawable = stakerEntity.costBasis;
+        } else {
+            // Reward eligible: can withdraw full share value
+            userWithdrawable = userShareValue;
+        }
+
+        // Constraint 2: Entity's activeRewardPool (use simulated value)
+        uint256 entityPoolBalance = simulatedActiveRewardPool;
+
+        // Constraint 3: Treasury balance
+        uint256 treasuryBalance = address(vanaPoolTreasury).balance;
+
+        // Find the minimum constraint
+        maxVana = userWithdrawable;
+        limitingFactor = 0; // user shares/costBasis
+
+        if (entityPoolBalance < maxVana) {
+            maxVana = entityPoolBalance;
+            limitingFactor = 1; // activeRewardPool
+        }
+
+        if (treasuryBalance < maxVana) {
+            maxVana = treasuryBalance;
+            limitingFactor = 2; // treasury
+        }
+
+        // Convert maxVana back to shares
+        if (maxVana > 0) {
+            if (isInBondingPeriod) {
+                // In bonding period: shares = maxVana * totalShares / costBasis
+                // Because vanaToReturn = (costBasis * shareAmount) / totalShares
+                // So shareAmount = vanaToReturn * totalShares / costBasis
+                if (stakerEntity.costBasis > 0) {
+                    maxShares = (maxVana * stakerEntity.shares) / stakerEntity.costBasis;
+                }
+            } else {
+                // Reward eligible: shares = maxVana / shareToVana
+                maxShares = (maxVana * vanaToShare) / 1e18;
+            }
+
+            // Ensure we don't exceed user's actual shares
+            if (maxShares > stakerEntity.shares) {
+                maxShares = stakerEntity.shares;
+            }
+        }
+
+        return (maxVana, maxShares, limitingFactor, isInBondingPeriod);
+    }
+
+    /**
      * @notice Get the accruing interest for a staker in a specific entity
      * @dev Accruing interest = (current VANA value of shares - cost basis) + vested rewards
      *      This represents all rewards that have not yet been withdrawn (unstaked)
