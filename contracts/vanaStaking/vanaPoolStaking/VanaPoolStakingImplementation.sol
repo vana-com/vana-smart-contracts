@@ -6,7 +6,7 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
-import "./interfaces/VanaPoolStakingStorageV1.sol";
+import "./interfaces/VanaPoolStakingStorageV2.sol";
 
 contract VanaPoolStakingImplementation is
     UUPSUpgradeable,
@@ -14,7 +14,7 @@ contract VanaPoolStakingImplementation is
     AccessControlUpgradeable,
     ReentrancyGuardUpgradeable,
     ERC2771ContextUpgradeable,
-    VanaPoolStakingStorageV1
+    VanaPoolStakingStorageV2
 {
     using EnumerableSet for EnumerableSet.AddressSet;
 
@@ -196,27 +196,55 @@ contract VanaPoolStakingImplementation is
     }
 
     /**
-     * @notice Get the unrealized interest for a staker in a specific entity
-     * @dev Unrealized interest = current VANA value of shares - cost basis
+     * @notice Get the accruing interest for a staker in a specific entity
+     * @dev Accruing interest = (current VANA value of shares - cost basis) + vested rewards
+     *      This represents all rewards that have not yet been withdrawn (unstaked)
      *
      * @param staker                            address of the staker
      * @param entityId                          ID of the entity
-     * @return uint256                          unrealized interest in VANA (0 if negative or no shares)
+     * @return uint256                          accruing interest in VANA (0 if negative or no shares)
      */
-    function getUnrealizedInterest(address staker, uint256 entityId) external view override returns (uint256) {
+    function getAccruingInterest(address staker, uint256 entityId) external view override returns (uint256) {
         StakerEntity storage stakerEntity = _stakers[staker].entities[entityId];
-        if (stakerEntity.shares == 0) {
-            return 0;
+
+        uint256 pendingInterest = 0;
+        if (stakerEntity.shares > 0) {
+            uint256 shareToVana = vanaPoolEntity.entityShareToVana(entityId);
+            uint256 currentValue = (stakerEntity.shares * shareToVana) / 1e18;
+
+            if (currentValue > stakerEntity.costBasis) {
+                pendingInterest = currentValue - stakerEntity.costBasis;
+            }
         }
 
-        uint256 shareToVana = vanaPoolEntity.entityShareToVana(entityId);
-        uint256 currentValue = (stakerEntity.shares * shareToVana) / 1e18;
+        return pendingInterest + stakerEntity.vestedRewards;
+    }
 
-        if (currentValue <= stakerEntity.costBasis) {
-            return 0;
+    /**
+     * @notice Returns the total rewards earned by a staker for an entity
+     * @dev Total earned = accruing interest (not yet withdrawn) + realized (withdrawn)
+     *      - accruingInterest: pending interest + vested rewards (all rewards not yet withdrawn)
+     *      - realizedRewards: rewards actually withdrawn during unstakes
+     *
+     * @param staker                            address of the staker
+     * @param entityId                          ID of the entity
+     * @return uint256                          total rewards earned in VANA
+     */
+    function getEarnedRewards(address staker, uint256 entityId) external view override returns (uint256) {
+        StakerEntity storage stakerEntity = _stakers[staker].entities[entityId];
+
+        // Calculate pending interest (current value - cost basis)
+        uint256 pendingInterest = 0;
+        if (stakerEntity.shares > 0) {
+            uint256 shareToVana = vanaPoolEntity.entityShareToVana(entityId);
+            uint256 currentValue = (stakerEntity.shares * shareToVana) / 1e18;
+            if (currentValue > stakerEntity.costBasis) {
+                pendingInterest = currentValue - stakerEntity.costBasis;
+            }
         }
 
-        return currentValue - stakerEntity.costBasis;
+        // Total = pending interest + vested (not yet withdrawn) + realized (withdrawn)
+        return pendingInterest + stakerEntity.vestedRewards + stakerEntity.realizedRewards;
     }
 
     /**
@@ -340,7 +368,15 @@ contract VanaPoolStakingImplementation is
         uint256 newTotalValue = (newTotalShares * shareToVana) / 1e18;
 
         if (stakerEntity.rewardEligibilityTimestamp <= currentTimestamp) {
-            // Reward eligible (or first stake): all current value becomes vested cost basis
+            // Reward eligible (or first stake): capture unrealized rewards into vestedRewards before resetting costBasis
+            // This ensures earned rewards are tracked when staking additional amounts (rewards rolled into costBasis)
+            if (stakerEntity.shares > 0) {
+                uint256 oldValue = (stakerEntity.shares * shareToVana) / 1e18;
+                if (oldValue > stakerEntity.costBasis) {
+                    stakerEntity.vestedRewards += oldValue - stakerEntity.costBasis;
+                }
+            }
+            // All current value becomes new cost basis (includes old principal + old rewards + new stake)
             // Weighted time: only new stake contributes (old stake has 0 remaining time)
             stakerEntity.costBasis = newTotalValue;
             stakerEntity.rewardEligibilityTimestamp = currentTimestamp + (stakeAmount * bondingPeriod) / newTotalValue;
@@ -413,9 +449,21 @@ contract VanaPoolStakingImplementation is
         uint256 proportionalCostBasis = (stakerEntity.costBasis * shareAmount) / stakerEntity.shares;
         uint256 forfeitedRewards = 0;
 
+        // Move proportional vested rewards to realized rewards (they're being withdrawn as part of costBasis)
+        // Note: vestedRewards are already included in costBasis, this is just for accounting tracking
+        uint256 proportionalVestedRewards = (stakerEntity.vestedRewards * shareAmount) / stakerEntity.shares;
+        if (proportionalVestedRewards > 0) {
+            stakerEntity.vestedRewards -= proportionalVestedRewards;
+            stakerEntity.realizedRewards += proportionalVestedRewards;
+        }
+
         if (currentTimestamp >= stakerEntity.rewardEligibilityTimestamp) {
             // Reward eligible: user receives full value (principal + rewards)
             vanaToReturn = shareValue;
+            // Track NEW unrealized rewards being withdrawn (separate from vested rewards already tracked above)
+            if (shareValue > proportionalCostBasis) {
+                stakerEntity.realizedRewards += shareValue - proportionalCostBasis;
+            }
         } else {
             // Still in bonding period: user receives only principal (forfeits rewards)
             vanaToReturn = proportionalCostBasis;

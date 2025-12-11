@@ -10,6 +10,8 @@ interface IVanaPoolStaking {
         uint256 shares;
         uint256 costBasis; // Cost basis in VANA for the shares held, which can be unstaked anytime
         uint256 rewardEligibilityTimestamp; // Timestamp at which rewards become claimable (end of bonding period)
+        uint256 realizedRewards; // Cumulative rewards actually withdrawn during unstakes (V2+)
+        uint256 vestedRewards; // Cumulative rewards locked into costBasis when staking while eligible (not yet withdrawn)
     }
 
     struct Staker {
@@ -32,7 +34,8 @@ interface IVanaPoolStaking {
     function inactiveStakersListValues(uint256 from, uint256 to) external view returns (address[] memory);
     function inactiveStakersListAt(uint256 index) external view returns (address);
     function stakerEntities(address staker, uint256 entityId) external view returns (StakerEntity memory);
-    function getUnrealizedInterest(address staker, uint256 entityId) external view returns (uint256);
+    function getAccruingInterest(address staker, uint256 entityId) external view returns (uint256);
+    function getEarnedRewards(address staker, uint256 entityId) external view returns (uint256);
 
     function pause() external;
     function unpause() external;

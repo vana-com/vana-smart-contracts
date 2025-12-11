@@ -20,6 +20,4 @@ abstract contract VanaPoolStakingStorageV1 is IVanaPoolStaking {
     EnumerableSet.AddressSet internal _activeStakersList;
     mapping(address => Staker) internal _stakers;
     EnumerableSet.AddressSet internal _inactiveStakersList;
-
-    uint256 public override bondingPeriod; // Bonding period in seconds
 }
