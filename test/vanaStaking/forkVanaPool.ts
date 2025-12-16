@@ -837,26 +837,34 @@ describe("VanaPool Fork Tests (Moksha)", () => {
       const shareToVanaBeforeUnstake = await vanaPoolEntity.entityShareToVana(ENTITY_ID);
 
       // Calculate expected values BEFORE unstake
-      // For reward-eligible staker: vanaToReturn = shareValue (full value including rewards)
-      const expectedShareValue = (sharesToUnstake * shareToVanaBeforeUnstake) / BigInt(1e18);
-      const expectedProportionalCostBasis = (afterEligibilityEntity.costBasis * sharesToUnstake) / afterEligibilityEntity.shares;
-      const expectedProportionalVestedRewards = (afterEligibilityEntity.vestedRewards * sharesToUnstake) / afterEligibilityEntity.shares;
+      // With the new vesting logic:
+      // 1. First, all unrealized rewards are vested (costBasis becomes currentTotalValue)
+      // 2. Then proportional calculation is done from the new costBasis
 
-      // When reward eligible: user receives full shareValue
-      // Rewards from this unstake = shareValue - proportionalCostBasis (if positive)
-      const expectedNewRewardsWithdrawn = expectedShareValue > expectedProportionalCostBasis
-        ? expectedShareValue - expectedProportionalCostBasis
+      // Step 1: Calculate current total value and unrealized rewards
+      const currentTotalValue = (afterEligibilityEntity.shares * shareToVanaBeforeUnstake) / BigInt(1e18);
+      const unvestedRewardsBeforeUnstake = currentTotalValue > afterEligibilityEntity.costBasis
+        ? currentTotalValue - afterEligibilityEntity.costBasis
         : 0n;
+
+      // After vesting: costBasis = currentTotalValue, vestedRewards = old + unvested
+      const costBasisAfterVesting = currentTotalValue;
+      const vestedRewardsAfterVesting = afterEligibilityEntity.vestedRewards + unvestedRewardsBeforeUnstake;
+
+      // Step 2: Calculate proportional amounts from the NEW (post-vesting) state
+      const expectedShareValue = (sharesToUnstake * shareToVanaBeforeUnstake) / BigInt(1e18);
+      const expectedProportionalCostBasis = (costBasisAfterVesting * sharesToUnstake) / afterEligibilityEntity.shares;
+      const expectedProportionalVestedRewards = (vestedRewardsAfterVesting * sharesToUnstake) / afterEligibilityEntity.shares;
 
       // Expected state after unstake:
       // - shares: afterEligibilityEntity.shares - sharesToUnstake
-      // - costBasis: afterEligibilityEntity.costBasis - proportionalCostBasis
-      // - vestedRewards: afterEligibilityEntity.vestedRewards - proportionalVestedRewards
-      // - realizedRewards: afterEligibilityEntity.realizedRewards + proportionalVestedRewards + newRewardsWithdrawn
+      // - costBasis: costBasisAfterVesting - proportionalCostBasis
+      // - vestedRewards: vestedRewardsAfterVesting - proportionalVestedRewards
+      // - realizedRewards: afterEligibilityEntity.realizedRewards + proportionalVestedRewards
       const expectedSharesAfter = afterEligibilityEntity.shares - sharesToUnstake;
-      const expectedCostBasisAfter = afterEligibilityEntity.costBasis - expectedProportionalCostBasis;
-      const expectedVestedRewardsAfter = afterEligibilityEntity.vestedRewards - expectedProportionalVestedRewards;
-      const expectedRealizedRewardsAfter = afterEligibilityEntity.realizedRewards + expectedProportionalVestedRewards + expectedNewRewardsWithdrawn;
+      const expectedCostBasisAfter = costBasisAfterVesting - expectedProportionalCostBasis;
+      const expectedVestedRewardsAfter = vestedRewardsAfterVesting - expectedProportionalVestedRewards;
+      const expectedRealizedRewardsAfter = afterEligibilityEntity.realizedRewards + expectedProportionalVestedRewards;
 
       console.log(`\n  --- Before Unstake State ---`);
       console.log(`  Shares: ${formatEther(afterEligibilityEntity.shares)}`);
@@ -864,13 +872,18 @@ describe("VanaPool Fork Tests (Moksha)", () => {
       console.log(`  Vested Rewards: ${formatEther(afterEligibilityEntity.vestedRewards)} VANA`);
       console.log(`  Realized Rewards: ${formatEther(afterEligibilityEntity.realizedRewards)} VANA`);
 
+      console.log(`\n  --- Vesting Step (before proportional calc) ---`);
+      console.log(`  Current Total Value: ${formatEther(currentTotalValue)} VANA`);
+      console.log(`  Unvested Rewards to Vest: ${formatEther(unvestedRewardsBeforeUnstake)} VANA`);
+      console.log(`  Cost Basis After Vesting: ${formatEther(costBasisAfterVesting)} VANA`);
+      console.log(`  Vested Rewards After Vesting: ${formatEther(vestedRewardsAfterVesting)} VANA`);
+
       console.log(`\n  --- Unstake Calculation ---`);
       console.log(`  Shares to unstake (10%): ${formatEther(sharesToUnstake)}`);
       console.log(`  Share to VANA ratio: ${formatEther(shareToVanaBeforeUnstake)}`);
       console.log(`  Share Value (what user receives): ${formatEther(expectedShareValue)} VANA`);
       console.log(`  Proportional Cost Basis: ${formatEther(expectedProportionalCostBasis)} VANA`);
       console.log(`  Proportional Vested Rewards: ${formatEther(expectedProportionalVestedRewards)} VANA`);
-      console.log(`  New Rewards Withdrawn (shareValue - costBasis): ${formatEther(expectedNewRewardsWithdrawn)} VANA`);
 
       console.log(`\n  --- Expected State After Unstake ---`);
       console.log(`  Expected Shares: ${formatEther(expectedSharesAfter)}`);
@@ -918,15 +931,23 @@ describe("VanaPool Fork Tests (Moksha)", () => {
         console.log(`  Realized Rewards: Expected >=${formatEther(expectedRealizedRewardsAfter)}, Actual ${formatEther(afterUnstakeEntity.realizedRewards)}, Diff: ${afterUnstakeEntity.realizedRewards - expectedRealizedRewardsAfter} wei`);
         console.log(`  Note: +${formatEther(rewardsProcessedDuringUnstake)} VANA from processRewards() during unstake`);
 
-        // Verify shares, cost basis, and vested rewards match exactly
+        // Verify shares match exactly (processRewards doesn't affect share count)
         afterUnstakeEntity.shares.should.eq(expectedSharesAfter, "Shares should match expected");
         console.log(`  ✓ Shares match expected value exactly`);
 
-        afterUnstakeEntity.costBasis.should.eq(expectedCostBasisAfter, "Cost basis should match expected");
-        console.log(`  ✓ Cost basis matches expected value exactly`);
+        // Note: Cost basis and vested rewards are >= expected because processRewards() is called
+        // during unstake, which increases share price BEFORE vesting. This means:
+        // - currentTotalValue is higher (more rewards added to pool)
+        // - unvestedRewards = currentTotalValue - oldCostBasis is higher
+        // - costBasisAfterVesting = currentTotalValue is higher
+        // - vestedRewardsAfterVesting is higher
+        // The difference equals the share of processRewards rewards for remaining shares
 
-        afterUnstakeEntity.vestedRewards.should.eq(expectedVestedRewardsAfter, "Vested rewards should match expected");
-        console.log(`  ✓ Vested rewards match expected value exactly`);
+        afterUnstakeEntity.costBasis.should.be.gte(expectedCostBasisAfter, "Cost basis should be >= expected (processRewards increases share price before vesting)");
+        console.log(`  ✓ Cost basis >= expected (includes processRewards effect)`);
+
+        afterUnstakeEntity.vestedRewards.should.be.gte(expectedVestedRewardsAfter, "Vested rewards should be >= expected (processRewards adds more to vest)");
+        console.log(`  ✓ Vested rewards >= expected (includes processRewards effect)`);
 
         // Realized rewards should be >= expected (can be higher due to processRewards during unstake)
         afterUnstakeEntity.realizedRewards.should.be.gte(expectedRealizedRewardsAfter, "Realized rewards should be >= expected (processRewards adds more)");
@@ -936,11 +957,11 @@ describe("VanaPool Fork Tests (Moksha)", () => {
         actualVanaReceived.should.be.gte(expectedShareValue, "VANA received should be >= expected share value");
         console.log(`  ✓ VANA received >= expected share value`);
 
-        // The difference between actual and expected should be due to processRewards
-        // This amount should be the same for both VANA received and realized rewards
-        const realizedRewardsDiff = afterUnstakeEntity.realizedRewards - expectedRealizedRewardsAfter;
-        realizedRewardsDiff.should.eq(rewardsProcessedDuringUnstake, "Extra realized rewards should match extra VANA from processRewards");
-        console.log(`  ✓ Extra rewards match: processRewards added ${formatEther(rewardsProcessedDuringUnstake)} VANA`);
+        // The cost basis and vested rewards difference should be equal (both affected by same processRewards amount)
+        const costBasisDiff = afterUnstakeEntity.costBasis - expectedCostBasisAfter;
+        const vestedRewardsDiff = afterUnstakeEntity.vestedRewards - expectedVestedRewardsAfter;
+        costBasisDiff.should.eq(vestedRewardsDiff, "Cost basis and vested rewards diff should match (same processRewards effect)");
+        console.log(`  ✓ Cost basis and vested rewards diff match: +${formatEther(costBasisDiff)} VANA from processRewards on remaining shares`);
       } else {
         if (entityBeforeEligibilityUnstake.activeRewardPool < expectedShareValue) {
           console.log(`  ⚠ Skipping unstake: entity activeRewardPool (${formatEther(entityBeforeEligibilityUnstake.activeRewardPool)}) < expectedReturn (${formatEther(expectedShareValue)})`);

@@ -23,6 +23,7 @@ contract VanaPoolEntityImplementation is
     event EntityMaxAPYUpdated(uint256 indexed entityId, uint256 newMaxAPY);
     event RewardsAdded(uint256 indexed entityId, uint256 amount);
     event RewardsProcessed(uint256 indexed entityId, uint256 distributedAmount);
+    event ForfeitedRewardsReturned(uint256 indexed entityId, uint256 amount);
 
     // Custom errors
     error InvalidParam();
@@ -464,6 +465,8 @@ contract VanaPoolEntityImplementation is
         // Add forfeited rewards to locked pool for gradual redistribution
         // (activeRewardPool was already reduced by updateEntityPool)
         entity.lockedRewardPool += amount;
+
+        emit ForfeitedRewardsReturned(entityId, amount);
     }
 
     /**

@@ -623,16 +623,28 @@ contract VanaPoolStakingImplementation is
         //        }
 
         uint256 shareToVana = vanaPoolEntity.entityShareToVana(entityId);
-        uint256 shareValue = (shareAmount * shareToVana) / 1e18;
         uint256 currentTimestamp = block.timestamp;
+
+        // If past bonding period, vest all unrealized rewards first (for entire position)
+        // This ensures clean accounting: all rewards become vested before proportional withdrawal
+        if (currentTimestamp >= stakerEntity.rewardEligibilityTimestamp && stakerEntity.shares > 0) {
+            uint256 currentTotalValue = (stakerEntity.shares * shareToVana) / 1e18;
+            if (currentTotalValue > stakerEntity.costBasis) {
+                uint256 unvestedRewards = currentTotalValue - stakerEntity.costBasis;
+                stakerEntity.vestedRewards += unvestedRewards;
+                stakerEntity.costBasis = currentTotalValue; // Reset cost basis to current value
+            }
+        }
+
+        uint256 shareValue = (shareAmount * shareToVana) / 1e18;
 
         // Calculate the VANA amount to return based on reward eligibility
         uint256 vanaToReturn;
         uint256 proportionalCostBasis = (stakerEntity.costBasis * shareAmount) / stakerEntity.shares;
         uint256 forfeitedRewards = 0;
 
-        // Move proportional vested rewards to realized rewards (they're being withdrawn as part of costBasis)
-        // Note: vestedRewards are already included in costBasis, this is just for accounting tracking
+        // Move proportional vested rewards to realized rewards (they're being withdrawn)
+        // After vesting above, vestedRewards now contains all earned rewards
         uint256 proportionalVestedRewards = (stakerEntity.vestedRewards * shareAmount) / stakerEntity.shares;
         if (proportionalVestedRewards > 0) {
             stakerEntity.vestedRewards -= proportionalVestedRewards;
@@ -642,10 +654,7 @@ contract VanaPoolStakingImplementation is
         if (currentTimestamp >= stakerEntity.rewardEligibilityTimestamp) {
             // Reward eligible: user receives full value (principal + rewards)
             vanaToReturn = shareValue;
-            // Track NEW unrealized rewards being withdrawn (separate from vested rewards already tracked above)
-            if (shareValue > proportionalCostBasis) {
-                stakerEntity.realizedRewards += shareValue - proportionalCostBasis;
-            }
+            // Note: rewards already tracked above via vestedRewards -> realizedRewards
         } else {
             // Still in bonding period: user receives only principal (forfeits rewards)
             vanaToReturn = proportionalCostBasis;
