@@ -21,6 +21,8 @@ contract VanaPoolStakingImplementation is
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
     bytes32 public constant VANA_POOL_ENTITY_ROLE = keccak256("VANA_POOL_ENTITY_ROLE");
 
+    uint256 public constant MAX_BONDING_PERIOD = 365 days;
+
     /**
      * @notice Triggered when a user stakes VANA to an entity
      *
@@ -49,6 +51,13 @@ contract VanaPoolStakingImplementation is
     event MinStakeUpdated(uint256 newMinStake);
 
     /**
+     * @notice Triggered when bonding period is updated
+     *
+     * @param newBondingPeriod                 new bonding period in seconds
+     */
+    event BondingPeriodUpdated(uint256 newBondingPeriod);
+
+    /**
      * @notice Triggered when an entity stake is registered
      *
      * @param entityId                         ID of the entity
@@ -69,6 +78,7 @@ contract VanaPoolStakingImplementation is
     error CannotRemoveRegistrationStake();
     error NotAuthorized();
     error InvalidSlippage();
+    error InvalidBondingPeriod();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() ERC2771ContextUpgradeable(address(0)) {
@@ -384,7 +394,11 @@ contract VanaPoolStakingImplementation is
      * @param newBondingPeriod                  new bonding period in seconds
      */
     function updateBondingPeriod(uint256 newBondingPeriod) external onlyRole(MAINTAINER_ROLE) {
+        if (newBondingPeriod > MAX_BONDING_PERIOD) {
+            revert InvalidBondingPeriod();
+        }
         bondingPeriod = newBondingPeriod;
+        emit BondingPeriodUpdated(newBondingPeriod);
     }
 
     /**
@@ -445,11 +459,6 @@ contract VanaPoolStakingImplementation is
 
         uint256 stakeAmount = msg.value;
 
-        //todo: block users from staking below min stake after the DLPStakes are migrated
-        //        if (stakeAmount < minStakeAmount) {
-        //            revert InsufficientStakeAmount();
-        //        }
-
         if (recipient == address(0)) {
             revert InvalidRecipient();
         }
@@ -460,6 +469,10 @@ contract VanaPoolStakingImplementation is
         // Calculate shares
         uint256 vanaToShare = vanaPoolEntity.vanaToEntityShare(entityId);
         uint256 sharesIssued = (vanaToShare * stakeAmount) / 1e18;
+
+        if (sharesIssued == 0) {
+            revert InsufficientStakeAmount();
+        }
 
         if (sharesIssued < shareAmountMin) {
             revert InvalidSlippage();
@@ -525,7 +538,7 @@ contract VanaPoolStakingImplementation is
         uint256 shareAmount,
         uint256 vanaAmountMin
     ) external override nonReentrant whenNotPaused {
-        _unstake(_msgSender(), entityId, shareAmount, vanaAmountMin);
+        _unstake(_msgSender(), entityId, shareAmount, vanaAmountMin, false);
     }
 
     /**
@@ -582,8 +595,8 @@ contract VanaPoolStakingImplementation is
             revert InvalidSlippage();
         }
 
-        // Call internal unstake (processRewards returns early since already processed)
-        _unstake(staker, entityId, shareAmount, 0);
+        // Call internal unstake, skip processRewards since already called above
+        _unstake(staker, entityId, shareAmount, 0, true);
     }
 
     /**
@@ -593,12 +606,14 @@ contract VanaPoolStakingImplementation is
      * @param entityId                          ID of the entity to unstake from
      * @param shareAmount                       shareAmount to unstake
      * @param vanaAmountMin                     minimum amount of VANA to receive
+     * @param skipProcessRewards                skip processRewards if already called
      */
     function _unstake(
         address staker,
         uint256 entityId,
         uint256 shareAmount,
-        uint256 vanaAmountMin
+        uint256 vanaAmountMin,
+        bool skipProcessRewards
     ) internal {
         StakerEntity storage stakerEntity = _stakers[staker].entities[entityId];
         if (stakerEntity.shares == 0 || shareAmount == 0) {
@@ -606,21 +621,9 @@ contract VanaPoolStakingImplementation is
         }
 
         // Process entity rewards through VanaPoolEntity to ensure current share price is used
-        vanaPoolEntity.processRewards(entityId);
-
-        //todo: block owner from unstaking below registration stake
-        //        uint256 vanaToShare = vanaPoolEntity.vanaToEntityShare(entityId);
-        //
-        //        // Get entity info from VanaPoolEntity
-        //        IVanaPoolEntity.EntityInfo memory entityInfo = vanaPoolEntity.entities(entityId);
-        //        // If this is the entity owner, ensure they can't unstake below the registration stake
-        //        if (entityInfo.ownerAddress == staker) {
-        //            uint256 ownerMinShares = (vanaToShare * vanaPoolEntity.minRegistrationStake()) / 1e18;
-        //
-        //            if (stakerShares - shareAmount < ownerMinShares) {
-        //                revert CannotRemoveRegistrationStake();
-        //            }
-        //        }
+        if (!skipProcessRewards) {
+            vanaPoolEntity.processRewards(entityId);
+        }
 
         uint256 shareToVana = vanaPoolEntity.entityShareToVana(entityId);
         uint256 currentTimestamp = block.timestamp;
@@ -724,7 +727,9 @@ contract VanaPoolStakingImplementation is
         uint256 registrationStake
     ) external override nonReentrant whenNotPaused onlyRole(VANA_POOL_ENTITY_ROLE) {
         // Register shares for the owner
-        _stakers[ownerAddress].entities[entityId].shares = registrationStake;
+        StakerEntity storage stakerEntity = _stakers[ownerAddress].entities[entityId];
+        stakerEntity.shares = registrationStake;
+        stakerEntity.costBasis = registrationStake;
 
         _addStaker(ownerAddress);
 

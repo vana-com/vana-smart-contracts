@@ -627,6 +627,39 @@ describe("VanaPool", () => {
         .should.rejectedWith("InvalidSlippage()");
     });
 
+    it("should reject stake when shares issued would be zero", async function () {
+      // First, we need to increase the share price significantly so that a small stake results in 0 shares
+      // Add rewards to increase the share price
+      const reward = parseEther(100); // 100 VANA
+      await vanaPoolEntity.connect(user3).addRewards(1, { value: reward });
+
+      // Process rewards to increase share price
+      await helpers.time.increase(365 * 24 * 60 * 60); // 1 year
+      await vanaPoolEntity.processRewards(1);
+
+      // Get current share price
+      const vanaToShare = await vanaPoolEntity.vanaToEntityShare(1);
+
+      // vanaToShare is how many shares 1 VANA gets (< 1e18 after rewards)
+      // sharesIssued = (stakeAmount * vanaToShare) / 1e18
+      // For sharesIssued = 0, we need: stakeAmount * vanaToShare < 1e18
+      // So: stakeAmount < 1e18 / vanaToShare = shareToVana
+
+      // Stake 1 wei less than the minimum needed for 1 share
+      // This ensures sharesIssued rounds down to 0
+      const tinyStake = 1n; // 1 wei will definitely result in 0 shares when share price > 1
+
+      // Verify this would indeed result in 0 shares
+      const expectedShares = (tinyStake * vanaToShare) / parseEther(1);
+      expectedShares.should.eq(0n);
+
+      // This tiny stake should result in 0 shares being issued
+      await vanaPoolStaking
+        .connect(user2)
+        .stake(1, user2.address, 0, { value: tinyStake })
+        .should.rejectedWith("InsufficientStakeAmount()");
+    });
+
     it("should unstake successfully from an entity", async function () {
       // First stake some VANA
       const stakeAmount = parseEther(2);
@@ -755,6 +788,38 @@ describe("VanaPool", () => {
         },
         { value: minRegistrationStake },
       );
+    });
+
+    it("should emit BondingPeriodUpdated event when updating bonding period", async function () {
+      const newBondingPeriod = 10 * day; // 10 days
+
+      await vanaPoolStaking
+        .connect(owner)
+        .updateBondingPeriod(newBondingPeriod)
+        .should.emit(vanaPoolStaking, "BondingPeriodUpdated")
+        .withArgs(newBondingPeriod);
+
+      // Verify the bonding period was updated
+      (await vanaPoolStaking.bondingPeriod()).should.eq(newBondingPeriod);
+    });
+
+    it("should reject bonding period exceeding MAX_BONDING_PERIOD", async function () {
+      const maxBondingPeriod = await vanaPoolStaking.MAX_BONDING_PERIOD();
+      const exceedingPeriod = maxBondingPeriod + 1n;
+
+      await vanaPoolStaking
+        .connect(owner)
+        .updateBondingPeriod(exceedingPeriod)
+        .should.rejectedWith("InvalidBondingPeriod()");
+
+      // Verify max bonding period is accepted
+      await vanaPoolStaking
+        .connect(owner)
+        .updateBondingPeriod(maxBondingPeriod)
+        .should.emit(vanaPoolStaking, "BondingPeriodUpdated")
+        .withArgs(maxBondingPeriod);
+
+      (await vanaPoolStaking.bondingPeriod()).should.eq(maxBondingPeriod);
     });
 
     it("should set rewardEligibilityTimestamp on first stake", async function () {
