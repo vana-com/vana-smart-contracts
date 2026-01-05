@@ -436,6 +436,269 @@ describe("VanaPool Fork Tests (Moksha)", () => {
       console.log(`\n=== Both Contracts Upgraded to V2, Bonding Period: 5 days ===`);
     });
 
+    it("should allow V1 staker to unstake immediately after upgrade without bonding period", async function () {
+      if (!(await isForkEnabled())) {
+        this.skip();
+      }
+
+      // Use an existing staker from the snapshot (this is a V1 staker)
+      const existingStaker = stakerSnapshots[0];
+      console.log(`\n=== Testing V1 Staker Can Unstake Immediately: ${existingStaker.address} ===`);
+
+      // Impersonate the existing staker
+      await helpers.impersonateAccount(existingStaker.address);
+      await helpers.setBalance(existingStaker.address, parseEther(1000));
+      const stakerSigner = await ethers.getSigner(existingStaker.address);
+
+      // Get staker's state BEFORE unstake
+      const stakerEntityBefore = await vanaPoolStakingV2.stakerEntities(existingStaker.address, ENTITY_ID);
+
+      console.log(`\n--- Before Unstake ---`);
+      console.log(`  Shares: ${formatEther(stakerEntityBefore.shares)}`);
+      console.log(`  Cost Basis: ${formatEther(stakerEntityBefore.costBasis)} VANA`);
+      console.log(`  Reward Eligibility Timestamp: ${stakerEntityBefore.rewardEligibilityTimestamp}`);
+
+      // Verify V1 staker has rewardEligibilityTimestamp = 0 (not subject to bonding period)
+      stakerEntityBefore.rewardEligibilityTimestamp.should.eq(0n, "V1 staker should have rewardEligibilityTimestamp = 0");
+
+      // Get current share price
+      const shareToVana = await vanaPoolEntity.entityShareToVana(ENTITY_ID);
+      console.log(`  Share to VANA ratio: ${formatEther(shareToVana)}`);
+
+      // Unstake 10% of shares - should succeed immediately without waiting for bonding period
+      const sharesToUnstake = stakerEntityBefore.shares / 10n;
+      const expectedVanaOut = (sharesToUnstake * shareToVana) / BigInt(1e18);
+      console.log(`\n--- Attempting to Unstake ---`);
+      console.log(`  Shares to unstake: ${formatEther(sharesToUnstake)}`);
+      console.log(`  Expected VANA out: ${formatEther(expectedVanaOut)} VANA`);
+
+      // Connect as staker and unstake - this should succeed immediately
+      const vanaPoolStakingAsStaker = vanaPoolStakingV2.connect(stakerSigner);
+      const balanceBefore = await ethers.provider.getBalance(existingStaker.address);
+
+      const unstakeTx = await vanaPoolStakingAsStaker.unstake(ENTITY_ID, sharesToUnstake, 0);
+      const receipt = await unstakeTx.wait();
+      const gasUsed = receipt!.gasUsed * receipt!.gasPrice;
+
+      const balanceAfter = await ethers.provider.getBalance(existingStaker.address);
+      const vanaReceived = balanceAfter - balanceBefore + gasUsed;
+
+      console.log(`\n--- After Unstake ---`);
+      console.log(`  VANA received: ${formatEther(vanaReceived)} VANA`);
+      console.log(`  ✓ V1 staker successfully unstaked immediately after upgrade without waiting for bonding period`);
+
+      // Verify shares decreased
+      const stakerEntityAfter = await vanaPoolStakingV2.stakerEntities(existingStaker.address, ENTITY_ID);
+      stakerEntityAfter.shares.should.eq(stakerEntityBefore.shares - sharesToUnstake, "Shares should decrease by unstaked amount");
+
+      // Verify VANA received is approximately correct (accounting for processRewards effect)
+      vanaReceived.should.be.gte(expectedVanaOut * 99n / 100n, "Should receive approximately expected VANA");
+    });
+
+    it("should allow V1 staker to unstake multiple times without bonding period", async function () {
+      if (!(await isForkEnabled())) {
+        this.skip();
+      }
+
+      // Use an existing staker from the snapshot (this is a V1 staker)
+      const existingStaker = stakerSnapshots[0];
+      console.log(`\n=== Testing V1 Staker Can Unstake Multiple Times: ${existingStaker.address} ===`);
+
+      // Impersonate the existing staker
+      await helpers.impersonateAccount(existingStaker.address);
+      await helpers.setBalance(existingStaker.address, parseEther(1000));
+      const stakerSigner = await ethers.getSigner(existingStaker.address);
+      const vanaPoolStakingAsStaker = vanaPoolStakingV2.connect(stakerSigner);
+
+      // Get initial state
+      const initialEntity = await vanaPoolStakingV2.stakerEntities(existingStaker.address, ENTITY_ID);
+      console.log(`\n--- Initial State ---`);
+      console.log(`  Initial Shares: ${formatEther(initialEntity.shares)}`);
+      console.log(`  Reward Eligibility Timestamp: ${initialEntity.rewardEligibilityTimestamp}`);
+
+      // Verify V1 staker has rewardEligibilityTimestamp = 0
+      initialEntity.rewardEligibilityTimestamp.should.eq(0n, "V1 staker should have rewardEligibilityTimestamp = 0");
+
+      const numUnstakes = 5;
+      let totalVanaReceived = 0n;
+      let currentShares = initialEntity.shares;
+
+      for (let i = 1; i <= numUnstakes; i++) {
+        console.log(`\n--- Unstake #${i} ---`);
+
+        // Get current state
+        const entityBefore = await vanaPoolStakingV2.stakerEntities(existingStaker.address, ENTITY_ID);
+        const shareToVana = await vanaPoolEntity.entityShareToVana(ENTITY_ID);
+
+        // Unstake 10% of current shares each time
+        const sharesToUnstake = entityBefore.shares / 10n;
+        if (sharesToUnstake === 0n) {
+          console.log(`  Skipping - shares too small to unstake`);
+          continue;
+        }
+
+        const expectedVanaOut = (sharesToUnstake * shareToVana) / BigInt(1e18);
+        console.log(`  Shares before: ${formatEther(entityBefore.shares)}`);
+        console.log(`  Shares to unstake: ${formatEther(sharesToUnstake)}`);
+        console.log(`  Expected VANA out: ${formatEther(expectedVanaOut)} VANA`);
+
+        // Verify still eligible (rewardEligibilityTimestamp should remain 0 for V1 stakers)
+        entityBefore.rewardEligibilityTimestamp.should.eq(0n, `Unstake #${i}: V1 staker should still have rewardEligibilityTimestamp = 0`);
+
+        const balanceBefore = await ethers.provider.getBalance(existingStaker.address);
+
+        // Unstake should succeed without waiting
+        const unstakeTx = await vanaPoolStakingAsStaker.unstake(ENTITY_ID, sharesToUnstake, 0);
+        const receipt = await unstakeTx.wait();
+        const gasUsed = receipt!.gasUsed * receipt!.gasPrice;
+
+        const balanceAfter = await ethers.provider.getBalance(existingStaker.address);
+        const vanaReceived = balanceAfter - balanceBefore + gasUsed;
+        totalVanaReceived += vanaReceived;
+
+        console.log(`  VANA received: ${formatEther(vanaReceived)} VANA`);
+        console.log(`  ✓ Unstake #${i} succeeded`);
+
+        // Verify shares decreased
+        const entityAfter = await vanaPoolStakingV2.stakerEntities(existingStaker.address, ENTITY_ID);
+        entityAfter.shares.should.eq(entityBefore.shares - sharesToUnstake, `Unstake #${i}: Shares should decrease`);
+        currentShares = entityAfter.shares;
+      }
+
+      console.log(`\n--- Summary ---`);
+      console.log(`  Total unstakes completed: ${numUnstakes}`);
+      console.log(`  Total VANA received: ${formatEther(totalVanaReceived)} VANA`);
+      console.log(`  Final shares remaining: ${formatEther(currentShares)}`);
+      console.log(`  ✓ V1 staker successfully unstaked ${numUnstakes} times without bonding period restrictions`);
+
+      // Verify final state still has rewardEligibilityTimestamp = 0
+      const finalEntity = await vanaPoolStakingV2.stakerEntities(existingStaker.address, ENTITY_ID);
+      finalEntity.rewardEligibilityTimestamp.should.eq(0n, "V1 staker should still have rewardEligibilityTimestamp = 0 after multiple unstakes");
+    });
+
+    it("should apply bonding period to V1 staker after they stake more", async function () {
+      if (!(await isForkEnabled())) {
+        this.skip();
+      }
+
+      // Use an existing staker from the snapshot (this is a V1 staker)
+      const existingStaker = stakerSnapshots[0];
+      console.log(`\n=== Testing V1 Staker Gets Bonding Period After New Stake: ${existingStaker.address} ===`);
+
+      // Impersonate the existing staker
+      await helpers.impersonateAccount(existingStaker.address);
+      await helpers.setBalance(existingStaker.address, parseEther(1000));
+      const stakerSigner = await ethers.getSigner(existingStaker.address);
+      const vanaPoolStakingAsStaker = vanaPoolStakingV2.connect(stakerSigner);
+
+      // Get initial state - V1 staker should have rewardEligibilityTimestamp = 0
+      const initialEntity = await vanaPoolStakingV2.stakerEntities(existingStaker.address, ENTITY_ID);
+      console.log(`\n--- Initial V1 State ---`);
+      console.log(`  Shares: ${formatEther(initialEntity.shares)}`);
+      console.log(`  Cost Basis: ${formatEther(initialEntity.costBasis)} VANA`);
+      console.log(`  Reward Eligibility Timestamp: ${initialEntity.rewardEligibilityTimestamp}`);
+
+      // Verify V1 staker starts with rewardEligibilityTimestamp = 0
+      initialEntity.rewardEligibilityTimestamp.should.eq(0n, "V1 staker should have rewardEligibilityTimestamp = 0 initially");
+
+      // First, demonstrate V1 staker can unstake immediately (before new stake)
+      const smallUnstake = initialEntity.shares / 20n; // 5% unstake
+      console.log(`\n--- Pre-stake Unstake (should succeed immediately) ---`);
+      console.log(`  Unstaking ${formatEther(smallUnstake)} shares...`);
+
+      await vanaPoolStakingAsStaker.unstake(ENTITY_ID, smallUnstake, 0);
+      console.log(`  ✓ Pre-stake unstake succeeded immediately (no bonding period)`);
+
+      // Get state after first unstake
+      const afterFirstUnstake = await vanaPoolStakingV2.stakerEntities(existingStaker.address, ENTITY_ID);
+      afterFirstUnstake.rewardEligibilityTimestamp.should.eq(0n, "Should still have rewardEligibilityTimestamp = 0 after unstake");
+
+      // Now stake new money - this should trigger bonding period
+      const newStakeAmount = parseEther(100);
+      console.log(`\n--- Staking New Money ---`);
+      console.log(`  New stake amount: ${formatEther(newStakeAmount)} VANA`);
+
+      const stakeTx = await vanaPoolStakingAsStaker.stake(ENTITY_ID, existingStaker.address, 0, { value: newStakeAmount });
+      const stakeReceipt = await stakeTx.wait();
+      const stakeBlock = await ethers.provider.getBlock(stakeReceipt!.blockNumber);
+      const stakeTimestamp = BigInt(stakeBlock!.timestamp);
+
+      // Get state after new stake
+      const afterStake = await vanaPoolStakingV2.stakerEntities(existingStaker.address, ENTITY_ID);
+      console.log(`\n--- After New Stake ---`);
+      console.log(`  Shares: ${formatEther(afterStake.shares)}`);
+      console.log(`  Cost Basis: ${formatEther(afterStake.costBasis)} VANA`);
+      console.log(`  Reward Eligibility Timestamp: ${afterStake.rewardEligibilityTimestamp}`);
+
+      // Verify bonding period is now applied (rewardEligibilityTimestamp > 0)
+      afterStake.rewardEligibilityTimestamp.should.be.gt(0n, "V1 staker should now have bonding period after new stake");
+      afterStake.rewardEligibilityTimestamp.should.be.gt(stakeTimestamp, "Eligibility timestamp should be in the future");
+
+      const bondingPeriod = await vanaPoolStakingV2.bondingPeriod();
+      const timeUntilEligible = afterStake.rewardEligibilityTimestamp - stakeTimestamp;
+      console.log(`  Time until eligible: ${timeUntilEligible} seconds (~${timeUntilEligible / 86400n} days)`);
+      console.log(`  Full bonding period: ${bondingPeriod} seconds (~${bondingPeriod / 86400n} days)`);
+
+      // Weighted bonding should be less than full bonding period (since V1 stake already existed)
+      timeUntilEligible.should.be.lte(bondingPeriod, "Weighted bonding time should be <= full bonding period");
+
+      // Now try to unstake more than cost basis during bonding period - should fail
+      console.log(`\n--- Attempting to Unstake During Bonding Period ---`);
+      const shareToVanaAfter = await vanaPoolEntity.entityShareToVana(ENTITY_ID);
+      const currentValue = (afterStake.shares * shareToVanaAfter) / BigInt(1e18);
+      console.log(`  Current value: ${formatEther(currentValue)} VANA`);
+      console.log(`  Cost basis: ${formatEther(afterStake.costBasis)} VANA`);
+
+      // Try to unstake all shares - should be limited to cost basis during bonding
+      const [maxVana, maxShares, , isInBonding] = await vanaPoolStakingV2.getMaxUnstakeAmount(existingStaker.address, ENTITY_ID);
+
+      console.log(`  Max unstakeable VANA: ${formatEther(maxVana)} VANA`);
+      console.log(`  Max unstakeable shares: ${formatEther(maxShares)}`);
+      console.log(`  Is in bonding period: ${isInBonding}`);
+
+      isInBonding.should.eq(true, "Should be in bonding period after new stake");
+
+      // Unstake within cost basis limit should succeed
+      const safeUnstakeShares = maxShares / 2n;
+      if (safeUnstakeShares > 0n) {
+        console.log(`\n--- Unstaking Within Limit ---`);
+        console.log(`  Unstaking ${formatEther(safeUnstakeShares)} shares (within cost basis)...`);
+        await vanaPoolStakingAsStaker.unstake(ENTITY_ID, safeUnstakeShares, 0);
+        console.log(`  ✓ Unstake within cost basis succeeded during bonding period`);
+
+        // Note: Partial unstake during bonding period extends the bonding time (anti-gaming)
+        const afterPartialUnstake = await vanaPoolStakingV2.stakerEntities(existingStaker.address, ENTITY_ID);
+        console.log(`  New eligibility timestamp after partial unstake: ${afterPartialUnstake.rewardEligibilityTimestamp}`);
+        afterPartialUnstake.rewardEligibilityTimestamp.should.be.gte(afterStake.rewardEligibilityTimestamp, "Bonding period should be extended after partial unstake");
+      }
+
+      // Get the updated eligibility timestamp (may have been extended by partial unstake)
+      const currentEntity = await vanaPoolStakingV2.stakerEntities(existingStaker.address, ENTITY_ID);
+
+      // Wait for bonding period to pass
+      console.log(`\n--- Waiting for Bonding Period to Pass ---`);
+      await helpers.time.increaseTo(currentEntity.rewardEligibilityTimestamp + 1n);
+      console.log(`  ✓ Time advanced past eligibility timestamp`);
+
+      // Now should be able to unstake freely
+      const afterWait = await vanaPoolStakingV2.stakerEntities(existingStaker.address, ENTITY_ID);
+      const [, , , isInBondingAfterWait] = await vanaPoolStakingV2.getMaxUnstakeAmount(existingStaker.address, ENTITY_ID);
+
+      console.log(`\n--- After Bonding Period ---`);
+      console.log(`  Is in bonding period: ${isInBondingAfterWait}`);
+      isInBondingAfterWait.should.eq(false, "Should no longer be in bonding period");
+
+      // Unstake remaining shares
+      const remainingShares = afterWait.shares / 2n;
+      if (remainingShares > 0n) {
+        console.log(`  Unstaking ${formatEther(remainingShares)} shares after bonding period...`);
+        await vanaPoolStakingAsStaker.unstake(ENTITY_ID, remainingShares, 0);
+        console.log(`  ✓ Post-bonding unstake succeeded`);
+      }
+
+      console.log(`\n✓ Test complete: V1 staker correctly gets bonding period after new stake`);
+    });
+
     it("should test existing staker stakes new money with correct bonding period and rewards", async function () {
       if (!(await isForkEnabled())) {
         this.skip();
