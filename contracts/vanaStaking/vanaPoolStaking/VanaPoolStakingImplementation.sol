@@ -6,7 +6,7 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
-import "./interfaces/VanaPoolStakingStorageV1.sol";
+import "./interfaces/VanaPoolStakingStorageV2.sol";
 
 contract VanaPoolStakingImplementation is
     UUPSUpgradeable,
@@ -14,12 +14,14 @@ contract VanaPoolStakingImplementation is
     AccessControlUpgradeable,
     ReentrancyGuardUpgradeable,
     ERC2771ContextUpgradeable,
-    VanaPoolStakingStorageV1
+    VanaPoolStakingStorageV2
 {
     using EnumerableSet for EnumerableSet.AddressSet;
 
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
     bytes32 public constant VANA_POOL_ENTITY_ROLE = keccak256("VANA_POOL_ENTITY_ROLE");
+
+    uint256 public constant MAX_BONDING_PERIOD = 365 days;
 
     /**
      * @notice Triggered when a user stakes VANA to an entity
@@ -49,6 +51,13 @@ contract VanaPoolStakingImplementation is
     event MinStakeUpdated(uint256 newMinStake);
 
     /**
+     * @notice Triggered when bonding period is updated
+     *
+     * @param newBondingPeriod                 new bonding period in seconds
+     */
+    event BondingPeriodUpdated(uint256 newBondingPeriod);
+
+    /**
      * @notice Triggered when an entity stake is registered
      *
      * @param entityId                         ID of the entity
@@ -69,6 +78,7 @@ contract VanaPoolStakingImplementation is
     error CannotRemoveRegistrationStake();
     error NotAuthorized();
     error InvalidSlippage();
+    error InvalidBondingPeriod();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() ERC2771ContextUpgradeable(address(0)) {
@@ -143,7 +153,7 @@ contract VanaPoolStakingImplementation is
      * @notice Returns the version of the contract
      */
     function version() external pure virtual override returns (uint256) {
-        return 1;
+        return 2;
     }
 
     /**
@@ -154,7 +164,7 @@ contract VanaPoolStakingImplementation is
      * @return uint256                         shares owned by staker in the entity
      */
     function stakerEntities(address staker, uint256 entityId) external view override returns (StakerEntity memory) {
-        return StakerEntity({shares: _stakers[staker].entities[entityId].shares});
+        return _stakers[staker].entities[entityId];
     }
 
     function activeStakersListCount() external view returns (uint256) {
@@ -196,6 +206,165 @@ contract VanaPoolStakingImplementation is
     }
 
     /**
+     * @notice Get the maximum amount of VANA that can be unstaked in a single transaction
+     * @dev Returns the minimum of:
+     *      1. The withdrawable VANA (costBasis if in bonding period, shareValue if eligible)
+     *      2. The entity's activeRewardPool (what the entity has available)
+     *      3. The treasury balance (what can be paid out)
+     *      Note: This simulates processRewards() to get accurate share prices
+     *
+     * @param staker                            address of the staker
+     * @param entityId                          ID of the entity
+     * @return maxVana                          maximum VANA that can be unstaked
+     * @return maxShares                        corresponding shares to unstake for maxVana
+     * @return limitingFactor                   0 = user shares/costBasis, 1 = activeRewardPool, 2 = treasury
+     * @return isInBondingPeriod                true if staker is still in bonding period
+     */
+    function getMaxUnstakeAmount(
+        address staker,
+        uint256 entityId
+    ) external view returns (uint256 maxVana, uint256 maxShares, uint256 limitingFactor, bool isInBondingPeriod) {
+        StakerEntity storage stakerEntity = _stakers[staker].entities[entityId];
+
+        if (stakerEntity.shares == 0) {
+            return (0, 0, 0, false);
+        }
+
+        // Get entity info and simulate processRewards to get accurate values
+        IVanaPoolEntity.EntityInfo memory entityInfo = vanaPoolEntity.entities(entityId);
+
+        // Simulate processRewards: calculate pending rewards to distribute
+        uint256 simulatedActiveRewardPool = entityInfo.activeRewardPool;
+        uint256 timeElapsed = block.timestamp - entityInfo.lastUpdateTimestamp;
+        if (timeElapsed > 0 && entityInfo.lockedRewardPool > 0) {
+            uint256 toDistribute = vanaPoolEntity.calculateYield(simulatedActiveRewardPool, entityInfo.maxAPY, timeElapsed);
+            if (toDistribute > entityInfo.lockedRewardPool) {
+                toDistribute = entityInfo.lockedRewardPool;
+            }
+            simulatedActiveRewardPool += toDistribute;
+        }
+
+        // Calculate share prices using simulated activeRewardPool
+        uint256 shareToVana = entityInfo.totalShares > 0
+            ? (simulatedActiveRewardPool * 1e18) / entityInfo.totalShares
+            : 1e18;
+        uint256 vanaToShare = simulatedActiveRewardPool > 0
+            ? (entityInfo.totalShares * 1e18) / simulatedActiveRewardPool
+            : 1e18;
+
+        // Check if staker is in bonding period
+        isInBondingPeriod = block.timestamp < stakerEntity.rewardEligibilityTimestamp;
+
+        // Constraint 1: User's withdrawable amount
+        // If in bonding period: can only withdraw costBasis (principal)
+        // If reward eligible: can withdraw full share value (principal + rewards)
+        uint256 userShareValue = (stakerEntity.shares * shareToVana) / 1e18;
+        uint256 userWithdrawable;
+
+        if (isInBondingPeriod) {
+            // In bonding period: can only withdraw cost basis (principal)
+            userWithdrawable = stakerEntity.costBasis;
+        } else {
+            // Reward eligible: can withdraw full share value
+            userWithdrawable = userShareValue;
+        }
+
+        // Constraint 2: Entity's activeRewardPool (use simulated value)
+        uint256 entityPoolBalance = simulatedActiveRewardPool;
+
+        // Constraint 3: Treasury balance
+        uint256 treasuryBalance = address(vanaPoolTreasury).balance;
+
+        // Find the minimum constraint
+        maxVana = userWithdrawable;
+        limitingFactor = 0; // user shares/costBasis
+
+        if (entityPoolBalance < maxVana) {
+            maxVana = entityPoolBalance;
+            limitingFactor = 1; // activeRewardPool
+        }
+
+        if (treasuryBalance < maxVana) {
+            maxVana = treasuryBalance;
+            limitingFactor = 2; // treasury
+        }
+
+        // Convert maxVana back to shares
+        if (maxVana > 0) {
+            if (isInBondingPeriod) {
+                // In bonding period: shares = maxVana * totalShares / costBasis
+                // Because vanaToReturn = (costBasis * shareAmount) / totalShares
+                // So shareAmount = vanaToReturn * totalShares / costBasis
+                if (stakerEntity.costBasis > 0) {
+                    maxShares = (maxVana * stakerEntity.shares) / stakerEntity.costBasis;
+                }
+            } else {
+                // Reward eligible: shares = maxVana / shareToVana
+                maxShares = (maxVana * vanaToShare) / 1e18;
+            }
+
+            // Ensure we don't exceed user's actual shares
+            if (maxShares > stakerEntity.shares) {
+                maxShares = stakerEntity.shares;
+            }
+        }
+
+        return (maxVana, maxShares, limitingFactor, isInBondingPeriod);
+    }
+
+    /**
+     * @notice Get the accruing interest for a staker in a specific entity
+     * @dev Accruing interest = (current VANA value of shares - cost basis) + vested rewards
+     *      This represents all rewards that have not yet been withdrawn (unstaked)
+     *
+     * @param staker                            address of the staker
+     * @param entityId                          ID of the entity
+     * @return uint256                          accruing interest in VANA (0 if negative or no shares)
+     */
+    function getAccruingInterest(address staker, uint256 entityId) external view override returns (uint256) {
+        StakerEntity storage stakerEntity = _stakers[staker].entities[entityId];
+
+        uint256 pendingInterest = 0;
+        if (stakerEntity.shares > 0) {
+            uint256 shareToVana = vanaPoolEntity.entityShareToVana(entityId);
+            uint256 currentValue = (stakerEntity.shares * shareToVana) / 1e18;
+
+            if (currentValue > stakerEntity.costBasis) {
+                pendingInterest = currentValue - stakerEntity.costBasis;
+            }
+        }
+
+        return pendingInterest + stakerEntity.vestedRewards;
+    }
+
+    /**
+     * @notice Returns the total rewards earned by a staker for an entity
+     * @dev Total earned = accruing interest (not yet withdrawn) + realized (withdrawn)
+     *      - accruingInterest: pending interest + vested rewards (all rewards not yet withdrawn)
+     *      - realizedRewards: rewards actually withdrawn during unstakes
+     *
+     * @param staker                            address of the staker
+     * @param entityId                          ID of the entity
+     * @return uint256                          total rewards earned in VANA
+     */
+    function getEarnedRewards(address staker, uint256 entityId) external view override returns (uint256) {
+        StakerEntity storage stakerEntity = _stakers[staker].entities[entityId];
+
+        // Calculate pending interest (current value - cost basis)
+        uint256 pendingInterest = 0;
+        if (stakerEntity.shares > 0) {
+            uint256 shareToVana = vanaPoolEntity.entityShareToVana(entityId);
+            uint256 currentValue = (stakerEntity.shares * shareToVana) / 1e18;
+            if (currentValue > stakerEntity.costBasis) {
+                pendingInterest = currentValue - stakerEntity.costBasis;
+            }
+        }
+
+        // Total = pending interest + vested (not yet withdrawn) + realized (withdrawn)
+        return pendingInterest + stakerEntity.vestedRewards + stakerEntity.realizedRewards;
+    }
+
+    /**
      * @dev Pauses the contract
      */
     function pause() external override onlyRole(MAINTAINER_ROLE) {
@@ -217,6 +386,19 @@ contract VanaPoolStakingImplementation is
     function updateMinStakeAmount(uint256 newMinStake) external override onlyRole(MAINTAINER_ROLE) {
         minStakeAmount = newMinStake;
         emit MinStakeUpdated(newMinStake);
+    }
+
+    /**
+     * @notice Update the bonding period
+     *
+     * @param newBondingPeriod                  new bonding period in seconds
+     */
+    function updateBondingPeriod(uint256 newBondingPeriod) external onlyRole(MAINTAINER_ROLE) {
+        if (newBondingPeriod > MAX_BONDING_PERIOD) {
+            revert InvalidBondingPeriod();
+        }
+        bondingPeriod = newBondingPeriod;
+        emit BondingPeriodUpdated(newBondingPeriod);
     }
 
     /**
@@ -277,11 +459,6 @@ contract VanaPoolStakingImplementation is
 
         uint256 stakeAmount = msg.value;
 
-        //todo: block users from staking below min stake after the DLPStakes are migrated
-        //        if (stakeAmount < minStakeAmount) {
-        //            revert InsufficientStakeAmount();
-        //        }
-
         if (recipient == address(0)) {
             revert InvalidRecipient();
         }
@@ -293,12 +470,47 @@ contract VanaPoolStakingImplementation is
         uint256 vanaToShare = vanaPoolEntity.vanaToEntityShare(entityId);
         uint256 sharesIssued = (vanaToShare * stakeAmount) / 1e18;
 
+        if (sharesIssued == 0) {
+            revert InsufficientStakeAmount();
+        }
+
         if (sharesIssued < shareAmountMin) {
             revert InvalidSlippage();
         }
 
-        // Update recipient's position instead of the sender's
-        _stakers[recipient].entities[entityId].shares += sharesIssued;
+        // Update recipient's position
+        StakerEntity storage stakerEntity = _stakers[recipient].entities[entityId];
+        uint256 currentTimestamp = block.timestamp;
+        uint256 shareToVana = vanaPoolEntity.entityShareToVana(entityId);
+
+        // Calculate new total shares and their VANA value after this stake
+        uint256 newTotalShares = stakerEntity.shares + sharesIssued;
+        uint256 newTotalValue = (newTotalShares * shareToVana) / 1e18;
+
+        if (stakerEntity.rewardEligibilityTimestamp <= currentTimestamp) {
+            // Reward eligible (or first stake): capture unrealized rewards into vestedRewards before resetting costBasis
+            // This ensures earned rewards are tracked when staking additional amounts (rewards rolled into costBasis)
+            if (stakerEntity.shares > 0) {
+                uint256 oldValue = (stakerEntity.shares * shareToVana) / 1e18;
+                if (oldValue > stakerEntity.costBasis) {
+                    stakerEntity.vestedRewards += oldValue - stakerEntity.costBasis;
+                }
+            }
+            // All current value becomes new cost basis (includes old principal + old rewards + new stake)
+            // Weighted time: only new stake contributes (old stake has 0 remaining time)
+            stakerEntity.costBasis = newTotalValue;
+            stakerEntity.rewardEligibilityTimestamp = currentTimestamp + (stakeAmount * bondingPeriod) / newTotalValue;
+        } else {
+            // Still in bonding period: add new stake to cost basis, calculate weighted average time
+            stakerEntity.costBasis += stakeAmount;
+
+            uint256 oldValue = (stakerEntity.shares * shareToVana) / 1e18;
+            uint256 remainingTime = stakerEntity.rewardEligibilityTimestamp - currentTimestamp;
+            uint256 weightedTime = (oldValue * remainingTime + stakeAmount * bondingPeriod) / newTotalValue;
+            stakerEntity.rewardEligibilityTimestamp = currentTimestamp + weightedTime;
+        }
+
+        stakerEntity.shares = newTotalShares;
 
         _addStaker(recipient);
 
@@ -326,51 +538,181 @@ contract VanaPoolStakingImplementation is
         uint256 shareAmount,
         uint256 vanaAmountMin
     ) external override nonReentrant whenNotPaused {
-        StakerEntity storage stakerEntity = _stakers[_msgSender()].entities[entityId];
+        _unstake(_msgSender(), entityId, shareAmount, vanaAmountMin, false);
+    }
+
+    /**
+     * @notice Unstake a specific VANA amount from an entity
+     * @dev Converts the VANA amount to shares and calls internal unstake.
+     *      During bonding period: calculates shares needed to receive vanaAmount as principal
+     *      After eligibility: calculates shares needed to receive vanaAmount as full value
+     *
+     * @param entityId                          ID of the entity to unstake from
+     * @param vanaAmount                        VANA amount to receive
+     * @param shareAmountMax                    maximum shares to burn (slippage protection, 0 to skip)
+     */
+    function unstakeVana(
+        uint256 entityId,
+        uint256 vanaAmount,
+        uint256 shareAmountMax
+    ) external nonReentrant whenNotPaused {
+        address staker = _msgSender();
+        StakerEntity storage stakerEntity = _stakers[staker].entities[entityId];
+        if (stakerEntity.shares == 0 || vanaAmount == 0) {
+            revert InvalidAmount();
+        }
+
+        // Process rewards to get accurate share prices
+        vanaPoolEntity.processRewards(entityId);
+
+        uint256 vanaToShare = vanaPoolEntity.vanaToEntityShare(entityId);
+        bool isInBondingPeriod = block.timestamp < stakerEntity.rewardEligibilityTimestamp;
+
+        // Calculate shares to unstake based on bonding status
+        uint256 shareAmount;
+        if (isInBondingPeriod) {
+            // In bonding period: user receives proportional cost basis
+            // vanaToReturn = (costBasis * shareAmount) / totalShares
+            // So: shareAmount = (vanaAmount * totalShares) / costBasis
+            if (vanaAmount > stakerEntity.costBasis) {
+                revert InvalidAmount();
+            }
+            shareAmount = (vanaAmount * stakerEntity.shares) / stakerEntity.costBasis;
+        } else {
+            // Reward eligible: user receives share value
+            // vanaToReturn = (shareAmount * shareToVana) / 1e18
+            // So: shareAmount = (vanaAmount * vanaToShare) / 1e18
+            shareAmount = (vanaAmount * vanaToShare) / 1e18;
+        }
+
+        // Ensure we don't exceed user's shares
+        if (shareAmount > stakerEntity.shares) {
+            shareAmount = stakerEntity.shares;
+        }
+
+        // Slippage protection
+        if (shareAmountMax > 0 && shareAmount > shareAmountMax) {
+            revert InvalidSlippage();
+        }
+
+        // Call internal unstake, skip processRewards since already called above
+        _unstake(staker, entityId, shareAmount, 0, true);
+    }
+
+    /**
+     * @notice Internal unstake logic
+     *
+     * @param staker                            address of the staker
+     * @param entityId                          ID of the entity to unstake from
+     * @param shareAmount                       shareAmount to unstake
+     * @param vanaAmountMin                     minimum amount of VANA to receive
+     * @param skipProcessRewards                skip processRewards if already called
+     */
+    function _unstake(
+        address staker,
+        uint256 entityId,
+        uint256 shareAmount,
+        uint256 vanaAmountMin,
+        bool skipProcessRewards
+    ) internal {
+        StakerEntity storage stakerEntity = _stakers[staker].entities[entityId];
         if (stakerEntity.shares == 0 || shareAmount == 0) {
             revert InvalidAmount();
         }
 
         // Process entity rewards through VanaPoolEntity to ensure current share price is used
-        vanaPoolEntity.processRewards(entityId);
-
-        //todo: block owner from unstaking below registration stake
-        //        uint256 vanaToShare = vanaPoolEntity.vanaToEntityShare(entityId);
-        //
-        //        // Get entity info from VanaPoolEntity
-        //        IVanaPoolEntity.EntityInfo memory entityInfo = vanaPoolEntity.entities(entityId);
-        //        // If this is the entity owner, ensure they can't unstake below the registration stake
-        //        if (entityInfo.ownerAddress == _msgSender()) {
-        //            uint256 ownerMinShares = (vanaToShare * vanaPoolEntity.minRegistrationStake()) / 1e18;
-        //
-        //            if (stakerShares - shareAmount < ownerMinShares) {
-        //                revert CannotRemoveRegistrationStake();
-        //            }
-        //        }
+        if (!skipProcessRewards) {
+            vanaPoolEntity.processRewards(entityId);
+        }
 
         uint256 shareToVana = vanaPoolEntity.entityShareToVana(entityId);
+        uint256 currentTimestamp = block.timestamp;
 
-        // Store the exact VANA amount corresponding to shares at this point
-        uint256 exactVanaAmount = (shareAmount * shareToVana) / 1e18;
+        // If past bonding period, vest all unrealized rewards first (for entire position)
+        // This ensures clean accounting: all rewards become vested before proportional withdrawal
+        if (currentTimestamp >= stakerEntity.rewardEligibilityTimestamp && stakerEntity.shares > 0) {
+            uint256 currentTotalValue = (stakerEntity.shares * shareToVana) / 1e18;
+            if (currentTotalValue > stakerEntity.costBasis) {
+                uint256 unvestedRewards = currentTotalValue - stakerEntity.costBasis;
+                stakerEntity.vestedRewards += unvestedRewards;
+                stakerEntity.costBasis = currentTotalValue; // Reset cost basis to current value
+            }
+        }
 
-        if (exactVanaAmount < vanaAmountMin) {
+        uint256 shareValue = (shareAmount * shareToVana) / 1e18;
+
+        // Calculate the VANA amount to return based on reward eligibility
+        uint256 vanaToReturn;
+        uint256 proportionalCostBasis = (stakerEntity.costBasis * shareAmount) / stakerEntity.shares;
+        uint256 forfeitedRewards = 0;
+
+        // Move proportional vested rewards to realized rewards (they're being withdrawn)
+        // After vesting above, vestedRewards now contains all earned rewards
+        uint256 proportionalVestedRewards = (stakerEntity.vestedRewards * shareAmount) / stakerEntity.shares;
+        if (proportionalVestedRewards > 0) {
+            stakerEntity.vestedRewards -= proportionalVestedRewards;
+            stakerEntity.realizedRewards += proportionalVestedRewards;
+        }
+
+        if (currentTimestamp >= stakerEntity.rewardEligibilityTimestamp) {
+            // Reward eligible: user receives full value (principal + rewards)
+            vanaToReturn = shareValue;
+            // Note: rewards already tracked above via vestedRewards -> realizedRewards
+        } else {
+            // Still in bonding period: user receives only principal (forfeits rewards)
+            vanaToReturn = proportionalCostBasis;
+            // Calculate forfeited rewards (difference between share value and cost basis)
+            if (shareValue > proportionalCostBasis) {
+                forfeitedRewards = shareValue - proportionalCostBasis;
+            }
+        }
+
+        // Reduce cost basis proportionally
+        stakerEntity.costBasis -= proportionalCostBasis;
+
+        // Anti-gaming logic for partial unstaking during bonding period
+        // Extends remaining bonding time using inverse weighted average formula:
+        // new_remaining_time = current_remaining_time * (amount_before / amount_after)
+        // This prevents "wash attacks" where users use old bonded capital to accelerate new capital vesting
+        if (currentTimestamp < stakerEntity.rewardEligibilityTimestamp && stakerEntity.shares > shareAmount) {
+            uint256 remainingTime = stakerEntity.rewardEligibilityTimestamp - currentTimestamp;
+            uint256 amountBefore = stakerEntity.shares;
+            uint256 amountAfter = stakerEntity.shares - shareAmount;
+
+            // Calculate extended time: remainingTime * (amountBefore / amountAfter)
+            uint256 extendedTime = (remainingTime * amountBefore) / amountAfter;
+
+            // Cap at full bonding period
+            if (extendedTime > bondingPeriod) {
+                extendedTime = bondingPeriod;
+            }
+
+            stakerEntity.rewardEligibilityTimestamp = currentTimestamp + extendedTime;
+        }
+
+        if (vanaToReturn < vanaAmountMin) {
             revert InvalidSlippage();
         }
 
         // Update staker's position
         stakerEntity.shares -= shareAmount;
 
-        _removeStaker(_msgSender());
+        _removeStaker(staker);
 
         // Update entity staking data in VanaPoolEntity contract
-        vanaPoolEntity.updateEntityPool(entityId, shareAmount, exactVanaAmount, false);
+        vanaPoolEntity.updateEntityPool(entityId, shareAmount, shareValue, false);
 
-        bool success = vanaPoolTreasury.transferVana(payable(_msgSender()), exactVanaAmount);
+        // Return forfeited rewards to the locked reward pool for gradual redistribution
+        if (forfeitedRewards > 0) {
+            vanaPoolEntity.returnForfeitedRewards(entityId, forfeitedRewards);
+        }
+
+        bool success = vanaPoolTreasury.transferVana(payable(staker), vanaToReturn);
         if (!success) {
             revert TransferFailed();
         }
 
-        emit Unstaked(entityId, _msgSender(), exactVanaAmount, shareAmount);
+        emit Unstaked(entityId, staker, vanaToReturn, shareAmount);
     }
 
     /**
@@ -385,7 +727,9 @@ contract VanaPoolStakingImplementation is
         uint256 registrationStake
     ) external override nonReentrant whenNotPaused onlyRole(VANA_POOL_ENTITY_ROLE) {
         // Register shares for the owner
-        _stakers[ownerAddress].entities[entityId].shares = registrationStake;
+        StakerEntity storage stakerEntity = _stakers[ownerAddress].entities[entityId];
+        stakerEntity.shares = registrationStake;
+        stakerEntity.costBasis = registrationStake;
 
         _addStaker(ownerAddress);
 

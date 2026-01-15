@@ -23,6 +23,7 @@ contract VanaPoolEntityImplementation is
     event EntityMaxAPYUpdated(uint256 indexed entityId, uint256 newMaxAPY);
     event RewardsAdded(uint256 indexed entityId, uint256 amount);
     event RewardsProcessed(uint256 indexed entityId, uint256 distributedAmount);
+    event ForfeitedRewardsReturned(uint256 indexed entityId, uint256 amount);
 
     // Custom errors
     error InvalidParam();
@@ -436,6 +437,36 @@ contract VanaPoolEntityImplementation is
             entity.totalShares -= shares;
             entity.activeRewardPool -= amount;
         }
+    }
+
+    /**
+     * @notice Returns forfeited rewards back to the locked reward pool
+     * @dev Called when a user unstakes before their reward eligibility date.
+     *      Note: updateEntityPool already deducted the full shareValue from activeRewardPool,
+     *      so we only need to add the forfeited amount to lockedRewardPool.
+     *
+     * @param entityId                          ID of the entity
+     * @param amount                            Amount of forfeited rewards to return
+     */
+    function returnForfeitedRewards(
+        uint256 entityId,
+        uint256 amount
+    ) external override whenNotPaused onlyRole(VANA_POOL_ROLE) {
+        if (amount == 0) {
+            return;
+        }
+
+        Entity storage entity = _entities[entityId];
+
+        if (entity.status != EntityStatus.Active) {
+            revert InvalidEntityStatus();
+        }
+
+        // Add forfeited rewards to locked pool for gradual redistribution
+        // (activeRewardPool was already reduced by updateEntityPool)
+        entity.lockedRewardPool += amount;
+
+        emit ForfeitedRewardsReturned(entityId, amount);
     }
 
     /**
