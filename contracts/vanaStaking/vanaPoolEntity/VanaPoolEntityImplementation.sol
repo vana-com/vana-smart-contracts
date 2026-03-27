@@ -85,10 +85,28 @@ contract VanaPoolEntityImplementation is
     function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     /**
+     * @notice Set totalDistributedRewards for entities to seed historical values
+     * @param entityIds The entity IDs to update
+     * @param amounts The totalDistributedRewards values to add for each entity
+     */
+    function addTotalDistributedRewards(
+        uint256[] calldata entityIds,
+        uint256[] calldata amounts
+    ) external onlyRole(MAINTAINER_ROLE) {
+        if (entityIds.length != amounts.length) {
+            revert InvalidParam();
+        }
+
+        for (uint256 i = 0; i < entityIds.length; i++) {
+            _entities[entityIds[i]].totalDistributedRewards += amounts[i];
+        }
+    }
+
+    /**
      * @notice Returns the version of the contract
      */
     function version() external pure virtual override returns (uint256) {
-        return 1;
+        return 2;
     }
 
     /**
@@ -109,7 +127,8 @@ contract VanaPoolEntityImplementation is
                 lockedRewardPool: entity.lockedRewardPool,
                 activeRewardPool: entity.activeRewardPool,
                 totalShares: entity.totalShares,
-                lastUpdateTimestamp: entity.lastUpdateTimestamp
+                lastUpdateTimestamp: entity.lastUpdateTimestamp,
+                totalDistributedRewards: entity.totalDistributedRewards
             });
     }
 
@@ -352,6 +371,7 @@ contract VanaPoolEntityImplementation is
 
         entity.lockedRewardPool -= toDistribute;
         entity.activeRewardPool += toDistribute;
+        entity.totalDistributedRewards += toDistribute;
 
         // Update last process timestamp
         entity.lastUpdateTimestamp = block.timestamp;
@@ -465,6 +485,7 @@ contract VanaPoolEntityImplementation is
         // Add forfeited rewards to locked pool for gradual redistribution
         // (activeRewardPool was already reduced by updateEntityPool)
         entity.lockedRewardPool += amount;
+        entity.totalDistributedRewards -= amount;
 
         emit ForfeitedRewardsReturned(entityId, amount);
     }
