@@ -20,6 +20,7 @@ interface IVanaPoolEntity {
         uint256 activeRewardPool; // Active rewards available for distribution
         uint256 totalShares; // Total shares for this entity
         uint256 lastUpdateTimestamp; // When rewards were last processed
+        uint256 totalDistributedRewards; // Cumulative rewards distributed from locked to active pool
     }
 
     function version() external pure returns (uint256);
@@ -37,6 +38,7 @@ interface IVanaPoolEntity {
         uint256 activeRewardPool;
         uint256 totalShares;
         uint256 lastUpdateTimestamp;
+        uint256 totalDistributedRewards;
     }
 
     function entitiesCount() external view returns (uint256);
