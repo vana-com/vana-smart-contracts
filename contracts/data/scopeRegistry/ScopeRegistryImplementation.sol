@@ -75,6 +75,10 @@ contract ScopeRegistryImplementation is
         return _scopes[id].status != Status.None;
     }
 
+    function scopeStatus(bytes32 id) external view override returns (Status) {
+        return _scopes[id].status;
+    }
+
     function scopeId(string calldata namespaceName, string calldata scopeName)
         external
         pure

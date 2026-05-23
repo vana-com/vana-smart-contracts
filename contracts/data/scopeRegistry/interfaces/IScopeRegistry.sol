@@ -73,6 +73,11 @@ interface IScopeRegistry {
 
     function isRegistered(bytes32 scopeId) external view returns (bool);
 
+    /// @notice Status of a scope by id. Cheaper than `scopes(id).status` for
+    ///         on-chain callers since the return is a single uint8 slot
+    ///         instead of the full Scope struct.
+    function scopeStatus(bytes32 scopeId) external view returns (Status);
+
     /// @notice Compute the on-chain id for a (namespace, scopeName) pair.
     function scopeId(string calldata namespaceName, string calldata scopeName) external pure returns (bytes32);
 
