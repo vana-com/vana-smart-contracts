@@ -7,6 +7,7 @@ import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "../dataPortabilityPermissionsV2/interfaces/IDataPortabilityPermissionsV2.sol";
 import "./interfaces/DataPortabilityEscrowStorageV1.sol";
 
 /**
@@ -81,6 +82,13 @@ contract DataPortabilityEscrowImplementation is
         if (token == address(0)) revert ZeroAddress();
         isWhitelistedToken[token] = whitelisted;
         emit TokenWhitelistUpdated(token, whitelisted);
+    }
+
+    function setPermissions(address newPermissions) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newPermissions == address(0)) revert ZeroAddress();
+        address previous = address(permissions);
+        permissions = IDataPortabilityPermissionsV2(newPermissions);
+        emit PermissionsUpdated(previous, newPermissions);
     }
 
     // ====================== Views ======================
@@ -183,6 +191,46 @@ contract DataPortabilityEscrowImplementation is
             if (!ok) revert NativeTransferFailed();
         } else {
             IERC20(asset).safeTransfer(to, amount);
+        }
+    }
+
+    // ====================== Facilitator: register + settle (atomic) ======================
+
+    /// @inheritdoc IDataPortabilityEscrow
+    /// @dev Register first, then run the payouts. Any sub-failure reverts the
+    ///      whole tx — so a partial state (grant on-chain but fee unpaid, or
+    ///      vice versa) is impossible. Both PermissionSet (from the permissions
+    ///      contract) and one Settled per op (from this contract) are emitted
+    ///      identically to the underlying primitives — no wrapper event.
+    function registerAndSettle(
+        IDataPortabilityPermissionsV2.AddPermissionInput calldata input,
+        bytes calldata signature,
+        SettleOp[] calldata ops
+    )
+        external
+        override
+        onlyRole(FACILITATOR_ROLE)
+        whenNotPaused
+        nonReentrant
+        returns (bytes32 grantId)
+    {
+        if (address(permissions) == address(0)) revert PermissionsNotSet();
+
+        // Step 1: register on the permissions contract. Reverts on any of:
+        // InvalidSignature, GrantorMismatch, InvalidGrantVersion, EmptyScopes,
+        // ZeroAddress, ZeroGranteeId — all from addPermissionWithSignature.
+        grantId = permissions.addPermissionWithSignature(input, signature);
+
+        // Step 2: identical loop to settleBatch — preserves event shape so
+        // indexers don't need a special case for bundled txs.
+        uint256 len = ops.length;
+        for (uint256 i = 0; i < len; ) {
+            SettleOp calldata op = ops[i];
+            _payout(op.from, op.to, op.asset, op.amount);
+            emit Settled(op.from, op.to, op.asset, op.amount, op.ref);
+            unchecked {
+                ++i;
+            }
         }
     }
 

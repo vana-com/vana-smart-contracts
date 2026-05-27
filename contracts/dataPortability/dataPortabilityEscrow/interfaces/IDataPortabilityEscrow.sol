@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
+import "../../dataPortabilityPermissionsV2/interfaces/IDataPortabilityPermissionsV2.sol";
+
 /**
  * @title IDataPortabilityEscrow
  * @author Vana Network
@@ -43,6 +45,7 @@ interface IDataPortabilityEscrow {
     error InsufficientBalance(address account, address asset, uint256 requested, uint256 available);
     error NativeTransferFailed();
     error UnexpectedNativeValue();
+    error PermissionsNotSet();
 
     // ====================== Events ======================
 
@@ -75,6 +78,9 @@ interface IDataPortabilityEscrow {
     /// @notice Emitted when the admin updates the ERC-20 whitelist.
     event TokenWhitelistUpdated(address indexed token, bool whitelisted);
 
+    /// @notice Emitted when the admin updates the cross-referenced permissions contract.
+    event PermissionsUpdated(address indexed previous, address indexed current);
+
     // ====================== Views ======================
 
     function version() external pure returns (uint256);
@@ -83,9 +89,16 @@ interface IDataPortabilityEscrow {
 
     function balanceOf(address account, address asset) external view returns (uint256);
 
+    /// @notice Cross-referenced permissions contract used by `registerAndSettle`.
+    ///         Settable post-deploy via `setPermissions` (admin-only).
+    function permissions() external view returns (IDataPortabilityPermissionsV2);
+
     // ====================== Admin ======================
 
     function setTokenWhitelisted(address token, bool whitelisted) external;
+
+    /// @notice Set or update the permissions contract used by `registerAndSettle`.
+    function setPermissions(address newPermissions) external;
 
     function pause() external;
 
@@ -110,4 +123,22 @@ interface IDataPortabilityEscrow {
 
     /// @notice Debit `account`'s in-escrow balance and return the funds to `account` itself.
     function withdraw(address account, address asset, uint256 amount, bytes32 ref) external;
+
+    /// @notice Atomically register a permission and execute associated payouts.
+    ///         Both succeed or both revert.
+    /// @dev Order: register first (via `permissions.addPermissionWithSignature`),
+    ///      then loop the ops calling `_payout` + emitting `Settled`. Reverts if
+    ///      the permissions contract is not set, the signature is invalid, the
+    ///      grantor mismatches, the grantVersion is stale, scopes are empty,
+    ///      or any op's balance is insufficient.
+    /// @param input the permission registration payload (matches the gateway's
+    ///        GrantRegistration EIP-712 type)
+    /// @param signature grantor's EIP-712 signature over `input`
+    /// @param ops payouts to execute after a successful registration; may be empty
+    /// @return grantId the deterministic grant id returned by the permissions contract
+    function registerAndSettle(
+        IDataPortabilityPermissionsV2.AddPermissionInput calldata input,
+        bytes calldata signature,
+        SettleOp[] calldata ops
+    ) external returns (bytes32 grantId);
 }

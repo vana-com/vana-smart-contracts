@@ -14,4 +14,9 @@ abstract contract DataPortabilityEscrowStorageV1 is IDataPortabilityEscrow {
 
     /// @dev Whitelisted ERC-20s eligible for deposit. Native (address(0)) is always supported and not tracked here.
     mapping(address token => bool whitelisted) public override isWhitelistedToken;
+
+    /// @dev Cross-referenced permissions contract used by `registerAndSettle`.
+    ///      Set post-deploy via `setPermissions`. If left unset, `registerAndSettle`
+    ///      reverts with `PermissionsNotSet`.
+    IDataPortabilityPermissionsV2 public override permissions;
 }
