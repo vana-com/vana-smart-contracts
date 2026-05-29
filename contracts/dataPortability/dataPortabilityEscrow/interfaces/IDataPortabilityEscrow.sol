@@ -23,18 +23,27 @@ import "../../dataPortabilityPermissionsV2/interfaces/IDataPortabilityPermission
  * @custom:security-contact security@vana.org
  */
 interface IDataPortabilityEscrow {
-    /// @notice Single settlement entry used by `settleBatch`.
+    /// @notice Categorizes a settlement op for off-chain indexing / accounting.
+    ///         `Unspecified` (0) is the zero default for callers who don't care
+    ///         to classify. Extend by appending values — never reorder.
+    enum OpKind {
+        Unspecified,
+        Registration, // registration fee for a grant (used by `registerAndSettle`)
+        DataAccess    // per-access payment for data use
+    }
+
+    /// @notice Single settlement entry used by `settleBatch` / `registerAndSettle`.
     /// @param from   In-escrow account whose balance is debited
     /// @param to     External recipient of the funds
     /// @param asset  Asset to transfer; `address(0)` for native VANA
     /// @param amount Amount to transfer
-    /// @param ref    Caller-supplied tag (paymentId / invoice hash). May be zero.
+    /// @param opKind Classification of the operation (off-chain hint).
     struct SettleOp {
         address from;
         address to;
         address asset;
         uint256 amount;
-        bytes32 ref;
+        OpKind opKind;
     }
 
     // ====================== Errors ======================
@@ -57,13 +66,13 @@ interface IDataPortabilityEscrow {
 
     /// @notice Emitted when the facilitator settles a payment: debits `from`'s
     ///         in-escrow balance and transfers funds to external address `to`.
-    /// @param ref Caller-supplied tag (e.g. paymentId / invoice hash). May be zero.
+    /// @param opKind Classification of the operation (off-chain hint).
     event Settled(
         address indexed from,
         address indexed to,
         address indexed asset,
         uint256 amount,
-        bytes32 ref
+        OpKind opKind
     );
 
     /// @notice Emitted when the facilitator returns funds to the account holder:
@@ -116,7 +125,7 @@ interface IDataPortabilityEscrow {
     // ====================== Facilitator ops ======================
 
     /// @notice Debit `from`'s in-escrow balance and transfer the funds to external address `to`.
-    function settle(address from, address to, address asset, uint256 amount, bytes32 ref) external;
+    function settle(address from, address to, address asset, uint256 amount, OpKind opKind) external;
 
     /// @notice Batched variant of `settle`.
     function settleBatch(SettleOp[] calldata ops) external;

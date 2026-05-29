@@ -131,7 +131,7 @@ contract DataPortabilityEscrowImplementation is
 
     // ====================== Facilitator: settle (pay external) ======================
 
-    function settle(address from, address to, address asset, uint256 amount, bytes32 ref)
+    function settle(address from, address to, address asset, uint256 amount, OpKind opKind)
         external
         override
         whenNotPaused
@@ -139,7 +139,7 @@ contract DataPortabilityEscrowImplementation is
         nonReentrant
     {
         _payout(from, to, asset, amount);
-        emit Settled(from, to, asset, amount, ref);
+        emit Settled(from, to, asset, amount, opKind);
     }
 
     function settleBatch(SettleOp[] calldata ops)
@@ -153,7 +153,7 @@ contract DataPortabilityEscrowImplementation is
         for (uint256 i = 0; i < len; ) {
             SettleOp calldata op = ops[i];
             _payout(op.from, op.to, op.asset, op.amount);
-            emit Settled(op.from, op.to, op.asset, op.amount, op.ref);
+            emit Settled(op.from, op.to, op.asset, op.amount, op.opKind);
             unchecked {
                 ++i;
             }
@@ -227,7 +227,7 @@ contract DataPortabilityEscrowImplementation is
         for (uint256 i = 0; i < len; ) {
             SettleOp calldata op = ops[i];
             _payout(op.from, op.to, op.asset, op.amount);
-            emit Settled(op.from, op.to, op.asset, op.amount, op.ref);
+            emit Settled(op.from, op.to, op.asset, op.amount, op.opKind);
             unchecked {
                 ++i;
             }

@@ -7,19 +7,23 @@ pragma solidity 0.8.24;
  * @notice Registry of data-access permissions, content-addressed by a
  *         deterministic id derived from (domain, grantor, grantee):
  *
- *           grantId = keccak256(abi.encode(domainSeparator, grantorAddress, granteeId))
+ *           grantId = keccak256(abi.encode(domainSeparator(), grantorAddress, granteeId))
  *
- *         where
+ *         where `domainSeparator()` is the EIP-712 domain separator returned
+ *         by OpenZeppelin's `_domainSeparatorV4`:
  *
  *           domainSeparator = keccak256(abi.encode(
- *             keccak256("DataPortabilityDomain(uint256 chainId,address verifyingContract)"),
+ *             keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+ *             keccak256("Vana Data Portability"),
+ *             keccak256("1"),
  *             chainId,
  *             address(this)
  *           ))
  *
- *         This domain is separate from the EIP-712 domain used for the
- *         signature in `addPermissionWithSignature` — it is purely for id
- *         derivation, so anyone can compute the id off-chain.
+ *         The same domain separator is used for both the `addPermissionWithSignature`
+ *         EIP-712 signature and the content-addressed `grantId`. Off-chain code
+ *         that constructs the standard EIP-712 domain (e.g. viem's `hashDomain`)
+ *         produces the same value.
  *
  *         Each Permission records:
  *           - grantorAddress: address that granted the permission
@@ -114,8 +118,10 @@ interface IDataPortabilityPermissionsV2 {
     ///         string[] scopes,uint256 grantVersion,uint256 expiresAt)
     function GRANT_REGISTRATION_TYPEHASH() external view returns (bytes32);
 
-    /// @notice The custom domain separator used to derive `grantId`. Different
-    ///         from the EIP-712 domain separator used for signatures.
+    /// @notice EIP-712 domain separator. Used both as the signing-domain for
+    ///         `addPermissionWithSignature` and as the namespace tag baked into
+    ///         every `grantId`. Computed from the standard EIP-712 fields
+    ///         (name, version, chainId, verifyingContract).
     function domainSeparator() external view returns (bytes32);
 
     /// @notice Deterministic id for a (grantor, grantee) pair.

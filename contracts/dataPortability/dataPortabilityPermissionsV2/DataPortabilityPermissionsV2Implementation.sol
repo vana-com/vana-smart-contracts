@@ -30,12 +30,6 @@ contract DataPortabilityPermissionsV2Implementation is
             "GrantRegistration(address grantorAddress,bytes32 granteeId,string[] scopes,uint256 grantVersion,uint256 expiresAt)"
         );
 
-    /// @dev Typehash for the custom domain used to derive `grantId`. Not the
-    ///      same as the EIP-712 domain — this one is purely for content-addressed
-    ///      ids, so anyone can recompute them off-chain from public inputs.
-    bytes32 private constant DOMAIN_TYPEHASH =
-        keccak256("DataPortabilityDomain(uint256 chainId,address verifyingContract)");
-
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -82,7 +76,7 @@ contract DataPortabilityPermissionsV2Implementation is
     }
 
     function domainSeparator() public view override returns (bytes32) {
-        return keccak256(abi.encode(DOMAIN_TYPEHASH, block.chainid, address(this)));
+        return _domainSeparatorV4();
     }
 
     function grantId(address grantorAddress, bytes32 granteeId) public view override returns (bytes32) {
