@@ -19,4 +19,9 @@ abstract contract DataPortabilityEscrowStorageV1 is IDataPortabilityEscrow {
     ///      Set post-deploy via `setPermissions`. If left unset, `registerAndSettle`
     ///      reverts with `PermissionsNotSet`.
     IDataPortabilityPermissionsV2 public override permissions;
+
+    /// @dev Cross-referenced data-registry contract used by `recordAccessAndSettle`.
+    ///      Set post-deploy via `setDataRegistry`. If left unset,
+    ///      `recordAccessAndSettle` reverts with `DataRegistryNotSet`.
+    IDataRegistryV2 public override dataRegistry;
 }

@@ -124,7 +124,10 @@ contract DataRegistryV2Implementation is
         override
         returns (DataPointInfo memory)
     {
-        bytes32 id = _dataPointId(ownerAddress, scope);
+        return dataPointById(_dataPointId(ownerAddress, scope));
+    }
+
+    function dataPointById(bytes32 id) public view override returns (DataPointInfo memory) {
         DataPoint storage d = _dataPoints[id];
         return
             DataPointInfo({

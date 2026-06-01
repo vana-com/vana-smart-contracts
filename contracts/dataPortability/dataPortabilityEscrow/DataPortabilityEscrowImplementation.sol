@@ -8,6 +8,7 @@ import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "../dataPortabilityPermissionsV2/interfaces/IDataPortabilityPermissionsV2.sol";
+import "../../data/dataRegistryV2/interfaces/IDataRegistryV2.sol";
 import "./interfaces/DataPortabilityEscrowStorageV1.sol";
 
 /**
@@ -89,6 +90,13 @@ contract DataPortabilityEscrowImplementation is
         address previous = address(permissions);
         permissions = IDataPortabilityPermissionsV2(newPermissions);
         emit PermissionsUpdated(previous, newPermissions);
+    }
+
+    function setDataRegistry(address newDataRegistry) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newDataRegistry == address(0)) revert ZeroAddress();
+        address previous = address(dataRegistry);
+        dataRegistry = IDataRegistryV2(newDataRegistry);
+        emit DataRegistryUpdated(previous, newDataRegistry);
     }
 
     // ====================== Views ======================
@@ -223,6 +231,48 @@ contract DataPortabilityEscrowImplementation is
 
         // Step 2: identical loop to settleBatch — preserves event shape so
         // indexers don't need a special case for bundled txs.
+        uint256 len = ops.length;
+        for (uint256 i = 0; i < len; ) {
+            SettleOp calldata op = ops[i];
+            _payout(op.from, op.to, op.asset, op.amount);
+            emit Settled(op.from, op.to, op.asset, op.amount, op.opKind);
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    // ====================== Facilitator: record access + settle (atomic) ======================
+
+    /// @inheritdoc IDataPortabilityEscrow
+    /// @dev Same pattern as `registerAndSettle`. Bundle-level idempotency comes
+    ///      for free from the EVM: `dataRegistry.recordDataAccess` reverts on
+    ///      duplicate recordId (or untrusted server, unknown version, etc.),
+    ///      which rolls back the entire bundle including the settle loop.
+    function recordAccessAndSettle(
+        address ownerAddress,
+        string calldata scope,
+        uint256 version_,
+        address accessor,
+        bytes32 recordId,
+        bytes calldata serverSignature,
+        SettleOp[] calldata ops
+    )
+        external
+        override
+        onlyRole(FACILITATOR_ROLE)
+        whenNotPaused
+        nonReentrant
+    {
+        if (address(dataRegistry) == address(0)) revert DataRegistryNotSet();
+
+        // Step 1: record the access. Reverts on RecordIdAlreadyUsed,
+        // UntrustedServer, UnknownVersion, InvalidSignature,
+        // DataPortabilityServersNotSet — all from DataRegistryV2.
+        dataRegistry.recordDataAccess(ownerAddress, scope, version_, accessor, recordId, serverSignature);
+
+        // Step 2: identical loop to settleBatch — same event shape so indexers
+        // don't need a special case for bundled txs.
         uint256 len = ops.length;
         for (uint256 i = 0; i < len; ) {
             SettleOp calldata op = ops[i];

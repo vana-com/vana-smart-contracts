@@ -124,6 +124,11 @@ interface IDataRegistryV2 {
 
     function dataPoints(address ownerAddress, string calldata scope) external view returns (DataPointInfo memory);
 
+    /// @notice Look up a data point by its deterministic id directly.
+    /// @dev For unregistered ids every field returns its zero default
+    ///      (`info.owner == address(0)` signals "not found").
+    function dataPointById(bytes32 id) external view returns (DataPointInfo memory);
+
     function dataCommitment(address ownerAddress, string calldata scope, uint256 version_)
         external view returns (bytes32);
 

@@ -2,6 +2,7 @@
 pragma solidity 0.8.24;
 
 import "../../dataPortabilityPermissionsV2/interfaces/IDataPortabilityPermissionsV2.sol";
+import "../../../data/dataRegistryV2/interfaces/IDataRegistryV2.sol";
 
 /**
  * @title IDataPortabilityEscrow
@@ -55,6 +56,7 @@ interface IDataPortabilityEscrow {
     error NativeTransferFailed();
     error UnexpectedNativeValue();
     error PermissionsNotSet();
+    error DataRegistryNotSet();
 
     // ====================== Events ======================
 
@@ -90,6 +92,9 @@ interface IDataPortabilityEscrow {
     /// @notice Emitted when the admin updates the cross-referenced permissions contract.
     event PermissionsUpdated(address indexed previous, address indexed current);
 
+    /// @notice Emitted when the admin updates the cross-referenced data-registry contract.
+    event DataRegistryUpdated(address indexed previous, address indexed current);
+
     // ====================== Views ======================
 
     function version() external pure returns (uint256);
@@ -102,12 +107,19 @@ interface IDataPortabilityEscrow {
     ///         Settable post-deploy via `setPermissions` (admin-only).
     function permissions() external view returns (IDataPortabilityPermissionsV2);
 
+    /// @notice Cross-referenced data-registry contract used by `recordAccessAndSettle`.
+    ///         Settable post-deploy via `setDataRegistry` (admin-only).
+    function dataRegistry() external view returns (IDataRegistryV2);
+
     // ====================== Admin ======================
 
     function setTokenWhitelisted(address token, bool whitelisted) external;
 
     /// @notice Set or update the permissions contract used by `registerAndSettle`.
     function setPermissions(address newPermissions) external;
+
+    /// @notice Set or update the data-registry contract used by `recordAccessAndSettle`.
+    function setDataRegistry(address newDataRegistry) external;
 
     function pause() external;
 
@@ -132,6 +144,29 @@ interface IDataPortabilityEscrow {
 
     /// @notice Debit `account`'s in-escrow balance and return the funds to `account` itself.
     function withdraw(address account, address asset, uint256 amount, bytes32 ref) external;
+
+    /// @notice Atomically record a data access and execute associated payouts.
+    ///         Both succeed or both revert.
+    /// @dev Order: record first (via `dataRegistry.recordDataAccess`), then loop
+    ///      the ops calling `_payout` + emitting `Settled`. The inner record
+    ///      reverts on duplicate recordId, untrusted server, unknown version,
+    ///      etc. — bundle-level idempotency falls out of EVM atomicity.
+    /// @param ownerAddress    Data point owner whose counter is incremented.
+    /// @param scope           Data point scope.
+    /// @param version_        Version against which the access is recorded.
+    /// @param accessor        Address that performed the access.
+    /// @param recordId        Caller-chosen unique id; reverts if reused.
+    /// @param serverSignature EIP-712 signature by a personal server trusted by `ownerAddress`.
+    /// @param ops             Payouts to execute after a successful record; may be empty.
+    function recordAccessAndSettle(
+        address ownerAddress,
+        string calldata scope,
+        uint256 version_,
+        address accessor,
+        bytes32 recordId,
+        bytes calldata serverSignature,
+        SettleOp[] calldata ops
+    ) external;
 
     /// @notice Atomically register a permission and execute associated payouts.
     ///         Both succeed or both revert.
