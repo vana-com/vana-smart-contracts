@@ -93,6 +93,13 @@ interface IDataRegistryV2 {
         uint256 dataPointTotalAccesses
     );
 
+    /// @notice Emitted alongside `DataVersionAdded` when the EIP-712 signature
+    ///         on `addDataWithSignature` was produced by a delegate (personal
+    ///         server currently trusted by `ownerAddress`) rather than the
+    ///         owner directly. Not emitted for direct `addData` or owner-self-
+    ///         signed `addDataWithSignature` calls.
+    event DataSignedByDelegate(bytes32 indexed id, address indexed ownerAddress, address indexed delegate);
+
     event DataPortabilityServersUpdated(address indexed previous, address indexed current);
 
     // ====================== Pure helpers ======================
@@ -178,7 +185,18 @@ interface IDataRegistryV2 {
 
     // ====================== Writes (delegated, EIP-712 signed) ======================
 
-    /// @notice Write on behalf of `ownerAddress`, who signed the EIP-712 payload.
+    /// @notice Write on behalf of `ownerAddress`. Authority comes from the
+    ///         EIP-712 signature, which is accepted from EITHER:
+    ///           (a) `ownerAddress` itself, OR
+    ///           (b) a personal server currently registered to `ownerAddress`
+    ///               in the configured `dataPortabilityServers` registry —
+    ///               server-as-delegate. Identical trust model to
+    ///               `recordDataAccess`: revoking the server in the servers
+    ///               registry immediately removes signing authority.
+    ///         If `dataPortabilityServers` is unset (zero address), only (a) is
+    ///         accepted; behavior matches the pre-upgrade contract exactly.
+    ///         In case (b), `DataSignedByDelegate` is emitted alongside the
+    ///         standard `DataVersionAdded` / `DataPointCreated` events.
     ///         `expectedVersion` must equal `currentVersion + 1` for the
     ///         (owner, scope) slot — both replay and rollback protection.
     function addDataWithSignature(

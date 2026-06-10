@@ -278,7 +278,20 @@ contract DataRegistryV2Implementation is
 
         address signer = ECDSA.recover(digest, signature);
         if (signer == address(0)) revert InvalidSignature();
-        if (signer != ownerAddress) revert OwnerMismatch(ownerAddress, signer);
+
+        // Two accepted authorities, identical to `addPermissionWithSignature`:
+        //   1. Owner self-signed — original V2 behavior.
+        //   2. Delegate — a personal server currently registered to the owner
+        //      in `dataPortabilityServers`. Trust is evaluated at execution
+        //      time; revocation in the servers registry immediately removes
+        //      signing authority.
+        // When `dataPortabilityServers` is unset, only path 1 is accepted —
+        // preserves pre-upgrade behavior bit-for-bit.
+        bool isOwner = signer == ownerAddress;
+        bool isDelegate = !isOwner
+            && address(dataPortabilityServers) != address(0)
+            && _isTrustedServer(ownerAddress, signer);
+        if (!isOwner && !isDelegate) revert OwnerMismatch(ownerAddress, signer);
 
         // Replay + rollback protection: signer must commit to the exact next
         // version. If anyone (the same owner via the direct path, or another
@@ -287,7 +300,8 @@ contract DataRegistryV2Implementation is
         uint256 nextVersion = uint256(_dataPoints[idCheck].currentVersion) + 1;
         if (expectedVersion != nextVersion) revert UnexpectedVersion(nextVersion, expectedVersion);
 
-        return _addData(ownerAddress, scope, dataHash, metadataHash);
+        (id, version_) = _addData(ownerAddress, scope, dataHash, metadataHash);
+        if (isDelegate) emit DataSignedByDelegate(id, ownerAddress, signer);
     }
 
     // ====================== Access recording ======================
