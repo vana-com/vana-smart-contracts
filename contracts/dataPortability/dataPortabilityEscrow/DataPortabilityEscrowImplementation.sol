@@ -7,6 +7,7 @@ import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "../dataPortabilityPermissionsV2/interfaces/IDataPortabilityPermissionsV2.sol";
 import "../../data/dataRegistryV2/interfaces/IDataRegistryV2.sol";
 import "./interfaces/DataPortabilityEscrowStorageV1.sol";
@@ -38,6 +39,8 @@ contract DataPortabilityEscrowImplementation is
     DataPortabilityEscrowStorageV1
 {
     using SafeERC20 for IERC20;
+    using EnumerableSet for EnumerableSet.AddressSet;
+    using EnumerableSet for EnumerableSet.Bytes32Set;
 
     bytes32 public constant FACILITATOR_ROLE = keccak256("FACILITATOR_ROLE");
 
@@ -99,10 +102,62 @@ contract DataPortabilityEscrowImplementation is
         emit DataRegistryUpdated(previous, newDataRegistry);
     }
 
+    /// @inheritdoc IDataPortabilityEscrow
+    /// @dev Maintains both `_allowedSelectorsByTarget[target]` (the actual gate)
+    ///      and `_allowedTargets` (the enumerable target list). The target is
+    ///      auto-added when its first selector is allowed and auto-removed when
+    ///      its last selector is disallowed — admins never manage the target
+    ///      set directly.
+    ///
+    ///      Idempotent: setting an already-correct flag is a no-op (no event)
+    ///      so off-chain indexers don't see spurious enable/disable churn.
+    function setOpAllowed(address target, bytes4 selector, bool allowed)
+        external
+        override
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        if (target == address(0)) revert ZeroAddress();
+
+        EnumerableSet.Bytes32Set storage selectors = _allowedSelectorsByTarget[target];
+        bytes32 selectorKey = bytes32(selector);
+
+        if (allowed) {
+            if (!selectors.add(selectorKey)) return; // already allowed — idempotent
+            // First selector for this target → also register it in the target set.
+            _allowedTargets.add(target);
+            emit OpAllowed(target, selector);
+        } else {
+            if (!selectors.remove(selectorKey)) return; // wasn't allowed — idempotent
+            // Last selector for this target → drop it from the target set too.
+            if (selectors.length() == 0) {
+                _allowedTargets.remove(target);
+            }
+            emit OpDisallowed(target, selector);
+        }
+    }
+
     // ====================== Views ======================
 
     function balanceOf(address account, address asset) external view override returns (uint256) {
         return _balances[account][asset];
+    }
+
+    function isAllowedOp(address target, bytes4 selector) external view override returns (bool) {
+        return _allowedSelectorsByTarget[target].contains(bytes32(selector));
+    }
+
+    function getAllowedTargets() external view override returns (address[] memory) {
+        return _allowedTargets.values();
+    }
+
+    function getAllowedSelectors(address target) external view override returns (bytes4[] memory out) {
+        bytes32[] memory raw = _allowedSelectorsByTarget[target].values();
+        uint256 len = raw.length;
+        out = new bytes4[](len);
+        for (uint256 i = 0; i < len; ) {
+            out[i] = bytes4(raw[i]);
+            unchecked { ++i; }
+        }
     }
 
     // ====================== Deposits ======================
@@ -273,6 +328,67 @@ contract DataPortabilityEscrowImplementation is
 
         // Step 2: identical loop to settleBatch — same event shape so indexers
         // don't need a special case for bundled txs.
+        uint256 len = ops.length;
+        for (uint256 i = 0; i < len; ) {
+            SettleOp calldata op = ops[i];
+            _payout(op.from, op.to, op.asset, op.amount);
+            emit Settled(op.from, op.to, op.asset, op.amount, op.opKind);
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    // ====================== Facilitator: generalized op + settle (atomic) ======================
+
+    /// @inheritdoc IDataPortabilityEscrow
+    /// @dev Generalized companion to `registerAndSettle` / `recordAccessAndSettle`.
+    ///      The contract is intentionally NOT a router for arbitrary external
+    ///      calls — every reachable `(target, selector)` pair must be admin-
+    ///      allowlisted via `setOpAllowed`. The facilitator role only gates
+    ///      *who* may submit; the *what* is gated by the allowlist.
+    ///
+    ///      Call semantics:
+    ///        - Value forwarded: 0. The escrow never pays the target from its
+    ///          own balance; any user-facing payment goes through `ops` and
+    ///          `_payout`, which debit the named account.
+    ///        - Revert bubbling: if the target reverts, its return data is
+    ///          re-raised verbatim so callers observe the target's typed error
+    ///          (e.g. `RecordIdAlreadyUsed`) rather than a generic wrapper.
+    ///        - Idempotency: delegated to the target. Reusing a request that
+    ///          the target rejects (e.g. duplicate `recordId`) reverts the
+    ///          whole bundle including the settle loop.
+    function runOpAndSettle(
+        address target,
+        bytes calldata callData,
+        SettleOp[] calldata ops
+    )
+        external
+        override
+        onlyRole(FACILITATOR_ROLE)
+        whenNotPaused
+        nonReentrant
+        returns (bytes memory returnData)
+    {
+        if (callData.length < 4) revert CallDataTooShort();
+        bytes4 selector = bytes4(callData[:4]);
+        if (!_allowedSelectorsByTarget[target].contains(bytes32(selector))) {
+            revert OpNotAllowed(target, selector);
+        }
+
+        // Step 1: dispatch the call with zero value. Bubble the target's revert
+        // data on failure so typed errors survive the wrapper.
+        bool ok;
+        (ok, returnData) = target.call(callData);
+        if (!ok) {
+            assembly {
+                revert(add(returnData, 0x20), mload(returnData))
+            }
+        }
+        emit OpExecuted(target, selector, returnData);
+
+        // Step 2: identical loop to settleBatch — preserves event shape so
+        // indexers don't need a special case for bundled txs.
         uint256 len = ops.length;
         for (uint256 i = 0; i < len; ) {
             SettleOp calldata op = ops[i];

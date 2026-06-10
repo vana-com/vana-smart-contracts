@@ -26,11 +26,15 @@ import "../../../data/dataRegistryV2/interfaces/IDataRegistryV2.sol";
 interface IDataPortabilityEscrow {
     /// @notice Categorizes a settlement op for off-chain indexing / accounting.
     ///         `Unspecified` (0) is the zero default for callers who don't care
-    ///         to classify. Extend by appending values — never reorder.
+    ///         to classify. Wire format is `uint8` — future additions should
+    ///         append (never reorder) once any non-test usage exists.
     enum OpKind {
-        Unspecified,
-        Registration, // registration fee for a grant (used by `registerAndSettle`)
-        DataAccess    // per-access payment for data use
+        Unspecified,         // 0 — default catch-all
+        DataRegistration,    // 1 — fee for registering / adding data
+        ServerRegistration,  // 2 — fee for registering a personal server
+        BuilderRegistration, // 3 — fee for registering a builder / grantee
+        GrantRegistration,   // 4 — fee for registering a grant (was named `Registration` previously)
+        DataAccess           // 5 — per-access payment for data use
     }
 
     /// @notice Single settlement entry used by `settleBatch` / `registerAndSettle`.
@@ -57,6 +61,8 @@ interface IDataPortabilityEscrow {
     error UnexpectedNativeValue();
     error PermissionsNotSet();
     error DataRegistryNotSet();
+    error OpNotAllowed(address target, bytes4 selector);
+    error CallDataTooShort();
 
     // ====================== Events ======================
 
@@ -95,6 +101,15 @@ interface IDataPortabilityEscrow {
     /// @notice Emitted when the admin updates the cross-referenced data-registry contract.
     event DataRegistryUpdated(address indexed previous, address indexed current);
 
+    /// @notice Emitted when admin allows a `(target, selector)` pair to be invoked via `runOpAndSettle`.
+    event OpAllowed(address indexed target, bytes4 indexed selector);
+
+    /// @notice Emitted when admin removes a previously-allowed `(target, selector)` pair.
+    event OpDisallowed(address indexed target, bytes4 indexed selector);
+
+    /// @notice Emitted for each call dispatched through `runOpAndSettle`.
+    event OpExecuted(address indexed target, bytes4 indexed selector, bytes returnData);
+
     // ====================== Views ======================
 
     function version() external pure returns (uint256);
@@ -111,6 +126,15 @@ interface IDataPortabilityEscrow {
     ///         Settable post-deploy via `setDataRegistry` (admin-only).
     function dataRegistry() external view returns (IDataRegistryV2);
 
+    /// @notice True iff the `(target, selector)` pair is allowed for `runOpAndSettle`.
+    function isAllowedOp(address target, bytes4 selector) external view returns (bool);
+
+    /// @notice Enumerate every target address that currently has at least one allowed selector.
+    function getAllowedTargets() external view returns (address[] memory);
+
+    /// @notice Enumerate the selectors currently allowed for a given target.
+    function getAllowedSelectors(address target) external view returns (bytes4[] memory);
+
     // ====================== Admin ======================
 
     function setTokenWhitelisted(address token, bool whitelisted) external;
@@ -120,6 +144,12 @@ interface IDataPortabilityEscrow {
 
     /// @notice Set or update the data-registry contract used by `recordAccessAndSettle`.
     function setDataRegistry(address newDataRegistry) external;
+
+    /// @notice Allow or disallow a `(target, selector)` pair for `runOpAndSettle`.
+    /// @dev When the last selector for a target is removed, the target is also removed
+    ///      from `getAllowedTargets`. When the first selector for a fresh target is
+    ///      added, the target is added.
+    function setOpAllowed(address target, bytes4 selector, bool allowed) external;
 
     function pause() external;
 
@@ -185,4 +215,26 @@ interface IDataPortabilityEscrow {
         bytes calldata signature,
         SettleOp[] calldata ops
     ) external returns (bytes32 grantId);
+
+    /// @notice Atomically dispatch an admin-allowed call to an external contract and execute
+    ///         associated payouts. Both succeed or both revert.
+    /// @dev Authorization model:
+    ///        - Caller must hold `FACILITATOR_ROLE` (gate against unsolicited bundles).
+    ///        - The `(target, selector)` pair must be admin-allowlisted via `setOpAllowed`.
+    ///        - The target contract is responsible for its own per-call authentication
+    ///          (e.g. embedded EIP-712 signatures, replay protection / idempotency).
+    ///        The escrow forwards `callData` verbatim with zero value attached. The
+    ///        target's revert reason is bubbled up unmodified on failure, so callers
+    ///        observe the target's typed error rather than a generic wrapper.
+    /// @param target   Contract to invoke. Must be in `getAllowedTargets`.
+    /// @param callData ABI-encoded call (selector + args). First 4 bytes are matched
+    ///                 against the per-target allowlist.
+    /// @param ops      Payouts to execute after the call succeeds; may be empty.
+    /// @return returnData Raw return data from the target call. Callers that don't need
+    ///                    it can ignore the value; on-chain consumers can decode it.
+    function runOpAndSettle(
+        address target,
+        bytes calldata callData,
+        SettleOp[] calldata ops
+    ) external returns (bytes memory returnData);
 }

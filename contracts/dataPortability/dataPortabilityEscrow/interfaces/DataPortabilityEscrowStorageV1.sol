@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
+import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "./IDataPortabilityEscrow.sol";
 
 /**
@@ -24,4 +25,15 @@ abstract contract DataPortabilityEscrowStorageV1 is IDataPortabilityEscrow {
     ///      Set post-deploy via `setDataRegistry`. If left unset,
     ///      `recordAccessAndSettle` reverts with `DataRegistryNotSet`.
     IDataRegistryV2 public override dataRegistry;
+
+    /// @dev Enumerable set of every target address that currently has at least
+    ///      one allowed selector. Maintained in lockstep with
+    ///      `_allowedSelectorsByTarget` so off-chain consumers can list every
+    ///      contract `runOpAndSettle` may dispatch to.
+    EnumerableSet.AddressSet internal _allowedTargets;
+
+    /// @dev Per-target enumerable set of allowed function selectors (left-aligned
+    ///      `bytes4` stored as `bytes32`). Lookup via
+    ///      `EnumerableSet.contains(_allowedSelectorsByTarget[target], bytes32(selector))`.
+    mapping(address target => EnumerableSet.Bytes32Set selectors) internal _allowedSelectorsByTarget;
 }
