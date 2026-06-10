@@ -62,6 +62,17 @@ contract DataPortabilityPermissionsV2Implementation is
         _unpause();
     }
 
+    function setDataPortabilityServers(address newDataPortabilityServers)
+        external
+        override
+        onlyRole(DEFAULT_ADMIN_ROLE)
+    {
+        if (newDataPortabilityServers == address(0)) revert ZeroAddress();
+        address previous = address(dataPortabilityServers);
+        dataPortabilityServers = IDataPortabilityServersV2(newDataPortabilityServers);
+        emit DataPortabilityServersUpdated(previous, newDataPortabilityServers);
+    }
+
     // ====================== Views ======================
 
     function permissions(bytes32 id) external view override returns (Permission memory) {
@@ -116,11 +127,26 @@ contract DataPortabilityPermissionsV2Implementation is
 
         address signer = ECDSA.recover(digest, signature);
         if (signer == address(0)) revert InvalidSignature();
-        if (signer != input.grantorAddress) revert GrantorMismatch(input.grantorAddress, signer);
+
+        // Two accepted authorities, in order:
+        //   1. Grantor self-signed — original V2 behavior.
+        //   2. Delegate — a personal server currently registered to the grantor
+        //      in `dataPortabilityServers`. Same trust model as
+        //      DataRegistryV2.recordDataAccess: revocation in the servers
+        //      registry immediately removes signing authority.
+        // If the servers registry is unset, only path 1 is accepted; behavior
+        // matches the pre-upgrade contract exactly.
+        bool isGrantor = signer == input.grantorAddress;
+        bool isDelegate = !isGrantor
+            && address(dataPortabilityServers) != address(0)
+            && _isTrustedServer(input.grantorAddress, signer);
+        if (!isGrantor && !isDelegate) revert GrantorMismatch(input.grantorAddress, signer);
 
         // No nonce check here — `grantVersion` monotonicity in `_addPermission`
         // gives replay + rollback protection per (grantor, grantee) slot.
-        return _addPermission(input);
+        bytes32 id = _addPermission(input);
+        if (isDelegate) emit PermissionSignedByDelegate(id, input.grantorAddress, signer);
+        return id;
     }
 
     // ====================== Internals ======================
@@ -169,6 +195,17 @@ contract DataPortabilityPermissionsV2Implementation is
 
     function _computeGrantId(address grantorAddress, bytes32 granteeId) internal view returns (bytes32) {
         return keccak256(abi.encode(domainSeparator(), grantorAddress, granteeId));
+    }
+
+    /// @dev Mirrors DataRegistryV2._isTrustedServer: a personal server is
+    ///      currently trusted by `ownerAddress` iff it has an active (non-
+    ///      revoked) registration whose stored owner matches. In V2 a server
+    ///      address has at most one active owner at a time.
+    function _isTrustedServer(address ownerAddress, address server) internal view returns (bool) {
+        bytes32 sId = dataPortabilityServers.activeServerId(server);
+        if (sId == bytes32(0)) return false;
+        IDataPortabilityServersV2.ServerInfo memory info = dataPortabilityServers.getServer(sId);
+        return info.ownerAddress == ownerAddress;
     }
 
     /// @dev Canonical EIP-712 hash of a `string[]`: hash each string, then

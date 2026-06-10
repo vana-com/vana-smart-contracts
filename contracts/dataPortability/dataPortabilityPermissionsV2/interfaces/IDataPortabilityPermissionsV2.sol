@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
+import "../../dataPortabilityServersV2/interfaces/IDataPortabilityServersV2.sol";
+
 /**
  * @title IDataPortabilityPermissionsV2
  * @author Vana Network
@@ -87,7 +89,9 @@ interface IDataPortabilityPermissionsV2 {
     error InvalidSignature();
     /// @dev Reverts when the claimed `grantorAddress` does not match the
     ///      actual authority (msg.sender for direct calls, recovered signer
-    ///      for signature-based calls).
+    ///      for signature-based calls). Also raised on the signature path when
+    ///      the recovered signer is neither the grantor nor a personal server
+    ///      currently trusted by the grantor.
     error GrantorMismatch(address claimed, address actual);
 
     // ====================== Events ======================
@@ -103,6 +107,20 @@ interface IDataPortabilityPermissionsV2 {
         uint256 grantVersion,
         uint256 expiresAt
     );
+
+    /// @notice Emitted alongside `PermissionSet` when the EIP-712 signature was
+    ///         produced by a delegate (personal server currently trusted by the
+    ///         grantor) rather than the grantor itself. Not emitted on direct
+    ///         calls or grantor-self-signed calls.
+    event PermissionSignedByDelegate(
+        bytes32 indexed id,
+        address indexed grantorAddress,
+        address indexed delegate
+    );
+
+    /// @notice Emitted when the admin updates the cross-referenced
+    ///         DataPortabilityServersV2 contract.
+    event DataPortabilityServersUpdated(address indexed previous, address indexed current);
 
     // ====================== Views ======================
 
@@ -127,11 +145,20 @@ interface IDataPortabilityPermissionsV2 {
     /// @notice Deterministic id for a (grantor, grantee) pair.
     function grantId(address grantorAddress, bytes32 granteeId) external view returns (bytes32);
 
+    /// @notice Cross-referenced personal-servers registry used by
+    ///         `addPermissionWithSignature` for delegated signing. If unset,
+    ///         only grantor-self-signed signatures are accepted.
+    function dataPortabilityServers() external view returns (IDataPortabilityServersV2);
+
     // ====================== Admin ======================
 
     function pause() external;
 
     function unpause() external;
+
+    /// @notice Set or update the DataPortabilityServersV2 contract used to
+    ///         resolve trusted personal servers for delegated signing.
+    function setDataPortabilityServers(address newDataPortabilityServers) external;
 
     // ====================== Registration ======================
 
@@ -141,10 +168,20 @@ interface IDataPortabilityPermissionsV2 {
 
     /// @notice Create or update a permission on behalf of the EIP-712 signer.
     ///         The submitter (msg.sender) pays gas; authority comes from the signature.
+    /// @dev Accepts a signature from EITHER:
+    ///         (a) the grantor itself, OR
+    ///         (b) a personal server currently registered to the grantor in the
+    ///             configured `dataPortabilityServers` registry — server-as-delegate.
+    ///      If the servers registry is unset (zero address), only (a) is accepted.
+    ///      In case (b), `PermissionSignedByDelegate` is emitted alongside the
+    ///      standard `PermissionSet`. Trust is determined at execution time:
+    ///      revoking the server before submission causes this call to revert
+    ///      with `GrantorMismatch`.
     /// @param input The permission data. `grantVersion` must be strictly greater
     ///        than the currently stored version for this (grantor, grantee) pair,
     ///        which doubles as nonce and rollback protection.
-    /// @param signature EIP-712 signature over `input` by the grantor.
+    /// @param signature EIP-712 signature over `input` by the grantor OR by a
+    ///        currently-trusted personal server for the grantor.
     /// @return id The deterministic grant id.
     function addPermissionWithSignature(
         AddPermissionInput calldata input,

@@ -13,4 +13,11 @@ abstract contract DataPortabilityPermissionsV2StorageV1 is IDataPortabilityPermi
     /// @dev Replay/rollback protection is via `grantVersion` monotonicity per id —
     ///      no separate nonce counter is needed.
     mapping(bytes32 id => Permission) internal _permissions;
+
+    /// @dev Cross-referenced DataPortabilityServersV2 used to resolve a personal
+    ///      server's current trust for its owner when verifying delegated
+    ///      signatures inside `addPermissionWithSignature`. Set post-deploy via
+    ///      `setDataPortabilityServers`. If unset, only grantor-self-signed
+    ///      signatures are accepted (existing behavior is preserved).
+    IDataPortabilityServersV2 public override dataPortabilityServers;
 }
