@@ -53,6 +53,11 @@ contract DataRegistryV2Implementation is
             "RecordDataAccess(address ownerAddress,string scope,uint256 version,address accessor,bytes32 recordId)"
         );
 
+    bytes32 public constant override SET_STATUS_TYPEHASH =
+        keccak256(
+            "SetStatus(address ownerAddress,string scope,uint8 newStatus,uint256 expectedSequence)"
+        );
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -229,6 +234,15 @@ contract DataRegistryV2Implementation is
         return _usedRecordIds[recordId];
     }
 
+    function statusSequence(address ownerAddress, string calldata scope)
+        external
+        view
+        override
+        returns (uint256)
+    {
+        return _statusSequences[_dataPointId(ownerAddress, scope)];
+    }
+
     // ====================== Writes (direct) ======================
 
     function addData(string calldata scope, bytes32 dataHash, bytes32 metadataHash)
@@ -302,6 +316,65 @@ contract DataRegistryV2Implementation is
 
         (id, version_) = _addData(ownerAddress, scope, dataHash, metadataHash);
         if (isDelegate) emit DataSignedByDelegate(id, ownerAddress, signer);
+    }
+
+    /// @inheritdoc IDataRegistryV2
+    /// @dev Mirrors `addDataWithSignature`'s dual-signer + monotonic-counter
+    ///      pattern, against `_statusSequences` instead of `currentVersion` so
+    ///      data writes and status flips can't invalidate each other's
+    ///      pending signatures. The sequence is consumed even on the
+    ///      silent-no-op case (status already equals newStatus) so the
+    ///      signature can never be replayed.
+    function setStatusWithSignature(
+        address ownerAddress,
+        string calldata scope,
+        Status newStatus,
+        uint256 expectedSequence,
+        bytes calldata signature
+    ) external override whenNotPaused {
+        if (newStatus == Status.None) revert InvalidStatus();
+
+        bytes32 digest = _hashTypedDataV4(
+            keccak256(
+                abi.encode(
+                    SET_STATUS_TYPEHASH,
+                    ownerAddress,
+                    keccak256(bytes(scope)),
+                    uint8(newStatus),
+                    expectedSequence
+                )
+            )
+        );
+
+        address signer = ECDSA.recover(digest, signature);
+        if (signer == address(0)) revert InvalidSignature();
+
+        bool isOwner = signer == ownerAddress;
+        bool isDelegate = !isOwner
+            && address(dataPortabilityServers) != address(0)
+            && _isTrustedServer(ownerAddress, signer);
+        if (!isOwner && !isDelegate) revert OwnerMismatch(ownerAddress, signer);
+
+        bytes32 id = _dataPointId(ownerAddress, scope);
+        DataPoint storage d = _dataPoints[id];
+        if (d.currentVersion == 0) revert DataPointNotFound(id);
+
+        uint256 nextSequence = _statusSequences[id] + 1;
+        if (expectedSequence != nextSequence) revert UnexpectedVersion(nextSequence, expectedSequence);
+        _statusSequences[id] = nextSequence;
+
+        // Status already at target: counter is consumed (anti-replay), but no
+        // state mutation and no event — matches direct setStatus's silent
+        // no-op semantics on the status side.
+        if (d.status == newStatus) {
+            if (isDelegate) emit StatusSignedByDelegate(id, ownerAddress, signer);
+            return;
+        }
+
+        d.status = newStatus;
+        d.modifiedAt = uint64(block.timestamp);
+        emit DataPointStatusChanged(id, newStatus);
+        if (isDelegate) emit StatusSignedByDelegate(id, ownerAddress, signer);
     }
 
     // ====================== Access recording ======================

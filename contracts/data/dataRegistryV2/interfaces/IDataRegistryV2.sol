@@ -100,6 +100,12 @@ interface IDataRegistryV2 {
     ///         signed `addDataWithSignature` calls.
     event DataSignedByDelegate(bytes32 indexed id, address indexed ownerAddress, address indexed delegate);
 
+    /// @notice Emitted alongside `DataPointStatusChanged` when the EIP-712
+    ///         signature on `setStatusWithSignature` was produced by a delegate
+    ///         (personal server currently trusted by `ownerAddress`). Not
+    ///         emitted for direct `setStatus` or owner-self-signed calls.
+    event StatusSignedByDelegate(bytes32 indexed id, address indexed ownerAddress, address indexed delegate);
+
     event DataPortabilityServersUpdated(address indexed previous, address indexed current);
 
     // ====================== Pure helpers ======================
@@ -121,6 +127,18 @@ interface IDataRegistryV2 {
     ///         RecordDataAccess(address ownerAddress,string scope,uint256 version,
     ///         address accessor,bytes32 recordId)
     function RECORD_ACCESS_TYPEHASH() external view returns (bytes32);
+
+    /// @notice EIP-712 typehash for `setStatusWithSignature`. Type:
+    ///         SetStatus(address ownerAddress,string scope,uint8 newStatus,
+    ///         uint256 expectedSequence)
+    function SET_STATUS_TYPEHASH() external view returns (bytes32);
+
+    /// @notice Monotonic per-`(owner, scope)` counter that gates
+    ///         `setStatusWithSignature` (signer must commit to `currentSequence + 1`).
+    ///         Independent of `currentVersion` so status flips do not require
+    ///         a data write. Starts at 0; first signed flip uses sequence 1.
+    function statusSequence(address ownerAddress, string calldata scope)
+        external view returns (uint256);
 
     // ====================== Views ======================
 
@@ -182,6 +200,45 @@ interface IDataRegistryV2 {
     ) external returns (bytes32 id, uint256 version_);
 
     function setStatus(string calldata scope, Status newStatus) external;
+
+    // ====================== Writes (delegated, EIP-712 signed) ======================
+
+    /// @notice Flip the status of a data point on behalf of `ownerAddress` via
+    ///         an EIP-712 signature. Same dual-signer model as
+    ///         `addDataWithSignature`: the signature is accepted from EITHER
+    ///         the owner OR a personal server currently registered to the
+    ///         owner in `dataPortabilityServers`. If the servers contract is
+    ///         unset, only owner-self-signed signatures are accepted.
+    /// @dev    Replay/rollback protection: `expectedSequence` must equal the
+    ///         current `statusSequence(owner, scope) + 1`. The sequence is
+    ///         independent of `currentVersion` so flipping status does not
+    ///         require a data write, and a write does not invalidate pending
+    ///         status signatures.
+    ///
+    ///         Reverts with:
+    ///           - `InvalidStatus` if `newStatus == Status.None`
+    ///           - `DataPointNotFound` if no data point exists at `(owner, scope)`
+    ///           - `UnexpectedVersion(expected, actual)` on sequence mismatch
+    ///             (reusing the `UnexpectedVersion` error keeps the surface
+    ///             tight; `expected` is the next sequence, `actual` is what
+    ///             the caller supplied)
+    ///           - `InvalidSignature` / `OwnerMismatch` as in `addDataWithSignature`
+    ///
+    ///         Same silent-no-op semantic as direct `setStatus` when the
+    ///         status is already the requested value — the sequence is still
+    ///         consumed so the signature cannot be replayed.
+    /// @param  ownerAddress     Data point owner.
+    /// @param  scope            Data point scope.
+    /// @param  newStatus        Target status (must not be `Status.None`).
+    /// @param  expectedSequence Must equal `statusSequence(owner, scope) + 1`.
+    /// @param  signature        EIP-712 signature over the SetStatus payload.
+    function setStatusWithSignature(
+        address ownerAddress,
+        string calldata scope,
+        Status newStatus,
+        uint256 expectedSequence,
+        bytes calldata signature
+    ) external;
 
     // ====================== Writes (delegated, EIP-712 signed) ======================
 

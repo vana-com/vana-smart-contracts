@@ -36,4 +36,11 @@ abstract contract DataRegistryV2StorageV1 is IDataRegistryV2 {
     /// @dev Replay-protection set for `recordDataAccess` payloads. Caller-chosen
     ///      recordIds are marked used the first time they appear.
     mapping(bytes32 recordId => bool used) internal _usedRecordIds;
+
+    /// @dev Monotonic per-data-point counter that gates
+    ///      `setStatusWithSignature`. Independent of `currentVersion` so status
+    ///      flips and data writes do not invalidate each other's pending
+    ///      signatures. Keyed by the same `_dataPointId(owner, scope)` used by
+    ///      `_dataPoints`.
+    mapping(bytes32 id => uint256 sequence) internal _statusSequences;
 }
