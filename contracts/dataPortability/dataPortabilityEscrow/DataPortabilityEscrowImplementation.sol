@@ -10,6 +10,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "../dataPortabilityPermissionsV2/interfaces/IDataPortabilityPermissionsV2.sol";
 import "../../data/dataRegistryV2/interfaces/IDataRegistryV2.sol";
+import "./interfaces/IERC3009.sol";
 import "./interfaces/DataPortabilityEscrowStorageV1.sol";
 
 /**
@@ -192,9 +193,58 @@ contract DataPortabilityEscrowImplementation is
         emit Deposited(msg.sender, account, token, received);
     }
 
+    /// @inheritdoc IDataPortabilityEscrow
+    /// @dev The nonce passed to the token is recomputed here from (account,
+    ///      salt) rather than taken as a parameter. This is what makes the
+    ///      beneficiary tamper-proof: the signer committed to the nonce inside
+    ///      the EIP-3009 signature, so any relayer-substituted `account` yields
+    ///      a nonce the signature doesn't cover and the token reverts.
+    function depositTokenWithAuthorization(
+        address account,
+        address from,
+        address token,
+        uint256 value,
+        uint256 validAfter,
+        uint256 validBefore,
+        bytes32 salt,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external override whenNotPaused nonReentrant {
+        if (value == 0) revert ZeroAmount();
+        if (account == address(0) || from == address(0)) revert ZeroAddress();
+        if (!isWhitelistedToken[token]) revert AssetNotSupported(token);
+
+        // Beneficiary commitment: the signer derived this exact nonce from the
+        // intended `account` when signing the authorization.
+        bytes32 nonce = keccak256(abi.encode(account, salt));
+
+        // The token verifies the EIP-712 signature, the (from, nonce) replay
+        // state, the validity window, AND that msg.sender == to. Any failure
+        // reverts inside the token with its own error.
+        uint256 balanceBefore = IERC20(token).balanceOf(address(this));
+        IERC3009(token).receiveWithAuthorization(
+            from,
+            address(this),
+            value,
+            validAfter,
+            validBefore,
+            nonce,
+            v,
+            r,
+            s
+        );
+        uint256 received = IERC20(token).balanceOf(address(this)) - balanceBefore;
+        if (received == 0) revert ZeroAmount();
+
+        _balances[account][token] += received;
+
+        emit Deposited(from, account, token, received);
+    }
+
     // ====================== Facilitator: settle (pay external) ======================
 
-    function settle(address from, address to, address asset, uint256 amount, OpKind opKind)
+    function settle(address from, address to, address asset, uint256 amount, OpKind opKind, bytes32 ref)
         external
         override
         whenNotPaused
@@ -202,7 +252,7 @@ contract DataPortabilityEscrowImplementation is
         nonReentrant
     {
         _payout(from, to, asset, amount);
-        emit Settled(from, to, asset, amount, opKind);
+        emit Settled(from, to, ref, asset, amount, opKind);
     }
 
     function settleBatch(SettleOp[] calldata ops)
@@ -216,7 +266,7 @@ contract DataPortabilityEscrowImplementation is
         for (uint256 i = 0; i < len; ) {
             SettleOp calldata op = ops[i];
             _payout(op.from, op.to, op.asset, op.amount);
-            emit Settled(op.from, op.to, op.asset, op.amount, op.opKind);
+            emit Settled(op.from, op.to, op.ref, op.asset, op.amount, op.opKind);
             unchecked {
                 ++i;
             }
@@ -290,7 +340,7 @@ contract DataPortabilityEscrowImplementation is
         for (uint256 i = 0; i < len; ) {
             SettleOp calldata op = ops[i];
             _payout(op.from, op.to, op.asset, op.amount);
-            emit Settled(op.from, op.to, op.asset, op.amount, op.opKind);
+            emit Settled(op.from, op.to, op.ref, op.asset, op.amount, op.opKind);
             unchecked {
                 ++i;
             }
@@ -332,7 +382,7 @@ contract DataPortabilityEscrowImplementation is
         for (uint256 i = 0; i < len; ) {
             SettleOp calldata op = ops[i];
             _payout(op.from, op.to, op.asset, op.amount);
-            emit Settled(op.from, op.to, op.asset, op.amount, op.opKind);
+            emit Settled(op.from, op.to, op.ref, op.asset, op.amount, op.opKind);
             unchecked {
                 ++i;
             }
@@ -393,7 +443,7 @@ contract DataPortabilityEscrowImplementation is
         for (uint256 i = 0; i < len; ) {
             SettleOp calldata op = ops[i];
             _payout(op.from, op.to, op.asset, op.amount);
-            emit Settled(op.from, op.to, op.asset, op.amount, op.opKind);
+            emit Settled(op.from, op.to, op.ref, op.asset, op.amount, op.opKind);
             unchecked {
                 ++i;
             }

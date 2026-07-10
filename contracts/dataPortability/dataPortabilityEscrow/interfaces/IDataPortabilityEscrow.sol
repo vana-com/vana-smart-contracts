@@ -43,12 +43,34 @@ interface IDataPortabilityEscrow {
     /// @param asset  Asset to transfer; `address(0)` for native VANA
     /// @param amount Amount to transfer
     /// @param opKind Classification of the operation (off-chain hint).
+    /// @param ref    Caller-asserted correlation id joining this settlement to
+    ///               the protocol entity it pays for. NOT verified on-chain —
+    ///               an indexing hint, not consensus data. Every value below is
+    ///               content-addressed and precomputable before the tx.
+    ///
+    ///               Convention by `opKind`:
+    ///                 Unspecified         — `bytes32(0)` or free-form
+    ///                 DataRegistration    — dataPointId
+    ///                                       = keccak256(abi.encode(owner, scope))
+    ///                 ServerRegistration  — serverId
+    ///                                       = keccak256(abi.encode(serversDomainSeparator,
+    ///                                         serverAddress, publicKey, serverUrl))
+    ///                 BuilderRegistration — granteeId (opaque bytes32 used in grants)
+    ///                 GrantRegistration   — grantId
+    ///                                       = keccak256(abi.encode(permissionsDomainSeparator,
+    ///                                         grantorAddress, granteeId))
+    ///                 DataAccess          — grantId under which the access was
+    ///                                       authorized. (recordId is NOT the ref:
+    ///                                       it is already joinable via the same-tx
+    ///                                       `DataAccessRecorded` event; grantId is
+    ///                                       the link that event lacks.)
     struct SettleOp {
         address from;
         address to;
         address asset;
         uint256 amount;
         OpKind opKind;
+        bytes32 ref;
     }
 
     // ====================== Errors ======================
@@ -74,11 +96,17 @@ interface IDataPortabilityEscrow {
 
     /// @notice Emitted when the facilitator settles a payment: debits `from`'s
     ///         in-escrow balance and transfers funds to external address `to`.
+    /// @dev `ref` is indexed (instead of `asset`) so indexers can filter
+    ///      settlements by grantId / dataPointId / serverId via log topics —
+    ///      e.g. "all payments under grant X" is a single eth_getLogs query.
+    ///      See the `SettleOp.ref` docs for the per-OpKind ref convention.
     /// @param opKind Classification of the operation (off-chain hint).
+    /// @param ref    Caller-asserted correlation id (see SettleOp.ref).
     event Settled(
         address indexed from,
         address indexed to,
-        address indexed asset,
+        bytes32 indexed ref,
+        address asset,
         uint256 amount,
         OpKind opKind
     );
@@ -164,10 +192,64 @@ interface IDataPortabilityEscrow {
     /// @dev Caller must have approved `amount` to this contract.
     function depositToken(address account, address token, uint256 amount) external;
 
+    /// @notice Deposit a whitelisted EIP-3009 ERC-20 (e.g. USDC) using the token
+    ///         owner's off-chain authorization — no prior `approve` tx needed —
+    ///         crediting `account`'s escrow balance (which may differ from the
+    ///         token owner `from`).
+    ///
+    ///         The beneficiary is tamper-proof despite not being a field of the
+    ///         EIP-3009 payload: the authorization's nonce MUST be computed as
+    ///
+    ///           nonce = keccak256(abi.encode(account, salt))
+    ///
+    ///         The signer derives the nonce from the intended beneficiary when
+    ///         signing; the escrow recomputes it from the caller-supplied
+    ///         `account` and `salt`. A relayer that substitutes a different
+    ///         `account` produces a different nonce, and the token's signature
+    ///         check fails. Self-deposit is simply `account == from`.
+    /// @dev Uses `receiveWithAuthorization` (not `transferWithAuthorization`):
+    ///      the token enforces `msg.sender == to == this escrow`, so the
+    ///      authorization cannot be front-run directly against the token to
+    ///      strand funds. Replay protection is the token's own (from, nonce)
+    ///      tracking; the token reverts on reuse, expiry, or bad signature.
+    ///      Balance-diff accounting credits only what actually arrived.
+    /// @param account     Escrow account to credit (committed via the nonce).
+    /// @param from        Token owner who signed the EIP-3009 authorization.
+    /// @param token       Whitelisted EIP-3009 token to deposit.
+    /// @param value       Amount authorized for transfer.
+    /// @param validAfter  Authorization not valid before this unix time.
+    /// @param validBefore Authorization not valid at/after this unix time.
+    /// @param salt        Signer-chosen entropy making the nonce unique per
+    ///                    deposit; reuse with the same `account` collides in the
+    ///                    token's (from, nonce) replay state and reverts.
+    /// @param v           Signature v.
+    /// @param r           Signature r.
+    /// @param s           Signature s.
+    function depositTokenWithAuthorization(
+        address account,
+        address from,
+        address token,
+        uint256 value,
+        uint256 validAfter,
+        uint256 validBefore,
+        bytes32 salt,
+        uint8 v,
+        bytes32 r,
+        bytes32 s
+    ) external;
+
     // ====================== Facilitator ops ======================
 
     /// @notice Debit `from`'s in-escrow balance and transfer the funds to external address `to`.
-    function settle(address from, address to, address asset, uint256 amount, OpKind opKind) external;
+    /// @param ref Correlation id — see `SettleOp.ref` for the per-OpKind convention.
+    function settle(
+        address from,
+        address to,
+        address asset,
+        uint256 amount,
+        OpKind opKind,
+        bytes32 ref
+    ) external;
 
     /// @notice Batched variant of `settle`.
     function settleBatch(SettleOp[] calldata ops) external;
