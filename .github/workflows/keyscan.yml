@@ -1,0 +1,55 @@
+name: "Private key scan"
+
+# Advisory on purpose. This annotates a pull request but never blocks it, so we
+# can measure the real false-positive rate before anyone's merge depends on it.
+# To make it blocking later, drop `continue-on-error` and add
+# `--fail-on-verified` to the scan step.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: keyscan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  keyscan:
+    name: Scan diff for leaked private keys
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need the base commit present locally to diff against it.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+
+      # --ignore-scripts: this job only needs ethers and ts-node, and a secret
+      # scanner is the last place to be running package postinstall hooks.
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile --ignore-scripts
+
+      - name: Unit tests
+        run: npx mocha --require ts-node/register scripts/keyscan/scan.test.ts
+
+      - name: Scan pull request diff
+        env:
+          # Public endpoints only, deliberately. This step executes the scanner
+          # *from the pull request's own checkout*, and same-repository PRs do
+          # receive repository secrets — so a PR that edits scan.ts could print
+          # a private RPC URL straight into the log. Since those URLs usually
+          # carry an API key, no secret goes in this job's environment at all.
+          # Run against our own node from a trusted context instead (locally, or
+          # a workflow that does not execute PR-authored code).
+          KEYSCAN_RPC_URLS: "vana=https://rpc.vana.org,moksha=https://rpc.moksha.vana.org"
+        run: |
+          npx ts-node scripts/keyscan/scan.ts \
+            --diff ${{ github.event.pull_request.base.sha }}...HEAD
