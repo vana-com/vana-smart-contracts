@@ -63,6 +63,7 @@ import {
   getAddress,
   id,
   keccak256,
+  sha256,
 } from "ethers";
 
 /** Order of the secp256k1 curve. A valid private key is in [1, N-1]. */
@@ -112,9 +113,35 @@ export const PUBLISHED_CONSTANTS: ReadonlySet<string> = new Set([
   slotMinusOne("eip1967.proxy.rollback"),
   id("PROXIABLE"), // ERC-1822 UUPS proxiable UUID
   id(""), // keccak256 of empty bytes
+  sha256("0x"), // sha256 of empty bytes — turns up as a fixture default
   keccak256("0x80"), // empty Merkle-Patricia trie root
   ...developmentKeys(),
 ]);
+
+/**
+ * True if the value is a short pattern repeated to fill 64 characters, such as
+ * `1234567890abcdef` four times over.
+ *
+ * A key from a real random source is never periodic: even a 32-character period
+ * has probability 2^-128. So this is another entropy statement rather than a
+ * list, and it removes the placeholder keys people type by hand into fixtures.
+ */
+export function isPeriodic(hex64: string): boolean {
+  for (const period of [1, 2, 4, 8, 16, 32]) {
+    const unit = hex64.slice(0, period);
+    if (unit.repeat(64 / period) === hex64) return true;
+  }
+  return false;
+}
+
+/**
+ * Marker that suppresses a single finding.
+ *
+ * Without a targeted escape the only way past the hook is `--no-verify`, which
+ * turns off every hook for that push. Given the choice, people reach for the
+ * blunt one and keep reaching for it, so the check quietly stops existing.
+ */
+const ALLOW_MARKER = /keyscan:\s*allow/i;
 
 /**
  * A value appearing in at least this many distinct files is a shared constant,
@@ -233,7 +260,7 @@ export function extractFromLine(
   let match: RegExpExecArray | null;
   while ((match = HEX64.exec(text)) !== null) {
     const hex64 = match[1].toLowerCase();
-    if (!isPlausibleKey(hex64)) continue;
+    if (!isPlausibleKey(hex64) || isPeriodic(hex64)) continue;
     found.push({ key: `0x${hex64}`, file, line });
   }
   return found;
@@ -251,6 +278,57 @@ export interface ScanTarget {
   file: string;
   line: number;
   text: string;
+  /**
+   * The candidate's line plus its neighbours, used for the secret-name check.
+   *
+   * A declaration and its value routinely sit on different lines:
+   *
+   *     const FUNDER_PRIVATE_KEY = (process.env["FUNDER_PRIVATE_KEY"] ??
+   *       "0x…") as Hex;
+   *
+   * Matching only the line the key sits on sees nothing but a quoted string,
+   * so the name that makes it obviously a secret is one line out of reach.
+   */
+  context?: string;
+}
+
+/** How many lines either side of a candidate count as its context. */
+const CONTEXT_RADIUS = 2;
+
+/**
+ * Attach neighbouring lines to every target that holds a candidate.
+ *
+ * Context is only built for lines that actually contain a 64-hex run — the
+ * whole-tree scan walks hundreds of thousands of lines, and joining a window
+ * for each of them would cost far more memory than the check is worth.
+ */
+export function addContext(
+  targets: ScanTarget[],
+  radius: number = CONTEXT_RADIUS,
+): ScanTarget[] {
+  const byFile = new Map<string, ScanTarget[]>();
+  for (const t of targets) byFile.set(t.file, [...(byFile.get(t.file) ?? []), t]);
+
+  const out: ScanTarget[] = [];
+  for (const lines of byFile.values()) {
+    const sorted = [...lines].sort((a, b) => a.line - b.line);
+    sorted.forEach((target, index) => {
+      HEX64.lastIndex = 0;
+      if (!HEX64.test(target.text)) {
+        out.push(target);
+        return;
+      }
+      const near: string[] = [];
+      for (let j = index - radius; j <= index + radius; j++) {
+        const neighbour = sorted[j];
+        if (neighbour && Math.abs(neighbour.line - target.line) <= radius) {
+          near.push(neighbour.text);
+        }
+      }
+      out.push({ ...target, context: near.join("\n") });
+    });
+  }
+  return out;
 }
 
 /**
@@ -515,7 +593,7 @@ export async function scan(
   const candidates: Array<Candidate & { text: string }> = [];
   for (const target of targets) {
     for (const candidate of extractFromLine(target.text, target.file, target.line)) {
-      candidates.push({ ...candidate, text: target.text });
+      candidates.push({ ...candidate, text: target.context ?? target.text });
     }
   }
 
@@ -554,6 +632,10 @@ export async function scan(
     const secretContext = occurrences.some((occurrence) =>
       looksLikeSecretContext(occurrence.text, occurrence.file),
     );
+    // An explicit allow marker anywhere in the candidate's context retires it.
+    if (occurrences.every((occurrence) => ALLOW_MARKER.test(occurrence.text))) {
+      continue;
+    }
     const distinctFiles = new Set(occurrences.map((o) => o.file)).size;
     const shared = distinctFiles >= SHARED_CONSTANT_FILE_THRESHOLD;
 
@@ -639,7 +721,11 @@ export function scanIncomplete(result: ScanResult): boolean {
   return !result.livenessChecked || result.chainStatus.some((c) => !c.ok);
 }
 
-function report(result: ScanResult, failOnVerified: boolean): number {
+function report(
+  result: ScanResult,
+  failOnVerified: boolean,
+  offline = false,
+): number {
   const inCI = Boolean(process.env.GITHUB_ACTIONS);
   const critical = result.findings.filter((f) => f.severity === "critical");
   const verified = result.findings.filter((f) => f.severity === "verified");
@@ -657,7 +743,8 @@ function report(result: ScanResult, failOnVerified: boolean): number {
       console.log(inCI ? `::warning::${message}` : `  ! ${message}`);
     }
   }
-  if (!result.livenessChecked) {
+  // In offline mode the absence of liveness is the point, not a shortfall.
+  if (!result.livenessChecked && !offline) {
     const message =
       "keyscan: KEYSCAN_RPC_URLS is unset, so no liveness checks ran — only register and filename signals were applied";
     console.log(inCI ? `::warning::${message}` : `  ! ${message}`);
@@ -689,6 +776,19 @@ function report(result: ScanResult, failOnVerified: boolean): number {
     );
   }
 
+  // Offline: every finding blocks. Without the chain there is no way to tell a
+  // live key from a dead one, and on a public repo the push is irreversible —
+  // so the cheap action (look at it) beats the expensive one (rotate forever).
+  if (offline) {
+    if (result.findings.length === 0) return 0;
+    console.log(
+      "\nkeyscan: push blocked. These look like private keys. Check them, then either " +
+        "remove them or push again with --no-verify if they are genuinely not secrets.\n" +
+        "Once a key reaches a public repo, deleting it does not take it back.",
+    );
+    return 1;
+  }
+
   if (failOnVerified && scanIncomplete(result)) {
     console.log(
       "\nkeyscan: failing because the scan was incomplete — liveness could not be checked " +
@@ -712,16 +812,22 @@ async function main(): Promise<void> {
   const all = argv.includes("--all");
   const asJson = argv.includes("--json");
   const failOnVerified = argv.includes("--fail-on-verified");
+  // Offline is the pre-push mode: no network, and any signal blocks. A hook
+  // that waits on an RPC is a hook people switch off, and on a public repo a
+  // check that runs after the push has already lost.
+  const offline = argv.includes("--offline");
 
   if (!diff && !all) {
     console.error(
-      "usage: scan.ts (--diff <range> | --all) [--json] [--fail-on-verified]",
+      "usage: scan.ts (--diff <range> | --all) [--json] [--offline] [--fail-on-verified]",
     );
     process.exit(2);
   }
 
-  const targets = diff ? addedLinesFromDiff(diff, cwd) : allTrackedLines(cwd);
-  const chains = parseRpcUrls(process.env.KEYSCAN_RPC_URLS);
+  const targets = addContext(
+    diff ? addedLinesFromDiff(diff, cwd) : allTrackedLines(cwd),
+  );
+  const chains = offline ? [] : parseRpcUrls(process.env.KEYSCAN_RPC_URLS);
   const registry = loadRegistry(process.env.KEYSCAN_ADDRESS_REGISTRY);
 
   const result = await scan(targets, chains, registry);
@@ -745,7 +851,7 @@ async function main(): Promise<void> {
     );
   }
 
-  process.exit(report(result, failOnVerified));
+  process.exit(report(result, failOnVerified, offline));
 }
 
 if (require.main === module) {

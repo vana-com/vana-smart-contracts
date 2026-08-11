@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+#
+# keyscan pre-push hook — the last point at which a leaked key is still private.
+#
+# This repository is public. Once a push lands, the key is in every fork, clone
+# and mirror, and GitHub keeps the object even after a force-push, so deleting
+# it afterwards does not take it back. A CI check reports the exposure; only a
+# pre-push check prevents it.
+#
+# Runs offline: no RPC, no network, typically under two seconds. It scans only
+# the commits actually being pushed.
+#
+# Install:  git config core.hooksPath .githooks
+# Bypass:   git push --no-verify
+#
+set -uo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT" || exit 0
+
+if [ ! -d node_modules/ethers ]; then
+  echo "keyscan: dependencies are missing, so the private-key check did not run." >&2
+  echo "         Run 'yarn install', or push with --no-verify to skip the check." >&2
+  exit 1
+fi
+
+ZERO="0000000000000000000000000000000000000000"
+DEFAULT_BRANCH="$(git symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null || echo origin/main)"
+status=0
+
+while read -r _local_ref local_sha _remote_ref remote_sha; do
+  # A branch deletion pushes the zero sha. There is nothing to scan.
+  [ "$local_sha" = "$ZERO" ] && continue
+
+  if [ "$remote_sha" = "$ZERO" ]; then
+    # New branch: compare against the default branch, so we scan what this
+    # branch adds rather than the whole of history.
+    base="$(git merge-base "$DEFAULT_BRANCH" "$local_sha" 2>/dev/null || echo "")"
+    [ -z "$base" ] && continue
+    range="${base}...${local_sha}"
+  else
+    range="${remote_sha}...${local_sha}"
+  fi
+
+  npx --no-install ts-node scripts/keyscan/scan.ts --diff "$range" --offline || status=1
+done
+
+exit "$status"

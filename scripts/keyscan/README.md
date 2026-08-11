@@ -37,10 +37,11 @@ Three rules keep the noise out, and each is a statement about entropy rather tha
 denylist that has to be maintained:
 
 1. **Entropy bounds.** A value must be in `[2^128, N)` where `N` is the secp256k1 curve
-   order. A real key is 32 random bytes and will never fall below 2^128, so anything
-   smaller is an ABI-encoded integer — `bytes32(1)`, a length prefix, an array offset.
-   Those derive to the well-known "private key = N" accounts, which have been used on
-   every chain.
+   order, and must not be a short pattern repeated to fill 64 characters. A real key is
+   32 random bytes: it never falls below 2^128, and it is never periodic (even a
+   32-character period has probability 2^-128). Anything smaller is an ABI-encoded
+   integer — `bytes32(1)`, a length prefix, an array offset — and anything periodic is a
+   placeholder somebody typed, like `1234567890abcdef` four times over.
 2. **Public values.** Two families that are valid keys but belong to nobody: the standard
    proxy storage slots, and the Hardhat/Anvil development accounts. Both are public, so
    both have real on-chain history — the EIP-1967 implementation slot derives to an
@@ -60,6 +61,35 @@ A freshly generated key that was never funded derives to an address with no hist
 liveness will not see it. The register and the secret-shaped-context check cover part of
 that tail, but not all of it. This is a backstop, not a substitute for keeping production
 keys somewhere they cannot be committed in the first place.
+
+## Where it runs, and why the hook is the important one
+
+| Stage | Catches | Network | Blocks? |
+|---|---|---|---|
+| **pre-push hook** | a key before it ever leaves the machine | no | **yes** |
+| CI on the PR diff | a key that was already pushed | yes | no (advisory) |
+| scheduled full-tree scan | the back-catalogue, and keys funded after commit | yes | no |
+
+**This repository is public, so CI is a smoke alarm that rings after the house is
+gone.** The moment a push lands, the key is in every fork, clone and mirror, and
+GitHub keeps the object even after a force-push — deleting it afterwards does not take
+it back. Only the pre-push hook runs while the key is still private.
+
+The hook runs offline in about two seconds and scans only the commits being pushed.
+
+```bash
+git config core.hooksPath .githooks   # `yarn install` does this for you
+```
+
+If it fires on something that genuinely is not a secret, mark that line rather than
+reaching for `--no-verify`:
+
+```ts
+const wellKnownTestKey = "0x…"; // keyscan: allow — anvil fixture, funded by nobody
+```
+
+`--no-verify` disables *every* hook for that push. Given only that escape, people use
+it habitually and the check quietly stops existing.
 
 ## Usage
 

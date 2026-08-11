@@ -4,6 +4,11 @@
   "main": "index.js",
   "author": "ec.dumea@gmail.com",
   "license": "MIT",
+  "scripts": {
+    "postinstall": "git config core.hooksPath .githooks || true",
+    "keyscan": "ts-node scripts/keyscan/scan.ts",
+    "keyscan:test": "mocha --require ts-node/register scripts/keyscan/scan.test.ts"
+  },
   "devDependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.0",
     "@nomicfoundation/hardhat-ethers": "^3.0.0",

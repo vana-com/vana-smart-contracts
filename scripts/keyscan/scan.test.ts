@@ -1,8 +1,10 @@
 import { expect } from "chai";
 import {
   PUBLISHED_CONSTANTS,
+  addContext,
   deriveAddress,
   extractFromLine,
+  isPeriodic,
   isPlausibleKey,
   looksLikeSecretContext,
   parseRpcUrls,
@@ -84,8 +86,46 @@ describe("keyscan/extractFromLine", () => {
   });
 
   it("finds every candidate on a line, not just the first", () => {
-    const line = `${SAMPLE_KEY} ${"0x" + "b".repeat(64)}`;
-    expect(extractFromLine(line, "a.ts", 1)).to.have.length(2);
+    const second =
+      "0x7c4a8d09ca3762af61e59520943dc26494f8941b9b1f0c3ea6d4e2b8f5a09c73";
+    expect(extractFromLine(`${SAMPLE_KEY} ${second}`, "a.ts", 1)).to.have.length(2);
+  });
+
+  it("ignores hand-typed placeholder keys that repeat a short pattern", () => {
+    const placeholder = "1234567890abcdef".repeat(4);
+    expect(isPeriodic(placeholder)).to.equal(true);
+    expect(extractFromLine(`0x${placeholder}`, "a.ts", 1)).to.have.length(0);
+    expect(extractFromLine(`0x${"b".repeat(64)}`, "a.ts", 1)).to.have.length(0);
+    // A real key is not periodic.
+    expect(isPeriodic(SAMPLE_KEY.slice(2))).to.equal(false);
+  });
+});
+
+describe("keyscan/addContext", () => {
+  it("sees a secret name declared on the line above the value", () => {
+    // The shape that caused the real incident: the name is on one line and the
+    // key on the next, so a line-scoped check sees only a quoted string.
+    const targets = addContext([
+      { file: "a.ts", line: 136, text: "const FUNDER_PRIVATE_KEY = (process.env[x] ??" },
+      { file: "a.ts", line: 137, text: `  "${SAMPLE_KEY}") as Hex;` },
+    ]);
+    const keyLine = targets.find((t) => t.line === 137)!;
+    expect(keyLine.context).to.contain("FUNDER_PRIVATE_KEY");
+    expect(looksLikeSecretContext(keyLine.context!, keyLine.file)).to.equal(true);
+  });
+
+  it("does not join lines that are far apart", () => {
+    const targets = addContext([
+      { file: "a.ts", line: 1, text: "const privateKey =" },
+      { file: "a.ts", line: 400, text: SAMPLE_KEY },
+    ]);
+    const keyLine = targets.find((t) => t.line === 400)!;
+    expect(keyLine.context ?? "").to.not.contain("privateKey");
+  });
+
+  it("leaves lines without a candidate untouched", () => {
+    const targets = addContext([{ file: "a.ts", line: 1, text: "no key here" }]);
+    expect(targets[0].context).to.equal(undefined);
   });
 });
 
@@ -322,6 +362,21 @@ describe("keyscan/scan", () => {
     expect(result.findings).to.have.length(3);
     expect(result.findings[0].severity).to.equal("suspicious");
     expect(result.findings[0].reasons.join(" ")).to.contain("downgraded");
+  });
+
+  it("respects an explicit keyscan:allow marker", async () => {
+    const result = await scan(
+      [
+        {
+          file: "a.ts",
+          line: 1,
+          text: `const privateKey = "${SAMPLE_KEY}" // keyscan: allow — dummy`,
+        },
+      ],
+      noChains,
+      noRegistry,
+    );
+    expect(result.findings).to.have.length(0);
   });
 
   it("emits one finding per location, not per occurrence on a line", async () => {
