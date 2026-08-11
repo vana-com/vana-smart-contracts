@@ -15,8 +15,14 @@
 #
 set -uo pipefail
 
-REPO_ROOT="$(git rev-parse --show-toplevel)"
-cd "$REPO_ROOT" || exit 0
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo "")"
+if [ -z "$REPO_ROOT" ] || ! cd "$REPO_ROOT"; then
+  # If we cannot reach the repository root we cannot scan anything, and a check
+  # that cannot run must not report success.
+  echo "keyscan: cannot locate the repository root, so the private-key check did not run." >&2
+  echo "         Push with --no-verify to skip it deliberately." >&2
+  exit 1
+fi
 
 if [ ! -d node_modules/ethers ]; then
   echo "keyscan: dependencies are missing, so the private-key check did not run." >&2
