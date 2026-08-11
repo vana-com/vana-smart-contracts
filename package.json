@@ -5,7 +5,7 @@
   "author": "ec.dumea@gmail.com",
   "license": "MIT",
   "scripts": {
-    "postinstall": "git config core.hooksPath .githooks || true",
+    "postinstall": "git config core.hooksPath >/dev/null 2>&1 || { git config core.hooksPath .githooks && echo 'keyscan: pre-push hook installed'; }; true",
     "keyscan": "ts-node scripts/keyscan/scan.ts",
     "keyscan:test": "mocha --require ts-node/register scripts/keyscan/scan.test.ts"
   },

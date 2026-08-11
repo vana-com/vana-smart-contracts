@@ -36,13 +36,23 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
     # New branch: compare against the default branch, so we scan what this
     # branch adds rather than the whole of history.
     base="$(git merge-base "$DEFAULT_BRANCH" "$local_sha" 2>/dev/null || echo "")"
-    [ -z "$base" ] && continue
-    range="${base}...${local_sha}"
+    if [ -z "$base" ]; then
+      # No common ancestor, so we cannot tell which commits are new. Refuse
+      # rather than wave it through: not knowing what is in a push is not a
+      # reason to allow it, and on a public repo the push cannot be undone.
+      echo "keyscan: cannot determine what this branch adds (no merge base with ${DEFAULT_BRANCH})." >&2
+      echo "         Scan it by hand with 'yarn keyscan --all --offline', or push with --no-verify." >&2
+      status=1
+      continue
+    fi
   else
-    range="${remote_sha}...${local_sha}"
+    # Existing branch, including a force-push. A two-dot diff compares the two
+    # end states, so the added lines are exactly what this push introduces
+    # relative to what the remote already has.
+    base="$remote_sha"
   fi
 
-  npx --no-install ts-node scripts/keyscan/scan.ts --diff "$range" --offline || status=1
+  npx --no-install ts-node scripts/keyscan/scan.ts --diff "${base}..${local_sha}" --offline || status=1
 done
 
 exit "$status"
