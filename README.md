@@ -126,3 +126,9 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - **Documentation**: https://docs.vana.org
 - **Block Explorer**: https://vanascan.io
 - **GitHub**: https://github.com/vana-com
+
+## Optional local EVM key scan
+
+Run `.github/scripts/install-evm-key-scan-hook.sh` once to install the local
+pre-push scan. It leaves global Git configuration unchanged; CI remains the
+enforcement layer.
