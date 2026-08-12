@@ -3,7 +3,7 @@
 set -euo pipefail
 
 readonly CENTRAL_REPOSITORY='https://github.com/vana-com/.github.git'
-readonly CENTRAL_POLICY_SHA='e16c9c1ec5001b2672d8463d3dd8f027bbcf8a35'
+readonly CENTRAL_POLICY_SHA='5f1b4b1019af6e3a528dd36d471f94be7dd83632'
 
 action=${1:-install}
 case "$action" in
