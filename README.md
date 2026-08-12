@@ -74,9 +74,9 @@ Core DLP management system handling registration, staking, epoch-based operation
    cd vana-smart-contracts
    ```
 
-2. **Install dependencies**
+2. **Set up the repository**
    ```bash
-   yarn install
+   yarn setup
    ```
 
 3. **Set up environment variables**
@@ -126,3 +126,9 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - **Documentation**: https://docs.vana.org
 - **Block Explorer**: https://vanascan.io
 - **GitHub**: https://github.com/vana-com
+
+## Optional local EVM key scan
+
+`yarn setup` installs dependencies and the optional local pre-push scan. The
+scan leaves global Git configuration unchanged; CI remains the enforcement
+layer.
