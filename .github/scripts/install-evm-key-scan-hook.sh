@@ -40,7 +40,7 @@ trap cleanup EXIT
 if [[ -d "$policy_dir/.git" ]]; then
   origin=$(git -C "$policy_dir" remote get-url origin) || fail "Refusing unreadable policy cache: $policy_dir"
   case "$origin" in
-    "$CENTRAL_REPOSITORY"|git@github.com:vana-com/.github.git) ;;
+    "$CENTRAL_REPOSITORY"|https://github.com/vana-com/.github|git@github.com:vana-com/.github|git@github.com:vana-com/.github.git) ;;
     *) fail "Refusing unexpected policy-cache origin: $policy_dir" ;;
   esac
   [[ "$(git -C "$policy_dir" rev-parse HEAD)" == "$CENTRAL_POLICY_SHA" ]] || fail "Refusing stale policy cache: $policy_dir"
@@ -55,6 +55,13 @@ else
   [[ "$(git -C "$tmp_dir" rev-parse HEAD)" == "$CENTRAL_POLICY_SHA" ]] || fail 'Fetched policy does not match requested SHA.'
   mv "$tmp_dir" "$policy_dir"
   tmp_dir=''
+fi
+
+if [[ "$action" == install ]]; then
+  "$policy_dir/scripts/install-pre-push.sh" prepare \
+    --shared-dir "$policy_dir" \
+    --repo "$repo_root" \
+    --ref "$CENTRAL_POLICY_SHA"
 fi
 
 rmdir "$lock_dir"
