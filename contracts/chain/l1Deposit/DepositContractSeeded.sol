@@ -6,6 +6,21 @@ import {Ownable2Step} from "@openzeppelin/contracts/access/Ownable2Step.sol";
 import {IDeposit} from "./interfaces/IDeposit.sol";
 import {ERC165} from "./interfaces/ERC165.sol";
 
+/// @dev Holds the deposit tree state and nothing else. Listed FIRST in the
+///      inheritance list below so these variables keep the canonical deposit
+///      contract's storage layout -- branch in slots 0..31, deposit_count in
+///      slot 32 -- readable with the same eth_getStorageAt calls as the
+///      original contract. Ownable2Step's _owner/_pendingOwner land AFTER
+///      them (slots 65..66) instead of at slots 0..1.
+abstract contract DepositTreeStorage {
+    uint constant DEPOSIT_CONTRACT_TREE_DEPTH = 32;
+    uint constant MAX_DEPOSIT_COUNT = 2 ** DEPOSIT_CONTRACT_TREE_DEPTH - 1;
+
+    bytes32[DEPOSIT_CONTRACT_TREE_DEPTH] branch;       // slots 0..31
+    uint256 deposit_count;                             // slot 32
+    bytes32[DEPOSIT_CONTRACT_TREE_DEPTH] zero_hashes;  // slots 33..64
+}
+
 /// @notice Port of the canonical Ethereum deposit contract, with one change:
 ///         the constructor seeds BOTH `deposit_count` and the incremental
 ///         Merkle `branch`, so the deployed contract reproduces an existing
@@ -16,18 +31,8 @@ import {ERC165} from "./interfaces/ERC165.sol";
 ///         the tree holds no leaves. Copying the branch fixes that: for a count
 ///         of N, `get_deposit_root()` folds branch[h] for every set bit of N,
 ///         so an identical (count, branch) pair gives an identical root.
-contract DepositContractSeeded is Ownable2Step, IDeposit, ERC165 {
-    uint constant DEPOSIT_CONTRACT_TREE_DEPTH = 32;
-    uint constant MAX_DEPOSIT_COUNT = 2 ** DEPOSIT_CONTRACT_TREE_DEPTH - 1;
-
-    // Ownable/Ownable2Step occupy slots 0 (_owner) and 1 (_pendingOwner), so the
-    // deposit state below sits two slots higher than in the canonical contract.
-    // That does not affect seeding, which is done via constructor arguments;
-    // verify a deployment with `get_deposit_root()` / `get_branch(i)` instead of
-    // by comparing raw slots against the source contract.
-    bytes32[DEPOSIT_CONTRACT_TREE_DEPTH] branch;       // slots 2..33
-    uint256 deposit_count;                             // slot 34
-    bytes32[DEPOSIT_CONTRACT_TREE_DEPTH] zero_hashes;  // slots 35..66
+contract DepositContractSeeded is DepositTreeStorage, Ownable2Step, IDeposit, ERC165 {
+    // Ownable2Step: _owner slot 65, _pendingOwner slot 66 (see DepositTreeStorage)
 
     /// @notice Minimum accepted deposit, replacing the canonical hard-coded
     ///         1 ether floor. Settable by the owner; the deposit logic and the

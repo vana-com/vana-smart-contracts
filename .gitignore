@@ -8,6 +8,7 @@ node_modules
 # Foundry files
 /out
 /cache_forge
+/broadcast
 
 # TypeChain files
 /typechain

@@ -18,3 +18,9 @@ remappings = [
     "@openzeppelin/contracts/=node_modules/@openzeppelin/contracts/",
     "@openzeppelin/contracts-upgradeable/=node_modules/@openzeppelin/contracts-upgradeable/",
 ]
+
+# named endpoints: `--rpc-url vana` resolves VANA_RPC_URL from .env (forge
+# auto-loads .env from the project root; the shell does not)
+[rpc_endpoints]
+vana = "${VANA_RPC_URL}"
+moksha = "${MOKSHA_RPC_URL}"

@@ -154,6 +154,29 @@ contract ConstructorTest is DepositSeededBase {
         new DepositContractSeeded(0, branch, 1 ether, address(0), false, new bytes[](0));
     }
 
+    /// @dev The deposit tree must keep the canonical contract's storage slots
+    ///      (branch 0..31, count 32) so the same eth_getStorageAt tooling works
+    ///      on the old and the new contract. DepositTreeStorage is listed first
+    ///      in the inheritance list to guarantee this; Ownable state follows.
+    function test_storageLayoutMatchesCanonicalContract() public {
+        bytes32[TREE_DEPTH] memory branch;
+        branch[0] = bytes32(uint256(0xAA));
+        branch[5] = bytes32(uint256(0xBB));
+        branch[31] = bytes32(uint256(0xCC));
+        DepositContractSeeded d =
+            new DepositContractSeeded(7, branch, 1 ether, owner, false, new bytes[](0));
+
+        assertEq(vm.load(address(d), bytes32(uint256(0))), branch[0], "branch[0] at slot 0");
+        assertEq(vm.load(address(d), bytes32(uint256(5))), branch[5], "branch[5] at slot 5");
+        assertEq(vm.load(address(d), bytes32(uint256(31))), branch[31], "branch[31] at slot 31");
+        assertEq(uint256(vm.load(address(d), bytes32(uint256(32)))), 7, "count at slot 32");
+        assertEq(
+            address(uint160(uint256(vm.load(address(d), bytes32(uint256(65)))))),
+            owner,
+            "_owner at slot 65"
+        );
+    }
+
     function test_supportsInterface() public {
         DepositContractSeeded d = _deployEmpty();
         assertTrue(d.supportsInterface(type(ERC165).interfaceId));
