@@ -8,7 +8,7 @@
 set -euo pipefail
 
 readonly CENTRAL_REPOSITORY='https://github.com/vana-com/.github.git'
-readonly CENTRAL_POLICY_SHA='7f59130a9d2f3954c15181068e8d8195dbc45c90'
+readonly CENTRAL_POLICY_SHA='8684f882aa9f54b9f1235fa5b15f784207290eb3'
 
 [[ "$CENTRAL_POLICY_SHA" =~ ^[0-9a-f]{40}$ ]] || {
   printf 'This bootstrap needs a reviewed 40-character central policy SHA before use.\n' >&2
@@ -34,7 +34,19 @@ done < <(git rev-parse --local-env-vars 2>/dev/null || printf '%s\n' \
 for v in GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM; do
   scrub+=(-u "$v")
 done
-policy_git() { env "${scrub[@]}" git "$@"; }
+# `-c` overrides neutralize execution-capable settings a poisoned cache could
+# plant in its own .git/config: core.fsmonitor runs a command during `git
+# status`, and the *Proxy/*Command hooks run during fetch. These must be off for
+# every command that touches a cache we have not yet authenticated.
+policy_git() {
+  env "${scrub[@]}" git \
+    -c core.fsmonitor= \
+    -c core.hooksPath=/dev/null \
+    -c credential.helper= \
+    -c protocol.ext.allow=never \
+    -c uploadpack.packObjectsHook= \
+    "$@"
+}
 
 # An existing cache must be authenticated BEFORE anything inside it is executed:
 # this stub execs the cache's own bootstrap, so a poisoned cache would otherwise

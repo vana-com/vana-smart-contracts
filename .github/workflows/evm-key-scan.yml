@@ -8,4 +8,4 @@ permissions:
 
 jobs:
   evm-key-scan:
-    uses: vana-com/.github/.github/workflows/evm-key-scan.yml@7f59130a9d2f3954c15181068e8d8195dbc45c90 # vana-com/.github#3
+    uses: vana-com/.github/.github/workflows/evm-key-scan.yml@8684f882aa9f54b9f1235fa5b15f784207290eb3 # vana-com/.github#5
