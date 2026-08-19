@@ -5,6 +5,10 @@ node_modules
 # Hardhat files
 /cache
 
+# Foundry files
+/out
+/cache_forge
+
 # TypeChain files
 /typechain
 /typechain-types

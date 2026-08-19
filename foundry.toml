@@ -1,0 +1,20 @@
+# Foundry is used only for Solidity unit tests (test/foundry).
+# Hardhat remains the build/deploy system for the repo, so `src` is scoped to
+# the contracts under test instead of the whole contracts/ tree, and the cache
+# is kept out of hardhat's ./cache.
+[profile.default]
+src = "contracts/chain/l1Deposit"
+test = "test/foundry"
+out = "out"
+cache_path = "cache_forge"
+libs = ["lib", "node_modules"]
+# match FIRST_COMPILER_SETTINGS in hardhat.config.ts
+solc = "0.8.24"
+via_ir = true
+optimizer = true
+optimizer_runs = 1
+remappings = [
+    "forge-std/=lib/forge-std/src/",
+    "@openzeppelin/contracts/=node_modules/@openzeppelin/contracts/",
+    "@openzeppelin/contracts-upgradeable/=node_modules/@openzeppelin/contracts-upgradeable/",
+]
