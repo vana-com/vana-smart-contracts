@@ -1,104 +1,110 @@
 #!/usr/bin/env bash
 # Explicit local bootstrap only. It never runs from package installation or CI.
+#
+# This stub is deliberately thin: it names the reviewed policy commit and hands
+# off to that commit's own bootstrap. All validation, locking and installation
+# logic lives in vana-com/.github so a fix there does not need editing here —
+# this file changes only when the pin is deliberately advanced.
 set -euo pipefail
 
 readonly CENTRAL_REPOSITORY='https://github.com/vana-com/.github.git'
-readonly CENTRAL_POLICY_SHA='99904520ef5b18f1fceb0331b4d0b0fb182d0b62'
+readonly CENTRAL_POLICY_SHA='8684f882aa9f54b9f1235fa5b15f784207290eb3'
 
-action=${1:-install}
-case "$action" in
-  install|status|uninstall) shift || true ;;
-  *)
-    printf 'Usage: %s [install|status|uninstall]\n' "${0##*/}" >&2
-    exit 2
-    ;;
-esac
-
-fail() {
-  printf '%s\n' "$1" >&2
+[[ "$CENTRAL_POLICY_SHA" =~ ^[0-9a-f]{40}$ ]] || {
+  printf 'This bootstrap needs a reviewed 40-character central policy SHA before use.\n' >&2
   exit 2
 }
 
-repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || fail 'Run this from a Git work tree.'
-[[ "$CENTRAL_POLICY_SHA" =~ ^[0-9a-f]{40}$ ]] || fail 'This bootstrap needs a reviewed 40-character central policy SHA before use.'
-
 cache_root="${XDG_DATA_HOME:-$HOME/.local/share}/vana-secret-scan/policy"
 policy_dir="$cache_root/$CENTRAL_POLICY_SHA"
-lock_dir="$cache_root/.${CENTRAL_POLICY_SHA}.lock"
-tmp_dir=''
 
-# Git exports GIT_DIR (and friends) into hook processes. In a linked worktree
-# that value is an ABSOLUTE path, so a plain `policy_git -C "$policy_dir" ...` still
-# resolves against the pushing repository and reports ITS remote, HEAD and
-# status instead of the policy cache's — validation then rejects a perfectly
-# good cache with "unexpected policy-cache origin". (In a normal checkout
-# GIT_DIR is the relative ".git", which happens to resolve correctly under -C,
-# which is why this only bites worktrees.)
-#
-# The scrub list comes from git itself rather than a hardcoded set: it covers
-# the directory variables, the repository-local variables (GIT_SHALLOW_FILE,
-# GIT_GRAFT_FILE, GIT_REPLACE_REF_BASE, GIT_IMPLICIT_WORK_TREE) and
-# GIT_CONFIG_PARAMETERS / GIT_CONFIG_COUNT (which `git -c foo=bar push`
-# exports into hooks). The GIT_CONFIG_* FILE overrides are not in that list, so
-# they are added explicitly — without GIT_CONFIG_GLOBAL a caller can point
-# `remote.origin.url` at vana-com/.github from its own environment and satisfy
+# Scrub the inherited repository environment: git exports an absolute GIT_DIR
+# into hook processes, which would otherwise redirect these commands at the
+# pushing repository instead of the policy cache. GIT_CONFIG_GLOBAL is not in
+# --local-env-vars, so it is added explicitly — without it a caller can point
+# remote.origin.url at vana-com/.github from its own environment and satisfy
 # the origin check against a cache whose real origin is something else.
-# A hardcoded fallback covers a git too old to answer.
+scrub=()
+while IFS= read -r v; do
+  [[ -n "$v" ]] && scrub+=(-u "$v")
+done < <(git rev-parse --local-env-vars 2>/dev/null || printf '%s\n' \
+  GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
+  GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR \
+  GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT)
+for v in GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM; do
+  scrub+=(-u "$v")
+done
+# `-c` overrides neutralize execution-capable settings a poisoned cache could
+# plant in its own .git/config: core.fsmonitor runs a command during `git
+# status`, and the *Proxy/*Command hooks run during fetch. These must be off for
+# every command that touches a cache we have not yet authenticated.
 policy_git() {
-  local scrub=()
-  local v
-  while IFS= read -r v; do
-    [[ -n "$v" ]] && scrub+=(-u "$v")
-  done < <(git rev-parse --local-env-vars 2>/dev/null || printf '%s\n' \
-    GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
-    GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_COMMON_DIR \
-    GIT_CONFIG GIT_CONFIG_PARAMETERS GIT_CONFIG_COUNT)
-  for v in GIT_CONFIG_GLOBAL GIT_CONFIG_SYSTEM GIT_CONFIG_NOSYSTEM; do
-    scrub+=(-u "$v")
-  done
-  env "${scrub[@]}" git "$@"
+  env "${scrub[@]}" git \
+    -c core.fsmonitor= \
+    -c core.hooksPath=/dev/null \
+    -c credential.helper= \
+    -c protocol.ext.allow=never \
+    -c uploadpack.packObjectsHook= \
+    "$@"
 }
 
-cleanup() {
-  [[ -z "$tmp_dir" ]] || rm -rf "$tmp_dir"
-  rmdir "$lock_dir" 2>/dev/null || true
-}
-
-mkdir -p "$cache_root"
-mkdir "$lock_dir" 2>/dev/null || fail "Policy setup is already running; try again: $lock_dir"
-trap cleanup EXIT
-
-[[ ! -L "$policy_dir" ]] || fail "Refusing symlinked policy cache: $policy_dir"
+# An existing cache must be authenticated BEFORE anything inside it is executed:
+# this stub execs the cache's own bootstrap, so a poisoned cache would otherwise
+# run arbitrary code before the central validation it delegates to. These checks
+# are deliberately duplicated with the central bootstrap — that one re-runs them
+# for callers who reach it another way, but they must also happen here, ahead of
+# the exec.
 if [[ -d "$policy_dir/.git" ]]; then
-  origin=$(policy_git -C "$policy_dir" remote get-url origin) || fail "Refusing unreadable policy cache: $policy_dir"
+  [[ ! -L "$policy_dir" ]] || {
+    printf 'Refusing symlinked policy cache: %s\n' "$policy_dir" >&2
+    exit 2
+  }
+  origin=$(policy_git -C "$policy_dir" remote get-url origin) || {
+    printf 'Refusing unreadable policy cache: %s\n' "$policy_dir" >&2
+    exit 2
+  }
   case "$origin" in
     "$CENTRAL_REPOSITORY"|https://github.com/vana-com/.github|git@github.com:vana-com/.github|git@github.com:vana-com/.github.git) ;;
-    *) fail "Refusing unexpected policy-cache origin: $policy_dir" ;;
+    *)
+      printf 'Refusing unexpected policy-cache origin: %s\n' "$policy_dir" >&2
+      exit 2
+      ;;
   esac
-  [[ "$(policy_git -C "$policy_dir" rev-parse HEAD)" == "$CENTRAL_POLICY_SHA" ]] || fail "Refusing stale policy cache: $policy_dir"
-  [[ -z "$(policy_git -C "$policy_dir" status --porcelain --untracked-files=all -- ':!/.tools')" ]] || fail "Refusing modified policy cache: $policy_dir"
-else
-  [[ ! -e "$policy_dir" ]] || fail "Refusing invalid policy cache: $policy_dir"
+  [[ "$(policy_git -C "$policy_dir" rev-parse HEAD)" == "$CENTRAL_POLICY_SHA" ]] || {
+    printf 'Refusing stale policy cache: %s\n' "$policy_dir" >&2
+    exit 2
+  }
+  [[ -z "$(policy_git -C "$policy_dir" status --porcelain --untracked-files=all -- ':!/.tools')" ]] || {
+    printf 'Refusing modified policy cache: %s\n' "$policy_dir" >&2
+    exit 2
+  }
+  [[ ! -L "$policy_dir/scripts/bootstrap.sh" ]] || {
+    printf 'Refusing symlinked policy bootstrap: %s\n' "$policy_dir" >&2
+    exit 2
+  }
+fi
+
+# Fetch the pinned policy if it is not already cached. Fetching by SHA is
+# self-authenticating: git verifies that the delivered objects hash to the
+# requested commit, so a wrong or tampered response cannot satisfy this check.
+if [[ ! -d "$policy_dir/.git" ]]; then
+  [[ ! -e "$policy_dir" ]] || {
+    printf 'Refusing invalid policy cache: %s\n' "$policy_dir" >&2
+    exit 2
+  }
+  mkdir -p "$cache_root"
   tmp_dir=$(mktemp -d "$cache_root/.policy.XXXXXX")
+  trap 'rm -rf "$tmp_dir"' EXIT
   policy_git init -q "$tmp_dir"
   policy_git -C "$tmp_dir" remote add origin "$CENTRAL_REPOSITORY"
   policy_git -C "$tmp_dir" fetch --depth 1 origin "$CENTRAL_POLICY_SHA"
   policy_git -C "$tmp_dir" checkout -q --detach FETCH_HEAD
-  [[ "$(policy_git -C "$tmp_dir" rev-parse HEAD)" == "$CENTRAL_POLICY_SHA" ]] || fail 'Fetched policy does not match requested SHA.'
+  [[ "$(policy_git -C "$tmp_dir" rev-parse HEAD)" == "$CENTRAL_POLICY_SHA" ]] || {
+    printf 'Fetched policy does not match requested SHA.\n' >&2
+    exit 2
+  }
   mv "$tmp_dir" "$policy_dir"
-  tmp_dir=''
+  trap - EXIT
 fi
 
-if [[ "$action" == install ]]; then
-  "$policy_dir/scripts/install-pre-push.sh" prepare \
-    --shared-dir "$policy_dir" \
-    --repo "$repo_root" \
-    --ref "$CENTRAL_POLICY_SHA"
-fi
-
-rmdir "$lock_dir"
-trap - EXIT
-exec "$policy_dir/scripts/install-pre-push.sh" "$action" \
-  --shared-dir "$policy_dir" \
-  --repo "$repo_root" \
-  --ref "$CENTRAL_POLICY_SHA" "$@"
+exec env VANA_POLICY_SHA="$CENTRAL_POLICY_SHA" "$policy_dir/scripts/bootstrap.sh" "$@"
