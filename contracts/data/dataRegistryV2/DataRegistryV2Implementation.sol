@@ -20,6 +20,8 @@ import "./interfaces/DataRegistryV2StorageV1.sol";
  *           - `recordDataAccess` is gated by ACCESS_RECORDER_ROLE AND requires an
  *             EIP-712 signature from one of the owner's trusted personal
  *             servers (verified via DataPortabilityServers)
+ *           - `recordDataAccessBatch` applies the same checks per item and
+ *             skips (never reverts on) a failing item — see IDataRegistryV2
  *           - EIP-712 delegated writes via `addDataWithSignature` with
  *             per-data-point version monotonicity for replay protection
  */
@@ -40,8 +42,11 @@ contract DataRegistryV2Implementation is
     ///      single SSTORE for the `scope` field.
     uint256 private constant MAX_SCOPE_BYTES = 256;
 
-    /// @notice Role required to submit `recordDataAccess` calls.
+    /// @notice Role required to submit `recordDataAccess` / `recordDataAccessBatch` calls.
     bytes32 public constant ACCESS_RECORDER_ROLE = keccak256("ACCESS_RECORDER_ROLE");
+
+    /// @inheritdoc IDataRegistryV2
+    uint256 public constant override MAX_ACCESS_BATCH = 200;
 
     bytes32 public constant override ADD_DATA_TYPEHASH =
         keccak256(
@@ -391,19 +396,10 @@ contract DataRegistryV2Implementation is
         if (_usedRecordIds[recordId]) revert RecordIdAlreadyUsed(recordId);
 
         // Recover the signer (must be one of the owner's trusted personal servers).
-        bytes32 digest = _hashTypedDataV4(
-            keccak256(
-                abi.encode(
-                    RECORD_ACCESS_TYPEHASH,
-                    ownerAddress,
-                    keccak256(bytes(scope)),
-                    version_,
-                    accessor,
-                    recordId
-                )
-            )
+        address server = ECDSA.recover(
+            _recordAccessDigest(ownerAddress, scope, version_, accessor, recordId),
+            signature
         );
-        address server = ECDSA.recover(digest, signature);
         if (server == address(0)) revert InvalidSignature();
         if (!_isTrustedServer(ownerAddress, server)) revert UntrustedServer(ownerAddress, server);
 
@@ -411,6 +407,113 @@ contract DataRegistryV2Implementation is
         DataPoint storage d = _dataPoints[id];
         if (version_ == 0 || version_ > d.currentVersion) revert UnknownVersion(id, version_);
 
+        _commitAccess(d, id, version_, accessor, server, recordId);
+    }
+
+    /// @inheritdoc IDataRegistryV2
+    /// @dev Same checks as `recordDataAccess`, in the same order, but a
+    ///      failing check skips the item (emitting `DataAccessSkipped` with
+    ///      the selector `recordDataAccess` would have reverted with) instead
+    ///      of reverting the call. `ECDSA.tryRecover` replaces `recover` so a
+    ///      malformed signature cannot abort the batch; every recover error
+    ///      maps to `InvalidSignature`. State is only written through
+    ///      `_commitAccess`, shared with the single-record path, so a batch of
+    ///      one and a single call produce identical state and identical
+    ///      `DataAccessRecorded` events.
+    function recordDataAccessBatch(AccessRecord[] calldata records)
+        external
+        override
+        whenNotPaused
+        onlyRole(ACCESS_RECORDER_ROLE)
+        returns (bool[] memory recorded)
+    {
+        if (address(dataPortabilityServers) == address(0)) revert DataPortabilityServersNotSet();
+        uint256 len = records.length;
+        if (len == 0) revert EmptyBatch();
+        if (len > MAX_ACCESS_BATCH) revert BatchTooLarge(len, MAX_ACCESS_BATCH);
+
+        recorded = new bool[](len);
+        for (uint256 i = 0; i < len; ) {
+            AccessRecord calldata r = records[i];
+            bytes4 reason = _tryRecordAccess(r);
+            if (reason == bytes4(0)) {
+                recorded[i] = true;
+            } else {
+                emit DataAccessSkipped(r.recordId, i, reason);
+            }
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    /// @dev One item of `recordDataAccessBatch`. Returns `bytes4(0)` and
+    ///      commits the access when every check passes; otherwise returns the
+    ///      selector of the error the single-record path raises for the same
+    ///      failure and leaves state untouched. Check order mirrors
+    ///      `recordDataAccess`: recordId reuse, signature, trusted server,
+    ///      version — preceded by two calldata-length guards that the single
+    ///      path does not need (it reverts, so it pays nothing further).
+    function _tryRecordAccess(AccessRecord calldata r) internal returns (bytes4) {
+        if (_usedRecordIds[r.recordId]) return RecordIdAlreadyUsed.selector;
+
+        // Cheap calldata-length checks before anything is hashed or copied to
+        // memory, so an oversized item costs its calldata and nothing more.
+        // No data point can exist with a scope above MAX_SCOPE_BYTES
+        // (`_addData` rejects it), and only 65-byte signatures can recover.
+        if (bytes(r.scope).length > MAX_SCOPE_BYTES) return ScopeTooLong.selector;
+        if (r.signature.length != 65) return InvalidSignature.selector;
+
+        (address server, ECDSA.RecoverError err, ) = ECDSA.tryRecover(
+            _recordAccessDigest(r.ownerAddress, r.scope, r.version, r.accessor, r.recordId),
+            r.signature
+        );
+        if (err != ECDSA.RecoverError.NoError || server == address(0)) return InvalidSignature.selector;
+        if (!_isTrustedServer(r.ownerAddress, server)) return UntrustedServer.selector;
+
+        bytes32 id = _dataPointId(r.ownerAddress, r.scope);
+        DataPoint storage d = _dataPoints[id];
+        if (r.version == 0 || r.version > d.currentVersion) return UnknownVersion.selector;
+
+        _commitAccess(d, id, r.version, r.accessor, server, r.recordId);
+        return bytes4(0);
+    }
+
+    /// @dev EIP-712 digest a trusted server signs for one access record.
+    function _recordAccessDigest(
+        address ownerAddress,
+        string calldata scope,
+        uint256 version_,
+        address accessor,
+        bytes32 recordId
+    ) internal view returns (bytes32) {
+        return
+            _hashTypedDataV4(
+                keccak256(
+                    abi.encode(
+                        RECORD_ACCESS_TYPEHASH,
+                        ownerAddress,
+                        keccak256(bytes(scope)),
+                        version_,
+                        accessor,
+                        recordId
+                    )
+                )
+            );
+    }
+
+    /// @dev The single state-mutating tail shared by `recordDataAccess` and
+    ///      `recordDataAccessBatch`: marks the recordId used, bumps both
+    ///      counters, emits `DataAccessRecorded`. Callers have already
+    ///      validated the record.
+    function _commitAccess(
+        DataPoint storage d,
+        bytes32 id,
+        uint256 version_,
+        address accessor,
+        address server,
+        bytes32 recordId
+    ) internal {
         _usedRecordIds[recordId] = true;
 
         uint256 newVersionCount;

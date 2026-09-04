@@ -45,6 +45,14 @@ contract DataPortabilityEscrowImplementation is
 
     bytes32 public constant FACILITATOR_ROLE = keccak256("FACILITATOR_ROLE");
 
+    /// @inheritdoc IDataPortabilityEscrow
+    uint256 public constant override MAX_ACCESS_BATCH = 200;
+
+    /// @inheritdoc IDataPortabilityEscrow
+    /// @dev A data access pays one fee leg today; 8 leaves room for a split
+    ///      (owner / protocol / referrer) without making the batch unbounded.
+    uint256 public constant override MAX_ACCESS_BUNDLE_OPS = 8;
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -383,6 +391,72 @@ contract DataPortabilityEscrowImplementation is
             SettleOp calldata op = ops[i];
             _payout(op.from, op.to, op.asset, op.amount);
             emit Settled(op.from, op.to, op.ref, op.asset, op.amount, op.opKind);
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    // ====================== Facilitator: batch record access + settle ======================
+
+    /// @inheritdoc IDataPortabilityEscrow
+    /// @dev One registry call for the whole batch, then the settle loop per
+    ///      recorded item. The registry's `recordDataAccessBatch` never
+    ///      reverts on a single bad record (it returns `recorded[i] = false`
+    ///      and emits `DataAccessSkipped`), so a skipped item simply has no
+    ///      legs executed. `_payout` is unchanged, so a leg failure reverts
+    ///      the entire batch as it does in `recordAccessAndSettle`.
+    ///
+    ///      Records are copied calldata → memory because the registry takes
+    ///      one array and the bundle shape interleaves records with ops.
+    function recordAccessAndSettleBatch(AccessBundle[] calldata bundles)
+        external
+        override
+        onlyRole(FACILITATOR_ROLE)
+        whenNotPaused
+        nonReentrant
+        returns (bool[] memory recorded)
+    {
+        if (address(dataRegistry) == address(0)) revert DataRegistryNotSet();
+        uint256 len = bundles.length;
+        if (len == 0) revert EmptyBatch();
+        if (len > MAX_ACCESS_BATCH) revert BatchTooLarge(len, MAX_ACCESS_BATCH);
+
+        IDataRegistryV2.AccessRecord[] memory records = new IDataRegistryV2.AccessRecord[](len);
+        for (uint256 i = 0; i < len; ) {
+            uint256 opsLen = bundles[i].ops.length;
+            if (opsLen > MAX_ACCESS_BUNDLE_OPS) revert TooManyOps(i, opsLen, MAX_ACCESS_BUNDLE_OPS);
+            records[i] = bundles[i].record;
+            unchecked {
+                ++i;
+            }
+        }
+
+        // Step 1: record every access the registry accepts. Reverts only on
+        // batch-level preconditions (servers unset, paused, role) — per-item
+        // failures come back as `recorded[i] == false`.
+        recorded = dataRegistry.recordDataAccessBatch(records);
+
+        // Step 2: settle the legs of every recorded item, in batch order.
+        // Same `_payout` + `Settled` shape as every other bundle here, with
+        // an `AccessSettled` marker in front so the receipt groups legs per
+        // read without the calldata. Token / recipient logs interleave with
+        // `Settled`; the grouping rule is "this contract's `Settled` events
+        // after the marker", see IDataPortabilityEscrow.AccessSettled.
+        for (uint256 i = 0; i < len; ) {
+            if (recorded[i]) {
+                SettleOp[] calldata ops = bundles[i].ops;
+                uint256 opsLen = ops.length;
+                emit AccessSettled(i, bundles[i].record.recordId, opsLen);
+                for (uint256 j = 0; j < opsLen; ) {
+                    SettleOp calldata op = ops[j];
+                    _payout(op.from, op.to, op.asset, op.amount);
+                    emit Settled(op.from, op.to, op.ref, op.asset, op.amount, op.opKind);
+                    unchecked {
+                        ++j;
+                    }
+                }
+            }
             unchecked {
                 ++i;
             }

@@ -73,6 +73,18 @@ interface IDataPortabilityEscrow {
         bytes32 ref;
     }
 
+    /// @notice One item of `recordAccessAndSettleBatch`: an access record and
+    ///         the payment legs that pay for exactly that access.
+    /// @param record The access record, as `DataRegistryV2.recordDataAccess`
+    ///               takes it (owner, scope, version, accessor, recordId,
+    ///               server signature).
+    /// @param ops    Payouts executed only if `record` is committed; may be
+    ///               empty.
+    struct AccessBundle {
+        IDataRegistryV2.AccessRecord record;
+        SettleOp[] ops;
+    }
+
     // ====================== Errors ======================
 
     error ZeroAmount();
@@ -85,6 +97,9 @@ interface IDataPortabilityEscrow {
     error DataRegistryNotSet();
     error OpNotAllowed(address target, bytes4 selector);
     error CallDataTooShort();
+    error EmptyBatch();
+    error BatchTooLarge(uint256 size, uint256 max);
+    error TooManyOps(uint256 index, uint256 count, uint256 max);
 
     // ====================== Events ======================
 
@@ -138,6 +153,22 @@ interface IDataPortabilityEscrow {
     /// @notice Emitted for each call dispatched through `runOpAndSettle`.
     event OpExecuted(address indexed target, bytes4 indexed selector, bytes returnData);
 
+    /// @notice Emitted by `recordAccessAndSettleBatch` for each item whose
+    ///         record was committed, immediately BEFORE that item's `Settled`
+    ///         events. The next `opCount` `Settled` events EMITTED BY THIS
+    ///         CONTRACT belong to `recordId`, so a receipt alone groups
+    ///         payment legs per read. Logs from other contracts interleave
+    ///         (an ERC-20 leg emits the token's `Transfer` between the marker
+    ///         and its `Settled`; a native leg's recipient may emit anything),
+    ///         so consumers must filter on this contract's address and the
+    ///         `Settled` topic, never count raw logs. Not emitted for skipped
+    ///         items (the registry emits `DataAccessSkipped` for those) and
+    ///         not emitted by the single-record `recordAccessAndSettle`.
+    /// @param index    Position of the item in the submitted batch.
+    /// @param recordId The committed access record's id.
+    /// @param opCount  Number of `Settled` events that follow for this item.
+    event AccessSettled(uint256 indexed index, bytes32 indexed recordId, uint256 opCount);
+
     // ====================== Views ======================
 
     function version() external pure returns (uint256);
@@ -156,6 +187,14 @@ interface IDataPortabilityEscrow {
 
     /// @notice True iff the `(target, selector)` pair is allowed for `runOpAndSettle`.
     function isAllowedOp(address target, bytes4 selector) external view returns (bool);
+
+    /// @notice Hard cap on `recordAccessAndSettleBatch` length. Never above
+    ///         the registry's `MAX_ACCESS_BATCH`.
+    function MAX_ACCESS_BATCH() external view returns (uint256);
+
+    /// @notice Hard cap on `ops.length` of one `AccessBundle`. Together with
+    ///         `MAX_ACCESS_BATCH` it bounds the work of one batch call.
+    function MAX_ACCESS_BUNDLE_OPS() external view returns (uint256);
 
     /// @notice Enumerate every target address that currently has at least one allowed selector.
     function getAllowedTargets() external view returns (address[] memory);
@@ -279,6 +318,44 @@ interface IDataPortabilityEscrow {
         bytes calldata serverSignature,
         SettleOp[] calldata ops
     ) external;
+
+    /// @notice Record up to `MAX_ACCESS_BATCH` accesses and settle each one's
+    ///         payment legs in a single transaction.
+    ///
+    ///         Failure semantics — skip-and-emit per item, all-or-nothing
+    ///         within an item:
+    ///           - The registry validates every record independently
+    ///             (`DataRegistryV2.recordDataAccessBatch`). A record it
+    ///             rejects (duplicate recordId, bad signature, untrusted
+    ///             server, unknown version) is skipped: it emits
+    ///             `DataAccessSkipped` on the registry, and NONE of its `ops`
+    ///             are executed. Other items are unaffected.
+    ///           - A record it commits emits `DataAccessRecorded` on the
+    ///             registry, then `AccessSettled(index, recordId, opCount)`
+    ///             here, then one `Settled` per op — the same events as
+    ///             `recordAccessAndSettle` plus the `AccessSettled` marker.
+    ///           - A payment leg that cannot execute (`ZeroAmount`,
+    ///             `ZeroAddress`, `InsufficientBalance`, transfer failure)
+    ///             reverts the WHOLE batch, exactly as it reverts the single
+    ///             call: escrow balances only move through the facilitator,
+    ///             so the facilitator can simulate this away before
+    ///             broadcasting, whereas a record rejection can be raced by
+    ///             the facilitator's own earlier transactions.
+    ///         A receipt is therefore self-describing: per item exactly one
+    ///         of `DataAccessRecorded` / `DataAccessSkipped`, and for
+    ///         recorded items the escrow-emitted `Settled` events between its
+    ///         `AccessSettled` marker and the next marker are its legs (see
+    ///         `AccessSettled` for the filtering rule).
+    /// @dev    Reverts with `DataRegistryNotSet`, `EmptyBatch`,
+    ///         `BatchTooLarge`, `TooManyOps` (a bundle with more than
+    ///         `MAX_ACCESS_BUNDLE_OPS` legs), or the registry's batch-level
+    ///         errors (`DataPortabilityServersNotSet`, `EnforcedPause`).
+    /// @param  bundles  Items to process, in order.
+    /// @return recorded `recorded[i]` is true iff `bundles[i].record` was
+    ///                  committed (and its ops executed).
+    function recordAccessAndSettleBatch(AccessBundle[] calldata bundles)
+        external
+        returns (bool[] memory recorded);
 
     /// @notice Atomically register a permission and execute associated payouts.
     ///         Both succeed or both revert.

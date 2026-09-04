@@ -3,6 +3,7 @@ import chaiAsPromised from "chai-as-promised";
 import { ethers, upgrades } from "hardhat";
 import {
   loadFixture,
+  takeSnapshot,
   time,
 } from "@nomicfoundation/hardhat-network-helpers";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
@@ -2010,6 +2011,494 @@ describe("DataPortabilityEscrow", () => {
               [],
             ),
         ).to.be.revertedWithCustomError(escrow, "EnforcedPause");
+      });
+    });
+  });
+
+  describe("recordAccessAndSettleBatch (integration with DataRegistryV2)", () => {
+    let servers: DataPortabilityServersV2Implementation;
+    let registry: DataRegistryV2Implementation;
+    let server2: ethers.Wallet; // user2's trusted server (fresh key, never funded)
+    const scope = "vana.profile";
+    const scope2 = "vana.health";
+    const dataHash = ethers.id("data-1");
+    const metadataHash = ethers.id("meta-1");
+    const rid = (label: string) => ethers.id(label);
+
+    let RecordIdAlreadyUsedSel: string;
+    let UntrustedServerSel: string;
+    let UnknownVersionSel: string;
+
+    const eip712Domain = async (verifyingContract: string) => ({
+      name: "Vana Data Portability",
+      version: "1",
+      chainId: (await ethers.provider.getNetwork()).chainId,
+      verifyingContract,
+    });
+
+    const RecordDataAccessTypes = {
+      RecordDataAccess: [
+        { name: "ownerAddress", type: "address" },
+        { name: "scope", type: "string" },
+        { name: "version", type: "uint256" },
+        { name: "accessor", type: "address" },
+        { name: "recordId", type: "bytes32" },
+      ],
+    };
+
+    const registerServer = async (
+      serverOwner: HardhatEthersSigner,
+      serverSignerAddress: string,
+    ) => {
+      const registration = {
+        ownerAddress: serverOwner.address,
+        serverAddress: serverSignerAddress,
+        publicKey: "pubkey-" + serverSignerAddress.slice(2, 8),
+        serverUrl: "https://server.example",
+      };
+      const regSignature = await serverOwner.signTypedData(
+        await eip712Domain(await servers.getAddress()),
+        {
+          ServerRegistration: [
+            { name: "ownerAddress", type: "address" },
+            { name: "serverAddress", type: "address" },
+            { name: "publicKey", type: "string" },
+            { name: "serverUrl", type: "string" },
+          ],
+        },
+        registration,
+      );
+      await servers
+        .connect(relayer)
+        .registerServerWithSignature(registration, regSignature);
+    };
+
+    const record = async (
+      signer: HardhatEthersSigner | ethers.Wallet,
+      params: {
+        ownerAddress: string;
+        scope?: string;
+        version?: bigint;
+        accessor?: string;
+        recordId: string;
+      },
+    ) => {
+      const r = {
+        ownerAddress: params.ownerAddress,
+        scope: params.scope ?? scope,
+        version: params.version ?? 1n,
+        accessor: params.accessor ?? user2.address,
+        recordId: params.recordId,
+      };
+      const signature = await signer.signTypedData(
+        await eip712Domain(await registry.getAddress()),
+        RecordDataAccessTypes,
+        r,
+      );
+      return { ...r, signature };
+    };
+
+    const leg = (from: string, amount: bigint, ref = ZERO_REF, asset = NATIVE) => ({
+      from,
+      to: payee.address,
+      asset,
+      amount,
+      opKind: OpKind.DataAccess,
+      ref,
+    });
+
+    // Every log of a receipt, parsed against both contracts, in receipt order.
+    const parsedLogs = async (txHash: string) => {
+      const rc = await ethers.provider.getTransactionReceipt(txHash);
+      const regAddr = (await registry.getAddress()).toLowerCase();
+      const escAddr = (await escrow.getAddress()).toLowerCase();
+      return rc!.logs.map((l) => {
+        const addr = l.address.toLowerCase();
+        const iface =
+          addr === regAddr
+            ? registry.interface
+            : addr === escAddr
+              ? escrow.interface
+              : null;
+        const parsed = iface
+          ? iface.parseLog({ topics: [...l.topics], data: l.data })
+          : null;
+        return {
+          contract: addr === regAddr ? "registry" : addr === escAddr ? "escrow" : "other",
+          name: parsed?.name ?? "?",
+          args: parsed?.args,
+          topics: [...l.topics],
+          data: l.data,
+        };
+      });
+    };
+
+    beforeEach(async () => {
+      const ServersFactory = await ethers.getContractFactory(
+        "DataPortabilityServersV2Implementation",
+      );
+      const serversDeploy = await upgrades.deployProxy(
+        ServersFactory,
+        [ethers.ZeroAddress, owner.address],
+        { kind: "uups" },
+      );
+      servers = await ethers.getContractAt(
+        "DataPortabilityServersV2Implementation",
+        serversDeploy.target,
+      );
+
+      const RegistryFactory = await ethers.getContractFactory(
+        "DataRegistryV2Implementation",
+      );
+      const registryDeploy = await upgrades.deployProxy(
+        RegistryFactory,
+        [owner.address],
+        { kind: "uups" },
+      );
+      registry = await ethers.getContractAt(
+        "DataRegistryV2Implementation",
+        registryDeploy.target,
+      );
+      await registry
+        .connect(owner)
+        .setDataPortabilityServers(await servers.getAddress());
+      await registry
+        .connect(owner)
+        .grantRole(
+          await registry.ACCESS_RECORDER_ROLE(),
+          await escrow.getAddress(),
+        );
+
+      server2 = ethers.Wallet.createRandom();
+      await registerServer(user1, serverSigner.address);
+      await registerServer(user2, server2.address);
+
+      await registry.connect(user1).addData(scope, dataHash, metadataHash);
+      await registry.connect(user2).addData(scope2, dataHash, metadataHash);
+
+      await depositNativeFor(user1, parseEther("5"));
+      await depositNativeFor(user2, parseEther("5"));
+
+      RecordIdAlreadyUsedSel = registry.interface.getError("RecordIdAlreadyUsed")!.selector;
+      UntrustedServerSel = registry.interface.getError("UntrustedServer")!.selector;
+      UnknownVersionSel = registry.interface.getError("UnknownVersion")!.selector;
+    });
+
+    it("should revert when the data registry is unset", async function () {
+      const r = await record(serverSigner, { ownerAddress: user1.address, recordId: rid("e-unset") });
+      await expect(
+        escrow.connect(facilitator).recordAccessAndSettleBatch([{ record: r, ops: [] }]),
+      ).to.be.revertedWithCustomError(escrow, "DataRegistryNotSet");
+    });
+
+    describe("with registry wired", () => {
+      beforeEach(async () => {
+        await escrow.connect(owner).setDataRegistry(await registry.getAddress());
+      });
+
+      it("should only be callable by the facilitator and respect pause", async function () {
+        const r = await record(serverSigner, { ownerAddress: user1.address, recordId: rid("e-gate") });
+        await expect(
+          escrow.connect(user1).recordAccessAndSettleBatch([{ record: r, ops: [] }]),
+        ).to.be.revertedWithCustomError(escrow, "AccessControlUnauthorizedAccount");
+        await escrow.connect(owner).pause();
+        await expect(
+          escrow.connect(facilitator).recordAccessAndSettleBatch([{ record: r, ops: [] }]),
+        ).to.be.revertedWithCustomError(escrow, "EnforcedPause");
+      });
+
+      it("should revert on an empty batch", async function () {
+        await expect(
+          escrow.connect(facilitator).recordAccessAndSettleBatch([]),
+        ).to.be.revertedWithCustomError(escrow, "EmptyBatch");
+      });
+
+      it("should bubble the registry's batch-level revert (paused registry)", async function () {
+        const r = await record(serverSigner, { ownerAddress: user1.address, recordId: rid("e-regpause") });
+        await registry.connect(owner).pause();
+        await expect(
+          escrow.connect(facilitator).recordAccessAndSettleBatch([{ record: r, ops: [] }]),
+        ).to.be.revertedWithCustomError(registry, "EnforcedPause");
+      });
+
+      it("should accept MAX_ACCESS_BATCH items and reject one more", async function () {
+        const max = Number(await escrow.MAX_ACCESS_BATCH());
+        max.should.eq(200);
+        (await registry.MAX_ACCESS_BATCH()).should.eq(BigInt(max));
+        const bundles = [];
+        for (let i = 0; i <= max; i++) {
+          bundles.push({
+            record: await record(serverSigner, { ownerAddress: user1.address, recordId: rid(`e-max-${i}`) }),
+            ops: [leg(user1.address, parseEther("0.01"))],
+          });
+        }
+        await expect(escrow.connect(facilitator).recordAccessAndSettleBatch(bundles))
+          .to.be.revertedWithCustomError(escrow, "BatchTooLarge")
+          .withArgs(max + 1, max);
+
+        const full = bundles.slice(0, max);
+        const recorded = await escrow.connect(facilitator).recordAccessAndSettleBatch.staticCall(full);
+        recorded.length.should.eq(max);
+        recorded.every((x: boolean) => x).should.eq(true);
+        await escrow.connect(facilitator).recordAccessAndSettleBatch(full);
+        (await registry.totalAccesses(user1.address, scope)).should.eq(max);
+        (await escrow.balanceOf(user1.address, NATIVE)).should.eq(
+          parseEther("5") - parseEther("0.01") * BigInt(max),
+        );
+      });
+
+      it("should reject a bundle with more than MAX_ACCESS_BUNDLE_OPS legs", async function () {
+        const max = Number(await escrow.MAX_ACCESS_BUNDLE_OPS());
+        max.should.eq(8);
+        const r = await record(serverSigner, { ownerAddress: user1.address, recordId: rid("e-ops") });
+        const ops = Array.from({ length: max + 1 }, () => leg(user1.address, parseEther("0.1")));
+        await expect(escrow.connect(facilitator).recordAccessAndSettleBatch([{ record: r, ops }]))
+          .to.be.revertedWithCustomError(escrow, "TooManyOps")
+          .withArgs(0, max + 1, max);
+        (await registry.isRecordIdUsed(r.recordId)).should.eq(false);
+
+        const recorded = await escrow
+          .connect(facilitator)
+          .recordAccessAndSettleBatch.staticCall([{ record: r, ops: ops.slice(0, max) }]);
+        recorded.should.deep.eq([true]);
+      });
+
+      it("batch of 1 should match recordAccessAndSettle: identical registry + Settled events, plus one AccessSettled marker", async function () {
+        const grantRef = rid("grant-ref");
+        const r = await record(serverSigner, { ownerAddress: user1.address, recordId: rid("e-equiv") });
+        const ops = [leg(user1.address, parseEther("1"), grantRef)];
+
+        const snap = await takeSnapshot();
+        const singleTx = await escrow
+          .connect(facilitator)
+          .recordAccessAndSettle(r.ownerAddress, r.scope, r.version, r.accessor, r.recordId, r.signature, ops);
+        const singleLogs = await parsedLogs(singleTx.hash);
+        const singleBal = await escrow.balanceOf(user1.address, NATIVE);
+        const singlePayee = await ethers.provider.getBalance(payee.address);
+        const singleTotal = await registry.totalAccesses(user1.address, scope);
+        await snap.restore();
+
+        const recorded = await escrow
+          .connect(facilitator)
+          .recordAccessAndSettleBatch.staticCall([{ record: r, ops }]);
+        recorded.should.deep.eq([true]);
+        const batchTx = await escrow
+          .connect(facilitator)
+          .recordAccessAndSettleBatch([{ record: r, ops }]);
+        const batchLogs = await parsedLogs(batchTx.hash);
+
+        singleLogs.map((l) => l.name).should.deep.eq(["DataAccessRecorded", "Settled"]);
+        batchLogs.map((l) => l.name).should.deep.eq(["DataAccessRecorded", "AccessSettled", "Settled"]);
+        // byte-identical shared events
+        const strip = (l: { topics: string[]; data: string }) => ({ topics: l.topics, data: l.data });
+        strip(batchLogs[0]).should.deep.eq(strip(singleLogs[0]));
+        strip(batchLogs[2]).should.deep.eq(strip(singleLogs[1]));
+        batchLogs[1].args!.index.should.eq(0n);
+        batchLogs[1].args!.recordId.should.eq(r.recordId);
+        batchLogs[1].args!.opCount.should.eq(1n);
+
+        (await escrow.balanceOf(user1.address, NATIVE)).should.eq(singleBal);
+        (await ethers.provider.getBalance(payee.address)).should.eq(singlePayee);
+        (await registry.totalAccesses(user1.address, scope)).should.eq(singleTotal);
+      });
+
+      it("should skip the second occurrence of a duplicate recordId inside a batch and not pay its legs", async function () {
+        const recordId = rid("e-dup-in");
+        const a = await record(serverSigner, { ownerAddress: user1.address, recordId });
+        const b = await record(serverSigner, { ownerAddress: user1.address, recordId, accessor: payee.address });
+        const c = await record(serverSigner, { ownerAddress: user1.address, recordId: rid("e-dup-in-2") });
+        const bundles = [
+          { record: a, ops: [leg(user1.address, parseEther("1"))] },
+          { record: b, ops: [leg(user1.address, parseEther("1"))] },
+          { record: c, ops: [leg(user1.address, parseEther("1"))] },
+        ];
+        const recorded = await escrow.connect(facilitator).recordAccessAndSettleBatch.staticCall(bundles);
+        recorded.should.deep.eq([true, false, true]);
+        const tx = await escrow.connect(facilitator).recordAccessAndSettleBatch(bundles);
+        const logs = await parsedLogs(tx.hash);
+        logs.map((l) => l.name).should.deep.eq([
+          "DataAccessRecorded",
+          "DataAccessSkipped",
+          "DataAccessRecorded",
+          "AccessSettled",
+          "Settled",
+          "AccessSettled",
+          "Settled",
+        ]);
+        logs[1].args!.reason.should.eq(RecordIdAlreadyUsedSel);
+        logs[3].args!.index.should.eq(0n);
+        logs[5].args!.index.should.eq(2n);
+        (await escrow.balanceOf(user1.address, NATIVE)).should.eq(parseEther("3"));
+        (await registry.totalAccesses(user1.address, scope)).should.eq(2);
+      });
+
+      it("should skip a recordId already used by an earlier batch (or single call) and not pay its legs", async function () {
+        const recordId = rid("e-dup-across");
+        const a = await record(serverSigner, { ownerAddress: user1.address, recordId });
+        const b = await record(serverSigner, { ownerAddress: user1.address, recordId: rid("e-dup-across-2") });
+        await escrow.connect(facilitator).recordAccessAndSettleBatch([{ record: a, ops: [leg(user1.address, parseEther("1"))] }]);
+
+        const bundles = [
+          { record: a, ops: [leg(user1.address, parseEther("1"))] },
+          { record: b, ops: [leg(user1.address, parseEther("1"))] },
+        ];
+        const recorded = await escrow.connect(facilitator).recordAccessAndSettleBatch.staticCall(bundles);
+        recorded.should.deep.eq([false, true]);
+        await expect(escrow.connect(facilitator).recordAccessAndSettleBatch(bundles))
+          .to.emit(registry, "DataAccessSkipped")
+          .withArgs(recordId, 0, RecordIdAlreadyUsedSel);
+        (await escrow.balanceOf(user1.address, NATIVE)).should.eq(parseEther("3"));
+        (await registry.totalAccesses(user1.address, scope)).should.eq(2);
+
+        // A single call on the same recordId still reverts as before.
+        await expect(
+          escrow.connect(facilitator).recordAccessAndSettle(a.ownerAddress, a.scope, a.version, a.accessor, a.recordId, a.signature, []),
+        ).to.be.revertedWithCustomError(registry, "RecordIdAlreadyUsed");
+      });
+
+      it("should skip only the item signed by an untrusted server and not pay its legs", async function () {
+        const good = await record(serverSigner, { ownerAddress: user1.address, recordId: rid("e-ut-1") });
+        const bad = await record(server2, { ownerAddress: user1.address, recordId: rid("e-ut-2") }); // user2's server, user1's data
+        const good2 = await record(serverSigner, { ownerAddress: user1.address, recordId: rid("e-ut-3") });
+        const bundles = [
+          { record: good, ops: [leg(user1.address, parseEther("1"))] },
+          { record: bad, ops: [leg(user1.address, parseEther("1"))] },
+          { record: good2, ops: [leg(user1.address, parseEther("1"))] },
+        ];
+        const recorded = await escrow.connect(facilitator).recordAccessAndSettleBatch.staticCall(bundles);
+        recorded.should.deep.eq([true, false, true]);
+        await expect(escrow.connect(facilitator).recordAccessAndSettleBatch(bundles))
+          .to.emit(registry, "DataAccessSkipped")
+          .withArgs(bad.recordId, 1, UntrustedServerSel);
+        (await registry.isRecordIdUsed(bad.recordId)).should.eq(false);
+        (await escrow.balanceOf(user1.address, NATIVE)).should.eq(parseEther("3"));
+      });
+
+      it("should skip only the item with an unknown version and not pay its legs", async function () {
+        const good = await record(serverSigner, { ownerAddress: user1.address, recordId: rid("e-uv-1") });
+        const bad = await record(serverSigner, { ownerAddress: user1.address, version: 2n, recordId: rid("e-uv-2") });
+        const bundles = [
+          { record: bad, ops: [leg(user1.address, parseEther("1"))] },
+          { record: good, ops: [leg(user1.address, parseEther("1"))] },
+        ];
+        const recorded = await escrow.connect(facilitator).recordAccessAndSettleBatch.staticCall(bundles);
+        recorded.should.deep.eq([false, true]);
+        await expect(escrow.connect(facilitator).recordAccessAndSettleBatch(bundles))
+          .to.emit(registry, "DataAccessSkipped")
+          .withArgs(bad.recordId, 0, UnknownVersionSel);
+        (await escrow.balanceOf(user1.address, NATIVE)).should.eq(parseEther("4"));
+        (await registry.accessCount(user1.address, scope, 2)).should.eq(0);
+      });
+
+      it("should settle a mixed-owner batch against each item's own payer", async function () {
+        const u1 = await record(serverSigner, { ownerAddress: user1.address, recordId: rid("e-mix-1") });
+        const u2 = await record(server2, { ownerAddress: user2.address, scope: scope2, accessor: user1.address, recordId: rid("e-mix-2") });
+        const cross = await record(serverSigner, { ownerAddress: user2.address, scope: scope2, recordId: rid("e-mix-3") }); // user1's server, user2's data
+        const bundles = [
+          { record: u1, ops: [leg(user2.address, parseEther("1"))] }, // user2 (accessor) pays for reading user1
+          { record: u2, ops: [leg(user1.address, parseEther("2"))] }, // user1 (accessor) pays for reading user2
+          { record: cross, ops: [leg(user1.address, parseEther("1"))] },
+        ];
+        const recorded = await escrow.connect(facilitator).recordAccessAndSettleBatch.staticCall(bundles);
+        recorded.should.deep.eq([true, true, false]);
+        const tx = escrow.connect(facilitator).recordAccessAndSettleBatch(bundles);
+        await expect(tx)
+          .to.emit(registry, "DataAccessRecorded")
+          .withArgs(await registry.dataPointId(user2.address, scope2), 1n, user1.address, server2.address, u2.recordId, 1n, 1n);
+        await expect(tx).to.emit(registry, "DataAccessSkipped").withArgs(cross.recordId, 2, UntrustedServerSel);
+        (await escrow.balanceOf(user1.address, NATIVE)).should.eq(parseEther("3"));
+        (await escrow.balanceOf(user2.address, NATIVE)).should.eq(parseEther("4"));
+        (await registry.totalAccesses(user1.address, scope)).should.eq(1);
+        (await registry.totalAccesses(user2.address, scope2)).should.eq(1);
+      });
+
+      it("should revert the whole batch when any payment leg fails, recording nothing", async function () {
+        const a = await record(serverSigner, { ownerAddress: user1.address, recordId: rid("e-leg-1") });
+        const b = await record(serverSigner, { ownerAddress: user1.address, recordId: rid("e-leg-2") });
+        await expect(
+          escrow.connect(facilitator).recordAccessAndSettleBatch([
+            { record: a, ops: [leg(user1.address, parseEther("1"))] },
+            { record: b, ops: [leg(user1.address, parseEther("100"))] },
+          ]),
+        ).to.be.revertedWithCustomError(escrow, "InsufficientBalance");
+        (await registry.isRecordIdUsed(a.recordId)).should.eq(false);
+        (await registry.isRecordIdUsed(b.recordId)).should.eq(false);
+        (await escrow.balanceOf(user1.address, NATIVE)).should.eq(parseEther("5"));
+
+        await expect(
+          escrow.connect(facilitator).recordAccessAndSettleBatch([
+            { record: a, ops: [leg(user1.address, 0n)] },
+          ]),
+        ).to.be.revertedWithCustomError(escrow, "ZeroAmount");
+      });
+
+      it("should group Settled legs per read in receipt order via AccessSettled markers (ERC-20 Transfer logs interleave)", async function () {
+        await depositTokenFor(user2, parseEther("10"));
+        const tokenAddr = await token.getAddress();
+        const a = await record(serverSigner, { ownerAddress: user1.address, recordId: rid("e-grp-1") });
+        const skipped = await record(serverSigner, { ownerAddress: user1.address, version: 7n, recordId: rid("e-grp-2") });
+        const noLegs = await record(serverSigner, { ownerAddress: user1.address, recordId: rid("e-grp-3") });
+        const twoLegs = await record(server2, { ownerAddress: user2.address, scope: scope2, recordId: rid("e-grp-4") });
+        const refA = rid("ref-a");
+        const refB = rid("ref-b");
+        const bundles = [
+          { record: a, ops: [leg(user1.address, parseEther("1"), refA)] },
+          { record: skipped, ops: [leg(user1.address, parseEther("1"))] },
+          { record: noLegs, ops: [] },
+          // one ERC-20 leg (emits the token's Transfer between the marker and Settled) + one native leg
+          { record: twoLegs, ops: [leg(user2.address, parseEther("1"), refB, tokenAddr), leg(user2.address, parseEther("0.5"), refB)] },
+        ];
+        const tx = await escrow.connect(facilitator).recordAccessAndSettleBatch(bundles);
+        const logs = await parsedLogs(tx.hash);
+        logs.map((l) => `${l.contract}:${l.name}`).should.deep.eq([
+          "registry:DataAccessRecorded",
+          "registry:DataAccessSkipped",
+          "registry:DataAccessRecorded",
+          "registry:DataAccessRecorded",
+          "escrow:AccessSettled",
+          "escrow:Settled",
+          "escrow:AccessSettled",
+          "escrow:AccessSettled",
+          "other:?", // ERC-20 Transfer emitted by the token inside _payout
+          "escrow:Settled",
+          "escrow:Settled",
+        ]);
+        // Reconstruct per-read grouping from the receipt alone, filtering on
+        // the escrow's own Settled events (token / recipient logs interleave).
+        const groups: Record<string, { ref: string; amount: bigint }[]> = {};
+        let current: string | null = null;
+        for (const l of logs) {
+          if (l.contract !== "escrow") continue;
+          if (l.name === "AccessSettled") {
+            current = l.args!.recordId;
+            groups[current!] = [];
+            Number(l.args!.opCount).should.eq(bundles[Number(l.args!.index)].ops.length);
+          } else if (l.name === "Settled") {
+            groups[current!].push({ ref: l.args!.ref, amount: l.args!.amount });
+          }
+        }
+        Object.keys(groups).should.deep.eq([a.recordId, noLegs.recordId, twoLegs.recordId]);
+        groups[a.recordId].should.deep.eq([{ ref: refA, amount: parseEther("1") }]);
+        groups[noLegs.recordId].should.deep.eq([]);
+        groups[twoLegs.recordId].should.deep.eq([
+          { ref: refB, amount: parseEther("1") },
+          { ref: refB, amount: parseEther("0.5") },
+        ]);
+      });
+
+      it("should settle ERC-20 legs in a batch", async function () {
+        await depositTokenFor(user1, parseEther("10"));
+        const tokenAddr = await token.getAddress();
+        const a = await record(serverSigner, { ownerAddress: user1.address, recordId: rid("e-erc20-1") });
+        const b = await record(serverSigner, { ownerAddress: user1.address, recordId: rid("e-erc20-2") });
+        const payeeBefore = await token.balanceOf(payee.address);
+        await escrow.connect(facilitator).recordAccessAndSettleBatch([
+          { record: a, ops: [leg(user1.address, parseEther("1"), ZERO_REF, tokenAddr)] },
+          { record: b, ops: [leg(user1.address, parseEther("2"), ZERO_REF, tokenAddr)] },
+        ]);
+        (await escrow.balanceOf(user1.address, tokenAddr)).should.eq(parseEther("7"));
+        (await token.balanceOf(payee.address)).should.eq(payeeBefore + parseEther("3"));
+        (await registry.totalAccesses(user1.address, scope)).should.eq(2);
       });
     });
   });
