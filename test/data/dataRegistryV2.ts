@@ -1,7 +1,7 @@
 import chai, { expect, should } from "chai";
 import chaiAsPromised from "chai-as-promised";
 import { ethers, upgrades } from "hardhat";
-import { time } from "@nomicfoundation/hardhat-network-helpers";
+import { takeSnapshot, time } from "@nomicfoundation/hardhat-network-helpers";
 import {
   DataRegistryV2Implementation,
   DataPortabilityServersV2Implementation,
@@ -1790,6 +1790,461 @@ describe("DataRegistryV2", () => {
   });
 
   // ====================== Pause ======================
+
+  describe("recordDataAccessBatch", () => {
+    const rid = (label: string) => ethers.keccak256(ethers.toUtf8Bytes(label));
+
+    let RecordIdAlreadyUsedSel: string;
+    let InvalidSignatureSel: string;
+    let UntrustedServerSel: string;
+    let UnknownVersionSel: string;
+
+    const record = async (
+      signer: HardhatEthersSigner,
+      ownerAddress: string,
+      scope: string,
+      version: bigint,
+      accessor: string,
+      recordId: string,
+    ) => ({
+      ownerAddress,
+      scope,
+      version,
+      accessor,
+      recordId,
+      signature: await signRecordDataAccess(
+        signer,
+        ownerAddress,
+        scope,
+        version,
+        accessor,
+        recordId,
+      ),
+    });
+
+    beforeEach(async () => {
+      await deploy();
+      await registry.connect(user1).addData(SCOPE, DATA_HASH, META_HASH);
+      await registry
+        .connect(owner)
+        .grantRole(ACCESS_RECORDER_ROLE, recorder.address);
+      RecordIdAlreadyUsedSel = registry.interface.getError(
+        "RecordIdAlreadyUsed",
+      )!.selector;
+      InvalidSignatureSel =
+        registry.interface.getError("InvalidSignature")!.selector;
+      UntrustedServerSel =
+        registry.interface.getError("UntrustedServer")!.selector;
+      UnknownVersionSel =
+        registry.interface.getError("UnknownVersion")!.selector;
+    });
+
+    const setupTrustedServer = async () => {
+      await wireServers();
+      await registerServer(user1, server1);
+    };
+
+    // Registry-emitted logs of a tx, normalized so two txs can be compared
+    // for byte-identical event content (topics + data), ignoring tx/block
+    // metadata.
+    const registryLogs = async (txHash: string) => {
+      const rc = await ethers.provider.getTransactionReceipt(txHash);
+      const addr = (await registry.getAddress()).toLowerCase();
+      return rc!.logs
+        .filter((l) => l.address.toLowerCase() === addr)
+        .map((l) => ({ topics: [...l.topics], data: l.data }));
+    };
+
+    it("should reject a caller without ACCESS_RECORDER_ROLE", async function () {
+      await setupTrustedServer();
+      const r = await record(
+        server1,
+        user1.address,
+        SCOPE,
+        1n,
+        other.address,
+        rid("b-role"),
+      );
+      await expect(
+        registry.connect(user1).recordDataAccessBatch([r]),
+      ).to.be.revertedWithCustomError(
+        registry,
+        "AccessControlUnauthorizedAccount",
+      );
+    });
+
+    it("should revert when the servers registry is unset", async function () {
+      const r = await record(
+        server1,
+        user1.address,
+        SCOPE,
+        1n,
+        other.address,
+        rid("b-noservers"),
+      );
+      await expect(
+        registry.connect(recorder).recordDataAccessBatch([r]),
+      ).to.be.revertedWithCustomError(registry, "DataPortabilityServersNotSet");
+    });
+
+    it("should revert when paused", async function () {
+      await setupTrustedServer();
+      const r = await record(
+        server1,
+        user1.address,
+        SCOPE,
+        1n,
+        other.address,
+        rid("b-paused"),
+      );
+      await registry.connect(owner).pause();
+      await expect(
+        registry.connect(recorder).recordDataAccessBatch([r]),
+      ).to.be.revertedWithCustomError(registry, "EnforcedPause");
+    });
+
+    it("should revert on an empty batch", async function () {
+      await setupTrustedServer();
+      await expect(
+        registry.connect(recorder).recordDataAccessBatch([]),
+      ).to.be.revertedWithCustomError(registry, "EmptyBatch");
+    });
+
+    it("should accept MAX_ACCESS_BATCH items and reject one more", async function () {
+      await setupTrustedServer();
+      const max = Number(await registry.MAX_ACCESS_BATCH());
+      max.should.eq(200);
+      const records = [];
+      for (let i = 0; i <= max; i++) {
+        records.push(
+          await record(
+            server1,
+            user1.address,
+            SCOPE,
+            1n,
+            other.address,
+            rid(`b-max-${i}`),
+          ),
+        );
+      }
+      await expect(
+        registry.connect(recorder).recordDataAccessBatch(records),
+      )
+        .to.be.revertedWithCustomError(registry, "BatchTooLarge")
+        .withArgs(max + 1, max);
+
+      const full = records.slice(0, max);
+      const recorded = await registry
+        .connect(recorder)
+        .recordDataAccessBatch.staticCall(full);
+      recorded.length.should.eq(max);
+      recorded.every((x: boolean) => x).should.eq(true);
+      await registry.connect(recorder).recordDataAccessBatch(full);
+      (await registry.totalAccesses(user1.address, SCOPE)).should.eq(max);
+      (await registry.accessCount(user1.address, SCOPE, 1)).should.eq(max);
+      (await registry.isRecordIdUsed(rid(`b-max-${max - 1}`))).should.eq(true);
+      (await registry.isRecordIdUsed(rid(`b-max-${max}`))).should.eq(false);
+    });
+
+    it("batch of 1 should produce byte-identical events and state to recordDataAccess", async function () {
+      await setupTrustedServer();
+      const recordId = rid("b-equiv");
+      const r = await record(
+        server1,
+        user1.address,
+        SCOPE,
+        1n,
+        other.address,
+        recordId,
+      );
+
+      const snap = await takeSnapshot();
+      const singleTx = await registry
+        .connect(recorder)
+        .recordDataAccess(
+          r.ownerAddress,
+          r.scope,
+          r.version,
+          r.accessor,
+          r.recordId,
+          r.signature,
+        );
+      const singleLogs = await registryLogs(singleTx.hash);
+      const singleInfo = await registry.dataPoints(user1.address, SCOPE);
+      const singleCount = await registry.accessCount(user1.address, SCOPE, 1);
+      await snap.restore();
+
+      const recorded = await registry
+        .connect(recorder)
+        .recordDataAccessBatch.staticCall([r]);
+      recorded.should.deep.eq([true]);
+      const batchTx = await registry
+        .connect(recorder)
+        .recordDataAccessBatch([r]);
+      const batchLogs = await registryLogs(batchTx.hash);
+
+      singleLogs.length.should.eq(1);
+      batchLogs.should.deep.eq(singleLogs);
+      (await registry.dataPoints(user1.address, SCOPE)).totalAccesses.should.eq(
+        singleInfo.totalAccesses,
+      );
+      (await registry.accessCount(user1.address, SCOPE, 1)).should.eq(
+        singleCount,
+      );
+      (await registry.isRecordIdUsed(recordId)).should.eq(true);
+    });
+
+    it("batch of 1 should skip with the selector recordDataAccess reverts with", async function () {
+      await setupTrustedServer();
+      await registerServer(user2, server2); // server2 belongs to user2, not user1
+
+      // (a) duplicate recordId
+      const dup = await record(
+        server1,
+        user1.address,
+        SCOPE,
+        1n,
+        other.address,
+        rid("b-sel-dup"),
+      );
+      await registry
+        .connect(recorder)
+        .recordDataAccess(
+          dup.ownerAddress,
+          dup.scope,
+          dup.version,
+          dup.accessor,
+          dup.recordId,
+          dup.signature,
+        );
+      await expect(
+        registry
+          .connect(recorder)
+          .recordDataAccess(
+            dup.ownerAddress,
+            dup.scope,
+            dup.version,
+            dup.accessor,
+            dup.recordId,
+            dup.signature,
+          ),
+      ).to.be.revertedWithCustomError(registry, "RecordIdAlreadyUsed");
+
+      // (b) untrusted server
+      const untrusted = await record(
+        server2,
+        user1.address,
+        SCOPE,
+        1n,
+        other.address,
+        rid("b-sel-untrusted"),
+      );
+      await expect(
+        registry
+          .connect(recorder)
+          .recordDataAccess(
+            untrusted.ownerAddress,
+            untrusted.scope,
+            untrusted.version,
+            untrusted.accessor,
+            untrusted.recordId,
+            untrusted.signature,
+          ),
+      ).to.be.revertedWithCustomError(registry, "UntrustedServer");
+
+      // (c) unknown version
+      const unknown = await record(
+        server1,
+        user1.address,
+        SCOPE,
+        2n,
+        other.address,
+        rid("b-sel-unknown"),
+      );
+      await expect(
+        registry
+          .connect(recorder)
+          .recordDataAccess(
+            unknown.ownerAddress,
+            unknown.scope,
+            unknown.version,
+            unknown.accessor,
+            unknown.recordId,
+            unknown.signature,
+          ),
+      ).to.be.revertedWithCustomError(registry, "UnknownVersion");
+
+      // (d) malformed signature: single path reverts inside ECDSA; the batch
+      //     reports it as InvalidSignature so one bad item cannot abort the batch.
+      const malformed = { ...unknown, version: 1n, recordId: rid("b-sel-bad"), signature: "0x1234" };
+      await expect(
+        registry
+          .connect(recorder)
+          .recordDataAccess(
+            malformed.ownerAddress,
+            malformed.scope,
+            malformed.version,
+            malformed.accessor,
+            malformed.recordId,
+            malformed.signature,
+          ),
+      ).to.be.revertedWithCustomError(registry, "ECDSAInvalidSignatureLength");
+
+      const cases: [typeof dup, string][] = [
+        [dup, RecordIdAlreadyUsedSel],
+        [untrusted, UntrustedServerSel],
+        [unknown, UnknownVersionSel],
+        [malformed, InvalidSignatureSel],
+      ];
+      for (const [r, sel] of cases) {
+        const recorded = await registry
+          .connect(recorder)
+          .recordDataAccessBatch.staticCall([r]);
+        recorded.should.deep.eq([false]);
+        await expect(registry.connect(recorder).recordDataAccessBatch([r]))
+          .to.emit(registry, "DataAccessSkipped")
+          .withArgs(r.recordId, 0, sel);
+        (await registry.isRecordIdUsed(r.recordId)).should.eq(
+          r === dup, // only the duplicate was used before this batch
+        );
+      }
+      (await registry.totalAccesses(user1.address, SCOPE)).should.eq(1);
+    });
+
+    it("should record the first occurrence of a duplicate recordId inside a batch and skip the rest", async function () {
+      await setupTrustedServer();
+      const recordId = rid("b-dup-in");
+      const a = await record(server1, user1.address, SCOPE, 1n, other.address, recordId);
+      const b = await record(server1, user1.address, SCOPE, 1n, user2.address, recordId);
+      const c = await record(server1, user1.address, SCOPE, 1n, other.address, rid("b-dup-in-2"));
+
+      const recorded = await registry
+        .connect(recorder)
+        .recordDataAccessBatch.staticCall([a, b, c]);
+      recorded.should.deep.eq([true, false, true]);
+
+      const tx = registry.connect(recorder).recordDataAccessBatch([a, b, c]);
+      const id = dpId(user1.address, SCOPE);
+      await expect(tx)
+        .to.emit(registry, "DataAccessRecorded")
+        .withArgs(id, 1n, other.address, server1.address, recordId, 1n, 1n);
+      await expect(tx)
+        .to.emit(registry, "DataAccessSkipped")
+        .withArgs(recordId, 1, RecordIdAlreadyUsedSel);
+      await expect(tx)
+        .to.emit(registry, "DataAccessRecorded")
+        .withArgs(id, 1n, other.address, server1.address, c.recordId, 2n, 2n);
+      (await registry.totalAccesses(user1.address, SCOPE)).should.eq(2);
+    });
+
+    it("should skip a recordId already used by an earlier batch", async function () {
+      await setupTrustedServer();
+      const recordId = rid("b-dup-across");
+      const a = await record(server1, user1.address, SCOPE, 1n, other.address, recordId);
+      const b = await record(server1, user1.address, SCOPE, 1n, other.address, rid("b-dup-across-2"));
+
+      await registry.connect(recorder).recordDataAccessBatch([a]);
+      const recorded = await registry
+        .connect(recorder)
+        .recordDataAccessBatch.staticCall([a, b]);
+      recorded.should.deep.eq([false, true]);
+      await expect(registry.connect(recorder).recordDataAccessBatch([a, b]))
+        .to.emit(registry, "DataAccessSkipped")
+        .withArgs(recordId, 0, RecordIdAlreadyUsedSel);
+      (await registry.totalAccesses(user1.address, SCOPE)).should.eq(2);
+    });
+
+    it("should skip only the item signed by an untrusted server", async function () {
+      await setupTrustedServer();
+      const good1 = await record(server1, user1.address, SCOPE, 1n, other.address, rid("b-ut-1"));
+      const bad = await record(server2, user1.address, SCOPE, 1n, other.address, rid("b-ut-2"));
+      const good2 = await record(server1, user1.address, SCOPE, 1n, other.address, rid("b-ut-3"));
+
+      const recorded = await registry
+        .connect(recorder)
+        .recordDataAccessBatch.staticCall([good1, bad, good2]);
+      recorded.should.deep.eq([true, false, true]);
+      await expect(registry.connect(recorder).recordDataAccessBatch([good1, bad, good2]))
+        .to.emit(registry, "DataAccessSkipped")
+        .withArgs(bad.recordId, 1, UntrustedServerSel);
+      (await registry.isRecordIdUsed(bad.recordId)).should.eq(false);
+      (await registry.totalAccesses(user1.address, SCOPE)).should.eq(2);
+    });
+
+    it("should skip only the item with an unknown version", async function () {
+      await setupTrustedServer();
+      const good = await record(server1, user1.address, SCOPE, 1n, other.address, rid("b-uv-1"));
+      const tooHigh = await record(server1, user1.address, SCOPE, 2n, other.address, rid("b-uv-2"));
+      const zero = await record(server1, user1.address, SCOPE, 0n, other.address, rid("b-uv-3"));
+
+      const recorded = await registry
+        .connect(recorder)
+        .recordDataAccessBatch.staticCall([tooHigh, good, zero]);
+      recorded.should.deep.eq([false, true, false]);
+      const tx = registry.connect(recorder).recordDataAccessBatch([tooHigh, good, zero]);
+      await expect(tx)
+        .to.emit(registry, "DataAccessSkipped")
+        .withArgs(tooHigh.recordId, 0, UnknownVersionSel);
+      await expect(tx)
+        .to.emit(registry, "DataAccessSkipped")
+        .withArgs(zero.recordId, 2, UnknownVersionSel);
+      (await registry.accessCount(user1.address, SCOPE, 1)).should.eq(1);
+      (await registry.accessCount(user1.address, SCOPE, 2)).should.eq(0);
+    });
+
+    it("should handle a mixed-owner batch with per-owner trusted servers", async function () {
+      await wireServers();
+      await registerServer(user1, server1);
+      await registerServer(user2, server2);
+      await registry.connect(user2).addData(SCOPE, DATA_HASH_2, META_HASH_2);
+
+      const u1a = await record(server1, user1.address, SCOPE, 1n, other.address, rid("b-mix-1"));
+      const u2a = await record(server2, user2.address, SCOPE, 1n, other.address, rid("b-mix-2"));
+      const cross = await record(server2, user1.address, SCOPE, 1n, other.address, rid("b-mix-3")); // user2's server signing for user1
+      const u1b = await record(server1, user1.address, SCOPE, 1n, user2.address, rid("b-mix-4"));
+
+      const recorded = await registry
+        .connect(recorder)
+        .recordDataAccessBatch.staticCall([u1a, u2a, cross, u1b]);
+      recorded.should.deep.eq([true, true, false, true]);
+      const tx = registry.connect(recorder).recordDataAccessBatch([u1a, u2a, cross, u1b]);
+      await expect(tx)
+        .to.emit(registry, "DataAccessRecorded")
+        .withArgs(dpId(user2.address, SCOPE), 1n, other.address, server2.address, u2a.recordId, 1n, 1n);
+      await expect(tx)
+        .to.emit(registry, "DataAccessSkipped")
+        .withArgs(cross.recordId, 2, UntrustedServerSel);
+      (await registry.totalAccesses(user1.address, SCOPE)).should.eq(2);
+      (await registry.totalAccesses(user2.address, SCOPE)).should.eq(1);
+    });
+
+    it("should emit exactly one of DataAccessRecorded / DataAccessSkipped per item", async function () {
+      await setupTrustedServer();
+      const items = [
+        await record(server1, user1.address, SCOPE, 1n, other.address, rid("b-one-1")),
+        await record(server2, user1.address, SCOPE, 1n, other.address, rid("b-one-2")),
+        await record(server1, user1.address, SCOPE, 1n, other.address, rid("b-one-3")),
+        await record(server1, user1.address, SCOPE, 9n, other.address, rid("b-one-4")),
+      ];
+      const tx = await registry.connect(recorder).recordDataAccessBatch(items);
+      const rc = await tx.wait();
+      const parsed = rc!.logs
+        .map((l) => registry.interface.parseLog({ topics: [...l.topics], data: l.data }))
+        .filter((x) => x !== null);
+      parsed.length.should.eq(items.length);
+      const names = parsed.map((x) => x!.name);
+      names.should.deep.eq([
+        "DataAccessRecorded",
+        "DataAccessSkipped",
+        "DataAccessRecorded",
+        "DataAccessSkipped",
+      ]);
+      parsed[0]!.args.recordId.should.eq(items[0].recordId);
+      parsed[1]!.args.recordId.should.eq(items[1].recordId);
+      parsed[1]!.args.index.should.eq(1n);
+      parsed[3]!.args.index.should.eq(3n);
+    });
+  });
 
   describe("Pause", () => {
     beforeEach(async () => {

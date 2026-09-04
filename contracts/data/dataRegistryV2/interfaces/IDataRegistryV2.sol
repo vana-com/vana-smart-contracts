@@ -49,6 +49,18 @@ interface IDataRegistryV2 {
         uint256 totalAccesses;
     }
 
+    /// @notice One access record for `recordDataAccessBatch`. Field-for-field
+    ///         the parameter list of `recordDataAccess`; the EIP-712 payload
+    ///         the server signs is unchanged (`RECORD_ACCESS_TYPEHASH`).
+    struct AccessRecord {
+        address ownerAddress;
+        string scope;
+        uint256 version;
+        address accessor;
+        bytes32 recordId;
+        bytes signature;
+    }
+
     // ====================== Errors ======================
 
     error ZeroAddress();
@@ -63,6 +75,8 @@ interface IDataRegistryV2 {
     error DataPortabilityServersNotSet();
     error UntrustedServer(address owner, address server);
     error RecordIdAlreadyUsed(bytes32 recordId);
+    error EmptyBatch();
+    error BatchTooLarge(uint256 size, uint256 max);
 
     // ====================== Events ======================
 
@@ -92,6 +106,18 @@ interface IDataRegistryV2 {
         uint256 versionAccessCount,
         uint256 dataPointTotalAccesses
     );
+
+    /// @notice Emitted by `recordDataAccessBatch` for every item it did NOT
+    ///         record. `reason` is the 4-byte selector of the error the
+    ///         single-record `recordDataAccess` would have reverted with for
+    ///         the same input: `RecordIdAlreadyUsed`, `InvalidSignature`,
+    ///         `UntrustedServer` or `UnknownVersion`. Exactly one of
+    ///         `DataAccessRecorded` / `DataAccessSkipped` is emitted per item,
+    ///         so a receipt alone tells which recordIds landed.
+    /// @param recordId Caller-chosen id of the skipped item.
+    /// @param index    Position of the item in the submitted batch.
+    /// @param reason   Error selector, see above.
+    event DataAccessSkipped(bytes32 indexed recordId, uint256 index, bytes4 reason);
 
     /// @notice Emitted alongside `DataVersionAdded` when the EIP-712 signature
     ///         on `addDataWithSignature` was produced by a delegate (personal
@@ -127,6 +153,11 @@ interface IDataRegistryV2 {
     ///         RecordDataAccess(address ownerAddress,string scope,uint256 version,
     ///         address accessor,bytes32 recordId)
     function RECORD_ACCESS_TYPEHASH() external view returns (bytes32);
+
+    /// @notice Hard cap on `recordDataAccessBatch` length. A gas bound, not a
+    ///         semantic one: sized so a full batch fits a 60M-gas block with
+    ///         margin. Batches above it revert with `BatchTooLarge`.
+    function MAX_ACCESS_BATCH() external view returns (uint256);
 
     /// @notice EIP-712 typehash for `setStatusWithSignature`. Type:
     ///         SetStatus(address ownerAddress,string scope,uint8 newStatus,
@@ -288,4 +319,32 @@ interface IDataRegistryV2 {
         bytes32 recordId,
         bytes calldata signature
     ) external;
+
+    /// @notice Record up to `MAX_ACCESS_BATCH` accesses in one call.
+    ///         Skip-and-emit per item: each record is validated exactly as
+    ///         `recordDataAccess` validates its arguments, in the same order.
+    ///         A record that passes is committed and emits
+    ///         `DataAccessRecorded`, identical to the single-record path. A
+    ///         record that fails is skipped, emits `DataAccessSkipped` with
+    ///         the selector of the error the single-record path would have
+    ///         raised, and does not touch state. Items are independent: a
+    ///         skipped item never affects another item, and a duplicate
+    ///         recordId within the batch records the first occurrence and
+    ///         skips the rest.
+    /// @dev    Batch-level preconditions revert the whole call, as they would
+    ///         a single call: caller lacks ACCESS_RECORDER_ROLE, contract
+    ///         paused, `dataPortabilityServers` unset. Additionally an empty
+    ///         batch reverts with `EmptyBatch` and an oversized one with
+    ///         `BatchTooLarge`.
+    ///
+    ///         Each record carries its own server signature over its own
+    ///         payload; there is no batch-level signature. A malformed
+    ///         signature (wrong length, high-s, zero recovery) is reported as
+    ///         `InvalidSignature` rather than the ECDSA library's typed
+    ///         errors, so the batch path never reverts on one bad item.
+    /// @param  records  Records to process, in order.
+    /// @return recorded `recorded[i]` is true iff `records[i]` was committed.
+    function recordDataAccessBatch(AccessRecord[] calldata records)
+        external
+        returns (bool[] memory recorded);
 }
