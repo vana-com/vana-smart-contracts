@@ -2111,6 +2111,24 @@ describe("DataRegistryV2", () => {
       (await registry.totalAccesses(user1.address, SCOPE)).should.eq(1);
     });
 
+    it("should skip an over-long scope and an odd-length signature on calldata length alone", async function () {
+      await setupTrustedServer();
+      const longScope = "x".repeat(257);
+      const tooLong = await record(server1, user1.address, longScope, 1n, other.address, rid("b-len-1"));
+      const good = await record(server1, user1.address, SCOPE, 1n, other.address, rid("b-len-2"));
+      const badSig = { ...good, recordId: rid("b-len-3"), signature: "0x" + "ab".repeat(64) }; // 64 bytes
+      const ScopeTooLongSel = registry.interface.getError("ScopeTooLong")!.selector;
+
+      const recorded = await registry
+        .connect(recorder)
+        .recordDataAccessBatch.staticCall([tooLong, good, badSig]);
+      recorded.should.deep.eq([false, true, false]);
+      const tx = registry.connect(recorder).recordDataAccessBatch([tooLong, good, badSig]);
+      await expect(tx).to.emit(registry, "DataAccessSkipped").withArgs(tooLong.recordId, 0, ScopeTooLongSel);
+      await expect(tx).to.emit(registry, "DataAccessSkipped").withArgs(badSig.recordId, 2, InvalidSignatureSel);
+      (await registry.totalAccesses(user1.address, SCOPE)).should.eq(1);
+    });
+
     it("should record the first occurrence of a duplicate recordId inside a batch and skip the rest", async function () {
       await setupTrustedServer();
       const recordId = rid("b-dup-in");

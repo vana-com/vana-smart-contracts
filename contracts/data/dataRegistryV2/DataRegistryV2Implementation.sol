@@ -452,9 +452,17 @@ contract DataRegistryV2Implementation is
     ///      selector of the error the single-record path raises for the same
     ///      failure and leaves state untouched. Check order mirrors
     ///      `recordDataAccess`: recordId reuse, signature, trusted server,
-    ///      version.
+    ///      version — preceded by two calldata-length guards that the single
+    ///      path does not need (it reverts, so it pays nothing further).
     function _tryRecordAccess(AccessRecord calldata r) internal returns (bytes4) {
         if (_usedRecordIds[r.recordId]) return RecordIdAlreadyUsed.selector;
+
+        // Cheap calldata-length checks before anything is hashed or copied to
+        // memory, so an oversized item costs its calldata and nothing more.
+        // No data point can exist with a scope above MAX_SCOPE_BYTES
+        // (`_addData` rejects it), and only 65-byte signatures can recover.
+        if (bytes(r.scope).length > MAX_SCOPE_BYTES) return ScopeTooLong.selector;
+        if (r.signature.length != 65) return InvalidSignature.selector;
 
         (address server, ECDSA.RecoverError err, ) = ECDSA.tryRecover(
             _recordAccessDigest(r.ownerAddress, r.scope, r.version, r.accessor, r.recordId),

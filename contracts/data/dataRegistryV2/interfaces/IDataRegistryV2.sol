@@ -111,7 +111,11 @@ interface IDataRegistryV2 {
     ///         record. `reason` is the 4-byte selector of the error the
     ///         single-record `recordDataAccess` would have reverted with for
     ///         the same input: `RecordIdAlreadyUsed`, `InvalidSignature`,
-    ///         `UntrustedServer` or `UnknownVersion`. Exactly one of
+    ///         `UntrustedServer` or `UnknownVersion` — plus `ScopeTooLong`
+    ///         for a scope above the registry's 256-byte cap, which the batch
+    ///         path rejects before hashing (no data point can carry such a
+    ///         scope, so the single path would end in `UnknownVersion` or
+    ///         `UntrustedServer` after doing the work). Exactly one of
     ///         `DataAccessRecorded` / `DataAccessSkipped` is emitted per item,
     ///         so a receipt alone tells which recordIds landed.
     /// @param recordId Caller-chosen id of the skipped item.
@@ -342,6 +346,9 @@ interface IDataRegistryV2 {
     ///         signature (wrong length, high-s, zero recovery) is reported as
     ///         `InvalidSignature` rather than the ECDSA library's typed
     ///         errors, so the batch path never reverts on one bad item.
+    ///         Signature length and scope length are checked on calldata
+    ///         before any hashing or memory copy, so an oversized item costs
+    ///         the caller its calldata and a skip event, nothing more.
     /// @param  records  Records to process, in order.
     /// @return recorded `recorded[i]` is true iff `records[i]` was committed.
     function recordDataAccessBatch(AccessRecord[] calldata records)

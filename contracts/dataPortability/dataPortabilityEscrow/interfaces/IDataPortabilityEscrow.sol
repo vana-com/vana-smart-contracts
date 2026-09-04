@@ -99,6 +99,7 @@ interface IDataPortabilityEscrow {
     error CallDataTooShort();
     error EmptyBatch();
     error BatchTooLarge(uint256 size, uint256 max);
+    error TooManyOps(uint256 index, uint256 count, uint256 max);
 
     // ====================== Events ======================
 
@@ -154,11 +155,15 @@ interface IDataPortabilityEscrow {
 
     /// @notice Emitted by `recordAccessAndSettleBatch` for each item whose
     ///         record was committed, immediately BEFORE that item's `Settled`
-    ///         events. The `opCount` Settled events that follow belong to
-    ///         `recordId`, so a receipt alone groups payment legs per read.
-    ///         Not emitted for skipped items (the registry emits
-    ///         `DataAccessSkipped` for those) and not emitted by the
-    ///         single-record `recordAccessAndSettle`.
+    ///         events. The next `opCount` `Settled` events EMITTED BY THIS
+    ///         CONTRACT belong to `recordId`, so a receipt alone groups
+    ///         payment legs per read. Logs from other contracts interleave
+    ///         (an ERC-20 leg emits the token's `Transfer` between the marker
+    ///         and its `Settled`; a native leg's recipient may emit anything),
+    ///         so consumers must filter on this contract's address and the
+    ///         `Settled` topic, never count raw logs. Not emitted for skipped
+    ///         items (the registry emits `DataAccessSkipped` for those) and
+    ///         not emitted by the single-record `recordAccessAndSettle`.
     /// @param index    Position of the item in the submitted batch.
     /// @param recordId The committed access record's id.
     /// @param opCount  Number of `Settled` events that follow for this item.
@@ -186,6 +191,10 @@ interface IDataPortabilityEscrow {
     /// @notice Hard cap on `recordAccessAndSettleBatch` length. Never above
     ///         the registry's `MAX_ACCESS_BATCH`.
     function MAX_ACCESS_BATCH() external view returns (uint256);
+
+    /// @notice Hard cap on `ops.length` of one `AccessBundle`. Together with
+    ///         `MAX_ACCESS_BATCH` it bounds the work of one batch call.
+    function MAX_ACCESS_BUNDLE_OPS() external view returns (uint256);
 
     /// @notice Enumerate every target address that currently has at least one allowed selector.
     function getAllowedTargets() external view returns (address[] memory);
@@ -334,11 +343,13 @@ interface IDataPortabilityEscrow {
     ///             the facilitator's own earlier transactions.
     ///         A receipt is therefore self-describing: per item exactly one
     ///         of `DataAccessRecorded` / `DataAccessSkipped`, and for
-    ///         recorded items the `Settled` events between its
-    ///         `AccessSettled` marker and the next marker are its legs.
+    ///         recorded items the escrow-emitted `Settled` events between its
+    ///         `AccessSettled` marker and the next marker are its legs (see
+    ///         `AccessSettled` for the filtering rule).
     /// @dev    Reverts with `DataRegistryNotSet`, `EmptyBatch`,
-    ///         `BatchTooLarge`, or the registry's batch-level errors
-    ///         (`DataPortabilityServersNotSet`, `EnforcedPause`).
+    ///         `BatchTooLarge`, `TooManyOps` (a bundle with more than
+    ///         `MAX_ACCESS_BUNDLE_OPS` legs), or the registry's batch-level
+    ///         errors (`DataPortabilityServersNotSet`, `EnforcedPause`).
     /// @param  bundles  Items to process, in order.
     /// @return recorded `recorded[i]` is true iff `bundles[i].record` was
     ///                  committed (and its ops executed).

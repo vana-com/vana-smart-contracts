@@ -17,10 +17,10 @@ should();
  * Gas measurement for `recordAccessAndSettleBatch`, printed as a table.
  *
  * Scenario (chosen to be the EXPENSIVE, realistic shape, not the cheapest):
- *   - every item is a different data owner with its own trusted server and
- *     its own data point → every registry slot touched is cold, every
- *     counter goes 0 → nonzero, every `_isTrustedServer` lookup is a fresh
- *     server
+ *   - every item is a different data owner with its own trusted server
+ *     (production-length public key + relay URL) and its own data point →
+ *     every registry slot touched is cold, every counter goes 0 → nonzero,
+ *     every `_isTrustedServer` lookup is a fresh server
  *   - first access on each data point (both counters zero → nonzero)
  *   - one ERC-20 payment leg per item, one payer (the accessor / builder),
  *     one payee (the protocol fee recipient) — the production shape
@@ -35,6 +35,11 @@ describe("recordAccessAndSettleBatch gas", () => {
   const MAX = Math.max(...SIZES);
   const FEE = 10_000n; // 0.01 USDC (6 decimals), the production access fee
   const scopeFor = (i: number) => `vana.profile.${String(i).padStart(3, "0")}`; // 16 bytes
+  // Production server registrations: 132-char uncompressed public key and a
+  // ~47-char relay URL. `_isTrustedServer` copies both out of storage per
+  // record, so short fixture strings would understate the per-read cost.
+  const prodPublicKey = (i: number) => "0x04" + i.toString(16).padStart(130, "0");
+  const prodServerUrl = (i: number) => `https://${i.toString(16).padStart(24, "0")}.relay.vana.com`;
 
   let deployer: HardhatEthersSigner;
   let owner: HardhatEthersSigner;
@@ -136,8 +141,8 @@ describe("recordAccessAndSettleBatch gas", () => {
       const registration = {
         ownerAddress: dataOwner.address,
         serverAddress: server.address,
-        publicKey: "pk-" + i,
-        serverUrl: "https://ps-" + i + ".example",
+        publicKey: prodPublicKey(i),
+        serverUrl: prodServerUrl(i),
       };
       const regSig = await dataOwner.signTypedData(
         serversDomain,

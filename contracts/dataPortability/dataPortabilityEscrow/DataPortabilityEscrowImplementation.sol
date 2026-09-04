@@ -48,6 +48,11 @@ contract DataPortabilityEscrowImplementation is
     /// @inheritdoc IDataPortabilityEscrow
     uint256 public constant override MAX_ACCESS_BATCH = 200;
 
+    /// @inheritdoc IDataPortabilityEscrow
+    /// @dev A data access pays one fee leg today; 8 leaves room for a split
+    ///      (owner / protocol / referrer) without making the batch unbounded.
+    uint256 public constant override MAX_ACCESS_BUNDLE_OPS = 8;
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -419,6 +424,8 @@ contract DataPortabilityEscrowImplementation is
 
         IDataRegistryV2.AccessRecord[] memory records = new IDataRegistryV2.AccessRecord[](len);
         for (uint256 i = 0; i < len; ) {
+            uint256 opsLen = bundles[i].ops.length;
+            if (opsLen > MAX_ACCESS_BUNDLE_OPS) revert TooManyOps(i, opsLen, MAX_ACCESS_BUNDLE_OPS);
             records[i] = bundles[i].record;
             unchecked {
                 ++i;
@@ -433,7 +440,9 @@ contract DataPortabilityEscrowImplementation is
         // Step 2: settle the legs of every recorded item, in batch order.
         // Same `_payout` + `Settled` shape as every other bundle here, with
         // an `AccessSettled` marker in front so the receipt groups legs per
-        // read without the calldata.
+        // read without the calldata. Token / recipient logs interleave with
+        // `Settled`; the grouping rule is "this contract's `Settled` events
+        // after the marker", see IDataPortabilityEscrow.AccessSettled.
         for (uint256 i = 0; i < len; ) {
             if (recorded[i]) {
                 SettleOp[] calldata ops = bundles[i].ops;

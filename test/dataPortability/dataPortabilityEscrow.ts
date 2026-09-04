@@ -2247,6 +2247,22 @@ describe("DataPortabilityEscrow", () => {
         );
       });
 
+      it("should reject a bundle with more than MAX_ACCESS_BUNDLE_OPS legs", async function () {
+        const max = Number(await escrow.MAX_ACCESS_BUNDLE_OPS());
+        max.should.eq(8);
+        const r = await record(serverSigner, { ownerAddress: user1.address, recordId: rid("e-ops") });
+        const ops = Array.from({ length: max + 1 }, () => leg(user1.address, parseEther("0.1")));
+        await expect(escrow.connect(facilitator).recordAccessAndSettleBatch([{ record: r, ops }]))
+          .to.be.revertedWithCustomError(escrow, "TooManyOps")
+          .withArgs(0, max + 1, max);
+        (await registry.isRecordIdUsed(r.recordId)).should.eq(false);
+
+        const recorded = await escrow
+          .connect(facilitator)
+          .recordAccessAndSettleBatch.staticCall([{ record: r, ops: ops.slice(0, max) }]);
+        recorded.should.deep.eq([true]);
+      });
+
       it("batch of 1 should match recordAccessAndSettle: identical registry + Settled events, plus one AccessSettled marker", async function () {
         const grantRef = rid("grant-ref");
         const r = await record(serverSigner, { ownerAddress: user1.address, recordId: rid("e-equiv") });
@@ -2416,7 +2432,9 @@ describe("DataPortabilityEscrow", () => {
         ).to.be.revertedWithCustomError(escrow, "ZeroAmount");
       });
 
-      it("should group Settled legs per read in receipt order via AccessSettled markers", async function () {
+      it("should group Settled legs per read in receipt order via AccessSettled markers (ERC-20 Transfer logs interleave)", async function () {
+        await depositTokenFor(user2, parseEther("10"));
+        const tokenAddr = await token.getAddress();
         const a = await record(serverSigner, { ownerAddress: user1.address, recordId: rid("e-grp-1") });
         const skipped = await record(serverSigner, { ownerAddress: user1.address, version: 7n, recordId: rid("e-grp-2") });
         const noLegs = await record(serverSigner, { ownerAddress: user1.address, recordId: rid("e-grp-3") });
@@ -2427,7 +2445,8 @@ describe("DataPortabilityEscrow", () => {
           { record: a, ops: [leg(user1.address, parseEther("1"), refA)] },
           { record: skipped, ops: [leg(user1.address, parseEther("1"))] },
           { record: noLegs, ops: [] },
-          { record: twoLegs, ops: [leg(user2.address, parseEther("1"), refB), leg(user2.address, parseEther("0.5"), refB)] },
+          // one ERC-20 leg (emits the token's Transfer between the marker and Settled) + one native leg
+          { record: twoLegs, ops: [leg(user2.address, parseEther("1"), refB, tokenAddr), leg(user2.address, parseEther("0.5"), refB)] },
         ];
         const tx = await escrow.connect(facilitator).recordAccessAndSettleBatch(bundles);
         const logs = await parsedLogs(tx.hash);
@@ -2440,13 +2459,16 @@ describe("DataPortabilityEscrow", () => {
           "escrow:Settled",
           "escrow:AccessSettled",
           "escrow:AccessSettled",
+          "other:?", // ERC-20 Transfer emitted by the token inside _payout
           "escrow:Settled",
           "escrow:Settled",
         ]);
-        // Reconstruct per-read grouping from the receipt alone.
+        // Reconstruct per-read grouping from the receipt alone, filtering on
+        // the escrow's own Settled events (token / recipient logs interleave).
         const groups: Record<string, { ref: string; amount: bigint }[]> = {};
         let current: string | null = null;
         for (const l of logs) {
+          if (l.contract !== "escrow") continue;
           if (l.name === "AccessSettled") {
             current = l.args!.recordId;
             groups[current!] = [];
