@@ -74,6 +74,10 @@ interface IVanaPoolEntity {
     function entitiesCount() external view returns (uint256);
     function entities(uint256 entityId) external view returns (EntityInfo memory);
     function entityByName(string calldata entityName) external view returns (EntityInfo memory);
+
+    function entityRewardModel(uint256 entityId) external view returns (RewardModel);
+    function entityRewardSchedule(uint256 entityId) external view returns (RewardSchedule memory);
+    function committedRewards(uint256 entityId) external view returns (uint256);
     function entityNameToId(string calldata entityName) external view returns (uint256);
 
     function entityShareToVana(uint256 entityId) external view returns (uint256);

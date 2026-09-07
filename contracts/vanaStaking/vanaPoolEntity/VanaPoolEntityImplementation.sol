@@ -137,6 +137,32 @@ contract VanaPoolEntityImplementation is
     }
 
     /**
+     * @notice The reward model (APY or STREAM) an entity currently vests by
+     */
+    function entityRewardModel(uint256 entityId) external view override returns (RewardModel) {
+        return _entities[entityId].rewardModel;
+    }
+
+    /**
+     * @notice An entity's reward schedule (active entry + queued follow-on).
+     *         Meaningful only while the entity is in STREAM mode.
+     */
+    function entityRewardSchedule(
+        uint256 entityId
+    ) external view override returns (RewardSchedule memory) {
+        return _entities[entityId].rewardSchedule;
+    }
+
+    /**
+     * @notice Wei a STREAM entity still owes: active-unvested + queued. Its
+     *         lockedRewardPool is kept at least this large. Returns 0 for an
+     *         APY entity or one with no schedule.
+     */
+    function committedRewards(uint256 entityId) external view override returns (uint256) {
+        return _committedRewards(_entities[entityId].rewardSchedule);
+    }
+
+    /**
      * @notice Convert share to VANA for a specific entity
      *
      * @param entityId                          ID of the entity
