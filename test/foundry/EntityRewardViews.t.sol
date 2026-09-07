@@ -84,4 +84,85 @@ contract EntityRewardViewsTest is Test {
         _seed(IVanaPoolEntity.RewardModel.APY, 1_000 ether, IVanaPoolEntity.RewardSchedule(0, 0, 0, 0, 0, 0, 0));
         assertEq(h.committedRewards(ID), 0, "APY entity owes nothing on a schedule");
     }
+
+    // ---- currentAPYByEntity ----
+
+    function _seedActive(
+        IVanaPoolEntity.RewardModel model,
+        uint256 locked,
+        uint256 active,
+        uint256 maxAPY,
+        IVanaPoolEntity.RewardSchedule memory sched
+    ) internal {
+        h.setEntity(
+            ID,
+            IVanaPoolEntity.Entity({
+                ownerAddress: address(0xE),
+                status: IVanaPoolEntity.EntityStatus.Active,
+                name: "e",
+                maxAPY: maxAPY,
+                lockedRewardPool: locked,
+                activeRewardPool: active,
+                totalShares: active > 0 ? active : 100 ether,
+                lastUpdateTimestamp: START,
+                totalDistributedRewards: 0,
+                rewardModel: model,
+                rewardSchedule: sched
+            })
+        );
+    }
+
+    function test_currentAPY_apyMode_matchesCapWhenFunded() public {
+        _seedActive(
+            IVanaPoolEntity.RewardModel.APY,
+            1_000 ether,
+            100 ether,
+            6e18,
+            IVanaPoolEntity.RewardSchedule(0, 0, 0, 0, 0, 0, 0)
+        );
+        assertEq(h.currentAPYByEntity(ID), h.calculateContinuousAPYByEntity(ID), "matches the cap");
+        assertGt(h.currentAPYByEntity(ID), 0, "nonzero when funded");
+    }
+
+    function test_currentAPY_apyMode_zeroWhenNoLocked() public {
+        _seedActive(
+            IVanaPoolEntity.RewardModel.APY,
+            0,
+            100 ether,
+            6e18,
+            IVanaPoolEntity.RewardSchedule(0, 0, 0, 0, 0, 0, 0)
+        );
+        assertEq(h.currentAPYByEntity(ID), 0, "cap unsustainable without funds");
+    }
+
+    function test_currentAPY_streamMode_annualizedRate() public {
+        // 10k over 10 days on a 100k active pool = 10% per 10 days = 365% APR
+        IVanaPoolEntity.RewardSchedule memory sched =
+            IVanaPoolEntity.RewardSchedule(10_000 ether, START, 10 days, uint32(START), 0, 0, 0);
+        _seedActive(IVanaPoolEntity.RewardModel.STREAM, 10_000 ether, 100_000 ether, 6e18, sched);
+
+        vm.warp(START + 1 days); // currently vesting
+        assertEq(h.currentAPYByEntity(ID), 365e18, "365% annualized");
+    }
+
+    function test_currentAPY_streamMode_zeroOutsideWindow() public {
+        IVanaPoolEntity.RewardSchedule memory sched =
+            IVanaPoolEntity.RewardSchedule(10_000 ether, START + 5 days, 10 days, uint32(START + 5 days), 0, 0, 0);
+        _seedActive(IVanaPoolEntity.RewardModel.STREAM, 10_000 ether, 100_000 ether, 6e18, sched);
+
+        // before start
+        assertEq(h.currentAPYByEntity(ID), 0, "zero before start");
+        // after end
+        vm.warp(START + 5 days + 10 days);
+        assertEq(h.currentAPYByEntity(ID), 0, "zero after end");
+    }
+
+    function test_currentAPY_streamMode_zeroWhenNoActivePool() public {
+        IVanaPoolEntity.RewardSchedule memory sched =
+            IVanaPoolEntity.RewardSchedule(10_000 ether, START, 10 days, uint32(START), 0, 0, 0);
+        _seedActive(IVanaPoolEntity.RewardModel.STREAM, 10_000 ether, 0, 6e18, sched);
+
+        vm.warp(START + 1 days);
+        assertEq(h.currentAPYByEntity(ID), 0, "undefined rate over an empty pool");
+    }
 }

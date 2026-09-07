@@ -115,4 +115,6 @@ interface IVanaPoolEntity {
     function calculateYield(uint256 apy, uint256 principal, uint256 time) external pure returns (uint256);
 
     function calculateContinuousAPYByEntity(uint256 entityId) external view returns (uint256);
+
+    function currentAPYByEntity(uint256 entityId) external view returns (uint256);
 }

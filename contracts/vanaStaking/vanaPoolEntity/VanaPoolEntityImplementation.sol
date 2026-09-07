@@ -646,6 +646,47 @@ contract VanaPoolEntityImplementation is
     }
 
     /**
+     * @notice The entity's current annualized APY, in the same units as
+     *         calculateContinuousAPYByEntity (percentage points scaled by 1e18,
+     *         e.g. 6.18% -> 6.18e18). Model-aware:
+     *          - APY:    the sustained effective cap (e^maxAPY - 1), but 0 once
+     *                    lockedRewardPool is empty (the cap can no longer drip).
+     *          - STREAM: the active entry's linear vesting rate annualized over
+     *                    activeRewardPool, or 0 when nothing is currently vesting.
+     *         This is the forward-looking rate; realized APY is measured from
+     *         entityShareToVana over time.
+     */
+    function currentAPYByEntity(uint256 entityId) external view override returns (uint256) {
+        Entity storage entity = _entities[entityId];
+
+        if (entity.rewardModel == RewardModel.APY) {
+            if (entity.lockedRewardPool == 0) {
+                return 0;
+            }
+            uint256 rateAsDecimal = entity.maxAPY / 100;
+            return (calculateExponential(rateAsDecimal) - 1e18) * 100;
+        }
+
+        // STREAM: annualize the active entry's linear rate (scheduledValue /
+        // duration wei/sec) over the active pool. Zero unless an entry is
+        // currently vesting into a non-empty pool.
+        RewardSchedule storage schedule = entity.rewardSchedule;
+        uint256 end = uint256(schedule.start) + schedule.duration;
+        if (
+            entity.activeRewardPool == 0 ||
+            schedule.scheduledValue == 0 ||
+            schedule.duration == 0 ||
+            block.timestamp < schedule.start ||
+            block.timestamp >= end
+        ) {
+            return 0;
+        }
+        return
+            (uint256(schedule.scheduledValue) * 365 days * 100 * 1e18) /
+            (uint256(schedule.duration) * entity.activeRewardPool);
+    }
+
+    /**
      * @dev Computes how much a STREAM-model entity's active schedule has vested
      *      since its last update, advances the watermark, and promotes the
      *      queued entry once the active one has ended. Returns wei to move from
