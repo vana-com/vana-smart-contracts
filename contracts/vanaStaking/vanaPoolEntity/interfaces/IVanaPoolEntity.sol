@@ -96,6 +96,8 @@ interface IVanaPoolEntity {
     // Entity reward management
     function addRewards(uint256 entityId) external payable;
     function processRewards(uint256 entityId) external;
+
+    function distributeRewards(uint256 entityId, uint256 amount, uint64 start, uint32 duration) external payable;
     function updateEntityMaxAPY(uint256 entityId, uint256 newMaxAPY) external;
 
     function updateEntityRewardModel(uint256 entityId, RewardModel model) external;

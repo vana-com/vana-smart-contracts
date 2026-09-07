@@ -23,6 +23,7 @@ contract VanaPoolEntityImplementation is
     event EntityMaxAPYUpdated(uint256 indexed entityId, uint256 newMaxAPY);
     event EntityRewardModelUpdated(uint256 indexed entityId, RewardModel model);
     event RewardsAdded(uint256 indexed entityId, uint256 amount);
+    event RewardsDistributed(uint256 indexed entityId, uint256 amount, uint64 start, uint32 duration);
     event RewardsProcessed(uint256 indexed entityId, uint256 distributedAmount);
     event ForfeitedRewardsReturned(uint256 indexed entityId, uint256 amount);
 
@@ -37,6 +38,8 @@ contract VanaPoolEntityImplementation is
     error NameTooShort();
     error InvalidRegistrationStake();
     error StakersStillPresent();
+    error InvalidRewardModel();
+    error InsufficientRewardFunds();
     error NotAuthorized();
     error TransferFailed();
 
@@ -347,6 +350,65 @@ contract VanaPoolEntityImplementation is
     }
 
     /**
+     * @notice Schedule a linear reward stream for a STREAM-model entity, funded
+     *         by msg.value and/or the entity's existing locked residue. Uses the
+     *         Synthetix V3 replace/queue rules: the new entry either replaces the
+     *         active one (cancelling its unvested remainder to residue) or is
+     *         queued as the single follow-on when it starts after the active one.
+     *
+     * @param entityId  the entity to schedule rewards for
+     * @param amount    wei to distribute over [start, start + duration]
+     * @param start     vesting start; must be >= block.timestamp
+     * @param duration  vesting span in seconds; 0 == instant
+     */
+    function distributeRewards(
+        uint256 entityId,
+        uint256 amount,
+        uint64 start,
+        uint32 duration
+    ) external payable override whenNotPaused {
+        Entity storage entity = _entities[entityId];
+
+        if (entity.status != EntityStatus.Active) {
+            revert InvalidEntityStatus();
+        }
+        if (msg.sender != entity.ownerAddress && !hasRole(MAINTAINER_ROLE, msg.sender)) {
+            revert NotEntityOwner();
+        }
+        if (entity.rewardModel != RewardModel.STREAM) {
+            revert InvalidRewardModel();
+        }
+        if (amount == 0 || start < block.timestamp) {
+            revert InvalidParam();
+        }
+
+        // Settle vesting under the current schedule before changing it, using
+        // the pre-funding locked balance.
+        processRewards(entityId);
+
+        // Fund: account the new value and move it to the treasury (residue that
+        // is already there backs any amount drawn beyond msg.value).
+        if (msg.value > 0) {
+            entity.lockedRewardPool += msg.value;
+
+            (bool success, ) = payable(address(vanaPoolStaking.vanaPoolTreasury())).call{value: msg.value}("");
+            if (!success) {
+                revert TransferFailed();
+            }
+        }
+
+        // Install the new distribution (replace or queue).
+        _scheduleDistribution(entity.rewardSchedule, amount, start, duration);
+
+        // Every scheduled reward must be backed by locked funds.
+        if (entity.lockedRewardPool < _committedRewards(entity.rewardSchedule)) {
+            revert InsufficientRewardFunds();
+        }
+
+        emit RewardsDistributed(entityId, amount, start, duration);
+    }
+
+    /**
      * @notice Process rewards for an entity
      * @param entityId The entity ID to process rewards for
      */
@@ -627,6 +689,82 @@ contract VanaPoolEntityImplementation is
         // but harmless SSTORE); when it promoted an empty slot it short-circuited
         // on the scheduledValue == 0 guard without writing, so this is required.
         schedule.lastUpdate = uint32(block.timestamp);
+    }
+
+    /**
+     * @dev Installs a new reward distribution into a schedule, following the
+     *      Synthetix V3 RewardDistribution.distribute rules. Assumes vesting has
+     *      already been settled up to now (caller runs processRewards first).
+     *      Funds are not moved here; they live in lockedRewardPool and the
+     *      caller enforces that locked covers everything still committed.
+     *
+     *      The new entry either replaces the active one (when it overlaps, or the
+     *      active one is absent/ended) or is queued as the single follow-on entry
+     *      (when it starts at/after the active one ends). A replaced remainder or
+     *      a displaced queued entry is left funded in lockedRewardPool as residue.
+     *
+     * @param schedule  the entity's reward schedule (mutated in place)
+     * @param amount    wei to distribute over [start, start + duration]
+     * @param start     vesting start (must be > 0)
+     * @param duration  vesting span in seconds; 0 == instant
+     */
+    function _scheduleDistribution(
+        RewardSchedule storage schedule,
+        uint256 amount,
+        uint64 start,
+        uint32 duration
+    ) internal {
+        uint256 activeEnd = uint256(schedule.start) + schedule.duration;
+
+        if (
+            start == 0 ||
+            schedule.scheduledValue == 0 ||
+            block.timestamp > activeEnd ||
+            start < activeEnd
+        ) {
+            // Replace the active entry. Any queued entry is displaced and the
+            // old active entry's unvested remainder stays funded in locked as
+            // residue. lastUpdate = 0 (< start, since start > 0) makes the new
+            // entry's first vest count from its start, for linear and instant.
+            schedule.nextScheduledValue = 0;
+            schedule.nextStart = 0;
+            schedule.nextDuration = 0;
+            schedule.scheduledValue = uint128(amount);
+            schedule.start = start;
+            schedule.duration = duration;
+            schedule.lastUpdate = 0;
+        } else {
+            // Queue as the single follow-on entry; the active entry keeps
+            // running and this one is promoted by _vestStream when it ends.
+            schedule.nextScheduledValue = uint128(amount);
+            schedule.nextStart = start;
+            schedule.nextDuration = duration;
+        }
+    }
+
+    /**
+     * @dev Total wei a STREAM schedule still owes: the active entry's not-yet
+     *      vested portion plus the whole queued entry. lockedRewardPool must be
+     *      at least this so every future vest is backed by real funds.
+     */
+    function _committedRewards(RewardSchedule storage schedule) internal view returns (uint256) {
+        uint256 activeRemaining;
+        if (schedule.scheduledValue > 0) {
+            uint256 end = uint256(schedule.start) + schedule.duration;
+            if (schedule.duration == 0) {
+                // instant: outstanding until it has vested (lastUpdate >= start)
+                activeRemaining = schedule.lastUpdate >= schedule.start ? 0 : schedule.scheduledValue;
+            } else if (block.timestamp >= end) {
+                activeRemaining = 0; // fully vested
+            } else if (block.timestamp <= schedule.start) {
+                activeRemaining = schedule.scheduledValue; // not started: all outstanding
+            } else {
+                uint256 vested = (uint256(schedule.scheduledValue) * (block.timestamp - schedule.start)) /
+                    schedule.duration;
+                activeRemaining = schedule.scheduledValue - vested;
+            }
+        }
+        return activeRemaining + schedule.nextScheduledValue;
     }
 
     // This function is copied from solmate/utils/SignedWadMath.sol
