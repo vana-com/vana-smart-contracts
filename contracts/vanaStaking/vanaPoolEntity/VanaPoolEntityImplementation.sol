@@ -362,8 +362,14 @@ contract VanaPoolEntityImplementation is
             return;
         }
 
-        // Calculate theoretical yield based on maxAPY
-        uint256 toDistribute = calculateYield(entity.activeRewardPool, entity.maxAPY, timeElapsed);
+        uint256 toDistribute;
+        if (entity.rewardModel == RewardModel.APY) {
+            // Calculate theoretical yield based on maxAPY
+            toDistribute = calculateYield(entity.activeRewardPool, entity.maxAPY, timeElapsed);
+        } else {
+            // STREAM: linear vesting of the entity's scheduled rewards
+            toDistribute = _vestStream(entity.rewardSchedule, entity.totalShares);
+        }
 
         if (toDistribute > entity.lockedRewardPool) {
             toDistribute = entity.lockedRewardPool;
