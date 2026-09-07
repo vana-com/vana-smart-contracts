@@ -525,6 +525,78 @@ contract VanaPoolEntityImplementation is
         return (eToRate - 1e18) * 100;
     }
 
+    /**
+     * @dev Computes how much a STREAM-model entity's active schedule has vested
+     *      since its last update, advances the watermark, and promotes the
+     *      queued entry once the active one has ended. Returns wei to move from
+     *      lockedRewardPool to activeRewardPool. Vesting is linear over
+     *      [start, start + duration].
+     *
+     *      While totalShares is zero the watermark is not advanced, so the
+     *      elapsed interval is preserved and vests once shares exist again,
+     *      rather than adding rewards to a pool with no shares to receive them.
+     *
+     * @param schedule     the entity's reward schedule (mutated in place)
+     * @param totalShares  the entity's current total shares
+     * @return toVest      wei to transfer from locked to active
+     */
+    function _vestStream(
+        RewardSchedule storage schedule,
+        uint256 totalShares
+    ) internal returns (uint256 toVest) {
+        // Nothing scheduled, or no shares to receive it: preserve the interval
+        // by returning without advancing the watermark.
+        if (schedule.scheduledValue == 0 || totalShares == 0) {
+            return 0;
+        }
+
+        // Active entry has not started vesting yet.
+        if (block.timestamp < schedule.start) {
+            return 0;
+        }
+
+        uint256 value = schedule.scheduledValue;
+        uint256 start = schedule.start;
+        uint256 duration = schedule.duration;
+        uint256 last = schedule.lastUpdate;
+
+        // vested(t): the total that has vested by time t, a line clamped to
+        // [0, value]. The amount owed now is vested(now) - vested(lastUpdate).
+        uint256 vestedNow;
+        uint256 vestedAtLast;
+        if (duration == 0) {
+            // Instant entry: the whole value vests at/after start.
+            vestedNow = value;
+            vestedAtLast = last >= start ? value : 0;
+        } else {
+            uint256 end = start + duration;
+            vestedNow = block.timestamp >= end ? value : (value * (block.timestamp - start)) / duration;
+            vestedAtLast = last >= start ? (value * (last - start)) / duration : 0;
+        }
+
+        toVest = vestedNow - vestedAtLast;
+
+        // Once the active entry has fully vested, promote the queued entry and
+        // vest its head in the same call (mirrors Synthetix updateEntry). Done
+        // before writing lastUpdate so the recursion sees a watermark that
+        // predates the promoted entry's start, making its vested-so-far zero.
+        if (block.timestamp >= start + duration) {
+            schedule.scheduledValue = schedule.nextScheduledValue;
+            schedule.start = schedule.nextStart;
+            schedule.duration = schedule.nextDuration;
+            schedule.nextScheduledValue = 0;
+            schedule.nextStart = 0;
+            schedule.nextDuration = 0;
+            toVest += _vestStream(schedule, totalShares);
+        }
+
+        // Always advance the watermark. When the recursion above ran with a
+        // further queued entry it already wrote this same value (a redundant
+        // but harmless SSTORE); when it promoted an empty slot it short-circuited
+        // on the scheduledValue == 0 guard without writing, so this is required.
+        schedule.lastUpdate = uint32(block.timestamp);
+    }
+
     // This function is copied from solmate/utils/SignedWadMath.sol
 
     /**
