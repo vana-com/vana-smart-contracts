@@ -24,6 +24,7 @@ contract VanaPoolEntityImplementation is
     event EntityRewardModelUpdated(uint256 indexed entityId, RewardModel model);
     event RewardsAdded(uint256 indexed entityId, uint256 amount);
     event RewardsDistributed(uint256 indexed entityId, uint256 amount, uint64 start, uint32 duration);
+    event QueuedRewardsToppedUp(uint256 indexed entityId, uint256 addedAmount, uint256 newQueuedTotal);
     event RewardsProcessed(uint256 indexed entityId, uint256 distributedAmount);
     event ForfeitedRewardsReturned(uint256 indexed entityId, uint256 amount);
 
@@ -432,6 +433,45 @@ contract VanaPoolEntityImplementation is
         }
 
         emit RewardsDistributed(entityId, amount, start, duration);
+    }
+
+    /**
+     * @notice Add funds to a STREAM entity's already-queued reward entry,
+     *         leaving its start and duration unchanged. Purely additive --
+     *         unlike distributeRewards, which overwrites the queued entry -- so
+     *         it can neither cancel nor defer anything already scheduled.
+     *
+     * @param entityId  the entity whose queued entry to top up
+     */
+    function topUpQueuedRewards(uint256 entityId) external payable override whenNotPaused {
+        Entity storage entity = _entities[entityId];
+
+        if (entity.status != EntityStatus.Active) {
+            revert InvalidEntityStatus();
+        }
+        if (msg.sender != entity.ownerAddress && !hasRole(MAINTAINER_ROLE, msg.sender)) {
+            revert NotEntityOwner();
+        }
+        if (entity.rewardModel != RewardModel.STREAM) {
+            revert InvalidRewardModel();
+        }
+        if (msg.value == 0 || entity.rewardSchedule.nextScheduledValue == 0) {
+            revert InvalidParam();
+        }
+
+        // Fund: account the value and move it to the treasury.
+        entity.lockedRewardPool += msg.value;
+
+        (bool success, ) = payable(address(vanaPoolStaking.vanaPoolTreasury())).call{value: msg.value}("");
+        if (!success) {
+            revert TransferFailed();
+        }
+
+        // Additive: grow the queued entry, start/duration unchanged. locked and
+        // committed both rise by msg.value, so the escrow invariant is preserved.
+        entity.rewardSchedule.nextScheduledValue += uint128(msg.value);
+
+        emit QueuedRewardsToppedUp(entityId, msg.value, entity.rewardSchedule.nextScheduledValue);
     }
 
     /**
