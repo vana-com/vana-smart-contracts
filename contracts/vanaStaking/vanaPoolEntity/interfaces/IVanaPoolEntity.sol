@@ -98,6 +98,8 @@ interface IVanaPoolEntity {
     function processRewards(uint256 entityId) external;
     function updateEntityMaxAPY(uint256 entityId, uint256 newMaxAPY) external;
 
+    function updateEntityRewardModel(uint256 entityId, RewardModel model) external;
+
     // Get entities
     function activeEntitiesValues() external view returns (uint256[] memory);
 

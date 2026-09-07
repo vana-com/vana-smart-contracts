@@ -21,6 +21,7 @@ contract VanaPoolEntityImplementation is
     event EntityUpdated(uint256 indexed entityId, address ownerAddress, string name);
     event EntityStatusUpdated(uint256 indexed entityId, EntityStatus newStatus);
     event EntityMaxAPYUpdated(uint256 indexed entityId, uint256 newMaxAPY);
+    event EntityRewardModelUpdated(uint256 indexed entityId, RewardModel model);
     event RewardsAdded(uint256 indexed entityId, uint256 amount);
     event RewardsProcessed(uint256 indexed entityId, uint256 distributedAmount);
     event ForfeitedRewardsReturned(uint256 indexed entityId, uint256 amount);
@@ -403,6 +404,31 @@ contract VanaPoolEntityImplementation is
         entity.maxAPY = newMaxAPY;
 
         emit EntityMaxAPYUpdated(entityId, newMaxAPY);
+    }
+
+    /**
+     * @notice Switch an entity between reward models (APY <-> STREAM)
+     * @param entityId The entity ID
+     * @param model The reward model to switch to
+     */
+    function updateEntityRewardModel(
+        uint256 entityId,
+        RewardModel model
+    ) external override onlyRole(MAINTAINER_ROLE) {
+        Entity storage entity = _entities[entityId];
+
+        if (entity.status != EntityStatus.Active) {
+            revert InvalidEntityStatus();
+        }
+
+        // Settle the outgoing model up to now before flipping, so rewards owed
+        // under the old model (e.g. APY accrued since the last drip) are moved
+        // locked -> active at the switch instant and not mis-credited after.
+        processRewards(entityId);
+
+        entity.rewardModel = model;
+
+        emit EntityRewardModelUpdated(entityId, model);
     }
 
     /**
