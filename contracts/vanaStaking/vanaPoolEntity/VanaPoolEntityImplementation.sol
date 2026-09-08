@@ -106,7 +106,7 @@ contract VanaPoolEntityImplementation is
      * @notice Returns the version of the contract
      */
     function version() external pure virtual override returns (uint256) {
-        return 2;
+        return 3;
     }
 
     /**
@@ -153,7 +153,15 @@ contract VanaPoolEntityImplementation is
     function vanaToEntityShare(uint256 entityId) external view override returns (uint256) {
         Entity storage entity = _entities[entityId];
 
-        return entity.activeRewardPool > 0 ? (entity.totalShares * 1e18) / entity.activeRewardPool : 1e18;
+        // With no shares outstanding the pool prices 1:1. Unstakes pay
+        // floor(shares * price), so the last exit can leave rounding dust in
+        // activeRewardPool; pricing that dust against zero shares would return
+        // 0 and make every subsequent stake() revert with InsufficientStakeAmount.
+        if (entity.totalShares == 0 || entity.activeRewardPool == 0) {
+            return 1e18;
+        }
+
+        return (entity.totalShares * 1e18) / entity.activeRewardPool;
     }
 
     /**
@@ -382,7 +390,7 @@ contract VanaPoolEntityImplementation is
     /**
      * @notice Update an entity's max APY
      * @param entityId The entity ID
-     * @param newMaxAPY The new max APY in basis points (1% = 100)
+     * @param newMaxAPY The new max APY, 1e18-scaled (6% = 6e18), matching `calculateYield`
      */
     function updateEntityMaxAPY(uint256 entityId, uint256 newMaxAPY) external override onlyRole(MAINTAINER_ROLE) {
         Entity storage entity = _entities[entityId];
@@ -485,7 +493,12 @@ contract VanaPoolEntityImplementation is
         // Add forfeited rewards to locked pool for gradual redistribution
         // (activeRewardPool was already reduced by updateEntityPool)
         entity.lockedRewardPool += amount;
-        entity.totalDistributedRewards -= amount;
+        // Rounding dust lets a position's value exceed its cost basis by a wei
+        // that was never counted as distributed. Saturate instead of reverting,
+        // otherwise that unstake is blocked for the rest of the bonding period.
+        entity.totalDistributedRewards = entity.totalDistributedRewards > amount
+            ? entity.totalDistributedRewards - amount
+            : 0;
 
         emit ForfeitedRewardsReturned(entityId, amount);
     }
