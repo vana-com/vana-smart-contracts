@@ -9,7 +9,7 @@ import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 import "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
-import "./interfaces/DataLiquidityPoolStorageV1.sol";
+import "./interfaces/DataLiquidityPoolStorageV2.sol";
 
 contract DataLiquidityPoolImplementation is
     UUPSUpgradeable,
@@ -17,7 +17,7 @@ contract DataLiquidityPoolImplementation is
     AccessControlUpgradeable,
     ReentrancyGuardUpgradeable,
     ERC2771ContextUpgradeable,
-    DataLiquidityPoolStorageV1
+    DataLiquidityPoolStorageV2
 {
     using EnumerableSet for EnumerableSet.UintSet;
     using EnumerableSet for EnumerableSet.AddressSet;
@@ -87,10 +87,19 @@ contract DataLiquidityPoolImplementation is
      */
     event TeePoolUpdated(address newTeePool);
 
+    /**
+     * @notice Triggered when the dlpId has been updated
+     *
+     * @param newDlpId                  new dlp id
+     */
+    event DlpIdUpdated(uint256 newDlpId);
+
     error FileAlreadyAdded();
     error InvalidScore();
     error InvalidAttestator();
     error InvalidProof();
+    error DlpIdNotSet();
+    error InvalidDlpId();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() ERC2771ContextUpgradeable(address(0)) {
@@ -179,7 +188,7 @@ contract DataLiquidityPoolImplementation is
      * returns the version of the contract
      */
     function version() external pure virtual override returns (uint256) {
-        return 1;
+        return 2;
     }
 
     /**
@@ -303,6 +312,19 @@ contract DataLiquidityPoolImplementation is
     }
 
     /**
+     * @notice Updates the dlpId
+     * @dev The id is assigned by the DLPRegistry after deployment (registerDlp), so it
+     * cannot be known at initialize time. Proofs are only accepted once it is set.
+     *
+     * @param newDlpId                new dlp id
+     */
+    function updateDlpId(uint256 newDlpId) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        dlpId = newDlpId;
+
+        emit DlpIdUpdated(newDlpId);
+    }
+
+    /**
      * @notice Updates the publicKey
      *
      * @param newPublicKey                new public key
@@ -333,6 +355,17 @@ contract DataLiquidityPoolImplementation is
 
         if (keccak256(bytes(fileProof.data.instruction)) != keccak256(bytes(proofInstruction))) {
             revert InvalidProof();
+        }
+
+        // Bind the proof to this DLP. The TEE signs over proof.data.dlpId, so a proof
+        // issued for another DLP that shares this teePool and proofInstruction must not
+        // be paid here. Fail closed until the owner has set the id.
+        if (dlpId == 0) {
+            revert DlpIdNotSet();
+        }
+
+        if (fileProof.data.dlpId != dlpId) {
+            revert InvalidDlpId();
         }
 
         File storage file = _files[fileId];

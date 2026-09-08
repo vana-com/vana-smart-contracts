@@ -31,6 +31,7 @@ interface IDataLiquidityPool {
     function token() external view returns (IERC20);
     function publicKey() external view returns (string memory);
     function proofInstruction() external view returns (string memory);
+    function dlpId() external view returns (uint256);
     function totalContributorsRewardAmount() external view returns (uint256);
     function fileRewardFactor() external view returns (uint256);
 
@@ -52,6 +53,7 @@ interface IDataLiquidityPool {
     function updateFileRewardFactor(uint256 newFileRewardFactor) external;
     function updateTeePool(address newTeePool) external;
     function updateProofInstruction(string calldata newProofInstruction) external;
+    function updateDlpId(uint256 newDlpId) external;
     function updatePublicKey(string calldata newProofInstruction) external;
     function requestReward(uint256 registryFileId, uint256 proofIndex) external;
     function addRewardsForContributors(uint256 contributorsRewardAmount) external;
