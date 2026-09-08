@@ -146,4 +146,74 @@ contract RewardModelsE2ETest is Test {
         int256 net = _stakeEarnUnstake(entityId, 365 days);
         assertGt(net, 0, "staker earned STREAM rewards");
     }
+
+    // ---- STREAM model x bonding period ----
+
+    /// @dev A STREAM entity with a `bonding`-second bonding period and a stream
+    ///      of `amount` over `duration`, funded now.
+    function _streamWithBonding(
+        uint256 bonding,
+        uint256 amount,
+        uint32 duration
+    ) internal returns (uint256 entityId) {
+        vm.prank(owner);
+        staking.updateBondingPeriod(bonding);
+
+        entityId = _createEntity();
+        vm.startPrank(owner);
+        entity.updateEntityRewardModel(entityId, IVanaPoolEntity.RewardModel.STREAM);
+        entity.distributeRewards{value: amount}(entityId, amount, uint64(block.timestamp), duration);
+        vm.stopPrank();
+    }
+
+    function test_streamBonding_earlyExitForfeitsRewards() public {
+        // 30-day bond, 100 VANA streamed over 30 days
+        uint256 entityId = _streamWithBonding(30 days, 100 ether, 30 days);
+
+        uint256 balBefore = staker.balance;
+        vm.prank(staker);
+        staking.stake{value: STAKE}(entityId, staker, 0); // eligibility = now + 30 days
+
+        // vest half the stream, lifting the price
+        vm.warp(block.timestamp + 15 days);
+        entity.processRewards(entityId);
+        assertGt(entity.entityShareToVana(entityId), 1e18, "stream lifted the price");
+
+        uint256 lockedBefore = entity.entities(entityId).lockedRewardPool;
+
+        // unstake DURING bonding -> principal only; the appreciation is forfeited
+        // (read shares before pranking: an external call would consume the prank)
+        uint256 shares = _stakerShares(entityId);
+        vm.prank(staker);
+        staking.unstake(entityId, shares, 0);
+
+        int256 net = int256(staker.balance) - int256(balBefore);
+        assertApproxEqAbs(net, 0, 1e12, "early exit returns principal only");
+
+        // forfeited stream rewards were returned to locked (as STREAM residue)
+        assertGt(
+            entity.entities(entityId).lockedRewardPool,
+            lockedBefore,
+            "forfeited rewards -> locked residue"
+        );
+    }
+
+    function test_streamBonding_lateExitCollectsRewards() public {
+        uint256 entityId = _streamWithBonding(30 days, 100 ether, 30 days);
+
+        uint256 balBefore = staker.balance;
+        vm.prank(staker);
+        staking.stake{value: STAKE}(entityId, staker, 0);
+
+        // wait past bonding; the stream fully vests
+        vm.warp(block.timestamp + 31 days);
+        entity.processRewards(entityId);
+
+        uint256 shares = _stakerShares(entityId);
+        vm.prank(staker);
+        staking.unstake(entityId, shares, 0);
+
+        int256 net = int256(staker.balance) - int256(balBefore);
+        assertGt(net, 0, "late exit collects the stream rewards it earned");
+    }
 }
