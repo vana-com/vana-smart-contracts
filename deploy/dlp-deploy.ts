@@ -41,8 +41,14 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   );
 
   const dlpPubicKey = process.env.DLP_PUBLIC_KEY || "pubicKey";
-  const proofInstruction =
-    process.env.DLP_PROOF_INSTRUCTION || "proofInstruction";
+  // A DLP's proofInstruction is part of what binds a TEE proof to it. Refuse to
+  // deploy with the placeholder so two DLPs never share the default string.
+  const proofInstruction = process.env.DLP_PROOF_INSTRUCTION;
+  if (!proofInstruction || proofInstruction === "DLP_PROOF_INSTRUCTION") {
+    throw new Error(
+      "DLP_PROOF_INSTRUCTION must be set to this DLP's own proof instruction URL",
+    );
+  }
   const dlpName = process.env.DLP_NAME || "DLP Name";
   const dlpFileRewardFactor =
     process.env.DLP_FILE_REWARD_FACTOR || parseEther(1);
@@ -258,6 +264,17 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   }
   console.log(
     "🚀 All components deployed and verified (or attempted). Ready to roll!",
+  );
+  console.log(``);
+  console.log(`⚠️  Next step before rewards can be paid:`);
+  console.log(
+    `   1. Register ${proxyDeploy.proxyAddress} in the DLPRegistry (registerDlp) and read back its dlpId (dlpIds).`,
+  );
+  console.log(
+    `   2. From ${ownerAddress}, call updateDlpId(<dlpId>) on the DataLiquidityPoolProxy.`,
+  );
+  console.log(
+    `   requestReward reverts with DlpIdNotSet() until the id is set; proofs are only accepted for this dlpId.`,
   );
 
   return;
