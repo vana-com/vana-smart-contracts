@@ -24,6 +24,11 @@ contract DataPortabilityGranteesImplementation is
 
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
     bytes32 public constant PERMISSION_MANAGER_ROLE = keccak256("PERMISSION_MANAGER_ROLE");
+    /// @notice May register grantees on behalf of other owners (the gateway
+    ///         relayer). Deliberately narrower than MAINTAINER_ROLE: a hot key
+    ///         that only needs registration must not also get pause() or
+    ///         updateTrustedForwarder().
+    bytes32 public constant REGISTRAR_ROLE = keccak256("REGISTRAR_ROLE");
 
     error ZeroAddress();
     error EmptyPublicKey();
@@ -119,14 +124,17 @@ contract DataPortabilityGranteesImplementation is
             revert ZeroAddress();
         }
 
-        // Allow registration if the caller has MAINTAINER_ROLE (the gateway
-        // relayer path), OR the caller is registering ITSELF as both owner and
-        // grantee. Records are immutable, so a caller must never be able to
-        // register an address it does not control: that would let anyone bind
-        // an attacker-chosen public key to a victim's builder address forever.
+        // Allow registration if the caller holds REGISTRAR_ROLE or
+        // MAINTAINER_ROLE (the gateway relayer path), OR the caller is
+        // registering ITSELF as both owner and grantee. Records are immutable,
+        // so a caller must never be able to register an address it does not
+        // control: that would let anyone bind an attacker-chosen public key to
+        // a victim's builder address forever.
+        address sender = _msgSender();
         if (
-            !hasRole(MAINTAINER_ROLE, _msgSender()) &&
-            (owner != granteeAddress || _msgSender() != granteeAddress)
+            !hasRole(REGISTRAR_ROLE, sender) &&
+            !hasRole(MAINTAINER_ROLE, sender) &&
+            (owner != granteeAddress || sender != granteeAddress)
         ) {
             revert UnauthorizedRegistration();
         }
