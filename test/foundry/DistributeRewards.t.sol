@@ -67,7 +67,9 @@ contract DistributeRewardsTest is Test {
                 lastUpdateTimestamp: START,
                 totalDistributedRewards: 0,
                 rewardModel: IVanaPoolEntity.RewardModel.STREAM,
-                rewardSchedule: sched
+                rewardSchedule: sched,
+                commissionRate: 0,
+                accruedCommission: 0
             })
         );
     }
