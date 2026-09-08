@@ -265,6 +265,17 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   console.log(
     "🚀 All components deployed and verified (or attempted). Ready to roll!",
   );
+  console.log(``);
+  console.log(`⚠️  Next step before rewards can be paid:`);
+  console.log(
+    `   1. Register ${proxyDeploy.proxyAddress} in the DLPRegistry (registerDlp) and read back its dlpId (dlpIds).`,
+  );
+  console.log(
+    `   2. From ${ownerAddress}, call updateDlpId(<dlpId>) on the DataLiquidityPoolProxy.`,
+  );
+  console.log(
+    `   requestReward reverts with DlpIdNotSet() until the id is set; proofs are only accepted for this dlpId.`,
+  );
 
   return;
 };
