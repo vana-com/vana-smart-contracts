@@ -16,12 +16,18 @@ contract VanaPoolEntityImplementation is
 {
     using EnumerableSet for EnumerableSet.UintSet;
 
+    // Commission is expressed as percent * 1e18, matching maxAPY's scale, so
+    // 100% == 100e18 and this is the divisor when skimming a distribution.
+    uint256 public constant MAX_COMMISSION = 100e18;
+
     // Events for entity lifecycle and operations
     event EntityCreated(uint256 indexed entityId, address ownerAddress, string name, uint256 maxAPY);
     event EntityUpdated(uint256 indexed entityId, address ownerAddress, string name);
     event EntityStatusUpdated(uint256 indexed entityId, EntityStatus newStatus);
     event EntityMaxAPYUpdated(uint256 indexed entityId, uint256 newMaxAPY);
     event EntityRewardModelUpdated(uint256 indexed entityId, RewardModel model);
+    event EntityCommissionUpdated(uint256 indexed entityId, uint256 newCommissionRate);
+    event CommissionClaimed(uint256 indexed entityId, address indexed to, uint256 amount);
     event RewardsAdded(uint256 indexed entityId, uint256 amount);
     event RewardsDistributed(uint256 indexed entityId, uint256 amount, uint64 start, uint32 duration);
     event QueuedRewardsToppedUp(uint256 indexed entityId, uint256 addedAmount, uint256 newQueuedTotal);
@@ -504,9 +510,15 @@ contract VanaPoolEntityImplementation is
             toDistribute = entity.lockedRewardPool;
         }
 
+        // Skim the entity's commission before the remainder raises the share
+        // price. Model-agnostic: applies to both APY drip and STREAM vesting.
+        uint256 commission = (toDistribute * entity.commissionRate) / MAX_COMMISSION;
+        uint256 delegatorReward = toDistribute - commission;
+
         entity.lockedRewardPool -= toDistribute;
-        entity.activeRewardPool += toDistribute;
-        entity.totalDistributedRewards += toDistribute;
+        entity.activeRewardPool += delegatorReward; // to delegators via share price
+        entity.accruedCommission += commission; // operator's cut, claimable
+        entity.totalDistributedRewards += delegatorReward;
 
         // Update last process timestamp
         entity.lastUpdateTimestamp = block.timestamp;
@@ -557,6 +569,80 @@ contract VanaPoolEntityImplementation is
         entity.rewardModel = model;
 
         emit EntityRewardModelUpdated(entityId, model);
+    }
+
+    /**
+     * @notice Set an entity's commission -- the operator's cut of each reward
+     *         distribution, taken before the remainder raises the share price
+     *         for delegators. Percent * 1e18 (100% == MAX_COMMISSION). Settles
+     *         pending rewards at the old rate first, so the change is forward-only.
+     *
+     * @param entityId The entity ID
+     * @param newCommissionRate New commission rate, 0..MAX_COMMISSION
+     */
+    function updateEntityCommission(uint256 entityId, uint256 newCommissionRate) external override {
+        Entity storage entity = _entities[entityId];
+
+        if (entity.status != EntityStatus.Active) {
+            revert InvalidEntityStatus();
+        }
+        if (msg.sender != entity.ownerAddress && !hasRole(MAINTAINER_ROLE, msg.sender)) {
+            revert NotEntityOwner();
+        }
+        if (newCommissionRate > MAX_COMMISSION) {
+            revert InvalidParam();
+        }
+
+        // Settle at the old rate so the new rate only applies to future rewards.
+        processRewards(entityId);
+
+        entity.commissionRate = newCommissionRate;
+
+        emit EntityCommissionUpdated(entityId, newCommissionRate);
+    }
+
+    /**
+     * @notice Claim an entity's accrued commission to its owner. Settles first
+     *         so freshly-vested commission is included.
+     *
+     * @param entityId The entity ID
+     */
+    function claimCommission(uint256 entityId) external override whenNotPaused nonReentrant {
+        Entity storage entity = _entities[entityId];
+
+        if (msg.sender != entity.ownerAddress && !hasRole(MAINTAINER_ROLE, msg.sender)) {
+            revert NotEntityOwner();
+        }
+
+        processRewards(entityId);
+
+        uint256 amount = entity.accruedCommission;
+        if (amount == 0) {
+            revert InvalidParam();
+        }
+
+        entity.accruedCommission = 0;
+
+        bool success = vanaPoolStaking.vanaPoolTreasury().transferVana(payable(entity.ownerAddress), amount);
+        if (!success) {
+            revert TransferFailed();
+        }
+
+        emit CommissionClaimed(entityId, entity.ownerAddress, amount);
+    }
+
+    /**
+     * @notice An entity's commission rate (percent * 1e18).
+     */
+    function entityCommissionRate(uint256 entityId) external view override returns (uint256) {
+        return _entities[entityId].commissionRate;
+    }
+
+    /**
+     * @notice Wei of commission accrued to an entity owner, not yet claimed.
+     */
+    function entityAccruedCommission(uint256 entityId) external view override returns (uint256) {
+        return _entities[entityId].accruedCommission;
     }
 
     /**

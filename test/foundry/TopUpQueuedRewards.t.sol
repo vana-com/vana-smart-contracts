@@ -73,7 +73,9 @@ contract TopUpQueuedRewardsTest is Test {
                 lastUpdateTimestamp: START,
                 totalDistributedRewards: 0,
                 rewardModel: model,
-                rewardSchedule: sched
+                rewardSchedule: sched,
+                commissionRate: 0,
+                accruedCommission: 0
             })
         );
     }

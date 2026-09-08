@@ -51,6 +51,9 @@ interface IVanaPoolEntity {
         //     only ever held in the _entities mapping (per-key base slot) ---
         RewardModel rewardModel; // APY (0, default) or STREAM
         RewardSchedule rewardSchedule; // only used while rewardModel == STREAM
+        // --- appended in the commission upgrade; append-safe as above ---
+        uint256 commissionRate; // operator cut of each distribution, percent * 1e18 (100% = 100e18); default 0
+        uint256 accruedCommission; // wei owed to the entity owner, not yet claimed
     }
 
     function version() external pure returns (uint256);
@@ -106,6 +109,11 @@ interface IVanaPoolEntity {
     function updateEntityMaxAPY(uint256 entityId, uint256 newMaxAPY) external;
 
     function updateEntityRewardModel(uint256 entityId, RewardModel model) external;
+
+    function updateEntityCommission(uint256 entityId, uint256 newCommissionRate) external;
+    function claimCommission(uint256 entityId) external;
+    function entityCommissionRate(uint256 entityId) external view returns (uint256);
+    function entityAccruedCommission(uint256 entityId) external view returns (uint256);
 
     // Get entities
     function activeEntitiesValues() external view returns (uint256[] memory);

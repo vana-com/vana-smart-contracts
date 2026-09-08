@@ -73,6 +73,8 @@ contract RewardModelsE2ETest is Test {
         vm.startPrank(owner);
         staking.updateVanaPoolEntity(address(entity));
         staking.updateVanaPoolTreasury(address(treasury));
+        // let the entity pull commission from the treasury (commission upgrade wiring)
+        treasury.grantRole(treasury.DEFAULT_ADMIN_ROLE(), address(entity));
         vm.stopPrank();
 
         vm.deal(owner, 10_000 ether);
@@ -215,5 +217,33 @@ contract RewardModelsE2ETest is Test {
 
         int256 net = int256(staker.balance) - int256(balBefore);
         assertGt(net, 0, "late exit collects the stream rewards it earned");
+    }
+
+    // ---- commission ----
+
+    function test_commission_delegatorEarnsPostCut_ownerClaims() public {
+        uint256 entityId = _createEntity();
+
+        // 20% commission, fund the APY drip
+        vm.startPrank(owner);
+        entity.updateEntityCommission(entityId, 20e18);
+        entity.addRewards{value: 100 ether}(entityId);
+        vm.stopPrank();
+        assertEq(entity.entityCommissionRate(entityId), 20e18);
+
+        // delegator earns the post-commission remainder
+        int256 net = _stakeEarnUnstake(entityId, 365 days);
+        assertGt(net, 0, "delegator earned post-commission rewards");
+
+        // owner claims the accrued commission out of the treasury
+        uint256 accrued = entity.entityAccruedCommission(entityId);
+        assertGt(accrued, 0, "commission accrued to the operator");
+
+        uint256 ownerBalBefore = entityOwner.balance;
+        vm.prank(owner);
+        entity.claimCommission(entityId);
+
+        assertEq(entityOwner.balance - ownerBalBefore, accrued, "owner received the commission");
+        assertEq(entity.entityAccruedCommission(entityId), 0, "accrued reset after claim");
     }
 }
