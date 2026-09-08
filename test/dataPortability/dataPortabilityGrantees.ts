@@ -19,15 +19,17 @@ describe("DataPortabilityGrantees", () => {
   let granteeAddress2: HardhatEthersSigner;
   let trustedForwarder: HardhatEthersSigner;
 
+  let registrar: HardhatEthersSigner;
   let granteesContract: DataPortabilityGranteesImplementation;
   let permissionsContract: DataPortabilityPermissionsImplementation;
 
   const DEFAULT_ADMIN_ROLE = ethers.ZeroHash;
   const MAINTAINER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("MAINTAINER_ROLE"));
   const PERMISSION_MANAGER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("PERMISSION_MANAGER_ROLE"));
+  const REGISTRAR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("REGISTRAR_ROLE"));
 
   beforeEach(async () => {
-    [deployer, owner, maintainer, user1, user2, granteeAddress1, granteeAddress2, trustedForwarder] =
+    [deployer, owner, maintainer, user1, user2, granteeAddress1, granteeAddress2, trustedForwarder, registrar] =
       await ethers.getSigners();
 
     // Deploy DataPortabilityGrantees
@@ -305,6 +307,67 @@ describe("DataPortabilityGrantees", () => {
       await granteesContract.connect(owner).removePermissionFromGrantee(granteeId, 1);
       const updatedInfo = await granteesContract.granteeInfoV2(granteeId);
       expect(updatedInfo.permissionsCount).to.equal(24);
+    });
+  });
+
+  describe("registerGrantee caller binding", () => {
+    // Without MAINTAINER_ROLE, the only allowed registration is a grantee
+    // registering ITSELF. Previously any caller could register any address
+    // with an attacker-chosen public key; records are immutable, so the
+    // victim could never register and consumers would encrypt to the
+    // attacker's key.
+    it("should reject a non-maintainer registering an address they do not control", async () => {
+      await expect(
+        granteesContract
+          .connect(user1)
+          .registerGrantee(granteeAddress2.address, granteeAddress2.address, "attacker-key"),
+      ).to.be.revertedWithCustomError(granteesContract, "UnauthorizedRegistration");
+      expect(await granteesContract.granteeAddressToId(granteeAddress2.address)).to.eq(0n);
+    });
+
+    it("should reject a non-maintainer naming a different owner for themselves", async () => {
+      await expect(
+        granteesContract
+          .connect(granteeAddress1)
+          .registerGrantee(user1.address, granteeAddress1.address, "key"),
+      ).to.be.revertedWithCustomError(granteesContract, "UnauthorizedRegistration");
+    });
+
+    it("should allow a grantee to register itself", async () => {
+      await expect(granteesContract
+        .connect(granteeAddress1)
+        .registerGrantee(granteeAddress1.address, granteeAddress1.address, "self-key")).to.not.be.reverted;
+      expect(await granteesContract.granteeAddressToId(granteeAddress1.address)).to.eq(1n);
+    });
+
+    it("should still allow a maintainer (the gateway relayer) to register any grantee", async () => {
+      await expect(granteesContract
+        .connect(maintainer)
+        .registerGrantee(user2.address, granteeAddress2.address, "relayed-key")).to.not.be.reverted;
+      expect(await granteesContract.granteeAddressToId(granteeAddress2.address)).to.eq(1n);
+    });
+
+    // REGISTRAR_ROLE is the narrow role for the gateway relayer: it can register
+    // on behalf of others but gets none of MAINTAINER_ROLE's pause / forwarder
+    // powers, so a leaked relayer key cannot freeze the registry.
+    it("should let a REGISTRAR_ROLE holder register any grantee", async () => {
+      await granteesContract.connect(owner).grantRole(REGISTRAR_ROLE, registrar.address);
+      await expect(granteesContract
+        .connect(registrar)
+        .registerGrantee(user2.address, granteeAddress2.address, "relayed-key")).to.not.be.reverted;
+      expect(await granteesContract.granteeAddressToId(granteeAddress2.address)).to.eq(1n);
+    });
+
+    it("should not let a REGISTRAR_ROLE holder pause or change the forwarder", async () => {
+      await granteesContract.connect(owner).grantRole(REGISTRAR_ROLE, registrar.address);
+      await expect(granteesContract.connect(registrar).pause()).to.be.revertedWithCustomError(
+        granteesContract,
+        "AccessControlUnauthorizedAccount",
+      );
+      await expect(
+        granteesContract.connect(registrar).updateTrustedForwarder(registrar.address),
+      ).to.be.revertedWithCustomError(granteesContract, "AccessControlUnauthorizedAccount");
+      expect(await granteesContract.paused()).to.eq(false);
     });
   });
 

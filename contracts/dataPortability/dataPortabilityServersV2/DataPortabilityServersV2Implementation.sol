@@ -237,10 +237,14 @@ contract DataPortabilityServersV2Implementation is
         );
     }
 
+    /// @dev Deliberately NOT `whenNotPaused`: deregistration is the only lever
+    /// that strips a server's delegate authority (grants, data writes, status
+    /// flips in PermissionsV2 / DataRegistryV2), and an incident pause is
+    /// exactly when an owner needs it. Registration stays paused.
     function deregisterServerWithSignature(
         ServerDeregistration calldata input,
         bytes calldata signature
-    ) external override whenNotPaused {
+    ) external override {
         if (block.timestamp > input.deadline) revert DeadlineExpired(input.deadline, block.timestamp);
 
         // Verify owner's signature.

@@ -906,7 +906,7 @@ describe("DataPortabilityServersV2", () => {
         .withArgs(serverOwner1.address, MAINTAINER_ROLE);
     });
 
-    it("should reject register and deregister while paused", async function () {
+    it("should reject register but allow deregister while paused", async function () {
       const { serverId } = await registerServer(
         serverOwner1,
         server1.address,
@@ -939,22 +939,51 @@ describe("DataPortabilityServersV2", () => {
         serverOwner1,
         deregistration,
       );
-      await expect(
-        serversContract
-          .connect(relayer)
-          .deregisterServerWithSignature(deregistration, deregSignature),
-      ).to.be.revertedWithCustomError(serversContract, "EnforcedPause");
+      // Deregistration is the only lever that strips a server's delegate
+      // authority (grants, writes, status flips). An incident is exactly
+      // when an owner needs it, so pause must NOT block it.
+      await serversContract
+        .connect(relayer)
+        .deregisterServerWithSignature(deregistration, deregSignature).should
+        .be.fulfilled;
+      (await serversContract.activeServerId(server1.address)).should.eq(
+        ethers.ZeroHash,
+      );
 
-      // After unpausing, both operations succeed again.
+      // After unpausing, registration succeeds again.
       await serversContract.connect(maintainer).unpause();
       await serversContract
         .connect(relayer)
         .registerServerWithSignature(registration, regSignature).should.be
         .fulfilled;
+    });
+
+    it("should let an owner revoke a compromised server during an incident pause", async function () {
+      const { serverId } = await registerServer(
+        serverOwner1,
+        server1.address,
+        PUBLIC_KEY_1,
+        SERVER_URL_1,
+      );
+      await serversContract.connect(maintainer).pause();
+
+      const deregistration: ServerDeregistration = {
+        ownerAddress: serverOwner1.address,
+        serverAddress: server1.address,
+        serverId,
+        deadline: await futureDeadline(),
+      };
+      const deregSignature = await signDeregistration(
+        serverOwner1,
+        deregistration,
+      );
       await serversContract
         .connect(relayer)
         .deregisterServerWithSignature(deregistration, deregSignature).should
         .be.fulfilled;
+      (await serversContract.getServer(serverId)).revokedAtBlock.should.not.eq(
+        0,
+      );
     });
 
     it("should allow maintainer to update the trusted forwarder", async function () {

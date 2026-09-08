@@ -26,7 +26,8 @@ import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
  * 
  * Security Considerations:
  * - Only authorized contracts can modify permission associations
- * - Grantee registration is open but creates immutable records
+ * - Grantee registration is self-service (caller == owner == granteeAddress) or
+ *   by REGISTRAR_ROLE / MAINTAINER_ROLE, and creates immutable records
  * - Public keys are stored for encryption and verification purposes
  * - Administrative functions require appropriate role permissions
  * 
@@ -154,6 +155,9 @@ interface IDataPortabilityGrantees {
      * - Grantee address must not be zero
      * - Public key must not be empty
      * - Contract must not be paused
+     * - Caller must hold REGISTRAR_ROLE or MAINTAINER_ROLE, or be registering itself
+     *   (`_msgSender() == owner == granteeAddress`). Records are immutable,
+     *   so a caller can never bind a public key to an address it does not control
      * 
      * Effects:
      * - Increments grantees count
