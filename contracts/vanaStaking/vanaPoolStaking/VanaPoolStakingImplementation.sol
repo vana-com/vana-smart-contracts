@@ -153,7 +153,7 @@ contract VanaPoolStakingImplementation is
      * @notice Returns the version of the contract
      */
     function version() external pure virtual override returns (uint256) {
-        return 2;
+        return 3;
     }
 
     /**
@@ -463,6 +463,10 @@ contract VanaPoolStakingImplementation is
             revert InvalidRecipient();
         }
 
+        if (stakeAmount < minStakeAmount) {
+            revert InsufficientStakeAmount();
+        }
+
         // Process entity rewards through VanaPoolEntity to ensure current share price is used
         vanaPoolEntity.processRewards(entityId);
 
@@ -659,8 +663,10 @@ contract VanaPoolStakingImplementation is
             vanaToReturn = shareValue;
             // Note: rewards already tracked above via vestedRewards -> realizedRewards
         } else {
-            // Still in bonding period: user receives only principal (forfeits rewards)
-            vanaToReturn = proportionalCostBasis;
+            // Still in bonding period: user receives only principal (forfeits rewards).
+            // Share issuance is floor()'d, so cost basis can sit a wei above the
+            // burned shares' value; never pay out more than the pool is debited.
+            vanaToReturn = proportionalCostBasis < shareValue ? proportionalCostBasis : shareValue;
             // Calculate forfeited rewards (difference between share value and cost basis)
             if (shareValue > proportionalCostBasis) {
                 forfeitedRewards = shareValue - proportionalCostBasis;
