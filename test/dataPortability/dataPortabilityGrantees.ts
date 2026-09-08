@@ -308,6 +308,46 @@ describe("DataPortabilityGrantees", () => {
     });
   });
 
+  describe("registerGrantee caller binding", () => {
+    // Without MAINTAINER_ROLE, the only allowed registration is a grantee
+    // registering ITSELF. Previously any caller could register any address
+    // with an attacker-chosen public key; records are immutable, so the
+    // victim could never register and consumers would encrypt to the
+    // attacker's key.
+    it("should reject a non-maintainer registering an address they do not control", async () => {
+      await expect(
+        granteesContract
+          .connect(user1)
+          .registerGrantee(granteeAddress2.address, granteeAddress2.address, "attacker-key"),
+      ).to.be.revertedWithCustomError(granteesContract, "UnauthorizedRegistration");
+      (await granteesContract.granteeAddressToId(granteeAddress2.address)).should.eq(0n);
+    });
+
+    it("should reject a non-maintainer naming a different owner for themselves", async () => {
+      await expect(
+        granteesContract
+          .connect(granteeAddress1)
+          .registerGrantee(user1.address, granteeAddress1.address, "key"),
+      ).to.be.revertedWithCustomError(granteesContract, "UnauthorizedRegistration");
+    });
+
+    it("should allow a grantee to register itself", async () => {
+      await granteesContract
+        .connect(granteeAddress1)
+        .registerGrantee(granteeAddress1.address, granteeAddress1.address, "self-key").should.be
+        .fulfilled;
+      (await granteesContract.granteeAddressToId(granteeAddress1.address)).should.eq(1n);
+    });
+
+    it("should still allow a maintainer (the gateway relayer) to register any grantee", async () => {
+      await granteesContract
+        .connect(maintainer)
+        .registerGrantee(user2.address, granteeAddress2.address, "relayed-key").should.be
+        .fulfilled;
+      (await granteesContract.granteeAddressToId(granteeAddress2.address)).should.eq(1n);
+    });
+  });
+
   describe("Edge cases and stress tests", () => {
     it("should handle pagination with exactly matching boundaries", async () => {
       // Register a grantee (owner must equal granteeAddress when called by non-maintainer)

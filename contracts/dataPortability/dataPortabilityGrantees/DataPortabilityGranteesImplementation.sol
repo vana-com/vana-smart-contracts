@@ -107,11 +107,6 @@ contract DataPortabilityGranteesImplementation is
         address granteeAddress,
         string memory publicKey
     ) external override whenNotPaused returns (uint256) {
-        // Allow registration if caller has MAINTAINER_ROLE OR owner is the granteeAddress
-        if (!hasRole(MAINTAINER_ROLE, _msgSender()) && owner != granteeAddress) {
-            revert UnauthorizedRegistration();
-        }
-
         if (bytes(publicKey).length == 0) {
             revert EmptyPublicKey();
         }
@@ -122,6 +117,18 @@ contract DataPortabilityGranteesImplementation is
 
         if (owner == address(0)) {
             revert ZeroAddress();
+        }
+
+        // Allow registration if the caller has MAINTAINER_ROLE (the gateway
+        // relayer path), OR the caller is registering ITSELF as both owner and
+        // grantee. Records are immutable, so a caller must never be able to
+        // register an address it does not control: that would let anyone bind
+        // an attacker-chosen public key to a victim's builder address forever.
+        if (
+            !hasRole(MAINTAINER_ROLE, _msgSender()) &&
+            (owner != granteeAddress || _msgSender() != granteeAddress)
+        ) {
+            revert UnauthorizedRegistration();
         }
 
         if (granteeAddressToId[granteeAddress] != 0) {

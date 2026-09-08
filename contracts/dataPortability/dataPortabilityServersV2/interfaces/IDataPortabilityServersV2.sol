@@ -174,6 +174,8 @@ interface IDataPortabilityServersV2 {
     ///         stored id (ties revocation to a specific registration instance).
     ///         Reverts if `block.timestamp > input.deadline` or if the server
     ///         is already revoked.
+    ///         Not gated by `whenNotPaused`: an owner can still revoke a
+    ///         server during an incident pause. Registration stays paused.
     function deregisterServerWithSignature(
         ServerDeregistration calldata input,
         bytes calldata signature
