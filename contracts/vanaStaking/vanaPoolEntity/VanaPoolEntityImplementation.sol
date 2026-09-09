@@ -597,27 +597,27 @@ contract VanaPoolEntityImplementation is
         if (entity.rewardModel != RewardModel.APY) {
             revert InvalidRewardModel();
         }
-        if (start < block.timestamp) {
-            revert InvalidParam();
-        }
 
-        // Settle the capped (APY) phase, then flip to STREAM.
+        // Settle the capped (APY) phase, then flip to STREAM. Clear any stale
+        // schedule so a new one would install fresh.
         processRewards(entityId);
         entity.rewardModel = RewardModel.STREAM;
+        delete entity.rewardSchedule;
+        emit EntityRewardModelUpdated(entityId, RewardModel.STREAM);
 
         // Roll the whole remaining reservoir into one fresh linear stream. In
-        // APY mode all of lockedRewardPool is the reservoir; clear any stale
-        // schedule so the new one installs fresh. The escrow then holds with
-        // equality (committed == residue == locked).
+        // APY mode all of lockedRewardPool is the reservoir; the escrow then
+        // holds with equality (committed == residue == locked). If there is no
+        // residue, the entity simply parks in STREAM with no schedule and can
+        // be funded later via distributeRewards.
         uint256 residue = entity.lockedRewardPool;
-        if (residue == 0) {
-            revert InvalidParam();
+        if (residue > 0) {
+            if (start < block.timestamp) {
+                revert InvalidParam();
+            }
+            _scheduleDistribution(entity.rewardSchedule, residue, start, duration);
+            emit RewardsDistributed(entityId, residue, start, duration);
         }
-        delete entity.rewardSchedule;
-        _scheduleDistribution(entity.rewardSchedule, residue, start, duration);
-
-        emit EntityRewardModelUpdated(entityId, RewardModel.STREAM);
-        emit RewardsDistributed(entityId, residue, start, duration);
     }
 
     /**

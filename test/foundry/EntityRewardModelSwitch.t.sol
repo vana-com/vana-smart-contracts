@@ -261,10 +261,14 @@ contract EntityRewardModelSwitchTest is Test {
         h.switchToStreamModel(ENTITY_ID, uint64(block.timestamp), 60 days);
     }
 
-    function test_switchToStreamModel_rejectsZeroResidue() public {
+    function test_switchToStreamModel_zeroResidue_parksInStreamNoSchedule() public {
         _seedApy(0, 100 ether, 6e18); // nothing to roll
         vm.prank(maintainer);
-        vm.expectRevert(VanaPoolEntityImplementation.InvalidParam.selector);
         h.switchToStreamModel(ENTITY_ID, uint64(block.timestamp), 60 days);
+
+        IVanaPoolEntity.Entity memory e = h.getEntity(ENTITY_ID);
+        assertEq(uint256(e.rewardModel), uint256(IVanaPoolEntity.RewardModel.STREAM), "flipped to STREAM");
+        assertEq(e.rewardSchedule.scheduledValue, 0, "no schedule");
+        assertEq(h.committedRewards(ENTITY_ID), 0, "nothing committed; fund later via distributeRewards");
     }
 }
