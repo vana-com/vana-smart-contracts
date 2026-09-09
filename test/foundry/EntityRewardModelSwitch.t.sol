@@ -163,4 +163,108 @@ contract EntityRewardModelSwitchTest is Test {
         vm.expectRevert(); // InvalidEntityStatus
         h.updateEntityRewardModel(ENTITY_ID, IVanaPoolEntity.RewardModel.STREAM);
     }
+
+    // ---- switchToStreamModel: roll residue into a linear stream ----
+
+    function test_switchToStreamModel_rollsResidueIntoStream() public {
+        _seedApy(1_000 ether, 100 ether, 6e18);
+        vm.warp(START + 30 days);
+        uint256 dripped = h.calculateYield(100 ether, 6e18, 30 days);
+        uint256 residue = 1_000 ether - dripped;
+
+        uint64 start = uint64(block.timestamp);
+        vm.prank(maintainer);
+        h.switchToStreamModel(ENTITY_ID, start, 60 days);
+
+        IVanaPoolEntity.Entity memory e = h.getEntity(ENTITY_ID);
+        assertEq(uint256(e.rewardModel), uint256(IVanaPoolEntity.RewardModel.STREAM), "flipped to STREAM");
+        assertEq(e.activeRewardPool, 100 ether + dripped, "APY settled before the roll");
+        assertEq(e.rewardSchedule.scheduledValue, residue, "residue scheduled");
+        assertEq(e.rewardSchedule.start, start, "stream start");
+        assertEq(e.rewardSchedule.duration, 60 days, "stream duration");
+        assertEq(e.lockedRewardPool, residue, "residue stays locked, backing the stream");
+        assertEq(h.committedRewards(ENTITY_ID), residue, "fully committed to the stream");
+        assertEq(e.lockedRewardPool + e.activeRewardPool, 1_100 ether, "conserved");
+    }
+
+    function test_switchToStreamModel_thenVestsLinearly() public {
+        _seedApy(1_000 ether, 100 ether, 6e18);
+        uint64 start = uint64(block.timestamp);
+        vm.prank(maintainer);
+        h.switchToStreamModel(ENTITY_ID, start, 100 days); // no APY dripped (timeElapsed 0), residue = 1000
+
+        vm.warp(start + 50 days); // half the stream
+        h.processRewards(ENTITY_ID);
+
+        IVanaPoolEntity.Entity memory e = h.getEntity(ENTITY_ID);
+        assertEq(e.activeRewardPool, 100 ether + 500 ether, "half the residue vested");
+        assertEq(e.lockedRewardPool, 500 ether, "half still locked");
+    }
+
+    function test_switchToStreamModel_clearsStaleSchedule() public {
+        // APY entity carrying stale schedule fields (e.g. from a prior STREAM phase)
+        IVanaPoolEntity.RewardSchedule memory stale =
+            IVanaPoolEntity.RewardSchedule(999 ether, START, 5 days, uint32(START), 777 ether, START + 5 days, 10 days);
+        h.setEntity(
+            ENTITY_ID,
+            IVanaPoolEntity.Entity({
+                ownerAddress: address(0xE),
+                status: IVanaPoolEntity.EntityStatus.Active,
+                name: "e",
+                maxAPY: 6e18,
+                lockedRewardPool: 500 ether,
+                activeRewardPool: 100 ether,
+                totalShares: 100 ether,
+                lastUpdateTimestamp: START,
+                totalDistributedRewards: 0,
+                rewardModel: IVanaPoolEntity.RewardModel.APY,
+                rewardSchedule: stale,
+                commissionRate: 0,
+                accruedCommission: 0
+            })
+        );
+
+        uint64 start = uint64(block.timestamp);
+        vm.prank(maintainer);
+        h.switchToStreamModel(ENTITY_ID, start, 30 days);
+
+        IVanaPoolEntity.RewardSchedule memory s = h.getEntity(ENTITY_ID).rewardSchedule;
+        assertEq(s.scheduledValue, 500 ether, "fresh stream = residue, not the stale 999");
+        assertEq(s.duration, 30 days, "fresh duration");
+        assertEq(s.nextScheduledValue, 0, "stale queue cleared");
+    }
+
+    function test_switchToStreamModel_rejectsNonApy() public {
+        IVanaPoolEntity.RewardSchedule memory sched =
+            IVanaPoolEntity.RewardSchedule(10 ether, START, 10 days, uint32(START), 0, 0, 0);
+        h.setEntity(
+            ENTITY_ID,
+            IVanaPoolEntity.Entity({
+                ownerAddress: address(0xE),
+                status: IVanaPoolEntity.EntityStatus.Active,
+                name: "e",
+                maxAPY: 6e18,
+                lockedRewardPool: 10 ether,
+                activeRewardPool: 100 ether,
+                totalShares: 100 ether,
+                lastUpdateTimestamp: START,
+                totalDistributedRewards: 0,
+                rewardModel: IVanaPoolEntity.RewardModel.STREAM,
+                rewardSchedule: sched,
+                commissionRate: 0,
+                accruedCommission: 0
+            })
+        );
+
+        vm.prank(maintainer);
+        vm.expectRevert(VanaPoolEntityImplementation.InvalidRewardModel.selector);
+        h.switchToStreamModel(ENTITY_ID, uint64(block.timestamp), 60 days);
+    }
+
+    function test_switchToStreamModel_rejectsZeroResidue() public {
+        _seedApy(0, 100 ether, 6e18); // nothing to roll
+        vm.prank(maintainer);
+        vm.expectRevert(VanaPoolEntityImplementation.InvalidParam.selector);
+        h.switchToStreamModel(ENTITY_ID, uint64(block.timestamp), 60 days);
+    }
 }

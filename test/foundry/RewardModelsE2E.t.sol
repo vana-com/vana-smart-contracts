@@ -246,4 +246,43 @@ contract RewardModelsE2ETest is Test {
         assertEq(entityOwner.balance - ownerBalBefore, accrued, "owner received the commission");
         assertEq(entity.entityAccruedCommission(entityId), 0, "accrued reset after claim");
     }
+
+    // ---- launch: capped bootstrap, then roll leftover into linear ----
+
+    function test_launchHandoff_cappedThenRollToStream() public {
+        uint256 entityId = _createEntity();
+
+        // capped phase: fund the whole pot, run a higher bootstrap APY
+        vm.startPrank(owner);
+        entity.updateEntityMaxAPY(entityId, 40e18); // 40%
+        entity.addRewards{value: 1_000 ether}(entityId); // the pot
+        vm.stopPrank();
+
+        // a migrator stakes in
+        uint256 balBefore = staker.balance;
+        vm.prank(staker);
+        staking.stake{value: STAKE}(entityId, staker, 0);
+
+        // 14 days of capped APY
+        vm.warp(block.timestamp + 14 days);
+        entity.processRewards(entityId);
+        uint256 residue = entity.entities(entityId).lockedRewardPool;
+        assertGt(residue, 0, "pot has leftover after the capped phase");
+
+        // day 14: ONE call rolls the leftover into a 60-day linear stream
+        vm.prank(owner);
+        entity.switchToStreamModel(entityId, uint64(block.timestamp), 60 days);
+        assertEq(uint256(entity.entityRewardModel(entityId)), uint256(IVanaPoolEntity.RewardModel.STREAM));
+        assertEq(entity.committedRewards(entityId), residue, "leftover rolled into the stream");
+
+        // linear phase runs; staker earns across both phases
+        vm.warp(block.timestamp + 60 days);
+        entity.processRewards(entityId);
+
+        uint256 shares = _stakerShares(entityId);
+        vm.prank(staker);
+        staking.unstake(entityId, shares, 0);
+
+        assertGt(int256(staker.balance) - int256(balBefore), 0, "staker earned across capped + linear");
+    }
 }

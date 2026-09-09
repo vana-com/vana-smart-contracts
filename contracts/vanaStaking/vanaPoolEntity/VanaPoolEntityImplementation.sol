@@ -572,6 +572,55 @@ contract VanaPoolEntityImplementation is
     }
 
     /**
+     * @notice Switch an APY entity to STREAM and roll its entire undistributed
+     *         lockedRewardPool into one linear stream over [start, start +
+     *         duration], atomically. Settles the capped phase first (so accrued
+     *         APY is credited), flips to STREAM, then schedules the residue.
+     *         Rolling the leftover in keeps it allocated to stakers and extends
+     *         the runway, and avoids the parked state a plain switch leaves
+     *         (locked funds vesting nothing until a separate distributeRewards).
+     *
+     * @param entityId  the entity to switch (must be in APY mode)
+     * @param start     stream start; must be >= now
+     * @param duration  linear vesting span in seconds
+     */
+    function switchToStreamModel(
+        uint256 entityId,
+        uint64 start,
+        uint32 duration
+    ) external override onlyRole(MAINTAINER_ROLE) {
+        Entity storage entity = _entities[entityId];
+
+        if (entity.status != EntityStatus.Active) {
+            revert InvalidEntityStatus();
+        }
+        if (entity.rewardModel != RewardModel.APY) {
+            revert InvalidRewardModel();
+        }
+        if (start < block.timestamp) {
+            revert InvalidParam();
+        }
+
+        // Settle the capped (APY) phase, then flip to STREAM.
+        processRewards(entityId);
+        entity.rewardModel = RewardModel.STREAM;
+
+        // Roll the whole remaining reservoir into one fresh linear stream. In
+        // APY mode all of lockedRewardPool is the reservoir; clear any stale
+        // schedule so the new one installs fresh. The escrow then holds with
+        // equality (committed == residue == locked).
+        uint256 residue = entity.lockedRewardPool;
+        if (residue == 0) {
+            revert InvalidParam();
+        }
+        delete entity.rewardSchedule;
+        _scheduleDistribution(entity.rewardSchedule, residue, start, duration);
+
+        emit EntityRewardModelUpdated(entityId, RewardModel.STREAM);
+        emit RewardsDistributed(entityId, residue, start, duration);
+    }
+
+    /**
      * @notice Set an entity's commission -- the operator's cut of each reward
      *         distribution, taken before the remainder raises the share price
      *         for delegators. Percent * 1e18 (100% == MAX_COMMISSION). Settles

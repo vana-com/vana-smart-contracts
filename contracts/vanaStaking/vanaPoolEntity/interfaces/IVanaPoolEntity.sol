@@ -109,6 +109,7 @@ interface IVanaPoolEntity {
     function updateEntityMaxAPY(uint256 entityId, uint256 newMaxAPY) external;
 
     function updateEntityRewardModel(uint256 entityId, RewardModel model) external;
+    function switchToStreamModel(uint256 entityId, uint64 start, uint32 duration) external;
 
     function updateEntityCommission(uint256 entityId, uint256 newCommissionRate) external;
     function claimCommission(uint256 entityId) external;
