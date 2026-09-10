@@ -170,6 +170,30 @@ contract VanaPoolEntityImplementation is
     }
 
     /**
+     * @notice The entity's cumulative stake-seconds (integral of activeRewardPool
+     *         over time) as of now, computed without a write. Monotone
+     *         non-decreasing. A reward splitter reads the delta between two calls
+     *         as the entity's weight for that interval.
+     *
+     *         Exact, not approximate: every activeRewardPool write is preceded by
+     *         _checkpointStakeSeconds, so if stakeSecondsUpdatedAt has not moved,
+     *         activeRewardPool is provably constant over [updatedAt, now].
+     */
+    function stakeSecondsAt(uint256 entityId) external view override returns (uint256) {
+        Entity storage entity = _entities[entityId];
+        // Frozen for a not-yet-checkpointed or non-Active entity, matching
+        // _checkpointStakeSeconds (entity removal is currently disabled, so the
+        // status branch is defensive future-proofing).
+        if (entity.stakeSecondsUpdatedAt == 0 || entity.status != EntityStatus.Active) {
+            return entity.stakeSeconds;
+        }
+        return
+            entity.stakeSeconds +
+            entity.activeRewardPool *
+            (block.timestamp - entity.stakeSecondsUpdatedAt);
+    }
+
+    /**
      * @notice Convert share to VANA for a specific entity
      *
      * @param entityId                          ID of the entity
@@ -278,6 +302,7 @@ contract VanaPoolEntityImplementation is
         // Initialize share values directly in the entity
         entity.totalShares = registrationStake;
         entity.activeRewardPool = registrationStake;
+        entity.stakeSecondsUpdatedAt = block.timestamp; // start stake-seconds accrual now
 
         // Call VanaPoolStaking to register the entity stake
         vanaPoolStaking.registerEntityStake(entityId, entityRegistrationInfo.ownerAddress, registrationStake);
@@ -490,6 +515,9 @@ contract VanaPoolEntityImplementation is
         if (entity.status != EntityStatus.Active) {
             revert InvalidEntityStatus();
         }
+
+        // Checkpoint stake-seconds before the drip changes activeRewardPool.
+        _checkpointStakeSeconds(entity);
 
         // Calculate time elapsed since last update
         uint256 timeElapsed = block.timestamp - entity.lastUpdateTimestamp;
@@ -743,6 +771,10 @@ contract VanaPoolEntityImplementation is
         if (entity.status != EntityStatus.Active) {
             revert InvalidEntityStatus();
         }
+
+        // Bank the elapsed interval at the OLD activeRewardPool before this
+        // stake/unstake changes it (the just-elapsed time ran at the old rate).
+        _checkpointStakeSeconds(entity);
 
         // Update entity totals based on whether it's a stake or unstake
         if (isStake) {
@@ -1036,6 +1068,29 @@ contract VanaPoolEntityImplementation is
             }
         }
         return activeRemaining + schedule.nextScheduledValue;
+    }
+
+    /**
+     * @dev Bank the stake-seconds accrued since the last checkpoint at the
+     *      current (pre-change) activeRewardPool, then advance the watermark.
+     *      MUST be called before every activeRewardPool mutation so the rate is
+     *      constant across each [updatedAt, now] interval. Frozen for non-Active
+     *      entities: a paused entity does not accrue weight.
+     *
+     *      updatedAt == 0 is the "never checkpointed" sentinel (a pre-upgrade
+     *      entity, or the very first touch). There is no prior watermark to
+     *      integrate from -- accruing here would integrate from the Unix epoch --
+     *      so we only start the clock and accrue nothing this call.
+     */
+    function _checkpointStakeSeconds(Entity storage entity) internal {
+        if (entity.stakeSecondsUpdatedAt == 0) {
+            entity.stakeSecondsUpdatedAt = block.timestamp; // first touch: start accruing now
+            return;
+        }
+        if (entity.status == EntityStatus.Active) {
+            entity.stakeSeconds += entity.activeRewardPool * (block.timestamp - entity.stakeSecondsUpdatedAt);
+        }
+        entity.stakeSecondsUpdatedAt = block.timestamp;
     }
 
     // This function is copied from solmate/utils/SignedWadMath.sol
