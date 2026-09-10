@@ -226,6 +226,50 @@ contract RedelegationTest is Test {
         assertApproxEqAbs(int256(staker.balance) - int256(balBefore), int256(0), 1e12, "principal only on early exit");
     }
 
+    // ---- merge into an existing `to` position ----
+
+    function test_redelegate_mergesIntoExistingPosition_weightsBond() public {
+        vm.prank(owner);
+        staking.updateBondingPeriod(30 days);
+
+        uint256 a = _createEntity("pool-a");
+        uint256 b = _createEntity("pool-b");
+        vm.prank(owner);
+        entity.addRewards{value: 100 ether}(a);
+
+        // stake in A now (A bond ends +30d)
+        vm.prank(staker);
+        staking.stake{value: STAKE}(a, staker, 0);
+
+        // stake in B 5 days later (B bond ends +30d from then -> 25d remaining at +10d)
+        vm.warp(block.timestamp + 5 days);
+        vm.prank(staker);
+        staking.stake{value: STAKE}(b, staker, 0);
+
+        // 5 more days: A has 20d bond left, B position has 25d left
+        vm.warp(block.timestamp + 5 days);
+        entity.processRewards(a);
+
+        uint256 bSharesBefore = _shares(b);
+        uint256 moveShares = _shares(a);
+
+        vm.prank(staker);
+        staking.redelegate(a, b, moveShares, 0);
+
+        // shares and cost basis accumulated onto the existing B position
+        assertGt(_shares(b), bSharesBefore, "B shares grew by the moved position");
+        (, uint256 bCost, uint256 bElig) = _position(b);
+        assertApproxEqAbs(bCost, 2 * STAKE, 1e6, "cost basis = existing 100 + moved principal 100");
+
+        // Redelegation happened at a known absolute time (setUp warped to 1e6,
+        // then +5d +5d). Assert against constants, not block.timestamp, which is
+        // cached unreliably under viaIR across the warps/external calls above.
+        uint256 redelegateTime = 1_000_000 + 10 days;
+        // bond is a value-weighted blend of B's 25d and A's carried 20d -> strictly between
+        assertGt(bElig, redelegateTime + 20 days, "later than the carried 20d alone");
+        assertLt(bElig, redelegateTime + 25 days, "earlier than B's existing 25d alone");
+    }
+
     // ---- guards ----
 
     function test_redelegate_rejectsSameEntity() public {
