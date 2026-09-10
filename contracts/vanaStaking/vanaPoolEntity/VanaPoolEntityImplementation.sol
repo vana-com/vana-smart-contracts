@@ -786,6 +786,35 @@ contract VanaPoolEntityImplementation is
     }
 
     /**
+     * @notice Move distributed-reward accounting from one entity to another when
+     *         a staker redelegates a position (called by VanaPoolStaking). The
+     *         reward value itself moves via updateEntityPool; this keeps the
+     *         totalDistributedRewards ledger with it so a later forfeiture in
+     *         `to` decrements a counter that was actually credited.
+     *
+     * @param fromEntityId  entity the reward value left
+     * @param toEntityId    entity the reward value entered
+     * @param amount        reward portion moved (wei)
+     */
+    function redelegateDistributedRewards(
+        uint256 fromEntityId,
+        uint256 toEntityId,
+        uint256 amount
+    ) external override whenNotPaused onlyRole(VANA_POOL_ROLE) {
+        if (amount == 0) {
+            return;
+        }
+
+        Entity storage from = _entities[fromEntityId];
+        // Clamp the debit so rounding or prior forfeitures on `from` can't
+        // underflow; `to` is always credited the full amount so it can absorb
+        // the forfeiture of the moved reward portion.
+        uint256 debit = amount < from.totalDistributedRewards ? amount : from.totalDistributedRewards;
+        from.totalDistributedRewards -= debit;
+        _entities[toEntityId].totalDistributedRewards += amount;
+    }
+
+    /**
      * @dev Calculates continuously compounded APY
      * @param apy The annual interest rate where 6% = 6e18
      * @param principal The initial amount

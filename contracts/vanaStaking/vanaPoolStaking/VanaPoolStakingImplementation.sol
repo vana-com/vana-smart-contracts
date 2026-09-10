@@ -42,6 +42,14 @@ contract VanaPoolStakingImplementation is
      * @param sharesBurned                     shares burned
      */
     event Unstaked(uint256 indexed entityId, address indexed staker, uint256 amount, uint256 sharesBurned);
+    event Redelegated(
+        uint256 indexed fromEntityId,
+        uint256 indexed toEntityId,
+        address indexed staker,
+        uint256 valueMoved,
+        uint256 sharesBurned,
+        uint256 sharesIssued
+    );
 
     /**
      * @notice Triggered when minimum stake amount is updated
@@ -713,6 +721,107 @@ contract VanaPoolStakingImplementation is
         }
 
         emit Unstaked(entityId, staker, vanaToReturn, shareAmount);
+    }
+
+    /**
+     * @notice Move a staking position from one entity to another (redelegation).
+     *         The full share value -- principal plus accrued rewards -- travels
+     *         with the staker (no forfeiture, no VANA leaves the shared treasury),
+     *         and the bond carries: `to` inherits the remaining bond time, so the
+     *         rewards stay locked behind the original maturity and cannot be
+     *         extracted early. Only the principal is carried as cost basis, so an
+     *         early exit from `to` forfeits the reward portion exactly as it would
+     *         have in `from`.
+     *
+     * @param fromEntityId  entity to move out of
+     * @param toEntityId    entity to move into
+     * @param shareAmount   shares of `from` to move
+     * @param minSharesOut  minimum shares to receive in `to` (slippage guard)
+     */
+    function redelegate(
+        uint256 fromEntityId,
+        uint256 toEntityId,
+        uint256 shareAmount,
+        uint256 minSharesOut
+    ) external override nonReentrant whenNotPaused {
+        if (fromEntityId == toEntityId) {
+            revert InvalidEntity();
+        }
+        if (!_isValidEntity(toEntityId)) {
+            revert EntityNotActive();
+        }
+
+        address staker = _msgSender();
+        StakerEntity storage from = _stakers[staker].entities[fromEntityId];
+        if (from.shares == 0 || shareAmount == 0 || shareAmount > from.shares) {
+            revert InvalidAmount();
+        }
+
+        // Settle both entities so each side's share price is current.
+        vanaPoolEntity.processRewards(fromEntityId);
+        vanaPoolEntity.processRewards(toEntityId);
+
+        uint256 currentTimestamp = block.timestamp;
+
+        // ---- exit `from`: carry full value, principal, vested, and bond ----
+        uint256 fromShareToVana = vanaPoolEntity.entityShareToVana(fromEntityId);
+        uint256 movedValue = (shareAmount * fromShareToVana) / 1e18; // full value incl. rewards
+        uint256 movedCostBasis = (from.costBasis * shareAmount) / from.shares; // principal portion
+        uint256 movedVested = (from.vestedRewards * shareAmount) / from.shares;
+        uint256 remainingBond = currentTimestamp < from.rewardEligibilityTimestamp
+            ? from.rewardEligibilityTimestamp - currentTimestamp
+            : 0;
+
+        uint256 fromSharesBefore = from.shares;
+        from.shares -= shareAmount;
+        from.costBasis -= movedCostBasis;
+        from.vestedRewards -= movedVested;
+
+        // Anti-wash: extend the bond on `from`'s remainder for a partial move
+        // mid-bond (same inverse-weighted rule as _unstake).
+        if (remainingBond > 0 && from.shares > 0) {
+            uint256 extendedTime = (remainingBond * fromSharesBefore) / from.shares;
+            if (extendedTime > bondingPeriod) {
+                extendedTime = bondingPeriod;
+            }
+            from.rewardEligibilityTimestamp = currentTimestamp + extendedTime;
+        }
+
+        vanaPoolEntity.updateEntityPool(fromEntityId, shareAmount, movedValue, false);
+
+        // ---- enter `to`: mint shares for movedValue, carry principal + bond ----
+        uint256 sharesIssued = (vanaPoolEntity.vanaToEntityShare(toEntityId) * movedValue) / 1e18;
+        if (sharesIssued == 0 || sharesIssued < minSharesOut) {
+            revert InvalidSlippage();
+        }
+
+        StakerEntity storage to = _stakers[staker].entities[toEntityId];
+
+        // Weighted-average the existing `to` bond with the carried bond, by value
+        // (mirrors stake()'s bonding math using the carried remaining bond).
+        uint256 existingValue = (to.shares * vanaPoolEntity.entityShareToVana(toEntityId)) / 1e18;
+        uint256 existingRemaining = currentTimestamp < to.rewardEligibilityTimestamp
+            ? to.rewardEligibilityTimestamp - currentTimestamp
+            : 0;
+        uint256 newTotalValue = existingValue + movedValue;
+        uint256 weightedTime = (existingValue * existingRemaining + movedValue * remainingBond) / newTotalValue;
+        to.rewardEligibilityTimestamp = currentTimestamp + weightedTime;
+
+        // Carry the principal (not the full value): the reward portion rides as
+        // unrealized gain, kept only if the carried bond is served in `to`.
+        to.costBasis += movedCostBasis;
+        to.vestedRewards += movedVested;
+        to.shares += sharesIssued;
+
+        _addStaker(staker);
+
+        vanaPoolEntity.updateEntityPool(toEntityId, sharesIssued, movedValue, true);
+
+        // Carry the distributed-reward ledger for the moved reward portion so a
+        // later forfeiture in `to` decrements a counter that was credited.
+        vanaPoolEntity.redelegateDistributedRewards(fromEntityId, toEntityId, movedValue - movedCostBasis);
+
+        emit Redelegated(fromEntityId, toEntityId, staker, movedValue, shareAmount, sharesIssued);
     }
 
     /**

@@ -121,6 +121,7 @@ interface IVanaPoolEntity {
 
     function updateEntityPool(uint256 entityId, uint256 shares, uint256 amount, bool isStake) external;
     function returnForfeitedRewards(uint256 entityId, uint256 amount) external;
+    function redelegateDistributedRewards(uint256 fromEntityId, uint256 toEntityId, uint256 amount) external;
 
     function calculateYield(uint256 apy, uint256 principal, uint256 time) external pure returns (uint256);
 
