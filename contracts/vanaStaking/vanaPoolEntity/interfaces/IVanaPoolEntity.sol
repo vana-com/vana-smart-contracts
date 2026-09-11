@@ -54,6 +54,9 @@ interface IVanaPoolEntity {
         // --- appended in the commission upgrade; append-safe as above ---
         uint256 commissionRate; // operator cut of each distribution, percent * 1e18 (100% = 100e18); default 0
         uint256 accruedCommission; // wei owed to the entity owner, not yet claimed
+        // --- appended in the stake-seconds upgrade; append-safe as above ---
+        uint256 stakeSeconds; // cumulative integral of activeRewardPool over time (monotone)
+        uint256 stakeSecondsUpdatedAt; // last time stakeSeconds was checkpointed
     }
 
     function version() external pure returns (uint256);
@@ -81,6 +84,7 @@ interface IVanaPoolEntity {
     function entityRewardModel(uint256 entityId) external view returns (RewardModel);
     function entityRewardSchedule(uint256 entityId) external view returns (RewardSchedule memory);
     function committedRewards(uint256 entityId) external view returns (uint256);
+    function stakeSecondsAt(uint256 entityId) external view returns (uint256);
     function entityNameToId(string calldata entityName) external view returns (uint256);
 
     function entityShareToVana(uint256 entityId) external view returns (uint256);
