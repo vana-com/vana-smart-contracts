@@ -16,12 +16,21 @@ contract VanaPoolEntityImplementation is
 {
     using EnumerableSet for EnumerableSet.UintSet;
 
+    // Commission is expressed as percent * 1e18, matching maxAPY's scale, so
+    // 100% == 100e18 and this is the divisor when skimming a distribution.
+    uint256 public constant MAX_COMMISSION = 100e18;
+
     // Events for entity lifecycle and operations
     event EntityCreated(uint256 indexed entityId, address ownerAddress, string name, uint256 maxAPY);
     event EntityUpdated(uint256 indexed entityId, address ownerAddress, string name);
     event EntityStatusUpdated(uint256 indexed entityId, EntityStatus newStatus);
     event EntityMaxAPYUpdated(uint256 indexed entityId, uint256 newMaxAPY);
+    event EntityRewardModelUpdated(uint256 indexed entityId, RewardModel model);
+    event EntityCommissionUpdated(uint256 indexed entityId, uint256 newCommissionRate);
+    event CommissionClaimed(uint256 indexed entityId, address indexed to, uint256 amount);
     event RewardsAdded(uint256 indexed entityId, uint256 amount);
+    event RewardsDistributed(uint256 indexed entityId, uint256 amount, uint64 start, uint32 duration);
+    event QueuedRewardsToppedUp(uint256 indexed entityId, uint256 addedAmount, uint256 newQueuedTotal);
     event RewardsProcessed(uint256 indexed entityId, uint256 distributedAmount);
     event ForfeitedRewardsReturned(uint256 indexed entityId, uint256 amount);
 
@@ -36,6 +45,8 @@ contract VanaPoolEntityImplementation is
     error NameTooShort();
     error InvalidRegistrationStake();
     error StakersStillPresent();
+    error InvalidRewardModel();
+    error InsufficientRewardFunds();
     error NotAuthorized();
     error TransferFailed();
 
@@ -130,6 +141,56 @@ contract VanaPoolEntityImplementation is
                 lastUpdateTimestamp: entity.lastUpdateTimestamp,
                 totalDistributedRewards: entity.totalDistributedRewards
             });
+    }
+
+    /**
+     * @notice The reward model (APY or STREAM) an entity currently vests by
+     */
+    function entityRewardModel(uint256 entityId) external view override returns (RewardModel) {
+        return _entities[entityId].rewardModel;
+    }
+
+    /**
+     * @notice An entity's reward schedule (active entry + queued follow-on).
+     *         Meaningful only while the entity is in STREAM mode.
+     */
+    function entityRewardSchedule(
+        uint256 entityId
+    ) external view override returns (RewardSchedule memory) {
+        return _entities[entityId].rewardSchedule;
+    }
+
+    /**
+     * @notice Wei a STREAM entity still owes: active-unvested + queued. Its
+     *         lockedRewardPool is kept at least this large. Returns 0 for an
+     *         APY entity or one with no schedule.
+     */
+    function committedRewards(uint256 entityId) external view override returns (uint256) {
+        return _committedRewards(_entities[entityId].rewardSchedule);
+    }
+
+    /**
+     * @notice The entity's cumulative stake-seconds (integral of activeRewardPool
+     *         over time) as of now, computed without a write. Monotone
+     *         non-decreasing. A reward splitter reads the delta between two calls
+     *         as the entity's weight for that interval.
+     *
+     *         Exact, not approximate: every activeRewardPool write is preceded by
+     *         _checkpointStakeSeconds, so if stakeSecondsUpdatedAt has not moved,
+     *         activeRewardPool is provably constant over [updatedAt, now].
+     */
+    function stakeSecondsAt(uint256 entityId) external view override returns (uint256) {
+        Entity storage entity = _entities[entityId];
+        // Frozen for a not-yet-checkpointed or non-Active entity, matching
+        // _checkpointStakeSeconds (entity removal is currently disabled, so the
+        // status branch is defensive future-proofing).
+        if (entity.stakeSecondsUpdatedAt == 0 || entity.status != EntityStatus.Active) {
+            return entity.stakeSeconds;
+        }
+        return
+            entity.stakeSeconds +
+            entity.activeRewardPool *
+            (block.timestamp - entity.stakeSecondsUpdatedAt);
     }
 
     /**
@@ -241,6 +302,7 @@ contract VanaPoolEntityImplementation is
         // Initialize share values directly in the entity
         entity.totalShares = registrationStake;
         entity.activeRewardPool = registrationStake;
+        entity.stakeSecondsUpdatedAt = block.timestamp; // start stake-seconds accrual now
 
         // Call VanaPoolStaking to register the entity stake
         vanaPoolStaking.registerEntityStake(entityId, entityRegistrationInfo.ownerAddress, registrationStake);
@@ -346,6 +408,104 @@ contract VanaPoolEntityImplementation is
     }
 
     /**
+     * @notice Schedule a linear reward stream for a STREAM-model entity, funded
+     *         by msg.value and/or the entity's existing locked residue. Uses the
+     *         Synthetix V3 replace/queue rules: the new entry either replaces the
+     *         active one (cancelling its unvested remainder to residue) or is
+     *         queued as the single follow-on when it starts after the active one.
+     *
+     * @param entityId  the entity to schedule rewards for
+     * @param amount    wei to distribute over [start, start + duration]
+     * @param start     vesting start; must be >= block.timestamp
+     * @param duration  vesting span in seconds; 0 == instant
+     */
+    function distributeRewards(
+        uint256 entityId,
+        uint256 amount,
+        uint64 start,
+        uint32 duration
+    ) external payable override whenNotPaused {
+        Entity storage entity = _entities[entityId];
+
+        if (entity.status != EntityStatus.Active) {
+            revert InvalidEntityStatus();
+        }
+        if (msg.sender != entity.ownerAddress && !hasRole(MAINTAINER_ROLE, msg.sender)) {
+            revert NotEntityOwner();
+        }
+        if (entity.rewardModel != RewardModel.STREAM) {
+            revert InvalidRewardModel();
+        }
+        if (amount == 0 || start < block.timestamp) {
+            revert InvalidParam();
+        }
+
+        // Settle vesting under the current schedule before changing it, using
+        // the pre-funding locked balance.
+        processRewards(entityId);
+
+        // Fund: account the new value and move it to the treasury (residue that
+        // is already there backs any amount drawn beyond msg.value).
+        if (msg.value > 0) {
+            entity.lockedRewardPool += msg.value;
+
+            (bool success, ) = payable(address(vanaPoolStaking.vanaPoolTreasury())).call{value: msg.value}("");
+            if (!success) {
+                revert TransferFailed();
+            }
+        }
+
+        // Install the new distribution (replace or queue).
+        _scheduleDistribution(entity.rewardSchedule, amount, start, duration);
+
+        // Every scheduled reward must be backed by locked funds.
+        if (entity.lockedRewardPool < _committedRewards(entity.rewardSchedule)) {
+            revert InsufficientRewardFunds();
+        }
+
+        emit RewardsDistributed(entityId, amount, start, duration);
+    }
+
+    /**
+     * @notice Add funds to a STREAM entity's already-queued reward entry,
+     *         leaving its start and duration unchanged. Purely additive --
+     *         unlike distributeRewards, which overwrites the queued entry -- so
+     *         it can neither cancel nor defer anything already scheduled.
+     *
+     * @param entityId  the entity whose queued entry to top up
+     */
+    function topUpQueuedRewards(uint256 entityId) external payable override whenNotPaused {
+        Entity storage entity = _entities[entityId];
+
+        if (entity.status != EntityStatus.Active) {
+            revert InvalidEntityStatus();
+        }
+        if (msg.sender != entity.ownerAddress && !hasRole(MAINTAINER_ROLE, msg.sender)) {
+            revert NotEntityOwner();
+        }
+        if (entity.rewardModel != RewardModel.STREAM) {
+            revert InvalidRewardModel();
+        }
+        if (msg.value == 0 || entity.rewardSchedule.nextScheduledValue == 0) {
+            revert InvalidParam();
+        }
+
+        // Fund: account the value and move it to the treasury.
+        entity.lockedRewardPool += msg.value;
+
+        (bool success, ) = payable(address(vanaPoolStaking.vanaPoolTreasury())).call{value: msg.value}("");
+        if (!success) {
+            revert TransferFailed();
+        }
+
+        // Additive: grow the queued entry, start/duration unchanged. locked and
+        // committed both rise by msg.value, so the escrow invariant is preserved.
+        entity.rewardSchedule.nextScheduledValue += uint128(msg.value);
+
+        emit QueuedRewardsToppedUp(entityId, msg.value, entity.rewardSchedule.nextScheduledValue);
+    }
+
+    /**
      * @notice Process rewards for an entity
      * @param entityId The entity ID to process rewards for
      */
@@ -356,22 +516,37 @@ contract VanaPoolEntityImplementation is
             revert InvalidEntityStatus();
         }
 
+        // Checkpoint stake-seconds before the drip changes activeRewardPool.
+        _checkpointStakeSeconds(entity);
+
         // Calculate time elapsed since last update
         uint256 timeElapsed = block.timestamp - entity.lastUpdateTimestamp;
         if (timeElapsed == 0) {
             return;
         }
 
-        // Calculate theoretical yield based on maxAPY
-        uint256 toDistribute = calculateYield(entity.activeRewardPool, entity.maxAPY, timeElapsed);
+        uint256 toDistribute;
+        if (entity.rewardModel == RewardModel.APY) {
+            // Calculate theoretical yield based on maxAPY
+            toDistribute = calculateYield(entity.activeRewardPool, entity.maxAPY, timeElapsed);
+        } else {
+            // STREAM: linear vesting of the entity's scheduled rewards
+            toDistribute = _vestStream(entity.rewardSchedule, entity.totalShares);
+        }
 
         if (toDistribute > entity.lockedRewardPool) {
             toDistribute = entity.lockedRewardPool;
         }
 
+        // Skim the entity's commission before the remainder raises the share
+        // price. Model-agnostic: applies to both APY drip and STREAM vesting.
+        uint256 commission = (toDistribute * entity.commissionRate) / MAX_COMMISSION;
+        uint256 delegatorReward = toDistribute - commission;
+
         entity.lockedRewardPool -= toDistribute;
-        entity.activeRewardPool += toDistribute;
-        entity.totalDistributedRewards += toDistribute;
+        entity.activeRewardPool += delegatorReward; // to delegators via share price
+        entity.accruedCommission += commission; // operator's cut, claimable
+        entity.totalDistributedRewards += delegatorReward;
 
         // Update last process timestamp
         entity.lastUpdateTimestamp = block.timestamp;
@@ -397,6 +572,154 @@ contract VanaPoolEntityImplementation is
         entity.maxAPY = newMaxAPY;
 
         emit EntityMaxAPYUpdated(entityId, newMaxAPY);
+    }
+
+    /**
+     * @notice Switch an entity between reward models (APY <-> STREAM)
+     * @param entityId The entity ID
+     * @param model The reward model to switch to
+     */
+    function updateEntityRewardModel(
+        uint256 entityId,
+        RewardModel model
+    ) external override onlyRole(MAINTAINER_ROLE) {
+        Entity storage entity = _entities[entityId];
+
+        if (entity.status != EntityStatus.Active) {
+            revert InvalidEntityStatus();
+        }
+
+        // Settle the outgoing model up to now before flipping, so rewards owed
+        // under the old model (e.g. APY accrued since the last drip) are moved
+        // locked -> active at the switch instant and not mis-credited after.
+        processRewards(entityId);
+
+        entity.rewardModel = model;
+
+        emit EntityRewardModelUpdated(entityId, model);
+    }
+
+    /**
+     * @notice Switch an APY entity to STREAM and roll its entire undistributed
+     *         lockedRewardPool into one linear stream over [start, start +
+     *         duration], atomically. Settles the capped phase first (so accrued
+     *         APY is credited), flips to STREAM, then schedules the residue.
+     *         Rolling the leftover in keeps it allocated to stakers and extends
+     *         the runway, and avoids the parked state a plain switch leaves
+     *         (locked funds vesting nothing until a separate distributeRewards).
+     *
+     * @param entityId  the entity to switch (must be in APY mode)
+     * @param start     stream start; must be >= now
+     * @param duration  linear vesting span in seconds
+     */
+    function switchToStreamModel(
+        uint256 entityId,
+        uint64 start,
+        uint32 duration
+    ) external override onlyRole(MAINTAINER_ROLE) {
+        Entity storage entity = _entities[entityId];
+
+        if (entity.status != EntityStatus.Active) {
+            revert InvalidEntityStatus();
+        }
+        if (entity.rewardModel != RewardModel.APY) {
+            revert InvalidRewardModel();
+        }
+
+        // Settle the capped (APY) phase, then flip to STREAM. Clear any stale
+        // schedule so a new one would install fresh.
+        processRewards(entityId);
+        entity.rewardModel = RewardModel.STREAM;
+        delete entity.rewardSchedule;
+        emit EntityRewardModelUpdated(entityId, RewardModel.STREAM);
+
+        // Roll the whole remaining reservoir into one fresh linear stream. In
+        // APY mode all of lockedRewardPool is the reservoir; the escrow then
+        // holds with equality (committed == residue == locked). If there is no
+        // residue, the entity simply parks in STREAM with no schedule and can
+        // be funded later via distributeRewards.
+        uint256 residue = entity.lockedRewardPool;
+        if (residue > 0) {
+            if (start < block.timestamp) {
+                revert InvalidParam();
+            }
+            _scheduleDistribution(entity.rewardSchedule, residue, start, duration);
+            emit RewardsDistributed(entityId, residue, start, duration);
+        }
+    }
+
+    /**
+     * @notice Set an entity's commission -- the operator's cut of each reward
+     *         distribution, taken before the remainder raises the share price
+     *         for delegators. Percent * 1e18 (100% == MAX_COMMISSION). Settles
+     *         pending rewards at the old rate first, so the change is forward-only.
+     *
+     * @param entityId The entity ID
+     * @param newCommissionRate New commission rate, 0..MAX_COMMISSION
+     */
+    function updateEntityCommission(uint256 entityId, uint256 newCommissionRate) external override {
+        Entity storage entity = _entities[entityId];
+
+        if (entity.status != EntityStatus.Active) {
+            revert InvalidEntityStatus();
+        }
+        if (msg.sender != entity.ownerAddress && !hasRole(MAINTAINER_ROLE, msg.sender)) {
+            revert NotEntityOwner();
+        }
+        if (newCommissionRate > MAX_COMMISSION) {
+            revert InvalidParam();
+        }
+
+        // Settle at the old rate so the new rate only applies to future rewards.
+        processRewards(entityId);
+
+        entity.commissionRate = newCommissionRate;
+
+        emit EntityCommissionUpdated(entityId, newCommissionRate);
+    }
+
+    /**
+     * @notice Claim an entity's accrued commission to its owner. Settles first
+     *         so freshly-vested commission is included.
+     *
+     * @param entityId The entity ID
+     */
+    function claimCommission(uint256 entityId) external override whenNotPaused nonReentrant {
+        Entity storage entity = _entities[entityId];
+
+        if (msg.sender != entity.ownerAddress && !hasRole(MAINTAINER_ROLE, msg.sender)) {
+            revert NotEntityOwner();
+        }
+
+        processRewards(entityId);
+
+        uint256 amount = entity.accruedCommission;
+        if (amount == 0) {
+            revert InvalidParam();
+        }
+
+        entity.accruedCommission = 0;
+
+        bool success = vanaPoolStaking.vanaPoolTreasury().transferVana(payable(entity.ownerAddress), amount);
+        if (!success) {
+            revert TransferFailed();
+        }
+
+        emit CommissionClaimed(entityId, entity.ownerAddress, amount);
+    }
+
+    /**
+     * @notice An entity's commission rate (percent * 1e18).
+     */
+    function entityCommissionRate(uint256 entityId) external view override returns (uint256) {
+        return _entities[entityId].commissionRate;
+    }
+
+    /**
+     * @notice Wei of commission accrued to an entity owner, not yet claimed.
+     */
+    function entityAccruedCommission(uint256 entityId) external view override returns (uint256) {
+        return _entities[entityId].accruedCommission;
     }
 
     /**
@@ -449,6 +772,10 @@ contract VanaPoolEntityImplementation is
             revert InvalidEntityStatus();
         }
 
+        // Bank the elapsed interval at the OLD activeRewardPool before this
+        // stake/unstake changes it (the just-elapsed time ran at the old rate).
+        _checkpointStakeSeconds(entity);
+
         // Update entity totals based on whether it's a stake or unstake
         if (isStake) {
             entity.totalShares += shares;
@@ -491,6 +818,35 @@ contract VanaPoolEntityImplementation is
     }
 
     /**
+     * @notice Move distributed-reward accounting from one entity to another when
+     *         a staker redelegates a position (called by VanaPoolStaking). The
+     *         reward value itself moves via updateEntityPool; this keeps the
+     *         totalDistributedRewards ledger with it so a later forfeiture in
+     *         `to` decrements a counter that was actually credited.
+     *
+     * @param fromEntityId  entity the reward value left
+     * @param toEntityId    entity the reward value entered
+     * @param amount        reward portion moved (wei)
+     */
+    function redelegateDistributedRewards(
+        uint256 fromEntityId,
+        uint256 toEntityId,
+        uint256 amount
+    ) external override whenNotPaused onlyRole(VANA_POOL_ROLE) {
+        if (amount == 0) {
+            return;
+        }
+
+        Entity storage from = _entities[fromEntityId];
+        // Clamp the debit so rounding or prior forfeitures on `from` can't
+        // underflow; `to` is always credited the full amount so it can absorb
+        // the forfeiture of the moved reward portion.
+        uint256 debit = amount < from.totalDistributedRewards ? amount : from.totalDistributedRewards;
+        from.totalDistributedRewards -= debit;
+        _entities[toEntityId].totalDistributedRewards += amount;
+    }
+
+    /**
      * @dev Calculates continuously compounded APY
      * @param apy The annual interest rate where 6% = 6e18
      * @param principal The initial amount
@@ -523,6 +879,218 @@ contract VanaPoolEntityImplementation is
 
         // Calculate (e^rate - 1) * 100 to get APY percentage
         return (eToRate - 1e18) * 100;
+    }
+
+    /**
+     * @notice The entity's current annualized APY, in the same units as
+     *         calculateContinuousAPYByEntity (percentage points scaled by 1e18,
+     *         e.g. 6.18% -> 6.18e18). Model-aware:
+     *          - APY:    the sustained effective cap (e^maxAPY - 1), but 0 once
+     *                    lockedRewardPool is empty (the cap can no longer drip).
+     *          - STREAM: the active entry's linear vesting rate annualized over
+     *                    activeRewardPool, or 0 when nothing is currently vesting.
+     *         This is the forward-looking rate; realized APY is measured from
+     *         entityShareToVana over time.
+     */
+    function currentAPYByEntity(uint256 entityId) external view override returns (uint256) {
+        Entity storage entity = _entities[entityId];
+
+        if (entity.rewardModel == RewardModel.APY) {
+            if (entity.lockedRewardPool == 0) {
+                return 0;
+            }
+            uint256 rateAsDecimal = entity.maxAPY / 100;
+            return (calculateExponential(rateAsDecimal) - 1e18) * 100;
+        }
+
+        // STREAM: annualize the active entry's linear rate (scheduledValue /
+        // duration wei/sec) over the active pool. Zero unless an entry is
+        // currently vesting into a non-empty pool.
+        RewardSchedule storage schedule = entity.rewardSchedule;
+        uint256 end = uint256(schedule.start) + schedule.duration;
+        if (
+            entity.activeRewardPool == 0 ||
+            schedule.scheduledValue == 0 ||
+            schedule.duration == 0 ||
+            block.timestamp < schedule.start ||
+            block.timestamp >= end
+        ) {
+            return 0;
+        }
+        return
+            (uint256(schedule.scheduledValue) * 365 days * 100 * 1e18) /
+            (uint256(schedule.duration) * entity.activeRewardPool);
+    }
+
+    /**
+     * @dev Computes how much a STREAM-model entity's active schedule has vested
+     *      since its last update, advances the watermark, and promotes the
+     *      queued entry once the active one has ended. Returns wei to move from
+     *      lockedRewardPool to activeRewardPool. Vesting is linear over
+     *      [start, start + duration].
+     *
+     *      While totalShares is zero the watermark is not advanced, so the
+     *      elapsed interval is preserved and vests once shares exist again,
+     *      rather than adding rewards to a pool with no shares to receive them.
+     *
+     * @param schedule     the entity's reward schedule (mutated in place)
+     * @param totalShares  the entity's current total shares
+     * @return toVest      wei to transfer from locked to active
+     */
+    function _vestStream(
+        RewardSchedule storage schedule,
+        uint256 totalShares
+    ) internal returns (uint256 toVest) {
+        // Nothing scheduled, or no shares to receive it: preserve the interval
+        // by returning without advancing the watermark.
+        if (schedule.scheduledValue == 0 || totalShares == 0) {
+            return 0;
+        }
+
+        // Active entry has not started vesting yet.
+        if (block.timestamp < schedule.start) {
+            return 0;
+        }
+
+        uint256 value = schedule.scheduledValue;
+        uint256 start = schedule.start;
+        uint256 duration = schedule.duration;
+        uint256 last = schedule.lastUpdate;
+
+        // vested(t): the total that has vested by time t, a line clamped to
+        // [0, value]. The amount owed now is vested(now) - vested(lastUpdate).
+        uint256 vestedNow;
+        uint256 vestedAtLast;
+        if (duration == 0) {
+            // Instant entry: the whole value vests at/after start.
+            vestedNow = value;
+            vestedAtLast = last >= start ? value : 0;
+        } else {
+            uint256 end = start + duration;
+            vestedNow = block.timestamp >= end ? value : (value * (block.timestamp - start)) / duration;
+            vestedAtLast = last >= start ? (value * (last - start)) / duration : 0;
+        }
+
+        toVest = vestedNow - vestedAtLast;
+
+        // Once the active entry has fully vested, promote the queued entry and
+        // vest its head in the same call (mirrors Synthetix updateEntry). Done
+        // before writing lastUpdate so the recursion sees a watermark that
+        // predates the promoted entry's start, making its vested-so-far zero.
+        if (block.timestamp >= start + duration) {
+            schedule.scheduledValue = schedule.nextScheduledValue;
+            schedule.start = schedule.nextStart;
+            schedule.duration = schedule.nextDuration;
+            schedule.nextScheduledValue = 0;
+            schedule.nextStart = 0;
+            schedule.nextDuration = 0;
+            toVest += _vestStream(schedule, totalShares);
+        }
+
+        // Always advance the watermark. When the recursion above ran with a
+        // further queued entry it already wrote this same value (a redundant
+        // but harmless SSTORE); when it promoted an empty slot it short-circuited
+        // on the scheduledValue == 0 guard without writing, so this is required.
+        schedule.lastUpdate = uint32(block.timestamp);
+    }
+
+    /**
+     * @dev Installs a new reward distribution into a schedule, following the
+     *      Synthetix V3 RewardDistribution.distribute rules. Assumes vesting has
+     *      already been settled up to now (caller runs processRewards first).
+     *      Funds are not moved here; they live in lockedRewardPool and the
+     *      caller enforces that locked covers everything still committed.
+     *
+     *      The new entry either replaces the active one (when it overlaps, or the
+     *      active one is absent/ended) or is queued as the single follow-on entry
+     *      (when it starts at/after the active one ends). A replaced remainder or
+     *      a displaced queued entry is left funded in lockedRewardPool as residue.
+     *
+     * @param schedule  the entity's reward schedule (mutated in place)
+     * @param amount    wei to distribute over [start, start + duration]
+     * @param start     vesting start (must be > 0)
+     * @param duration  vesting span in seconds; 0 == instant
+     */
+    function _scheduleDistribution(
+        RewardSchedule storage schedule,
+        uint256 amount,
+        uint64 start,
+        uint32 duration
+    ) internal {
+        uint256 activeEnd = uint256(schedule.start) + schedule.duration;
+
+        if (
+            start == 0 ||
+            schedule.scheduledValue == 0 ||
+            block.timestamp > activeEnd ||
+            start < activeEnd
+        ) {
+            // Replace the active entry. Any queued entry is displaced and the
+            // old active entry's unvested remainder stays funded in locked as
+            // residue. lastUpdate = 0 (< start, since start > 0) makes the new
+            // entry's first vest count from its start, for linear and instant.
+            schedule.nextScheduledValue = 0;
+            schedule.nextStart = 0;
+            schedule.nextDuration = 0;
+            schedule.scheduledValue = uint128(amount);
+            schedule.start = start;
+            schedule.duration = duration;
+            schedule.lastUpdate = 0;
+        } else {
+            // Queue as the single follow-on entry; the active entry keeps
+            // running and this one is promoted by _vestStream when it ends.
+            schedule.nextScheduledValue = uint128(amount);
+            schedule.nextStart = start;
+            schedule.nextDuration = duration;
+        }
+    }
+
+    /**
+     * @dev Total wei a STREAM schedule still owes: the active entry's not-yet
+     *      vested portion plus the whole queued entry. lockedRewardPool must be
+     *      at least this so every future vest is backed by real funds.
+     */
+    function _committedRewards(RewardSchedule storage schedule) internal view returns (uint256) {
+        uint256 activeRemaining;
+        if (schedule.scheduledValue > 0) {
+            uint256 end = uint256(schedule.start) + schedule.duration;
+            if (schedule.duration == 0) {
+                // instant: outstanding until it has vested (lastUpdate >= start)
+                activeRemaining = schedule.lastUpdate >= schedule.start ? 0 : schedule.scheduledValue;
+            } else if (block.timestamp >= end) {
+                activeRemaining = 0; // fully vested
+            } else if (block.timestamp <= schedule.start) {
+                activeRemaining = schedule.scheduledValue; // not started: all outstanding
+            } else {
+                uint256 vested = (uint256(schedule.scheduledValue) * (block.timestamp - schedule.start)) /
+                    schedule.duration;
+                activeRemaining = schedule.scheduledValue - vested;
+            }
+        }
+        return activeRemaining + schedule.nextScheduledValue;
+    }
+
+    /**
+     * @dev Bank the stake-seconds accrued since the last checkpoint at the
+     *      current (pre-change) activeRewardPool, then advance the watermark.
+     *      MUST be called before every activeRewardPool mutation so the rate is
+     *      constant across each [updatedAt, now] interval. Frozen for non-Active
+     *      entities: a paused entity does not accrue weight.
+     *
+     *      updatedAt == 0 is the "never checkpointed" sentinel (a pre-upgrade
+     *      entity, or the very first touch). There is no prior watermark to
+     *      integrate from -- accruing here would integrate from the Unix epoch --
+     *      so we only start the clock and accrue nothing this call.
+     */
+    function _checkpointStakeSeconds(Entity storage entity) internal {
+        if (entity.stakeSecondsUpdatedAt == 0) {
+            entity.stakeSecondsUpdatedAt = block.timestamp; // first touch: start accruing now
+            return;
+        }
+        if (entity.status == EntityStatus.Active) {
+            entity.stakeSeconds += entity.activeRewardPool * (block.timestamp - entity.stakeSecondsUpdatedAt);
+        }
+        entity.stakeSecondsUpdatedAt = block.timestamp;
     }
 
     // This function is copied from solmate/utils/SignedWadMath.sol

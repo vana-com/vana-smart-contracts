@@ -1,0 +1,19 @@
+# Foundry is used for Solidity unit tests only; Hardhat remains the build/deploy
+# system. src is scoped to the tree under test so forge does not compile the
+# whole repo (which spans settings that need the compiler options below).
+# Compiler options mirror FIRST_COMPILER_SETTINGS in hardhat.config.ts.
+[profile.default]
+src = "contracts/vanaStaking"
+test = "test/foundry"
+out = "out"
+cache_path = "cache_forge"
+libs = ["lib", "node_modules"]
+solc = "0.8.24"
+via_ir = true
+optimizer = true
+optimizer_runs = 1
+remappings = [
+    "forge-std/=lib/forge-std/src/",
+    "@openzeppelin/contracts/=node_modules/@openzeppelin/contracts/",
+    "@openzeppelin/contracts-upgradeable/=node_modules/@openzeppelin/contracts-upgradeable/",
+]
