@@ -22,6 +22,7 @@ contract RewardSplitterTest is Test {
     address entityOwner = makeAddr("entityOwner");
     address staker = makeAddr("staker");
     address stranger = makeAddr("stranger");
+    address sink = makeAddr("sink");
 
     uint256 constant MIN_STAKE = 1 ether;
     uint256 constant MIN_REG_STAKE = 1 ether;
@@ -208,5 +209,70 @@ contract RewardSplitterTest is Test {
         vm.prank(stranger);
         vm.expectRevert();
         splitter.distribute(100 ether, _ids(a, b));
+    }
+
+    // ---- buy-and-burn ----
+
+    function _twoRoundsWithBurn(uint256 rate) internal returns (uint256 a, uint256 b, uint256 shareSum) {
+        a = _createEntity("pool-a");
+        b = _createEntity("pool-b");
+        _stake(a, 100 ether);
+        _stake(b, 100 ether);
+
+        vm.startPrank(owner);
+        splitter.updateBuyAndBurn(rate, sink);
+        vm.warp(block.timestamp + 1 days);
+        splitter.distribute(100 ether, _ids(a, b)); // round 1: baselines only
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + 10 days);
+        uint256 la = _locked(a);
+        uint256 lb = _locked(b);
+
+        vm.prank(owner);
+        splitter.distribute(100 ether, _ids(a, b)); // round 2: burn + entity split
+
+        shareSum = (_locked(a) - la) + (_locked(b) - lb);
+    }
+
+    function test_burnAccruesAndEntitiesGetRemainder() public {
+        (, , uint256 shareSum) = _twoRoundsWithBurn(10e18); // 10%
+
+        assertEq(splitter.pendingBurn(), 10 ether, "10% of the 100 budget accrued to burn");
+        assertApproxEqAbs(shareSum, 90 ether, 2, "entities split the remaining 90 (minus dust)");
+        assertEq(sink.balance, 0, "not flushed yet");
+    }
+
+    function test_executeBuyAndBurnFlushesToSink() public {
+        _twoRoundsWithBurn(10e18);
+        assertEq(splitter.pendingBurn(), 10 ether);
+
+        splitter.executeBuyAndBurn(); // permissionless
+        assertEq(sink.balance, 10 ether, "flushed to sink");
+        assertEq(splitter.pendingBurn(), 0, "reserve cleared");
+    }
+
+    function test_noBurnWhenUnconfigured() public {
+        (, , uint256 shareSum) = _twoRoundsWithBurn(0); // rate 0
+        assertEq(splitter.pendingBurn(), 0, "no burn accrued");
+        assertApproxEqAbs(shareSum, 100 ether, 2, "entities split the full budget");
+    }
+
+    function test_burnRateCapAndSinkRequired() public {
+        vm.startPrank(owner);
+        vm.expectRevert(RewardSplitterImplementation.InvalidBurnRate.selector);
+        splitter.updateBuyAndBurn(100e18 + 1, sink); // > 100%
+
+        vm.expectRevert(RewardSplitterImplementation.InvalidAddress.selector);
+        splitter.updateBuyAndBurn(10e18, address(0)); // nonzero rate needs a sink
+        vm.stopPrank();
+    }
+
+    function test_withdrawCannotTouchPendingBurn() public {
+        _twoRoundsWithBurn(10e18); // pendingBurn = 10
+        uint256 free = address(splitter).balance - splitter.pendingBurn();
+        vm.prank(owner);
+        vm.expectRevert(RewardSplitterImplementation.InvalidBudget.selector);
+        splitter.withdraw(payable(owner), free + 1);
     }
 }
