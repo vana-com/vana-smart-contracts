@@ -11,6 +11,15 @@ import {VanaPoolTreasuryProxy} from "../../contracts/vanaStaking/vanaPoolTreasur
 import {RewardSplitterImplementation} from "../../contracts/vanaStaking/rewardSplitter/RewardSplitterImplementation.sol";
 import {RewardSplitterProxy} from "../../contracts/vanaStaking/rewardSplitter/RewardSplitterProxy.sol";
 import {IVanaPoolEntity} from "../../contracts/vanaStaking/vanaPoolEntity/interfaces/IVanaPoolEntity.sol";
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+
+contract MockERC20 is ERC20 {
+    constructor() ERC20("Mock", "MOCK") {}
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+}
 
 contract RewardSplitterTest is Test {
     VanaPoolStakingImplementation staking;
@@ -274,5 +283,134 @@ contract RewardSplitterTest is Test {
         vm.prank(owner);
         vm.expectRevert(RewardSplitterImplementation.InvalidBudget.selector);
         splitter.withdraw(payable(owner), free + 1);
+    }
+
+    // ---- ERC-20 reward inlet ----
+
+    function _token() internal returns (MockERC20 t) {
+        t = new MockERC20();
+        t.mint(stranger, 1_000 ether);
+    }
+
+    function test_fundTokenRewardPullsAndRecords() public {
+        MockERC20 t = _token();
+        vm.startPrank(stranger);
+        t.approve(address(splitter), 100 ether);
+        splitter.fundTokenReward(address(t), 100 ether);
+        vm.stopPrank();
+
+        assertEq(t.balanceOf(address(splitter)), 100 ether, "tokens pulled in");
+        assertEq(splitter.pendingConversion(address(t)), 100 ether, "recorded");
+    }
+
+    function test_fundTokenRewardRejectsZeroTokenAndAmount() public {
+        MockERC20 t = _token();
+        vm.startPrank(stranger);
+        vm.expectRevert(RewardSplitterImplementation.InvalidAddress.selector);
+        splitter.fundTokenReward(address(0), 1 ether);
+        vm.expectRevert(RewardSplitterImplementation.InvalidAmount.selector);
+        splitter.fundTokenReward(address(t), 0);
+        vm.stopPrank();
+    }
+
+    function test_sendToConverterForwardsAndDecrements() public {
+        MockERC20 t = _token();
+        address convertor = makeAddr("convertor");
+
+        vm.startPrank(stranger);
+        t.approve(address(splitter), 100 ether);
+        splitter.fundTokenReward(address(t), 100 ether);
+        vm.stopPrank();
+
+        vm.startPrank(owner);
+        splitter.updateConverter(convertor);
+        splitter.sendToConverter(address(t), 60 ether);
+        vm.stopPrank();
+
+        assertEq(t.balanceOf(convertor), 60 ether, "forwarded to converter");
+        assertEq(splitter.pendingConversion(address(t)), 40 ether, "record decremented");
+    }
+
+    function test_sendToConverterGuards() public {
+        MockERC20 t = _token();
+        vm.startPrank(stranger);
+        t.approve(address(splitter), 100 ether);
+        splitter.fundTokenReward(address(t), 100 ether);
+        vm.stopPrank();
+
+        // no converter set yet
+        vm.prank(owner);
+        vm.expectRevert(RewardSplitterImplementation.InvalidAddress.selector);
+        splitter.sendToConverter(address(t), 10 ether);
+
+        vm.prank(owner);
+        splitter.updateConverter(makeAddr("convertor"));
+
+        // more than recorded
+        vm.prank(owner);
+        vm.expectRevert(RewardSplitterImplementation.InvalidBudget.selector);
+        splitter.sendToConverter(address(t), 100 ether + 1);
+
+        // not a maintainer
+        vm.prank(stranger);
+        vm.expectRevert();
+        splitter.sendToConverter(address(t), 10 ether);
+    }
+
+    function test_updateConverterAccessAndZeroAddress() public {
+        vm.prank(stranger);
+        vm.expectRevert();
+        splitter.updateConverter(makeAddr("convertor"));
+
+        vm.prank(owner);
+        vm.expectRevert(RewardSplitterImplementation.InvalidAddress.selector);
+        splitter.updateConverter(address(0));
+    }
+
+    function test_returnedVanaIsDistributable() public {
+        // full loop: fund ERC-20 -> converter -> converter returns VANA -> distribute
+        MockERC20 t = _token();
+        address convertor = makeAddr("convertor");
+
+        vm.startPrank(stranger);
+        t.approve(address(splitter), 100 ether);
+        splitter.fundTokenReward(address(t), 100 ether);
+        vm.stopPrank();
+
+        vm.startPrank(owner);
+        splitter.updateConverter(convertor);
+        splitter.sendToConverter(address(t), 100 ether);
+        vm.stopPrank();
+
+        // converter swaps off-chain and returns native VANA to receive()
+        uint256 balBefore = address(splitter).balance;
+        vm.deal(convertor, 50 ether);
+        vm.prank(convertor);
+        (bool ok, ) = address(splitter).call{value: 50 ether}("");
+        assertTrue(ok, "converter returns VANA");
+        assertEq(address(splitter).balance, balBefore + 50 ether, "distributable balance grew");
+    }
+
+    function test_recoverTokenOnlyExcessNotRecorded() public {
+        MockERC20 t = _token();
+
+        // record 100 via fundTokenReward
+        vm.startPrank(stranger);
+        t.approve(address(splitter), 100 ether);
+        splitter.fundTokenReward(address(t), 100 ether);
+        // plus 30 sent directly (untracked airdrop-style)
+        t.transfer(address(splitter), 30 ether);
+        vm.stopPrank();
+
+        // cannot touch the recorded reserve
+        vm.prank(owner);
+        vm.expectRevert(RewardSplitterImplementation.InvalidBudget.selector);
+        splitter.recoverToken(address(t), owner, 30 ether + 1);
+
+        // can sweep exactly the untracked excess
+        vm.prank(owner);
+        splitter.recoverToken(address(t), owner, 30 ether);
+        assertEq(t.balanceOf(owner), 30 ether, "excess recovered");
+        assertEq(splitter.pendingConversion(address(t)), 100 ether, "reserve intact");
     }
 }

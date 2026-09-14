@@ -5,6 +5,8 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IVanaPoolEntity} from "../vanaPoolEntity/interfaces/IVanaPoolEntity.sol";
 
 /**
@@ -21,6 +23,8 @@ contract RewardSplitterImplementation is
     AccessControlUpgradeable,
     ReentrancyGuardUpgradeable
 {
+    using SafeERC20 for IERC20;
+
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
     bytes32 public constant DISTRIBUTOR_ROLE = keccak256("DISTRIBUTOR_ROLE");
 
@@ -41,6 +45,14 @@ contract RewardSplitterImplementation is
     address public buyAndBurnAddress;
     uint256 public pendingBurn; // wei accrued for buy-and-burn, not yet flushed
 
+    // --- ERC-20 reward inlet (appended; append-safe for UUPS) ---
+    // There is no on-chain swap. ERC-20 rewards are funded here, handed to a
+    // trusted off-chain converter, and returned as native VANA (via receive())
+    // to be distributed by the existing native path. pendingConversion is the
+    // record of tokens held but not yet sent to the converter.
+    address public converter;
+    mapping(address token => uint256 amount) public pendingConversion;
+
     event Distributed(uint256 indexed entityId, uint256 amount, uint256 weight);
     event RoundDistributed(uint256 budget, uint256 totalWeight, uint256 entityCount);
     event BurnAccrued(uint256 amount, uint256 pendingBurn);
@@ -48,11 +60,16 @@ contract RewardSplitterImplementation is
     event BuyAndBurnUpdated(uint256 burnRate, address buyAndBurnAddress);
     event Funded(address indexed from, uint256 amount);
     event Withdrawn(address indexed to, uint256 amount);
+    event ConverterUpdated(address indexed converter);
+    event TokenRewardFunded(address indexed token, address indexed from, uint256 amount);
+    event SentToConverter(address indexed token, address indexed to, uint256 amount);
+    event TokenRecovered(address indexed token, address indexed to, uint256 amount);
 
     error InvalidAddress();
     error InvalidBudget();
     error InvalidBurnRate();
     error TransferFailed();
+    error InvalidAmount();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -81,6 +98,66 @@ contract RewardSplitterImplementation is
     /// @notice Fund the splitter's distributable balance.
     receive() external payable {
         emit Funded(msg.sender, msg.value);
+    }
+
+    /**
+     * @notice Fund an ERC-20 reward. Pulls `amount` of `token` from the caller
+     *         (who must have approved this contract) and records it in
+     *         pendingConversion. There is no on-chain swap: the tokens wait here
+     *         until a maintainer forwards them to the converter, which swaps them
+     *         off-chain and returns native VANA to receive() for distribution.
+     *         Permissionless, mirroring the native receive() inlet.
+     * @param token  ERC-20 reward token
+     * @param amount amount to pull from the caller
+     */
+    function fundTokenReward(address token, uint256 amount) external nonReentrant whenNotPaused {
+        if (token == address(0)) {
+            revert InvalidAddress();
+        }
+        if (amount == 0) {
+            revert InvalidAmount();
+        }
+        // Record exactly what arrives, so fee-on-transfer tokens can't leave
+        // pendingConversion overstating the real balance.
+        uint256 balanceBefore = IERC20(token).balanceOf(address(this));
+        IERC20(token).safeTransferFrom(msg.sender, address(this), amount);
+        uint256 received = IERC20(token).balanceOf(address(this)) - balanceBefore;
+
+        pendingConversion[token] += received;
+        emit TokenRewardFunded(token, msg.sender, received);
+    }
+
+    /// @notice Set the trusted converter that swaps ERC-20 rewards to VANA
+    ///         off-chain and returns the VANA to this contract.
+    function updateConverter(address newConverter) external onlyRole(MAINTAINER_ROLE) {
+        if (newConverter == address(0)) {
+            revert InvalidAddress();
+        }
+        converter = newConverter;
+        emit ConverterUpdated(newConverter);
+    }
+
+    /**
+     * @notice Forward recorded ERC-20 rewards to the converter for off-chain
+     *         swapping to VANA. The converter is trusted to return native VANA to
+     *         receive(); this contract holds no on-chain guarantee it will, so
+     *         only a maintainer may call, and only to the configured converter.
+     * @param token  ERC-20 reward token
+     * @param amount amount to forward (<= pendingConversion[token])
+     */
+    function sendToConverter(address token, uint256 amount) external onlyRole(MAINTAINER_ROLE) nonReentrant {
+        if (converter == address(0)) {
+            revert InvalidAddress();
+        }
+        if (amount == 0) {
+            revert InvalidAmount();
+        }
+        if (amount > pendingConversion[token]) {
+            revert InvalidBudget();
+        }
+        pendingConversion[token] -= amount; // effects before interaction
+        IERC20(token).safeTransfer(converter, amount);
+        emit SentToConverter(token, converter, amount);
     }
 
     /**
@@ -242,6 +319,25 @@ contract RewardSplitterImplementation is
             revert TransferFailed();
         }
         emit Withdrawn(to, amount);
+    }
+
+    /// @notice Recover ERC-20 not part of a recorded reward -- tokens airdropped
+    ///         or sent directly rather than via fundTokenReward. Cannot touch the
+    ///         pendingConversion reserve, which must exit through sendToConverter.
+    function recoverToken(
+        address token,
+        address to,
+        uint256 amount
+    ) external onlyRole(DEFAULT_ADMIN_ROLE) nonReentrant {
+        if (to == address(0)) {
+            revert InvalidAddress();
+        }
+        uint256 recoverable = IERC20(token).balanceOf(address(this)) - pendingConversion[token];
+        if (amount > recoverable) {
+            revert InvalidBudget();
+        }
+        IERC20(token).safeTransfer(to, amount);
+        emit TokenRecovered(token, to, amount);
     }
 
     function pause() external onlyRole(MAINTAINER_ROLE) {
