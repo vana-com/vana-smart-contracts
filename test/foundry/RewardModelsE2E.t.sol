@@ -8,7 +8,19 @@ import {VanaPoolEntityImplementation} from "../../contracts/vanaStaking/vanaPool
 import {VanaPoolEntityProxy} from "../../contracts/vanaStaking/vanaPoolEntity/VanaPoolEntityProxy.sol";
 import {VanaPoolTreasuryImplementation} from "../../contracts/vanaStaking/vanaPoolTreasury/VanaPoolTreasuryImplementation.sol";
 import {VanaPoolTreasuryProxy} from "../../contracts/vanaStaking/vanaPoolTreasury/VanaPoolTreasuryProxy.sol";
+import {RewardSplitterImplementation} from "../../contracts/vanaStaking/rewardSplitter/RewardSplitterImplementation.sol";
+import {RewardSplitterProxy} from "../../contracts/vanaStaking/rewardSplitter/RewardSplitterProxy.sol";
 import {IVanaPoolEntity} from "../../contracts/vanaStaking/vanaPoolEntity/interfaces/IVanaPoolEntity.sol";
+import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+
+/// @dev A stand-in reward token (e.g. USDC) with an open mint for tests.
+contract MockRewardToken is ERC20 {
+    constructor() ERC20("Mock USDC", "mUSDC") {}
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+}
 
 /// @notice End-to-end through the real proxy stack (staking + entity + treasury):
 ///         create an entity, fund/schedule rewards under each model, stake,
@@ -18,10 +30,12 @@ contract RewardModelsE2ETest is Test {
     VanaPoolStakingImplementation staking;
     VanaPoolEntityImplementation entity;
     VanaPoolTreasuryImplementation treasury;
+    RewardSplitterImplementation splitter;
 
     address owner = makeAddr("owner"); // admin + maintainer on all three
     address entityOwner = makeAddr("entityOwner"); // holds the registration stake
     address staker = makeAddr("staker");
+    address converter = makeAddr("converter"); // off-chain ERC-20 -> VANA swapper
 
     uint256 constant MIN_STAKE = 1 ether;
     uint256 constant MIN_REG_STAKE = 1 ether; // createEntity requires exactly this
@@ -65,6 +79,17 @@ contract RewardModelsE2ETest is Test {
                 new VanaPoolTreasuryProxy(
                     address(treasuryImpl),
                     abi.encodeCall(VanaPoolTreasuryImplementation.initialize, (owner, address(staking)))
+                )
+            )
+        );
+
+        // reward splitter proxy (splits a VANA budget across entities by stake-seconds)
+        RewardSplitterImplementation splitterImpl = new RewardSplitterImplementation();
+        splitter = RewardSplitterImplementation(
+            payable(
+                new RewardSplitterProxy(
+                    address(splitterImpl),
+                    abi.encodeCall(RewardSplitterImplementation.initialize, (owner, address(entity)))
                 )
             )
         );
@@ -284,5 +309,73 @@ contract RewardModelsE2ETest is Test {
         staking.unstake(entityId, shares, 0);
 
         assertGt(int256(staker.balance) - int256(balBefore), 0, "staker earned across capped + linear");
+    }
+
+    // ---- ERC-20 rewards: fund -> manual conversion -> distribute -> staker earns ----
+
+    /// @dev The converter swaps `tokenIn` for VANA off-chain and returns VANA to
+    ///      the splitter. Modelled here 1:1: the converter's token balance is
+    ///      "sold" and the same amount of VANA is sent back via receive().
+    function _convertAndReturn(MockRewardToken tokenIn) internal {
+        uint256 held = tokenIn.balanceOf(converter);
+        vm.deal(converter, held); // proceeds of the off-chain swap
+        vm.prank(converter);
+        (bool ok, ) = address(splitter).call{value: held}("");
+        assertTrue(ok, "converter returned VANA to the splitter");
+    }
+
+    function test_erc20RewardFlow_convertAndDistribute() public {
+        uint256 entityId = _createEntity();
+
+        // 1) A reward sponsor holds an ERC-20 (e.g. USDC) and funds the splitter.
+        MockRewardToken token = new MockRewardToken();
+        token.mint(owner, 200 ether);
+        vm.startPrank(owner);
+        token.approve(address(splitter), 200 ether);
+        splitter.fundTokenReward(address(token), 200 ether);
+        vm.stopPrank();
+        assertEq(splitter.pendingConversion(address(token)), 200 ether, "ERC-20 reward recorded");
+
+        // 2) Maintainer wires the converter and forwards the tokens for swapping.
+        vm.startPrank(owner);
+        splitter.updateConverter(converter);
+        splitter.sendToConverter(address(token), 200 ether);
+        vm.stopPrank();
+        assertEq(token.balanceOf(converter), 200 ether, "tokens sent to converter");
+        assertEq(splitter.pendingConversion(address(token)), 0, "record cleared once forwarded");
+
+        // 3) Converter swaps off-chain and returns native VANA to the splitter.
+        _convertAndReturn(token);
+        assertEq(address(splitter).balance, 200 ether, "converted VANA is now distributable");
+
+        // 4) Staker stakes; the entity accrues stake-seconds.
+        uint256 balBefore = staker.balance;
+        vm.prank(staker);
+        staking.stake{value: STAKE}(entityId, staker, 0);
+
+        // 5) First round records the baseline (first-seen entity, no payout).
+        vm.warp(block.timestamp + 1 days);
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = entityId;
+        vm.prank(owner);
+        splitter.distribute(100 ether, ids);
+        assertEq(entity.entities(entityId).lockedRewardPool, 0, "baseline round pays nothing");
+
+        // 6) Second round: the entity now has weight and receives the budget.
+        vm.warp(block.timestamp + 10 days);
+        vm.prank(owner);
+        splitter.distribute(100 ether, ids);
+        assertGt(entity.entities(entityId).lockedRewardPool, 0, "entity funded from converted VANA");
+
+        // 7) The entity vests the reward to its staker (APY model), who withdraws a gain.
+        vm.warp(block.timestamp + 365 days);
+        entity.processRewards(entityId);
+        assertGt(entity.entityShareToVana(entityId), 1e18, "converted reward lifted the share price");
+
+        uint256 shares = _stakerShares(entityId);
+        vm.prank(staker);
+        staking.unstake(entityId, shares, 0);
+
+        assertGt(int256(staker.balance) - int256(balBefore), 0, "staker earned from the ERC-20 reward");
     }
 }
