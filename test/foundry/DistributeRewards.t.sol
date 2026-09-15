@@ -71,7 +71,8 @@ contract DistributeRewardsTest is Test {
                 commissionRate: 0,
                 accruedCommission: 0,
                 stakeSeconds: 0,
-                stakeSecondsUpdatedAt: 0
+                stakeSecondsUpdatedAt: 0,
+                stakingBlocked: false
             })
         );
     }

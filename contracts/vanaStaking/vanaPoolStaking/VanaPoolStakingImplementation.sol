@@ -87,6 +87,7 @@ contract VanaPoolStakingImplementation is
     error NotAuthorized();
     error InvalidSlippage();
     error InvalidBondingPeriod();
+    error StakingBlocked();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() ERC2771ContextUpgradeable(address(0)) {
@@ -464,6 +465,11 @@ contract VanaPoolStakingImplementation is
         if (!_isValidEntity(entityId)) {
             revert EntityNotActive();
         }
+        // Blocked entities reject new stake from anyone (new or existing staker);
+        // only unstake and redelegate-out remain open.
+        if (vanaPoolEntity.entityStakingBlocked(entityId)) {
+            revert StakingBlocked();
+        }
 
         uint256 stakeAmount = msg.value;
 
@@ -749,6 +755,12 @@ contract VanaPoolStakingImplementation is
         }
         if (!_isValidEntity(toEntityId)) {
             revert EntityNotActive();
+        }
+        // Redelegating in is new stake into `to`, so a blocked destination
+        // rejects it. `from` is never checked here: moving out of (and unstaking
+        // from) a blocked entity stays open.
+        if (vanaPoolEntity.entityStakingBlocked(toEntityId)) {
+            revert StakingBlocked();
         }
 
         address staker = _msgSender();

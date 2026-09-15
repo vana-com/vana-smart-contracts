@@ -66,7 +66,8 @@ contract EntityCommissionTest is Test {
                 commissionRate: commissionRate,
                 accruedCommission: 0,
                 stakeSeconds: 0,
-                stakeSecondsUpdatedAt: 0
+                stakeSecondsUpdatedAt: 0,
+                stakingBlocked: false
             })
         );
     }

@@ -28,6 +28,7 @@ contract VanaPoolEntityImplementation is
     event EntityRewardModelUpdated(uint256 indexed entityId, RewardModel model);
     event EntityCommissionUpdated(uint256 indexed entityId, uint256 newCommissionRate);
     event CommissionClaimed(uint256 indexed entityId, address indexed to, uint256 amount);
+    event EntityStakingBlockedUpdated(uint256 indexed entityId, bool blocked);
     event RewardsAdded(uint256 indexed entityId, uint256 amount);
     event RewardsDistributed(uint256 indexed entityId, uint256 amount, uint64 start, uint32 duration);
     event QueuedRewardsToppedUp(uint256 indexed entityId, uint256 addedAmount, uint256 newQueuedTotal);
@@ -720,6 +721,38 @@ contract VanaPoolEntityImplementation is
      */
     function entityAccruedCommission(uint256 entityId) external view override returns (uint256) {
         return _entities[entityId].accruedCommission;
+    }
+
+    /**
+     * @notice Block or unblock new stake entering an entity. While blocked, both
+     *         new and existing stakers are stopped from staking (and from
+     *         redelegating in); unstaking and redelegating out stay open, so
+     *         positions are never trapped. Owner- or maintainer-gated, matching
+     *         the other per-entity setters.
+     *
+     * @param entityId The entity ID
+     * @param blocked  true to block new stake, false to allow it again
+     */
+    function updateEntityStakingBlocked(uint256 entityId, bool blocked) external override {
+        Entity storage entity = _entities[entityId];
+
+        if (entity.status != EntityStatus.Active) {
+            revert InvalidEntityStatus();
+        }
+        if (msg.sender != entity.ownerAddress && !hasRole(MAINTAINER_ROLE, msg.sender)) {
+            revert NotEntityOwner();
+        }
+
+        entity.stakingBlocked = blocked;
+
+        emit EntityStakingBlockedUpdated(entityId, blocked);
+    }
+
+    /**
+     * @notice Whether new stake into an entity is currently blocked.
+     */
+    function entityStakingBlocked(uint256 entityId) external view override returns (bool) {
+        return _entities[entityId].stakingBlocked;
     }
 
     /**

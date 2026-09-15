@@ -57,6 +57,8 @@ interface IVanaPoolEntity {
         // --- appended in the stake-seconds upgrade; append-safe as above ---
         uint256 stakeSeconds; // cumulative integral of activeRewardPool over time (monotone)
         uint256 stakeSecondsUpdatedAt; // last time stakeSeconds was checkpointed
+        // --- appended in the stake-block upgrade; append-safe as above ---
+        bool stakingBlocked; // when true, no new stake may enter (stake / redelegate-in); unstake and redelegate-out stay open
     }
 
     function version() external pure returns (uint256);
@@ -119,6 +121,9 @@ interface IVanaPoolEntity {
     function claimCommission(uint256 entityId) external;
     function entityCommissionRate(uint256 entityId) external view returns (uint256);
     function entityAccruedCommission(uint256 entityId) external view returns (uint256);
+
+    function updateEntityStakingBlocked(uint256 entityId, bool blocked) external;
+    function entityStakingBlocked(uint256 entityId) external view returns (bool);
 
     // Get entities
     function activeEntitiesValues() external view returns (uint256[] memory);
