@@ -6,8 +6,8 @@ import {IAccessControl} from "@openzeppelin/contracts/access/IAccessControl.sol"
 import {VanaPoolEntityImplementation} from "../../contracts/vanaStaking/vanaPoolEntity/VanaPoolEntityImplementation.sol";
 import {IVanaPoolEntity} from "../../contracts/vanaStaking/vanaPoolEntity/interfaces/IVanaPoolEntity.sol";
 
-/// @dev updateEntityRewardModel and processRewards touch only entity storage
-///      and pure math (calculateYield / _vestStream) -- no VanaPoolStaking or
+/// @dev switchToStreamModel and processRewards touch only entity storage and
+///      pure math (calculateYield / _vestStream) -- no VanaPoolStaking or
 ///      treasury -- so a bare harness that seeds an entity and grants the
 ///      maintainer role is enough to test the switch in isolation.
 contract SwitchHarness is VanaPoolEntityImplementation {
@@ -67,79 +67,6 @@ contract EntityRewardModelSwitchTest is Test {
         );
     }
 
-    // ---- conservation + settle ----
-
-    function test_switchApyToStream_settlesAndConserves() public {
-        _seedApy(1_000 ether, 100 ether, 6e18);
-
-        vm.warp(START + 30 days);
-        // expected drip under the old (APY) model, capped by locked
-        uint256 expected = h.calculateYield(100 ether, 6e18, 30 days);
-        assertLe(expected, 1_000 ether, "test setup: locked must not bind");
-
-        vm.prank(maintainer);
-        h.updateEntityRewardModel(ENTITY_ID, IVanaPoolEntity.RewardModel.STREAM);
-
-        IVanaPoolEntity.Entity memory e = h.getEntity(ENTITY_ID);
-        assertEq(uint256(e.rewardModel), uint256(IVanaPoolEntity.RewardModel.STREAM), "model flipped");
-        assertEq(e.activeRewardPool, 100 ether + expected, "APY settled into active");
-        assertEq(e.lockedRewardPool, 1_000 ether - expected, "locked reduced by settle");
-        assertEq(e.lockedRewardPool + e.activeRewardPool, 1_100 ether, "locked+active conserved");
-    }
-
-    function test_switchStreamToApy_vestsThenFlips() public {
-        // STREAM entity: 10k over [START, START+10d], funded from locked
-        IVanaPoolEntity.RewardSchedule memory sched =
-            IVanaPoolEntity.RewardSchedule(10_000 ether, START, 10 days, uint32(START), 0, 0, 0);
-        h.setEntity(
-            ENTITY_ID,
-            IVanaPoolEntity.Entity({
-                ownerAddress: address(0xE),
-                status: IVanaPoolEntity.EntityStatus.Active,
-                name: "e",
-                maxAPY: 6e18,
-                lockedRewardPool: 10_000 ether,
-                activeRewardPool: 0,
-                totalShares: 100 ether,
-                lastUpdateTimestamp: START,
-                totalDistributedRewards: 0,
-                rewardModel: IVanaPoolEntity.RewardModel.STREAM,
-                rewardSchedule: sched,
-                commissionRate: 0,
-                accruedCommission: 0,
-                stakeSeconds: 0,
-                stakeSecondsUpdatedAt: 0,
-                stakingBlocked: false
-            })
-        );
-
-        vm.warp(START + 5 days); // half the stream
-
-        vm.prank(maintainer);
-        h.updateEntityRewardModel(ENTITY_ID, IVanaPoolEntity.RewardModel.APY);
-
-        IVanaPoolEntity.Entity memory e = h.getEntity(ENTITY_ID);
-        assertEq(uint256(e.rewardModel), uint256(IVanaPoolEntity.RewardModel.APY), "model flipped");
-        assertEq(e.activeRewardPool, 5_000 ether, "half the stream vested at switch");
-        assertEq(e.lockedRewardPool, 5_000 ether, "remainder still locked");
-        assertEq(e.lockedRewardPool + e.activeRewardPool, 10_000 ether, "conserved");
-    }
-
-    // ---- idempotence ----
-
-    function test_switchToSameModel_isNoOpBeyondSettle() public {
-        _seedApy(1_000 ether, 100 ether, 6e18);
-        vm.warp(START + 30 days);
-        uint256 expected = h.calculateYield(100 ether, 6e18, 30 days);
-
-        vm.prank(maintainer);
-        h.updateEntityRewardModel(ENTITY_ID, IVanaPoolEntity.RewardModel.APY); // same model
-
-        IVanaPoolEntity.Entity memory e = h.getEntity(ENTITY_ID);
-        assertEq(uint256(e.rewardModel), uint256(IVanaPoolEntity.RewardModel.APY), "still APY");
-        assertEq(e.activeRewardPool, 100 ether + expected, "settle still ran");
-    }
-
     // ---- access control ----
 
     function test_onlyMaintainerCanSwitch() public {
@@ -155,7 +82,7 @@ contract EntityRewardModelSwitchTest is Test {
                 role
             )
         );
-        h.updateEntityRewardModel(ENTITY_ID, IVanaPoolEntity.RewardModel.STREAM);
+        h.switchToStreamModel(ENTITY_ID, uint64(block.timestamp), 60 days);
     }
 
     function test_nonActiveEntityReverts() public {
@@ -167,7 +94,7 @@ contract EntityRewardModelSwitchTest is Test {
 
         vm.prank(maintainer);
         vm.expectRevert(); // InvalidEntityStatus
-        h.updateEntityRewardModel(ENTITY_ID, IVanaPoolEntity.RewardModel.STREAM);
+        h.switchToStreamModel(ENTITY_ID, uint64(block.timestamp), 60 days);
     }
 
     // ---- switchToStreamModel: roll residue into a linear stream ----

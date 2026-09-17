@@ -162,9 +162,9 @@ contract RewardModelsE2ETest is Test {
     function test_streamModel_stakerEarnsAndWithdraws() public {
         uint256 entityId = _createEntity();
 
-        // switch to STREAM and schedule a stream funded now
+        // switch to STREAM (no residue to roll on a fresh entity) and schedule a stream funded now
         vm.startPrank(owner);
-        entity.updateEntityRewardModel(entityId, IVanaPoolEntity.RewardModel.STREAM);
+        entity.switchToStreamModel(entityId, uint64(block.timestamp), 365 days);
         entity.distributeRewards{value: 100 ether}(entityId, 100 ether, uint64(block.timestamp), 365 days);
         vm.stopPrank();
 
@@ -188,7 +188,7 @@ contract RewardModelsE2ETest is Test {
 
         entityId = _createEntity();
         vm.startPrank(owner);
-        entity.updateEntityRewardModel(entityId, IVanaPoolEntity.RewardModel.STREAM);
+        entity.switchToStreamModel(entityId, uint64(block.timestamp), duration);
         entity.distributeRewards{value: amount}(entityId, amount, uint64(block.timestamp), duration);
         vm.stopPrank();
     }

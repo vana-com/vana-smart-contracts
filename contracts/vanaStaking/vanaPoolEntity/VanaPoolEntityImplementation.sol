@@ -576,31 +576,6 @@ contract VanaPoolEntityImplementation is
     }
 
     /**
-     * @notice Switch an entity between reward models (APY <-> STREAM)
-     * @param entityId The entity ID
-     * @param model The reward model to switch to
-     */
-    function updateEntityRewardModel(
-        uint256 entityId,
-        RewardModel model
-    ) external override onlyRole(MAINTAINER_ROLE) {
-        Entity storage entity = _entities[entityId];
-
-        if (entity.status != EntityStatus.Active) {
-            revert InvalidEntityStatus();
-        }
-
-        // Settle the outgoing model up to now before flipping, so rewards owed
-        // under the old model (e.g. APY accrued since the last drip) are moved
-        // locked -> active at the switch instant and not mis-credited after.
-        processRewards(entityId);
-
-        entity.rewardModel = model;
-
-        emit EntityRewardModelUpdated(entityId, model);
-    }
-
-    /**
      * @notice Switch an APY entity to STREAM and roll its entire undistributed
      *         lockedRewardPool into one linear stream over [start, start +
      *         duration], atomically. Settles the capped phase first (so accrued
