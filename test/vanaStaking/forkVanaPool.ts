@@ -173,7 +173,7 @@ describe("VanaPool Fork Tests (Moksha)", () => {
     // Verify version
     const version = await vanaPoolStakingV2.version();
     console.log(`Contract version: ${version}`);
-    version.should.eq(2n, "Version should be 2 after upgrade");
+    version.should.eq(3n, "Version should be 3 after upgrade");
 
     // Verify entity data preserved
     console.log(`\nVerifying entity data...`);
