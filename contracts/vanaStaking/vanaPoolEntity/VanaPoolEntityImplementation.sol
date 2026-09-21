@@ -274,12 +274,29 @@ contract VanaPoolEntityImplementation is
     }
 
     /**
-     * @notice Creates a new entity
+     * @notice Creates a new entity on the default APY model.
      * @param entityRegistrationInfo The entity registration information
+     * @dev Thin wrapper over the two-arg overload; kept for backward
+     *      compatibility. The reentrancy guard lives on the overload.
      */
     function createEntity(
         EntityRegistrationInfo calldata entityRegistrationInfo
-    ) external payable override whenNotPaused nonReentrant onlyRole(MAINTAINER_ROLE) {
+    ) external payable override {
+        createEntity(entityRegistrationInfo, RewardModel.APY);
+    }
+
+    /**
+     * @notice Creates a new entity on the chosen reward model.
+     * @param entityRegistrationInfo The entity registration information
+     * @param model APY (continuous drip) or STREAM (linear vesting)
+     * @dev A STREAM entity is created parked with an empty schedule: it vests
+     *      nothing until it is funded via distributeRewards (registration stake
+     *      seeds shares, not lockedRewardPool, so there is nothing to vest yet).
+     */
+    function createEntity(
+        EntityRegistrationInfo calldata entityRegistrationInfo,
+        RewardModel model
+    ) public payable override whenNotPaused nonReentrant onlyRole(MAINTAINER_ROLE) {
         if (entityRegistrationInfo.ownerAddress == address(0)) {
             revert InvalidAddress();
         }
@@ -304,6 +321,7 @@ contract VanaPoolEntityImplementation is
         entity.status = EntityStatus.Active;
         entity.maxAPY = maxAPYDefault;
         entity.lastUpdateTimestamp = block.timestamp;
+        entity.rewardModel = model;
 
         entityNameToId[entityRegistrationInfo.name] = entityId;
         _activeEntityIds.add(entityId);
@@ -324,6 +342,7 @@ contract VanaPoolEntityImplementation is
 
         emit EntityCreated(entityId, entityRegistrationInfo.ownerAddress, entityRegistrationInfo.name, maxAPYDefault);
         emit EntityStatusUpdated(entityId, EntityStatus.Active);
+        emit EntityRewardModelUpdated(entityId, model);
     }
 
     /**

@@ -103,6 +103,7 @@ interface IVanaPoolEntity {
     }
 
     function createEntity(EntityRegistrationInfo calldata entityRegistrationInfo) external payable;
+    function createEntity(EntityRegistrationInfo calldata entityRegistrationInfo, RewardModel model) external payable;
     function updateEntity(uint256 entityId, EntityRegistrationInfo calldata entityRegistrationInfo) external;
     //    function removeEntity(uint256 entityId) external;
 

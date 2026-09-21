@@ -157,6 +157,31 @@ contract RewardModelsE2ETest is Test {
         assertGt(net, 0, "staker earned APY rewards");
     }
 
+    // ---- create directly on a chosen model ----
+
+    function test_createEntity_defaultsToApy() public {
+        // the one-arg overload keeps the original APY-by-default behaviour
+        uint256 entityId = _createEntity();
+        assertEq(uint256(entity.entityRewardModel(entityId)), uint256(IVanaPoolEntity.RewardModel.APY));
+    }
+
+    function test_createStreamEntity_directlyAndEarns() public {
+        // create straight onto STREAM, then just fund it -- no switchToStreamModel step
+        vm.prank(owner);
+        entity.createEntity{value: MIN_REG_STAKE}(
+            IVanaPoolEntity.EntityRegistrationInfo({ownerAddress: entityOwner, name: "stream-pool"}),
+            IVanaPoolEntity.RewardModel.STREAM
+        );
+        uint256 entityId = entity.entitiesCount();
+        assertEq(uint256(entity.entityRewardModel(entityId)), uint256(IVanaPoolEntity.RewardModel.STREAM), "born STREAM");
+
+        vm.prank(owner);
+        entity.distributeRewards{value: 100 ether}(entityId, 100 ether, uint64(block.timestamp), 365 days);
+
+        int256 net = _stakeEarnUnstake(entityId, 365 days);
+        assertGt(net, 0, "staker earned from a directly-created STREAM entity");
+    }
+
     // ---- STREAM model ----
 
     function test_streamModel_stakerEarnsAndWithdraws() public {
