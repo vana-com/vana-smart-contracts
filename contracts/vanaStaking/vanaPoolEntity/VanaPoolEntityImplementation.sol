@@ -29,6 +29,8 @@ contract VanaPoolEntityImplementation is
     event EntityCommissionUpdated(uint256 indexed entityId, uint256 newCommissionRate);
     event CommissionClaimed(uint256 indexed entityId, address indexed to, uint256 amount);
     event EntityStakingBlockedUpdated(uint256 indexed entityId, bool blocked);
+    event EntitySweepableAfterUpdated(uint256 indexed entityId, uint256 timestamp);
+    event UnallocatedRewardsSwept(uint256 indexed entityId, address indexed to, uint256 amount);
     event RewardsAdded(uint256 indexed entityId, uint256 amount);
     event RewardsDistributed(uint256 indexed entityId, uint256 amount, uint64 start, uint32 duration);
     event QueuedRewardsToppedUp(uint256 indexed entityId, uint256 addedAmount, uint256 newQueuedTotal);
@@ -50,6 +52,8 @@ contract VanaPoolEntityImplementation is
     error InsufficientRewardFunds();
     error NotAuthorized();
     error TransferFailed();
+    error SweepNotUnlocked();
+    error InvalidSweepTime();
 
     modifier onlyEntityOwner(uint256 entityId) {
         if (_entities[entityId].ownerAddress != msg.sender) {
@@ -755,6 +759,91 @@ contract VanaPoolEntityImplementation is
      */
     function entityStakingBlocked(uint256 entityId) external view override returns (bool) {
         return _entities[entityId].stakingBlocked;
+    }
+
+    /**
+     * @notice The timestamp from which an entity's unallocated APY rewards may be
+     *         swept. 0 means sweeping is disabled.
+     */
+    function entitySweepableAfter(uint256 entityId) external view override returns (uint256) {
+        return _entities[entityId].sweepableAfter;
+    }
+
+    /**
+     * @notice Arm (or extend) the time-lock after which unallocated APY rewards
+     *         may be swept from an entity. The date can only move later, never
+     *         earlier -- a set value is a one-way commitment to stakers, so
+     *         governance cannot pull the reclaim date forward on them. First set
+     *         must be in the future.
+     *
+     * @param entityId  The entity ID
+     * @param timestamp The new sweepable-after time (> now; > the current value)
+     */
+    function updateEntitySweepableAfter(uint256 entityId, uint256 timestamp) external override onlyRole(MAINTAINER_ROLE) {
+        Entity storage entity = _entities[entityId];
+
+        if (entity.status != EntityStatus.Active) {
+            revert InvalidEntityStatus();
+        }
+        // Must be in the future, and can only be pushed out, never pulled in.
+        if (timestamp <= block.timestamp || timestamp <= entity.sweepableAfter) {
+            revert InvalidSweepTime();
+        }
+
+        entity.sweepableAfter = timestamp;
+
+        emit EntitySweepableAfterUpdated(entityId, timestamp);
+    }
+
+    /**
+     * @notice Sweep an APY entity's unallocated reward reserve (its entire
+     *         lockedRewardPool) to `to`, once the armed time-lock has elapsed.
+     *         Reclaims over-provisioned bootstrap incentives without touching
+     *         staker-owned funds.
+     * @dev APY only: in STREAM mode lockedRewardPool backs a committed schedule.
+     *      Settles the APY drip up to now first, so stakers keep everything they
+     *      earned before the sweep; only activeRewardPool ever backs shares, and
+     *      it is left untouched, so no staker is diluted.
+     *
+     * @param entityId The entity to sweep
+     * @param to       recipient of the reclaimed VANA
+     */
+    function sweepUnallocatedRewards(
+        uint256 entityId,
+        address payable to
+    ) external override whenNotPaused nonReentrant onlyRole(MAINTAINER_ROLE) {
+        Entity storage entity = _entities[entityId];
+
+        if (entity.status != EntityStatus.Active) {
+            revert InvalidEntityStatus();
+        }
+        if (entity.rewardModel != RewardModel.APY) {
+            revert InvalidRewardModel();
+        }
+        if (to == address(0)) {
+            revert InvalidAddress();
+        }
+        // 0 means disabled; otherwise the lock must have elapsed.
+        if (entity.sweepableAfter == 0 || block.timestamp < entity.sweepableAfter) {
+            revert SweepNotUnlocked();
+        }
+
+        // Credit the APY drip up to now before reclaiming the remainder, so
+        // stakers are not clawed back rewards already earned this interval.
+        processRewards(entityId);
+
+        uint256 amount = entity.lockedRewardPool;
+        if (amount == 0) {
+            revert InvalidParam();
+        }
+
+        entity.lockedRewardPool = 0; // effects before interaction
+        bool success = vanaPoolStaking.vanaPoolTreasury().transferVana(to, amount);
+        if (!success) {
+            revert TransferFailed();
+        }
+
+        emit UnallocatedRewardsSwept(entityId, to, amount);
     }
 
     /**

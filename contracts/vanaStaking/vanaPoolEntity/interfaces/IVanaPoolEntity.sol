@@ -59,6 +59,8 @@ interface IVanaPoolEntity {
         uint256 stakeSecondsUpdatedAt; // last time stakeSeconds was checkpointed
         // --- appended in the stake-block upgrade; append-safe as above ---
         bool stakingBlocked; // when true, no new stake may enter (stake / redelegate-in); unstake and redelegate-out stay open
+        // --- appended in the sweep upgrade; append-safe as above ---
+        uint256 sweepableAfter; // 0 = sweep disabled; else the timestamp from which unallocated APY rewards may be swept
     }
 
     function version() external pure returns (uint256);
@@ -91,6 +93,10 @@ interface IVanaPoolEntity {
 
     function entityShareToVana(uint256 entityId) external view returns (uint256);
     function vanaToEntityShare(uint256 entityId) external view returns (uint256);
+
+    function entitySweepableAfter(uint256 entityId) external view returns (uint256);
+    function updateEntitySweepableAfter(uint256 entityId, uint256 timestamp) external;
+    function sweepUnallocatedRewards(uint256 entityId, address payable to) external;
 
     function pause() external;
     function unpause() external;

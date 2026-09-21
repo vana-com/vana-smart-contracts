@@ -56,7 +56,8 @@ contract StakeSecondsTest is Test {
                 accruedCommission: 0,
                 stakeSeconds: 0,
                 stakeSecondsUpdatedAt: updatedAt,
-                stakingBlocked: false
+                stakingBlocked: false,
+                sweepableAfter: 0
             })
         );
     }
