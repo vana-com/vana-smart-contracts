@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.24;
 
-import {Test} from "forge-std/Test.sol";
+import {Test, Vm} from "forge-std/Test.sol";
 import {VanaPoolStakingImplementation} from "../../contracts/vanaStaking/vanaPoolStaking/VanaPoolStakingImplementation.sol";
 import {VanaPoolStakingProxy} from "../../contracts/vanaStaking/vanaPoolStaking/VanaPoolStakingProxy.sol";
 import {VanaPoolEntityImplementation} from "../../contracts/vanaStaking/vanaPoolEntity/VanaPoolEntityImplementation.sol";
@@ -95,6 +95,84 @@ contract RedelegationTest is Test {
             0,
             0
         );
+    }
+
+    function _eventData(bytes32 signature) internal returns (bytes memory data) {
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        for (uint256 i; i < logs.length; i++) {
+            if (logs[i].emitter == address(staking) && logs[i].topics[0] == signature) {
+                return logs[i].data;
+            }
+        }
+        fail("staking event not emitted");
+    }
+
+    function test_stake_returnsEmittedAndSettledShares() public {
+        uint256 entityId = _createEntity("pool");
+
+        vm.recordLogs();
+        vm.prank(staker);
+        uint256 sharesIssued = staking.stake{value: STAKE}(entityId, staker, 0);
+
+        (uint256 amount, uint256 emittedShares) = abi.decode(
+            _eventData(keccak256("Staked(uint256,address,uint256,uint256)")),
+            (uint256, uint256)
+        );
+        assertEq(amount, STAKE, "event records settled stake amount");
+        assertEq(sharesIssued, emittedShares, "return matches event shares");
+        assertEq(sharesIssued, _shares(entityId), "return matches settled shares");
+    }
+
+    function test_unstakeDuringBond_returnsEmittedAndSettledVana() public {
+        vm.prank(owner);
+        staking.updateBondingPeriod(30 days);
+        uint256 entityId = _createEntity("pool");
+        vm.prank(owner);
+        entity.addRewards{value: 100 ether}(entityId);
+        vm.prank(staker);
+        staking.stake{value: STAKE}(entityId, staker, 0);
+
+        vm.warp(block.timestamp + 10 days);
+        uint256 shares = _shares(entityId);
+        uint256 balanceBefore = staker.balance;
+        vm.recordLogs();
+        vm.prank(staker);
+        uint256 vanaAmount = staking.unstake(entityId, shares, 0);
+
+        (uint256 emittedAmount, uint256 sharesBurned) = abi.decode(
+            _eventData(keccak256("Unstaked(uint256,address,uint256,uint256)")),
+            (uint256, uint256)
+        );
+        assertEq(vanaAmount, emittedAmount, "return matches event amount");
+        assertEq(vanaAmount, staker.balance - balanceBefore, "return matches settled transfer");
+        assertEq(sharesBurned, shares, "event records settled share burn");
+        assertEq(_shares(entityId), 0, "shares settled to zero");
+    }
+
+    function test_redelegateWithRewards_returnsEmittedAndSettledOutputs() public {
+        uint256 fromEntityId = _createEntity("pool-a");
+        uint256 toEntityId = _createEntity("pool-b");
+        vm.prank(owner);
+        entity.addRewards{value: 100 ether}(fromEntityId);
+        vm.prank(staker);
+        staking.stake{value: STAKE}(fromEntityId, staker, 0);
+
+        vm.warp(block.timestamp + 365 days);
+        uint256 shares = _shares(fromEntityId);
+        vm.recordLogs();
+        vm.prank(staker);
+        (uint256 movedValue, uint256 sharesIssued) = staking.redelegate(fromEntityId, toEntityId, shares, 0);
+
+        (uint256 emittedValue, uint256 sharesBurned, uint256 emittedShares) = abi.decode(
+            _eventData(keccak256("Redelegated(uint256,uint256,address,uint256,uint256,uint256)")),
+            (uint256, uint256, uint256)
+        );
+        assertGt(movedValue, STAKE, "return includes accrued rewards");
+        assertEq(movedValue, emittedValue, "moved value return matches event");
+        assertEq(sharesIssued, emittedShares, "issued shares return matches event");
+        assertEq(sharesBurned, shares, "event records settled source shares");
+        assertEq(_shares(fromEntityId), 0, "source shares settled to zero");
+        assertEq(sharesIssued, _shares(toEntityId), "return matches settled destination shares");
     }
 
     // ---- basic move (no bonding) ----

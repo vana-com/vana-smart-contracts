@@ -461,7 +461,7 @@ contract VanaPoolStakingImplementation is
         uint256 entityId,
         address recipient,
         uint256 shareAmountMin
-    ) external payable override nonReentrant whenNotPaused {
+    ) external payable override nonReentrant whenNotPaused returns (uint256 sharesIssued) {
         if (!_isValidEntity(entityId)) {
             revert EntityNotActive();
         }
@@ -486,7 +486,7 @@ contract VanaPoolStakingImplementation is
 
         // Calculate shares
         uint256 vanaToShare = vanaPoolEntity.vanaToEntityShare(entityId);
-        uint256 sharesIssued = (vanaToShare * stakeAmount) / 1e18;
+        sharesIssued = (vanaToShare * stakeAmount) / 1e18;
 
         if (sharesIssued == 0) {
             revert InsufficientStakeAmount();
@@ -555,8 +555,8 @@ contract VanaPoolStakingImplementation is
         uint256 entityId,
         uint256 shareAmount,
         uint256 vanaAmountMin
-    ) external override nonReentrant whenNotPaused {
-        _unstake(_msgSender(), entityId, shareAmount, vanaAmountMin, false);
+    ) external override nonReentrant whenNotPaused returns (uint256 vanaAmount) {
+        return _unstake(_msgSender(), entityId, shareAmount, vanaAmountMin, false);
     }
 
     /**
@@ -632,7 +632,7 @@ contract VanaPoolStakingImplementation is
         uint256 shareAmount,
         uint256 vanaAmountMin,
         bool skipProcessRewards
-    ) internal {
+    ) internal returns (uint256 vanaToReturn) {
         StakerEntity storage stakerEntity = _stakers[staker].entities[entityId];
         if (stakerEntity.shares == 0 || shareAmount == 0) {
             revert InvalidAmount();
@@ -660,7 +660,6 @@ contract VanaPoolStakingImplementation is
         uint256 shareValue = (shareAmount * shareToVana) / 1e18;
 
         // Calculate the VANA amount to return based on reward eligibility
-        uint256 vanaToReturn;
         uint256 proportionalCostBasis = (stakerEntity.costBasis * shareAmount) / stakerEntity.shares;
         uint256 forfeitedRewards = 0;
 
@@ -755,7 +754,7 @@ contract VanaPoolStakingImplementation is
         uint256 toEntityId,
         uint256 shareAmount,
         uint256 minSharesOut
-    ) external override nonReentrant whenNotPaused {
+    ) external override nonReentrant whenNotPaused returns (uint256 movedValue, uint256 sharesIssued) {
         if (fromEntityId == toEntityId) {
             revert InvalidEntity();
         }
@@ -783,7 +782,7 @@ contract VanaPoolStakingImplementation is
 
         // ---- exit `from`: carry full value, principal, vested, and bond ----
         uint256 fromShareToVana = vanaPoolEntity.entityShareToVana(fromEntityId);
-        uint256 movedValue = (shareAmount * fromShareToVana) / 1e18; // full value incl. rewards
+        movedValue = (shareAmount * fromShareToVana) / 1e18; // full value incl. rewards
         uint256 movedCostBasis = (from.costBasis * shareAmount) / from.shares; // principal portion
         uint256 movedVested = (from.vestedRewards * shareAmount) / from.shares;
         uint256 remainingBond = currentTimestamp < from.rewardEligibilityTimestamp
@@ -808,7 +807,7 @@ contract VanaPoolStakingImplementation is
         vanaPoolEntity.updateEntityPool(fromEntityId, shareAmount, movedValue, false);
 
         // ---- enter `to`: mint shares for movedValue, carry principal + bond ----
-        uint256 sharesIssued = (vanaPoolEntity.vanaToEntityShare(toEntityId) * movedValue) / 1e18;
+        sharesIssued = (vanaPoolEntity.vanaToEntityShare(toEntityId) * movedValue) / 1e18;
         if (sharesIssued == 0 || sharesIssued < minSharesOut) {
             revert InvalidSlippage();
         }
