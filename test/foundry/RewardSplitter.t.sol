@@ -31,7 +31,6 @@ contract RewardSplitterTest is Test {
     address entityOwner = makeAddr("entityOwner");
     address staker = makeAddr("staker");
     address stranger = makeAddr("stranger");
-    address sink = makeAddr("sink");
 
     uint256 constant MIN_STAKE = 1 ether;
     uint256 constant MIN_REG_STAKE = 1 ether;
@@ -220,7 +219,7 @@ contract RewardSplitterTest is Test {
         splitter.distribute(100 ether, _ids(a, b));
     }
 
-    // ---- buy-and-burn ----
+    // ---- burn ----
 
     function _twoRoundsWithBurn(uint256 rate) internal returns (uint256 a, uint256 b, uint256 shareSum) {
         a = _createEntity("pool-a");
@@ -229,7 +228,7 @@ contract RewardSplitterTest is Test {
         _stake(b, 100 ether);
 
         vm.startPrank(owner);
-        splitter.updateBuyAndBurn(rate, sink);
+        splitter.updateBurnRate(rate);
         vm.warp(block.timestamp + 1 days);
         splitter.distribute(100 ether, _ids(a, b)); // round 1: baselines only
         vm.stopPrank();
@@ -245,19 +244,21 @@ contract RewardSplitterTest is Test {
     }
 
     function test_burnAccruesAndEntitiesGetRemainder() public {
+        uint256 zeroBefore = address(0).balance;
         (, , uint256 shareSum) = _twoRoundsWithBurn(10e18); // 10%
 
         assertEq(splitter.pendingBurn(), 10 ether, "10% of the 100 budget accrued to burn");
         assertApproxEqAbs(shareSum, 90 ether, 2, "entities split the remaining 90 (minus dust)");
-        assertEq(sink.balance, 0, "not flushed yet");
+        assertEq(address(0).balance, zeroBefore, "not burned yet");
     }
 
-    function test_executeBuyAndBurnFlushesToSink() public {
+    function test_executeBurnSendsToZeroAddress() public {
+        uint256 zeroBefore = address(0).balance;
         _twoRoundsWithBurn(10e18);
         assertEq(splitter.pendingBurn(), 10 ether);
 
-        splitter.executeBuyAndBurn(); // permissionless
-        assertEq(sink.balance, 10 ether, "flushed to sink");
+        splitter.executeBurn(); // permissionless
+        assertEq(address(0).balance - zeroBefore, 10 ether, "burned to the zero address");
         assertEq(splitter.pendingBurn(), 0, "reserve cleared");
     }
 
@@ -267,14 +268,10 @@ contract RewardSplitterTest is Test {
         assertApproxEqAbs(shareSum, 100 ether, 2, "entities split the full budget");
     }
 
-    function test_burnRateCapAndSinkRequired() public {
-        vm.startPrank(owner);
+    function test_burnRateCap() public {
+        vm.prank(owner);
         vm.expectRevert(RewardSplitterImplementation.InvalidBurnRate.selector);
-        splitter.updateBuyAndBurn(100e18 + 1, sink); // > 100%
-
-        vm.expectRevert(RewardSplitterImplementation.InvalidAddress.selector);
-        splitter.updateBuyAndBurn(10e18, address(0)); // nonzero rate needs a sink
-        vm.stopPrank();
+        splitter.updateBurnRate(100e18 + 1); // > 100%
     }
 
     function test_withdrawCannotTouchPendingBurn() public {

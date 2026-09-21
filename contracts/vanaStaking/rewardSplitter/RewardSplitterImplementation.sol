@@ -31,6 +31,10 @@ contract RewardSplitterImplementation is
     // Burn rate is percent * 1e18 (matching maxAPY / commission), so 100% == this.
     uint256 public constant MAX_BURN_RATE = 100e18;
 
+    // The burn cut is sent to the zero address, which permanently removes the
+    // VANA from circulation. No dedicated burn/sink address is configured.
+    address public constant BURN_ADDRESS = address(0);
+
     IVanaPoolEntity public vanaPoolEntity;
 
     // last stake-seconds reading taken for an entity (the round baseline)
@@ -38,12 +42,11 @@ contract RewardSplitterImplementation is
     // whether an entity has been seen before (distinguishes "baseline 0" from unset)
     mapping(uint256 entityId => bool) public seen;
 
-    // Buy-and-burn: this fraction of each distributed budget is set aside before
-    // the remainder is split across entities. distribute() only accrues it into
-    // pendingBurn; executeBuyAndBurn() flushes it to buyAndBurnAddress.
+    // Burn: this fraction of each distributed budget is set aside before the
+    // remainder is split across entities. distribute() only accrues it into
+    // pendingBurn; executeBurn() sends it to BURN_ADDRESS (the zero address).
     uint256 public burnRate; // percent * 1e18; 0 = no burn
-    address public buyAndBurnAddress;
-    uint256 public pendingBurn; // wei accrued for buy-and-burn, not yet flushed
+    uint256 public pendingBurn; // wei accrued for burning, not yet sent
 
     // --- ERC-20 reward inlet (appended; append-safe for UUPS) ---
     // There is no on-chain swap. ERC-20 rewards are funded here, handed to a
@@ -56,8 +59,8 @@ contract RewardSplitterImplementation is
     event Distributed(uint256 indexed entityId, uint256 amount, uint256 weight);
     event RoundDistributed(uint256 budget, uint256 totalWeight, uint256 entityCount);
     event BurnAccrued(uint256 amount, uint256 pendingBurn);
-    event BuyAndBurnExecuted(address indexed to, uint256 amount);
-    event BuyAndBurnUpdated(uint256 burnRate, address buyAndBurnAddress);
+    event Burned(uint256 amount);
+    event BurnRateUpdated(uint256 burnRate);
     event Funded(address indexed from, uint256 amount);
     event Withdrawn(address indexed to, uint256 amount);
     event ConverterUpdated(address indexed converter);
@@ -211,11 +214,9 @@ contract RewardSplitterImplementation is
             return;
         }
 
-        // Buy-and-burn: set aside a cut of the budget before the entity split.
-        // Only accrued here (no transfer); flushed by executeBuyAndBurn.
-        uint256 burnAmount = (burnRate > 0 && buyAndBurnAddress != address(0))
-            ? (budget * burnRate) / MAX_BURN_RATE
-            : 0;
+        // Burn: set aside a cut of the budget before the entity split. Only
+        // accrued here (no transfer); sent to the burn address by executeBurn.
+        uint256 burnAmount = burnRate > 0 ? (budget * burnRate) / MAX_BURN_RATE : 0;
         uint256 entityBudget = budget - burnAmount;
         if (burnAmount > 0) {
             pendingBurn += burnAmount;
@@ -262,47 +263,34 @@ contract RewardSplitterImplementation is
     }
 
     /**
-     * @notice Set the buy-and-burn cut skimmed from each distributed budget.
-     * @param newBurnRate         percent * 1e18 (0..MAX_BURN_RATE); 0 disables
-     * @param newBuyAndBurnAddress recipient of the skim (a burner/buy-back sink)
+     * @notice Set the burn cut skimmed from each distributed budget. The skim is
+     *         sent to the zero address (BURN_ADDRESS), so no recipient is needed.
+     * @param newBurnRate percent * 1e18 (0..MAX_BURN_RATE); 0 disables
      */
-    function updateBuyAndBurn(
-        uint256 newBurnRate,
-        address newBuyAndBurnAddress
-    ) external onlyRole(MAINTAINER_ROLE) {
+    function updateBurnRate(uint256 newBurnRate) external onlyRole(MAINTAINER_ROLE) {
         if (newBurnRate > MAX_BURN_RATE) {
             revert InvalidBurnRate();
         }
-        // require a recipient whenever the rate is nonzero, so a live rate can't
-        // silently skim to address(0).
-        if (newBurnRate > 0 && newBuyAndBurnAddress == address(0)) {
-            revert InvalidAddress();
-        }
         burnRate = newBurnRate;
-        buyAndBurnAddress = newBuyAndBurnAddress;
-        emit BuyAndBurnUpdated(newBurnRate, newBuyAndBurnAddress);
+        emit BurnRateUpdated(newBurnRate);
     }
 
     /**
-     * @notice Flush the accrued buy-and-burn balance to buyAndBurnAddress.
-     *         Permissionless: funds only ever go to the configured sink. No-op
-     *         when nothing has accrued.
+     * @notice Send the accrued burn balance to the zero address, permanently
+     *         removing it from circulation. Permissionless: funds only ever go
+     *         to BURN_ADDRESS. No-op when nothing has accrued.
      */
-    function executeBuyAndBurn() external nonReentrant {
+    function executeBurn() external nonReentrant {
         uint256 amount = pendingBurn;
         if (amount == 0) {
             return;
         }
-        address sink = buyAndBurnAddress;
-        if (sink == address(0)) {
-            revert InvalidAddress();
-        }
         pendingBurn = 0; // effects before interaction
-        (bool burned, ) = sink.call{value: amount}("");
+        (bool burned, ) = BURN_ADDRESS.call{value: amount}("");
         if (!burned) {
             revert TransferFailed();
         }
-        emit BuyAndBurnExecuted(sink, amount);
+        emit Burned(amount);
     }
 
     /// @notice Recover unallocated VANA (division dust or excess funding). Cannot
