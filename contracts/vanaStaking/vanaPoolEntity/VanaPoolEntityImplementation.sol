@@ -1120,7 +1120,7 @@ contract VanaPoolEntityImplementation is
         // further queued entry it already wrote this same value (a redundant
         // but harmless SSTORE); when it promoted an empty slot it short-circuited
         // on the scheduledValue == 0 guard without writing, so this is required.
-        schedule.lastUpdate = uint32(block.timestamp);
+        schedule.lastUpdate = uint64(block.timestamp);
     }
 
     /**

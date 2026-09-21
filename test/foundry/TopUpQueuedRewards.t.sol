@@ -89,7 +89,7 @@ contract TopUpQueuedRewardsTest is Test {
         _seed(
             IVanaPoolEntity.RewardModel.STREAM,
             locked,
-            IVanaPoolEntity.RewardSchedule(10 ether, START, 10 days, uint32(START), 20 ether, START + 10 days, 20 days)
+            IVanaPoolEntity.RewardSchedule(10 ether, START, 10 days, 20 days, 20 ether, START + 10 days, uint64(START))
         );
     }
 
@@ -113,7 +113,7 @@ contract TopUpQueuedRewardsTest is Test {
         _seed(
             IVanaPoolEntity.RewardModel.STREAM,
             10 ether,
-            IVanaPoolEntity.RewardSchedule(10 ether, START, 10 days, uint32(START), 0, 0, 0) // no queue
+            IVanaPoolEntity.RewardSchedule(10 ether, START, 10 days, 0, 0, 0, uint64(START)) // no queue
         );
         vm.prank(owner);
         vm.expectRevert(VanaPoolEntityImplementation.InvalidParam.selector);
@@ -139,7 +139,7 @@ contract TopUpQueuedRewardsTest is Test {
         _seed(
             IVanaPoolEntity.RewardModel.APY,
             10 ether,
-            IVanaPoolEntity.RewardSchedule(0, 0, 0, 0, 20 ether, START + 10 days, 20 days)
+            IVanaPoolEntity.RewardSchedule(0, 0, 0, 20 days, 20 ether, START + 10 days, 0)
         );
         vm.prank(owner);
         vm.expectRevert(VanaPoolEntityImplementation.InvalidRewardModel.selector);

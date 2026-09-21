@@ -57,7 +57,7 @@ contract EntityRewardViewsTest is Test {
 
     function test_rewardScheduleView() public {
         IVanaPoolEntity.RewardSchedule memory sched =
-            IVanaPoolEntity.RewardSchedule(10_000 ether, START, 10 days, uint32(START), 20_000 ether, START + 10 days, 20 days);
+            IVanaPoolEntity.RewardSchedule(10_000 ether, START, 10 days, 20 days, 20_000 ether, START + 10 days, uint64(START));
         _seed(IVanaPoolEntity.RewardModel.STREAM, 30_000 ether, sched);
 
         IVanaPoolEntity.RewardSchedule memory s = h.entityRewardSchedule(ID);
@@ -71,7 +71,7 @@ contract EntityRewardViewsTest is Test {
     function test_committedRewards_activeUnvestedPlusQueued() public {
         // active 10k over [START, START+10d]; queued 20k
         IVanaPoolEntity.RewardSchedule memory sched =
-            IVanaPoolEntity.RewardSchedule(10_000 ether, START, 10 days, uint32(START), 20_000 ether, START + 10 days, 20 days);
+            IVanaPoolEntity.RewardSchedule(10_000 ether, START, 10 days, 20 days, 20_000 ether, START + 10 days, uint64(START));
         _seed(IVanaPoolEntity.RewardModel.STREAM, 30_000 ether, sched);
 
         // at start: nothing vested → 10k active + 20k queued
@@ -150,7 +150,7 @@ contract EntityRewardViewsTest is Test {
     function test_currentAPY_streamMode_annualizedRate() public {
         // 10k over 10 days on a 100k active pool = 10% per 10 days = 365% APR
         IVanaPoolEntity.RewardSchedule memory sched =
-            IVanaPoolEntity.RewardSchedule(10_000 ether, START, 10 days, uint32(START), 0, 0, 0);
+            IVanaPoolEntity.RewardSchedule(10_000 ether, START, 10 days, 0, 0, 0, uint64(START));
         _seedActive(IVanaPoolEntity.RewardModel.STREAM, 10_000 ether, 100_000 ether, 6e18, sched);
 
         vm.warp(START + 1 days); // currently vesting
@@ -159,7 +159,7 @@ contract EntityRewardViewsTest is Test {
 
     function test_currentAPY_streamMode_zeroOutsideWindow() public {
         IVanaPoolEntity.RewardSchedule memory sched =
-            IVanaPoolEntity.RewardSchedule(10_000 ether, START + 5 days, 10 days, uint32(START + 5 days), 0, 0, 0);
+            IVanaPoolEntity.RewardSchedule(10_000 ether, START + 5 days, 10 days, 0, 0, 0, uint64(START + 5 days));
         _seedActive(IVanaPoolEntity.RewardModel.STREAM, 10_000 ether, 100_000 ether, 6e18, sched);
 
         // before start
@@ -171,7 +171,7 @@ contract EntityRewardViewsTest is Test {
 
     function test_currentAPY_streamMode_zeroWhenNoActivePool() public {
         IVanaPoolEntity.RewardSchedule memory sched =
-            IVanaPoolEntity.RewardSchedule(10_000 ether, START, 10 days, uint32(START), 0, 0, 0);
+            IVanaPoolEntity.RewardSchedule(10_000 ether, START, 10 days, 0, 0, 0, uint64(START));
         _seedActive(IVanaPoolEntity.RewardModel.STREAM, 10_000 ether, 0, 6e18, sched);
 
         vm.warp(START + 1 days);

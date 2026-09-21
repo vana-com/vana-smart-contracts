@@ -97,7 +97,7 @@ contract DistributeRewardsTest is Test {
     function test_replaceOnOverlap_cancelsRemainderToResidue() public {
         // active 10k over [START, START+10d]; funded to cover it
         IVanaPoolEntity.RewardSchedule memory sched =
-            IVanaPoolEntity.RewardSchedule(10_000 ether, START, 10 days, uint32(START), 0, 0, 0);
+            IVanaPoolEntity.RewardSchedule(10_000 ether, START, 10 days, 0, 0, 0, uint64(START));
         _seed(15_000 ether, 0, 100 ether, sched);
 
         vm.warp(START + 5 days); // half of the active vested
@@ -118,7 +118,7 @@ contract DistributeRewardsTest is Test {
 
     function test_queuesWhenStartsAtOrAfterActiveEnd() public {
         IVanaPoolEntity.RewardSchedule memory sched =
-            IVanaPoolEntity.RewardSchedule(10_000 ether, START, 10 days, uint32(START), 0, 0, 0);
+            IVanaPoolEntity.RewardSchedule(10_000 ether, START, 10 days, 0, 0, 0, uint64(START));
         _seed(30_000 ether, 0, 100 ether, sched);
 
         // starts exactly at active end -> contiguous, queues

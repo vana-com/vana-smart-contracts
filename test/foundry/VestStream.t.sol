@@ -58,7 +58,7 @@ contract VestStreamTest is Test {
                 scheduledValue: value,
                 start: start,
                 duration: duration,
-                lastUpdate: uint32(lastUpdate),
+                lastUpdate: uint64(lastUpdate),
                 nextScheduledValue: 0,
                 nextStart: 0,
                 nextDuration: 0
@@ -163,7 +163,7 @@ contract VestStreamTest is Test {
                 scheduledValue: VALUE,
                 start: start,
                 duration: DURATION,
-                lastUpdate: uint32(start),
+                lastUpdate: uint64(start),
                 nextScheduledValue: 20_000 ether,
                 nextStart: start + DURATION,
                 nextDuration: 20 days
@@ -202,5 +202,27 @@ contract VestStreamTest is Test {
         if (span >= DURATION) {
             assertEq(total, VALUE, "fully vested once past the window");
         }
+    }
+
+    // ---- watermark survives past the uint32 timestamp boundary (year ~2106) ----
+
+    function test_vestsCorrectlyPastUint32Timestamp() public {
+        // A start beyond 2**32 seconds (4_294_967_296, ~year 2106). A uint32
+        // lastUpdate would truncate here and make the second half re-vest from a
+        // wrapped watermark; uint64 keeps the line correct.
+        uint64 start = 4_300_000_000;
+        vm.warp(start);
+        _install(start, DURATION, VALUE);
+
+        // first half vests
+        vm.warp(start + DURATION / 2);
+        assertEq(h.vest(1000), VALUE / 2, "half vests past the uint32 boundary");
+
+        // watermark is now > 2**32; the second half must vest exactly once
+        vm.warp(start + DURATION);
+        assertEq(h.vest(1000), VALUE / 2, "remaining half vests, watermark not truncated");
+
+        // fully vested: no phantom re-vest from a wrapped watermark
+        assertEq(h.vest(1000), 0, "no double-vest after the window");
     }
 }

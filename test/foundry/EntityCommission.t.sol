@@ -99,7 +99,7 @@ contract EntityCommissionTest is Test {
 
     function test_streamSkimSplits() public {
         IVanaPoolEntity.RewardSchedule memory sched =
-            IVanaPoolEntity.RewardSchedule(100 ether, START, 10 days, uint32(START), 0, 0, 0);
+            IVanaPoolEntity.RewardSchedule(100 ether, START, 10 days, 0, 0, 0, uint64(START));
         _seed(IVanaPoolEntity.RewardModel.STREAM, 100 ether, 0, 20e18, sched); // 20%
 
         vm.warp(START + 5 days); // half vests -> 50 ether distributed

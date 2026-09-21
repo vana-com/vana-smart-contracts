@@ -138,7 +138,7 @@ contract EntityRewardModelSwitchTest is Test {
     function test_switchToStreamModel_clearsStaleSchedule() public {
         // APY entity carrying stale schedule fields (e.g. from a prior STREAM phase)
         IVanaPoolEntity.RewardSchedule memory stale =
-            IVanaPoolEntity.RewardSchedule(999 ether, START, 5 days, uint32(START), 777 ether, START + 5 days, 10 days);
+            IVanaPoolEntity.RewardSchedule(999 ether, START, 5 days, 10 days, 777 ether, START + 5 days, uint64(START));
         h.setEntity(
             ENTITY_ID,
             IVanaPoolEntity.Entity({
@@ -174,7 +174,7 @@ contract EntityRewardModelSwitchTest is Test {
 
     function test_switchToStreamModel_rejectsNonApy() public {
         IVanaPoolEntity.RewardSchedule memory sched =
-            IVanaPoolEntity.RewardSchedule(10 ether, START, 10 days, uint32(START), 0, 0, 0);
+            IVanaPoolEntity.RewardSchedule(10 ether, START, 10 days, 0, 0, 0, uint64(START));
         h.setEntity(
             ENTITY_ID,
             IVanaPoolEntity.Entity({

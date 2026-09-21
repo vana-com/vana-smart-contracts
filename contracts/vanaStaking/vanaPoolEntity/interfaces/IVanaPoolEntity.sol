@@ -28,13 +28,15 @@ interface IVanaPoolEntity {
     ///         RewardDistribution semantics). All amounts are in wei; the funds
     ///         backing them live in the entity's lockedRewardPool.
     struct RewardSchedule {
+        // slot 0 (256 bits, fully packed)
         uint128 scheduledValue; // active entry: total to vest over [start, start+duration]
         uint64 start; // active entry: vesting start; <= now vests immediately when duration == 0
         uint32 duration; // active entry: vesting span in seconds; 0 == instant
-        uint32 lastUpdate; // watermark: last time the active entry was vested into active pool
+        uint32 nextDuration; // queued entry: vesting span in seconds
+        // slot 1 (256 bits, fully packed)
         uint128 nextScheduledValue; // queued entry: total, or 0 if nothing queued
         uint64 nextStart; // queued entry: vesting start (>= active entry's end)
-        uint32 nextDuration; // queued entry: vesting span in seconds
+        uint64 lastUpdate; // watermark: last time the active entry was vested; uint64 to match `start` (no 2106 truncation)
     }
 
     struct Entity {
