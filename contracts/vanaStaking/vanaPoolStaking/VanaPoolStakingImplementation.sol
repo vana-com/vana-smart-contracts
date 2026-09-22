@@ -501,6 +501,10 @@ contract VanaPoolStakingImplementation is
         uint256 currentTimestamp = block.timestamp;
         uint256 shareToVana = vanaPoolEntity.entityShareToVana(entityId);
 
+        // Heal a legacy (V1) zero-costBasis position before it is read below, so
+        // its principal is not mis-booked as reward into vestedRewards.
+        _healLegacyCostBasis(stakerEntity, shareToVana);
+
         // Calculate new total shares and their VANA value after this stake
         uint256 newTotalShares = stakerEntity.shares + sharesIssued;
         uint256 newTotalValue = (newTotalShares * shareToVana) / 1e18;
@@ -646,6 +650,10 @@ contract VanaPoolStakingImplementation is
         uint256 shareToVana = vanaPoolEntity.entityShareToVana(entityId);
         uint256 currentTimestamp = block.timestamp;
 
+        // Heal a legacy (V1) zero-costBasis position before it is read below, so
+        // the payout and reward accounting use its real principal.
+        _healLegacyCostBasis(stakerEntity, shareToVana);
+
         // If past bonding period, vest all unrealized rewards first (for entire position)
         // This ensures clean accounting: all rewards become vested before proportional withdrawal
         if (currentTimestamp >= stakerEntity.rewardEligibilityTimestamp && stakerEntity.shares > 0) {
@@ -782,6 +790,9 @@ contract VanaPoolStakingImplementation is
 
         // ---- exit `from`: carry full value, principal, vested, and bond ----
         uint256 fromShareToVana = vanaPoolEntity.entityShareToVana(fromEntityId);
+        // Heal a legacy (V1) zero-costBasis source, so the carried principal is
+        // its real value and cannot be under-valued during a bond in `to`.
+        _healLegacyCostBasis(from, fromShareToVana);
         movedValue = (shareAmount * fromShareToVana) / 1e18; // full value incl. rewards
         uint256 movedCostBasis = (from.costBasis * shareAmount) / from.shares; // principal portion
         uint256 movedVested = (from.vestedRewards * shareAmount) / from.shares;
@@ -816,13 +827,18 @@ contract VanaPoolStakingImplementation is
 
         // Weighted-average the existing `to` bond with the carried bond, by value
         // (mirrors stake()'s bonding math using the carried remaining bond).
-        uint256 existingValue = (to.shares * vanaPoolEntity.entityShareToVana(toEntityId)) / 1e18;
+        uint256 toShareToVana = vanaPoolEntity.entityShareToVana(toEntityId);
+        uint256 existingValue = (to.shares * toShareToVana) / 1e18;
         uint256 existingRemaining = currentTimestamp < to.rewardEligibilityTimestamp
             ? to.rewardEligibilityTimestamp - currentTimestamp
             : 0;
         uint256 newTotalValue = existingValue + movedValue;
         uint256 weightedTime = (existingValue * existingRemaining + movedValue * remainingBond) / newTotalValue;
         to.rewardEligibilityTimestamp = currentTimestamp + weightedTime;
+
+        // Heal a legacy (V1) zero-costBasis destination too, so merging the moved
+        // principal into it does not under-value the existing position in a bond.
+        _healLegacyCostBasis(to, toShareToVana);
 
         // Carry the principal (not the full value): the reward portion rides as
         // unrealized gain, kept only if the carried bond is served in `to`.
@@ -872,6 +888,23 @@ contract VanaPoolStakingImplementation is
         // Check if entity exists in VanaPoolEntity contract
         IVanaPoolEntity.EntityInfo memory entityInfo = vanaPoolEntity.entities(entityId);
         return entityInfo.status == IVanaPoolEntity.EntityStatus.Active;
+    }
+
+    /**
+     * @notice Heal a legacy position whose costBasis was never migrated from V1
+     *         (the V1 struct stored only `shares`, leaving costBasis == 0). Treat
+     *         its entire current value as principal, so no accounting path
+     *         mis-reads the principal as reward or under-values it during bonding.
+     *         Idempotent: a no-op once costBasis is nonzero, and skips empty
+     *         positions (shares == 0), so it never touches a fresh first stake.
+     *
+     * @param se          the staker position to heal
+     * @param shareToVana the entity's current share price (VANA per share, 1e18)
+     */
+    function _healLegacyCostBasis(StakerEntity storage se, uint256 shareToVana) internal {
+        if (se.costBasis == 0 && se.shares > 0) {
+            se.costBasis = (se.shares * shareToVana) / 1e18;
+        }
     }
 
     function _addStaker(address staker) internal {
