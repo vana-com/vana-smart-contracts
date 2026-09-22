@@ -63,6 +63,16 @@ interface IVanaPoolEntity {
         bool stakingBlocked; // when true, no new stake may enter (stake / redelegate-in); unstake and redelegate-out stay open
         // --- appended in the sweep upgrade; append-safe as above ---
         uint256 sweepableAfter; // 0 = sweep disabled; else the timestamp from which unallocated APY rewards may be swept
+        // --- appended in the two-phase-commission upgrade; append-safe as above ---
+        uint256 pendingCommissionRate; // 0 = none; else a proposed rate INCREASE awaiting maintainer approval
+        // --- appended in the splitter-reward-track upgrade; append-safe as above ---
+        // Dedicated, owner-proof track for externally-funded (splitter) rewards.
+        // Kept OUT of lockedRewardPool so the owner-controlled APY/STREAM drip,
+        // sweep, distributeRewards and switchToStreamModel can never reach it.
+        // Funded only by addStakerRewards; vested linearly to delegators by
+        // processRewards on the schedule below.
+        uint256 stakerLockedRewardPool; // splitter rewards not yet vested to delegators
+        RewardSchedule stakerRewardSchedule; // linear vesting entry for the splitter track
     }
 
     function version() external pure returns (uint256);
@@ -89,6 +99,8 @@ interface IVanaPoolEntity {
 
     function entityRewardModel(uint256 entityId) external view returns (RewardModel);
     function entityRewardSchedule(uint256 entityId) external view returns (RewardSchedule memory);
+    function entityStakerLockedRewardPool(uint256 entityId) external view returns (uint256);
+    function entityStakerRewardSchedule(uint256 entityId) external view returns (RewardSchedule memory);
     function committedRewards(uint256 entityId) external view returns (uint256);
     function stakeSecondsAt(uint256 entityId) external view returns (uint256);
     function entityNameToId(string calldata entityName) external view returns (uint256);
@@ -117,6 +129,12 @@ interface IVanaPoolEntity {
 
     // Entity reward management
     function addRewards(uint256 entityId) external payable;
+    // Externally-funded, delegator-earned rewards (from the RewardSplitter): vested
+    // to delegators over `duration` on a dedicated, owner-proof track; payCommission
+    // skims the owner's cut up front at the current rate. Overlapping calls rebase
+    // (remaining unvested + new amount re-vest over a fresh window). Never touches
+    // the owner's lockedRewardPool/schedule, so the owner cannot withhold or re-rate it.
+    function addStakerRewards(uint256 entityId, bool payCommission, uint32 duration) external payable;
     function processRewards(uint256 entityId) external;
 
     function distributeRewards(uint256 entityId, uint256 amount, uint64 start, uint32 duration) external payable;
@@ -125,9 +143,12 @@ interface IVanaPoolEntity {
 
     function switchToStreamModel(uint256 entityId, uint64 start, uint32 duration) external;
 
-    function updateEntityCommission(uint256 entityId, uint256 newCommissionRate) external;
+    function updateEntityCommission(uint256 entityId, uint256 newCommissionRate) external; // decreases only
+    function proposeCommissionRate(uint256 entityId, uint256 newCommissionRate) external; // increases: owner proposes
+    function approveCommissionRate(uint256 entityId) external; // increases: maintainer approves
     function claimCommission(uint256 entityId) external;
     function entityCommissionRate(uint256 entityId) external view returns (uint256);
+    function entityPendingCommissionRate(uint256 entityId) external view returns (uint256);
     function entityAccruedCommission(uint256 entityId) external view returns (uint256);
 
     function updateEntityStakingBlocked(uint256 entityId, bool blocked) external;

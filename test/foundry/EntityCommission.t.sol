@@ -68,7 +68,10 @@ contract EntityCommissionTest is Test {
                 stakeSeconds: 0,
                 stakeSecondsUpdatedAt: 0,
                 stakingBlocked: false,
-                sweepableAfter: 0
+                sweepableAfter: 0,
+                pendingCommissionRate: 0,
+                stakerLockedRewardPool: 0,
+                stakerRewardSchedule: IVanaPoolEntity.RewardSchedule(0, 0, 0, 0, 0, 0, 0)
             })
         );
     }
@@ -125,34 +128,75 @@ contract EntityCommissionTest is Test {
         assertEq(e.activeRewardPool, 100 ether + toDistribute, "everything to delegators");
     }
 
-    // ---- rate change settles at the old rate ----
+    // ---- two-phase increases: approval settles at the old rate ----
 
-    function test_updateCommission_settlesAtOldRateFirst() public {
+    function test_approveCommission_settlesAtOldRateFirst() public {
         _seed(IVanaPoolEntity.RewardModel.APY, 1_000 ether, 100 ether, 10e18, _empty()); // 10%
         vm.warp(START + 365 days);
         uint256 pending = h.calculateYield(100 ether, 6e18, 365 days);
 
         vm.prank(entityOwner);
-        h.updateEntityCommission(ID, 20e18); // raise to 20%
+        h.proposeCommissionRate(ID, 20e18); // owner proposes 20%
+        vm.prank(maintainer);
+        h.approveCommissionRate(ID); // maintainer approves -> applies, settling at old 10%
 
         IVanaPoolEntity.Entity memory e = h.getEntity(ID);
-        assertEq(e.commissionRate, 20e18, "new rate stored");
+        assertEq(e.commissionRate, 20e18, "new rate applied");
+        assertEq(e.pendingCommissionRate, 0, "proposal cleared");
         assertEq(e.accruedCommission, pending / 10, "pending settled at OLD 10%");
+    }
+
+    // ---- two-phase gating ----
+
+    function test_proposeDoesNotApplyUntilApproved() public {
+        _seed(IVanaPoolEntity.RewardModel.APY, 1_000 ether, 100 ether, 10e18, _empty());
+        vm.prank(entityOwner);
+        h.proposeCommissionRate(ID, 50e18);
+        assertEq(h.entityCommissionRate(ID), 10e18, "rate unchanged until approved");
+        assertEq(h.entityPendingCommissionRate(ID), 50e18, "proposal pending");
+    }
+
+    function test_ownerCannotApproveOwnIncrease() public {
+        _seed(IVanaPoolEntity.RewardModel.APY, 1_000 ether, 100 ether, 10e18, _empty());
+        vm.startPrank(entityOwner);
+        h.proposeCommissionRate(ID, 50e18);
+        vm.expectRevert(); // approveCommissionRate is MAINTAINER_ROLE-gated
+        h.approveCommissionRate(ID);
+        vm.stopPrank();
+    }
+
+    function test_updateEntityCommissionCannotRaise() public {
+        _seed(IVanaPoolEntity.RewardModel.APY, 1_000 ether, 100 ether, 10e18, _empty());
+        vm.prank(entityOwner);
+        vm.expectRevert(VanaPoolEntityImplementation.InvalidParam.selector);
+        h.updateEntityCommission(ID, 20e18); // increase must go through propose/approve
+    }
+
+    function test_decreaseIsImmediateAndCancelsPending() public {
+        _seed(IVanaPoolEntity.RewardModel.APY, 1_000 ether, 100 ether, 20e18, _empty());
+        vm.startPrank(entityOwner);
+        h.proposeCommissionRate(ID, 50e18); // pending increase
+        h.updateEntityCommission(ID, 5e18); // immediate decrease
+        vm.stopPrank();
+        assertEq(h.entityCommissionRate(ID), 5e18, "decrease applied immediately");
+        assertEq(h.entityPendingCommissionRate(ID), 0, "decrease cancels the pending increase");
     }
 
     // ---- access + bounds ----
 
     function test_onlyOwnerOrMaintainerSetsCommission() public {
-        _seed(IVanaPoolEntity.RewardModel.APY, 1_000 ether, 100 ether, 0, _empty());
+        _seed(IVanaPoolEntity.RewardModel.APY, 1_000 ether, 100 ether, 10e18, _empty());
         vm.prank(stranger);
         vm.expectRevert(VanaPoolEntityImplementation.NotEntityOwner.selector);
-        h.updateEntityCommission(ID, 10e18);
+        h.updateEntityCommission(ID, 5e18);
     }
 
-    function test_maintainerCanSetCommission() public {
+    function test_maintainerCanRaiseCommission() public {
         _seed(IVanaPoolEntity.RewardModel.APY, 1_000 ether, 100 ether, 0, _empty());
-        vm.prank(maintainer);
-        h.updateEntityCommission(ID, 15e18);
+        vm.startPrank(maintainer);
+        h.proposeCommissionRate(ID, 15e18);
+        h.approveCommissionRate(ID);
+        vm.stopPrank();
         assertEq(h.entityCommissionRate(ID), 15e18);
     }
 
@@ -160,7 +204,7 @@ contract EntityCommissionTest is Test {
         _seed(IVanaPoolEntity.RewardModel.APY, 1_000 ether, 100 ether, 0, _empty());
         vm.prank(entityOwner);
         vm.expectRevert(VanaPoolEntityImplementation.InvalidParam.selector);
-        h.updateEntityCommission(ID, 100e18 + 1); // > MAX_COMMISSION
+        h.proposeCommissionRate(ID, 100e18 + 1); // > MAX_COMMISSION
     }
 
     function test_hundredPercentCommission_delegatorsGetNothing() public {

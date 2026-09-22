@@ -27,7 +27,10 @@ contract VanaPoolEntityImplementation is
     event EntityMaxAPYUpdated(uint256 indexed entityId, uint256 newMaxAPY);
     event EntityRewardModelUpdated(uint256 indexed entityId, RewardModel model);
     event EntityCommissionUpdated(uint256 indexed entityId, uint256 newCommissionRate);
+    event CommissionRateProposed(uint256 indexed entityId, uint256 newCommissionRate);
+    event CommissionRateApproved(uint256 indexed entityId, uint256 newCommissionRate);
     event CommissionClaimed(uint256 indexed entityId, address indexed to, uint256 amount);
+    event StakerRewardsAdded(uint256 indexed entityId, uint256 delegatorReward, uint256 commission);
     event EntityStakingBlockedUpdated(uint256 indexed entityId, bool blocked);
     event EntitySweepableAfterUpdated(uint256 indexed entityId, uint256 timestamp);
     event UnallocatedRewardsSwept(uint256 indexed entityId, address indexed to, uint256 amount);
@@ -163,6 +166,18 @@ contract VanaPoolEntityImplementation is
         uint256 entityId
     ) external view override returns (RewardSchedule memory) {
         return _entities[entityId].rewardSchedule;
+    }
+
+    /// @notice Splitter rewards not yet vested to delegators (owner-proof track).
+    function entityStakerLockedRewardPool(uint256 entityId) external view override returns (uint256) {
+        return _entities[entityId].stakerLockedRewardPool;
+    }
+
+    /// @notice The splitter track's linear vesting schedule.
+    function entityStakerRewardSchedule(
+        uint256 entityId
+    ) external view override returns (RewardSchedule memory) {
+        return _entities[entityId].stakerRewardSchedule;
     }
 
     /**
@@ -440,6 +455,73 @@ contract VanaPoolEntityImplementation is
     }
 
     /**
+     * @notice Pay externally-funded, delegator-earned rewards (from the
+     *         RewardSplitter) to an entity's delegators, vesting linearly over
+     *         `duration` on a dedicated, owner-proof track (stakerLockedRewardPool
+     *         + stakerRewardSchedule). This track is kept OUT of lockedRewardPool,
+     *         so the owner's APY/STREAM drip, sweep, distributeRewards and
+     *         switchToStreamModel can never reach it: the owner cannot withhold,
+     *         cancel, re-time, or re-rate the reward.
+     *
+     *         When payCommission is true the owner's cut is skimmed UP FRONT at the
+     *         rate in force now; the vesting portion then carries no commission, so
+     *         there is nothing to skim at a later, owner-chosen moment. Rate
+     *         increases are gated by propose/approve, so the rate cannot be spiked
+     *         unilaterally before a round.
+     *
+     *         Overlapping calls rebase: the schedule is settled up to now, then the
+     *         remaining unvested balance plus the new delegator amount re-vest over
+     *         a fresh [now, now + duration].
+     *
+     * @param entityId      The entity to credit
+     * @param payCommission Whether to pay the entity owner's commission cut
+     * @param duration      Linear vesting span in seconds (must be > 0)
+     */
+    function addStakerRewards(
+        uint256 entityId,
+        bool payCommission,
+        uint32 duration
+    ) external payable override whenNotPaused onlyRole(REWARD_SPLITTER_ROLE) {
+        Entity storage entity = _entities[entityId];
+
+        if (entity.status != EntityStatus.Active) {
+            revert InvalidEntityStatus();
+        }
+        if (msg.value == 0 || duration == 0) {
+            revert InvalidParam();
+        }
+
+        // Settle first: vests the splitter track up to now (and the owner's model),
+        // and checkpoints stake-seconds. Leaves stakerLockedRewardPool holding only
+        // the not-yet-vested remainder.
+        processRewards(entityId);
+
+        uint256 commission = payCommission ? (msg.value * entity.commissionRate) / MAX_COMMISSION : 0;
+        uint256 delegatorReward = msg.value - commission;
+
+        entity.accruedCommission += commission; // owner's cut, fixed up front at the current rate
+        entity.stakerLockedRewardPool += delegatorReward; // held on the owner-proof track
+
+        // Rebase: re-vest the entire outstanding staker-reward balance over a fresh
+        // window. lastUpdate == start makes vested-so-far zero for the new entry.
+        RewardSchedule storage s = entity.stakerRewardSchedule;
+        s.scheduledValue = uint128(entity.stakerLockedRewardPool);
+        s.start = uint64(block.timestamp);
+        s.duration = duration;
+        s.lastUpdate = uint64(block.timestamp);
+        s.nextScheduledValue = 0;
+        s.nextStart = 0;
+        s.nextDuration = 0;
+
+        (bool success, ) = payable(address(vanaPoolStaking.vanaPoolTreasury())).call{value: msg.value}("");
+        if (!success) {
+            revert TransferFailed();
+        }
+
+        emit StakerRewardsAdded(entityId, delegatorReward, commission);
+    }
+
+    /**
      * @notice Schedule a linear reward stream for a STREAM-model entity, funded
      *         by msg.value and/or the entity's existing locked residue. Uses the
      *         Synthetix V3 replace/queue rules: the new entry either replaces the
@@ -551,39 +633,60 @@ contract VanaPoolEntityImplementation is
         // Checkpoint stake-seconds before the drip changes activeRewardPool.
         _checkpointStakeSeconds(entity);
 
-        // Calculate time elapsed since last update
+        // Owner-controlled model track (APY drip / STREAM), gated on the entity's
+        // own elapsed time. Runs first so the APY base excludes this round's
+        // splitter vesting.
         uint256 timeElapsed = block.timestamp - entity.lastUpdateTimestamp;
-        if (timeElapsed == 0) {
+        if (timeElapsed > 0) {
+            uint256 toDistribute;
+            if (entity.rewardModel == RewardModel.APY) {
+                // Calculate theoretical yield based on maxAPY
+                toDistribute = calculateYield(entity.activeRewardPool, entity.maxAPY, timeElapsed);
+            } else {
+                // STREAM: linear vesting of the entity's scheduled rewards
+                toDistribute = _vestStream(entity.rewardSchedule, entity.totalShares);
+            }
+
+            if (toDistribute > entity.lockedRewardPool) {
+                toDistribute = entity.lockedRewardPool;
+            }
+
+            // Skim the entity's commission before the remainder raises the share
+            // price. Model-agnostic: applies to both APY drip and STREAM vesting.
+            uint256 commission = (toDistribute * entity.commissionRate) / MAX_COMMISSION;
+            uint256 delegatorReward = toDistribute - commission;
+
+            entity.lockedRewardPool -= toDistribute;
+            entity.activeRewardPool += delegatorReward; // to delegators via share price
+            entity.accruedCommission += commission; // operator's cut, claimable
+            entity.totalDistributedRewards += delegatorReward;
+
+            // Update last process timestamp
+            entity.lastUpdateTimestamp = block.timestamp;
+
+            emit RewardsProcessed(entityId, toDistribute);
+        }
+
+        // Owner-proof splitter track: vests on its own schedule watermark,
+        // independent of the model track above (so it is never skipped). Commission
+        // was already taken up front in addStakerRewards, so none is skimmed here.
+        _vestStakerRewards(entity);
+    }
+
+    /// @dev Vest the splitter-funded track (stakerLockedRewardPool) to delegators
+    ///      per its schedule. Separate from the model track and from
+    ///      lockedRewardPool, so the owner cannot influence it.
+    function _vestStakerRewards(Entity storage entity) internal {
+        uint256 toVest = _vestStream(entity.stakerRewardSchedule, entity.totalShares);
+        if (toVest == 0) {
             return;
         }
-
-        uint256 toDistribute;
-        if (entity.rewardModel == RewardModel.APY) {
-            // Calculate theoretical yield based on maxAPY
-            toDistribute = calculateYield(entity.activeRewardPool, entity.maxAPY, timeElapsed);
-        } else {
-            // STREAM: linear vesting of the entity's scheduled rewards
-            toDistribute = _vestStream(entity.rewardSchedule, entity.totalShares);
+        if (toVest > entity.stakerLockedRewardPool) {
+            toVest = entity.stakerLockedRewardPool;
         }
-
-        if (toDistribute > entity.lockedRewardPool) {
-            toDistribute = entity.lockedRewardPool;
-        }
-
-        // Skim the entity's commission before the remainder raises the share
-        // price. Model-agnostic: applies to both APY drip and STREAM vesting.
-        uint256 commission = (toDistribute * entity.commissionRate) / MAX_COMMISSION;
-        uint256 delegatorReward = toDistribute - commission;
-
-        entity.lockedRewardPool -= toDistribute;
-        entity.activeRewardPool += delegatorReward; // to delegators via share price
-        entity.accruedCommission += commission; // operator's cut, claimable
-        entity.totalDistributedRewards += delegatorReward;
-
-        // Update last process timestamp
-        entity.lastUpdateTimestamp = block.timestamp;
-
-        emit RewardsProcessed(entityId, toDistribute);
+        entity.stakerLockedRewardPool -= toVest;
+        entity.activeRewardPool += toVest; // to delegators via share price
+        entity.totalDistributedRewards += toVest;
     }
 
     /**
@@ -656,13 +759,15 @@ contract VanaPoolEntityImplementation is
     }
 
     /**
-     * @notice Set an entity's commission -- the operator's cut of each reward
-     *         distribution, taken before the remainder raises the share price
-     *         for delegators. Percent * 1e18 (100% == MAX_COMMISSION). Settles
-     *         pending rewards at the old rate first, so the change is forward-only.
+     * @notice Lower an entity's commission -- the operator's cut, percent * 1e18.
+     *         Decreases only and take effect immediately (always delegator-
+     *         favorable). Increases must go through proposeCommissionRate +
+     *         approveCommissionRate, so an owner cannot unilaterally spike the
+     *         rate ahead of a reward round. Settles at the old rate first, and a
+     *         decrease cancels any pending increase proposal.
      *
      * @param entityId The entity ID
-     * @param newCommissionRate New commission rate, 0..MAX_COMMISSION
+     * @param newCommissionRate New rate, <= the current rate
      */
     function updateEntityCommission(uint256 entityId, uint256 newCommissionRate) external override {
         Entity storage entity = _entities[entityId];
@@ -673,16 +778,71 @@ contract VanaPoolEntityImplementation is
         if (msg.sender != entity.ownerAddress && !hasRole(MAINTAINER_ROLE, msg.sender)) {
             revert NotEntityOwner();
         }
-        if (newCommissionRate > MAX_COMMISSION) {
-            revert InvalidParam();
+        if (newCommissionRate > entity.commissionRate) {
+            revert InvalidParam(); // increases go through propose/approve
         }
 
         // Settle at the old rate so the new rate only applies to future rewards.
         processRewards(entityId);
 
         entity.commissionRate = newCommissionRate;
+        entity.pendingCommissionRate = 0; // a decrease cancels any pending increase
 
         emit EntityCommissionUpdated(entityId, newCommissionRate);
+    }
+
+    /**
+     * @notice Propose a commission-rate INCREASE. Stored as pending; it does not
+     *         take effect until a maintainer calls approveCommissionRate. This is
+     *         the only way to raise the rate, so externally-funded rewards can
+     *         never be skimmed at a rate the owner spiked unilaterally.
+     *
+     * @param entityId The entity ID
+     * @param newCommissionRate Proposed rate, > current and <= MAX_COMMISSION
+     */
+    function proposeCommissionRate(uint256 entityId, uint256 newCommissionRate) external override {
+        Entity storage entity = _entities[entityId];
+
+        if (entity.status != EntityStatus.Active) {
+            revert InvalidEntityStatus();
+        }
+        if (msg.sender != entity.ownerAddress && !hasRole(MAINTAINER_ROLE, msg.sender)) {
+            revert NotEntityOwner();
+        }
+        // Increases only (use updateEntityCommission to lower) and within the cap.
+        if (newCommissionRate <= entity.commissionRate || newCommissionRate > MAX_COMMISSION) {
+            revert InvalidParam();
+        }
+
+        entity.pendingCommissionRate = newCommissionRate;
+
+        emit CommissionRateProposed(entityId, newCommissionRate);
+    }
+
+    /**
+     * @notice Approve and apply a pending commission-rate increase. Maintainer-
+     *         only. Settles at the old rate first, so the increase is forward-only.
+     *
+     * @param entityId The entity ID
+     */
+    function approveCommissionRate(uint256 entityId) external override onlyRole(MAINTAINER_ROLE) {
+        Entity storage entity = _entities[entityId];
+
+        if (entity.status != EntityStatus.Active) {
+            revert InvalidEntityStatus();
+        }
+        uint256 pending = entity.pendingCommissionRate;
+        if (pending == 0) {
+            revert InvalidParam(); // nothing proposed
+        }
+
+        // Settle at the old rate so the new rate only applies to future rewards.
+        processRewards(entityId);
+
+        entity.commissionRate = pending;
+        entity.pendingCommissionRate = 0;
+
+        emit CommissionRateApproved(entityId, pending);
     }
 
     /**
@@ -720,6 +880,13 @@ contract VanaPoolEntityImplementation is
      */
     function entityCommissionRate(uint256 entityId) external view override returns (uint256) {
         return _entities[entityId].commissionRate;
+    }
+
+    /**
+     * @notice A pending commission-rate increase awaiting approval (0 if none).
+     */
+    function entityPendingCommissionRate(uint256 entityId) external view override returns (uint256) {
+        return _entities[entityId].pendingCommissionRate;
     }
 
     /**

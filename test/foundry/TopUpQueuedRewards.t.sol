@@ -79,7 +79,10 @@ contract TopUpQueuedRewardsTest is Test {
                 stakeSeconds: 0,
                 stakeSecondsUpdatedAt: 0,
                 stakingBlocked: false,
-                sweepableAfter: 0
+                sweepableAfter: 0,
+                pendingCommissionRate: 0,
+                stakerLockedRewardPool: 0,
+                stakerRewardSchedule: IVanaPoolEntity.RewardSchedule(0, 0, 0, 0, 0, 0, 0)
             })
         );
     }

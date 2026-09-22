@@ -100,6 +100,9 @@ contract RewardModelsE2ETest is Test {
         staking.updateVanaPoolTreasury(address(treasury));
         // let the entity pull commission from the treasury (commission upgrade wiring)
         treasury.grantRole(treasury.DEFAULT_ADMIN_ROLE(), address(entity));
+        // the splitter pays delegators directly via addStakerRewards
+        entity.grantRole(entity.REWARD_SPLITTER_ROLE(), address(splitter));
+        splitter.updateRewardVestingDuration(7 days);
         vm.stopPrank();
 
         vm.deal(owner, 10_000 ether);
@@ -275,8 +278,10 @@ contract RewardModelsE2ETest is Test {
         uint256 entityId = _createEntity();
 
         // 20% commission, fund the APY drip
+        // raise commission via the two-phase path (owner proposes, maintainer approves)
         vm.startPrank(owner);
-        entity.updateEntityCommission(entityId, 20e18);
+        entity.proposeCommissionRate(entityId, 20e18);
+        entity.approveCommissionRate(entityId);
         entity.addRewards{value: 100 ether}(entityId);
         vm.stopPrank();
         assertEq(entity.entityCommissionRate(entityId), 20e18);
@@ -382,20 +387,22 @@ contract RewardModelsE2ETest is Test {
         vm.warp(block.timestamp + 1 days);
         uint256[] memory ids = new uint256[](1);
         ids[0] = entityId;
+        uint256 activeBaseline = entity.entities(entityId).activeRewardPool;
         vm.prank(owner);
         splitter.distribute(100 ether, ids);
-        assertEq(entity.entities(entityId).lockedRewardPool, 0, "baseline round pays nothing");
+        assertEq(entity.entities(entityId).activeRewardPool, activeBaseline, "baseline round pays nothing");
 
-        // 6) Second round: the entity now has weight and receives the budget.
+        // 6) Second round: the entity now has weight; the reward is committed to
+        //    the owner-proof splitter track and vests to delegators over time.
         vm.warp(block.timestamp + 10 days);
         vm.prank(owner);
         splitter.distribute(100 ether, ids);
-        assertGt(entity.entities(entityId).lockedRewardPool, 0, "entity funded from converted VANA");
+        assertGt(entity.entityStakerLockedRewardPool(entityId), 0, "reward committed from converted VANA");
 
-        // 7) The entity vests the reward to its staker (APY model), who withdraws a gain.
+        // 7) It vests to the staker over the schedule, who then withdraws a gain.
         vm.warp(block.timestamp + 365 days);
         entity.processRewards(entityId);
-        assertGt(entity.entityShareToVana(entityId), 1e18, "converted reward lifted the share price");
+        assertGt(entity.entityShareToVana(entityId), 1e18, "converted reward vested into the share price");
 
         uint256 shares = _stakerShares(entityId);
         vm.prank(staker);

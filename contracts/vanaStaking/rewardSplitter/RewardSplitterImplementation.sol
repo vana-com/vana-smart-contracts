@@ -56,11 +56,23 @@ contract RewardSplitterImplementation is
     address public converter;
     mapping(address token => uint256 amount) public pendingConversion;
 
+    // Whether entity payouts pay the entity owner's commission cut. Passed to
+    // addStakerRewards, which vests to delegators and (when true) skims the owner's
+    // cut up front at the current rate. Governance-toggled.
+    bool public payEntityCommission;
+
+    // Linear vesting span (seconds) for each entity payout on the entity's
+    // owner-proof splitter track. Must be set explicitly before distributing;
+    // there is no default, so a payout can never be an unintended instant release.
+    uint32 public rewardVestingDuration;
+
     event Distributed(uint256 indexed entityId, uint256 amount, uint256 weight);
     event RoundDistributed(uint256 budget, uint256 totalWeight, uint256 entityCount);
     event BurnAccrued(uint256 amount, uint256 pendingBurn);
     event Burned(uint256 amount);
     event BurnRateUpdated(uint256 burnRate);
+    event PayEntityCommissionUpdated(bool value);
+    event RewardVestingDurationUpdated(uint32 duration);
     event Funded(address indexed from, uint256 amount);
     event Withdrawn(address indexed to, uint256 amount);
     event ConverterUpdated(address indexed converter);
@@ -73,6 +85,7 @@ contract RewardSplitterImplementation is
     error InvalidBurnRate();
     error TransferFailed();
     error InvalidAmount();
+    error VestingDurationNotSet();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -90,6 +103,7 @@ contract RewardSplitterImplementation is
         }
 
         vanaPoolEntity = IVanaPoolEntity(vanaPoolEntityAddress);
+        payEntityCommission = true; // default: pay the entity owner's commission cut
 
         _grantRole(DEFAULT_ADMIN_ROLE, ownerAddress);
         _grantRole(MAINTAINER_ROLE, ownerAddress);
@@ -179,6 +193,11 @@ contract RewardSplitterImplementation is
         uint256 budget,
         uint256[] calldata entityIds
     ) external onlyRole(DISTRIBUTOR_ROLE) nonReentrant whenNotPaused {
+        // The vesting duration must be set explicitly; no default, so a payout is
+        // never an unintended instant release.
+        if (rewardVestingDuration == 0) {
+            revert VestingDurationNotSet();
+        }
         // pendingBurn is reserved; a distribution can only use the free balance.
         if (budget == 0 || budget > address(this).balance - pendingBurn) {
             revert InvalidBudget();
@@ -236,8 +255,9 @@ contract RewardSplitterImplementation is
             if (share == 0) {
                 continue;
             }
-            // fund the entity's reward pool; it vests to its stakers by its model
-            vanaPoolEntity.addRewards{value: share}(id);
+            // Pay the entity's stakers on the owner-proof track: vests over
+            // rewardVestingDuration; the entity owner cannot withhold or re-rate it.
+            vanaPoolEntity.addStakerRewards{value: share}(id, payEntityCommission, rewardVestingDuration);
             emit Distributed(id, share, weights[i]);
         }
 
@@ -273,6 +293,22 @@ contract RewardSplitterImplementation is
         }
         burnRate = newBurnRate;
         emit BurnRateUpdated(newBurnRate);
+    }
+
+    /// @notice Toggle whether entity payouts pay the entity owner's commission cut.
+    function updatePayEntityCommission(bool value) external onlyRole(MAINTAINER_ROLE) {
+        payEntityCommission = value;
+        emit PayEntityCommissionUpdated(value);
+    }
+
+    /// @notice Set the linear vesting span (seconds) applied to each entity payout.
+    ///         Must be explicitly set (> 0) before distributing.
+    function updateRewardVestingDuration(uint32 duration) external onlyRole(MAINTAINER_ROLE) {
+        if (duration == 0) {
+            revert VestingDurationNotSet();
+        }
+        rewardVestingDuration = duration;
+        emit RewardVestingDurationUpdated(duration);
     }
 
     /**

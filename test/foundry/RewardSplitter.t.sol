@@ -83,6 +83,9 @@ contract RewardSplitterTest is Test {
         vm.startPrank(owner);
         staking.updateVanaPoolEntity(address(entity));
         staking.updateVanaPoolTreasury(address(treasury));
+        // the splitter pays delegators directly via addStakerRewards
+        entity.grantRole(entity.REWARD_SPLITTER_ROLE(), address(splitter));
+        splitter.updateRewardVestingDuration(7 days);
         vm.stopPrank();
 
         vm.deal(owner, 100_000 ether);
@@ -103,8 +106,8 @@ contract RewardSplitterTest is Test {
         staking.stake{value: amount}(id, staker, 0);
     }
 
-    function _locked(uint256 id) internal view returns (uint256) {
-        return entity.entities(id).lockedRewardPool;
+    function _stakerLocked(uint256 id) internal view returns (uint256) {
+        return entity.entityStakerLockedRewardPool(id);
     }
 
     function _ids(uint256 a, uint256 b) internal pure returns (uint256[] memory ids) {
@@ -122,14 +125,14 @@ contract RewardSplitterTest is Test {
         _stake(b, 100 ether);
         vm.warp(block.timestamp + 10 days);
 
-        uint256 la = _locked(a);
-        uint256 lb = _locked(b);
+        uint256 la = _stakerLocked(a);
+        uint256 lb = _stakerLocked(b);
 
         vm.prank(owner);
         splitter.distribute(100 ether, _ids(a, b));
 
-        assertEq(_locked(a), la, "no payout for first-seen A");
-        assertEq(_locked(b), lb, "no payout for first-seen B");
+        assertEq(_stakerLocked(a), la, "no payout for first-seen A");
+        assertEq(_stakerLocked(b), lb, "no payout for first-seen B");
         assertTrue(splitter.seen(a) && splitter.seen(b), "baselines recorded");
     }
 
@@ -154,15 +157,15 @@ contract RewardSplitterTest is Test {
         uint256 wB = splitter.pendingWeight(b);
         assertGt(wA, wB, "A accrued more stake-seconds");
 
-        uint256 la = _locked(a);
-        uint256 lb = _locked(b);
+        uint256 la = _stakerLocked(a);
+        uint256 lb = _stakerLocked(b);
         uint256 budget = 100 ether;
 
         vm.prank(owner);
         splitter.distribute(budget, _ids(a, b));
 
-        uint256 shareA = _locked(a) - la;
-        uint256 shareB = _locked(b) - lb;
+        uint256 shareA = _stakerLocked(a) - la;
+        uint256 shareB = _stakerLocked(b) - lb;
 
         // shares track the weights, and sum to the budget (minus integer dust)
         assertApproxEqRel(shareA, (budget * wA) / (wA + wB), 1e12, "A share ~ wA/(wA+wB)");
@@ -188,14 +191,14 @@ contract RewardSplitterTest is Test {
         // flash: dump a huge stake into A in the same block as distribute
         _stake(a, 10_000 ether);
 
-        uint256 la = _locked(a);
-        uint256 lb = _locked(b);
+        uint256 la = _stakerLocked(a);
+        uint256 lb = _stakerLocked(b);
 
         vm.prank(owner);
         splitter.distribute(100 ether, _ids(a, b));
 
-        uint256 shareA = _locked(a) - la;
-        uint256 shareB = _locked(b) - lb;
+        uint256 shareA = _stakerLocked(a) - la;
+        uint256 shareB = _stakerLocked(b) - lb;
 
         // the flash added ~0 stake-seconds (0 elapsed time), so A ~= B
         assertApproxEqRel(shareA, shareB, 1e15, "flash stake did not inflate A's share");
@@ -209,6 +212,24 @@ contract RewardSplitterTest is Test {
         vm.prank(owner);
         vm.expectRevert(RewardSplitterImplementation.InvalidBudget.selector);
         splitter.distribute(address(splitter).balance + 1, _ids(a, b));
+    }
+
+    function test_distributeRevertsWhenVestingDurationUnset() public {
+        // a fresh splitter with no vesting duration set
+        RewardSplitterImplementation ri2 = new RewardSplitterImplementation();
+        RewardSplitterImplementation s2 = RewardSplitterImplementation(
+            payable(
+                new RewardSplitterProxy(
+                    address(ri2),
+                    abi.encodeCall(RewardSplitterImplementation.initialize, (owner, address(entity)))
+                )
+            )
+        );
+        vm.deal(address(s2), 100 ether);
+        uint256 a = _createEntity("pool-x");
+        vm.prank(owner);
+        vm.expectRevert(RewardSplitterImplementation.VestingDurationNotSet.selector);
+        s2.distribute(10 ether, _ids(a, a));
     }
 
     function test_onlyDistributorCanDistribute() public {
@@ -234,13 +255,13 @@ contract RewardSplitterTest is Test {
         vm.stopPrank();
 
         vm.warp(block.timestamp + 10 days);
-        uint256 la = _locked(a);
-        uint256 lb = _locked(b);
+        uint256 la = _stakerLocked(a);
+        uint256 lb = _stakerLocked(b);
 
         vm.prank(owner);
         splitter.distribute(100 ether, _ids(a, b)); // round 2: burn + entity split
 
-        shareSum = (_locked(a) - la) + (_locked(b) - lb);
+        shareSum = (_stakerLocked(a) - la) + (_stakerLocked(b) - lb);
     }
 
     function test_burnAccruesAndEntitiesGetRemainder() public {
