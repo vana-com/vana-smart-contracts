@@ -23,6 +23,8 @@ interface IVanaPoolStaking {
     function vanaPoolTreasury() external view returns (IVanaPoolTreasury);
     function minStakeAmount() external view returns (uint256);
     function bondingPeriod() external view returns (uint256);
+    function entityRegistrant(uint256 entityId) external view returns (address);
+    function entityRegistrationShares(uint256 entityId) external view returns (uint256);
 
     function stake(
         uint256 entityId,
