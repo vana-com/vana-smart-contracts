@@ -194,13 +194,11 @@ describe("VanaPool", () => {
       (
         await vanaPoolTreasury.hasRole(DEFAULT_ADMIN_ROLE, owner.address)
       ).should.eq(true);
-      (
-        await vanaPoolTreasury.hasRole(
-          DEFAULT_ADMIN_ROLE,
-          vanaPoolStaking.target,
-        )
-      ).should.eq(true);
-      (await vanaPoolTreasury.version()).should.eq(1);
+      // Staking spends (SPENDER_ROLE) but must not administer the treasury.
+      const SPENDER_ROLE = await vanaPoolTreasury.SPENDER_ROLE();
+      (await vanaPoolTreasury.hasRole(SPENDER_ROLE, vanaPoolStaking.target)).should.eq(true);
+      (await vanaPoolTreasury.hasRole(DEFAULT_ADMIN_ROLE, vanaPoolStaking.target)).should.eq(false);
+      (await vanaPoolTreasury.version()).should.eq(2);
       (await vanaPoolTreasury.vanaPool()).should.eq(vanaPoolStaking.target);
     });
 
@@ -301,7 +299,7 @@ describe("VanaPool", () => {
     const createEntity = async (entityInfo: EntityRegistrationInfo) => {
       return vanaPoolEntity
         .connect(maintainer)
-        .createEntity(entityInfo, { value: minRegistrationStake });
+        ["createEntity((address,string))"](entityInfo, { value: minRegistrationStake });
     };
 
     it("should create an entity successfully", async function () {
@@ -387,7 +385,7 @@ describe("VanaPool", () => {
 
       await vanaPoolEntity
         .connect(maintainer)
-        .createEntity(entityInfo, { value: minRegistrationStake - BigInt(1) })
+        ["createEntity((address,string))"](entityInfo, { value: minRegistrationStake - BigInt(1) })
         .should.rejectedWith("InvalidRegistrationStake()");
     });
 
@@ -488,7 +486,7 @@ describe("VanaPool", () => {
       await deploy();
 
       // Create an entity for testing staking operations
-      await vanaPoolEntity.connect(maintainer).createEntity(
+      await vanaPoolEntity.connect(maintainer)["createEntity((address,string))"](
         {
           ownerAddress: user1.address,
           name: "Test Entity",
@@ -781,7 +779,7 @@ describe("VanaPool", () => {
       await vanaPoolStaking.connect(owner).updateBondingPeriod(bondingPeriod);
 
       // Create an entity for testing
-      await vanaPoolEntity.connect(maintainer).createEntity(
+      await vanaPoolEntity.connect(maintainer)["createEntity((address,string))"](
         {
           ownerAddress: user1.address,
           name: "Test Entity",
@@ -1175,7 +1173,7 @@ describe("VanaPool", () => {
       await vanaPoolStaking.connect(owner).updateBondingPeriod(bondingPeriod);
 
       // Create an entity for testing
-      await vanaPoolEntity.connect(maintainer).createEntity(
+      await vanaPoolEntity.connect(maintainer)["createEntity((address,string))"](
         {
           ownerAddress: user1.address,
           name: "Test Entity",
@@ -1534,7 +1532,7 @@ describe("VanaPool", () => {
       await vanaPoolStaking.connect(owner).updateBondingPeriod(bondingPeriod);
 
       // Create an entity for testing
-      await vanaPoolEntity.connect(maintainer).createEntity(
+      await vanaPoolEntity.connect(maintainer)["createEntity((address,string))"](
         {
           ownerAddress: user1.address,
           name: "Test Entity",
@@ -2494,7 +2492,7 @@ describe("VanaPool", () => {
       await deploy();
 
       // Create an entity for testing rewards
-      await vanaPoolEntity.connect(maintainer).createEntity(
+      await vanaPoolEntity.connect(maintainer)["createEntity((address,string))"](
         {
           ownerAddress: user1.address,
           name: "Test Entity",
@@ -2729,7 +2727,7 @@ describe("VanaPool", () => {
       await deploy();
 
       // Create an entity for testing
-      await vanaPoolEntity.connect(maintainer).createEntity(
+      await vanaPoolEntity.connect(maintainer)["createEntity((address,string))"](
         {
           ownerAddress: user1.address,
           name: "Test Entity",
@@ -2740,7 +2738,7 @@ describe("VanaPool", () => {
 
     it("should handle multiple entities with stakers and rewards", async function () {
       // Create a second entity
-      await vanaPoolEntity.connect(maintainer).createEntity(
+      await vanaPoolEntity.connect(maintainer)["createEntity((address,string))"](
         {
           ownerAddress: user2.address,
           name: "Entity Beta",
@@ -2965,8 +2963,9 @@ describe("VanaPool", () => {
         vanaPoolTreasury.target,
       );
 
-      // Transfer VANA to user
+      // Transfer VANA to user: transferVana is gated by SPENDER_ROLE, not admin
       const transferAmount = parseEther(2);
+      await vanaPoolTreasury.connect(owner).grantRole(await vanaPoolTreasury.SPENDER_ROLE(), owner.address);
       await vanaPoolTreasury
         .connect(owner)
         .transferVana(user5.address, transferAmount);
@@ -2993,7 +2992,7 @@ describe("VanaPool", () => {
         .connect(user1)
         .transferVana(user2.address, parseEther(1))
         .should.rejectedWith(
-          `AccessControlUnauthorizedAccount("${user1.address}", "${DEFAULT_ADMIN_ROLE}")`,
+          `AccessControlUnauthorizedAccount("${user1.address}", "${await vanaPoolTreasury.SPENDER_ROLE()}")`,
         );
     });
 
@@ -3016,7 +3015,7 @@ describe("VanaPool", () => {
 
     it("should have enough balance to cover unstaking operations", async function () {
       // Create an entity
-      await vanaPoolEntity.connect(maintainer).createEntity(
+      await vanaPoolEntity.connect(maintainer)["createEntity((address,string))"](
         {
           ownerAddress: user1.address,
           name: "Treasury Test Entity",
@@ -3089,7 +3088,7 @@ describe("VanaPool", () => {
 
     it("should calculate entity APY correctly", async function () {
       // Create an entity for testing
-      await vanaPoolEntity.connect(maintainer).createEntity(
+      await vanaPoolEntity.connect(maintainer)["createEntity((address,string))"](
         {
           ownerAddress: user1.address,
           name: "APY Test Entity",
@@ -3121,7 +3120,7 @@ describe("VanaPool", () => {
 
     it("should accumulate rewards correctly over time", async function () {
       // Create an entity for testing
-      await vanaPoolEntity.connect(maintainer).createEntity(
+      await vanaPoolEntity.connect(maintainer)["createEntity((address,string))"](
         {
           ownerAddress: user1.address,
           name: "Rewards Entity",
@@ -3159,7 +3158,7 @@ describe("VanaPool", () => {
 
     it("should cap rewards by available locked rewards", async function () {
       // Create an entity with a very high APY
-      await vanaPoolEntity.connect(maintainer).createEntity(
+      await vanaPoolEntity.connect(maintainer)["createEntity((address,string))"](
         {
           ownerAddress: user1.address,
           name: "High APY Entity",
@@ -3221,7 +3220,7 @@ describe("VanaPool", () => {
 
         await vanaPoolEntity
           .connect(maintainer)
-          .createEntity(entityInfo, { value: minRegistrationStake });
+          ["createEntity((address,string))"](entityInfo, { value: minRegistrationStake });
 
         // Check that the entity was created with the correct name
         const entityId = i + 1;
@@ -3246,7 +3245,7 @@ describe("VanaPool", () => {
 
         await vanaPoolEntity
           .connect(maintainer)
-          .createEntity(entityInfo, { value: minRegistrationStake })
+          ["createEntity((address,string))"](entityInfo, { value: minRegistrationStake })
           .should.rejectedWith("InvalidName()");
       }
     });
@@ -3322,7 +3321,7 @@ describe("VanaPool", () => {
       await deploy();
 
       // Create an entity for testing
-      await vanaPoolEntity.connect(maintainer).createEntity(
+      await vanaPoolEntity.connect(maintainer)["createEntity((address,string))"](
         {
           ownerAddress: user1.address,
           name: "Test Entity",
@@ -3412,7 +3411,7 @@ describe("VanaPool", () => {
   describe("Audit hardening (2026-09)", () => {
     beforeEach(async () => {
       await deploy();
-      await vanaPoolEntity.connect(maintainer).createEntity(
+      await vanaPoolEntity.connect(maintainer)["createEntity((address,string))"](
         { ownerAddress: user1.address, name: "Hardened Entity" },
         { value: minRegistrationStake },
       );
