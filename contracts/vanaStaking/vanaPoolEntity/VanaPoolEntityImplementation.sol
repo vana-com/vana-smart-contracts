@@ -246,6 +246,25 @@ contract VanaPoolEntityImplementation is
     }
 
     /**
+     * @notice Shares minted for `vanaAmount` VANA, computed in a SINGLE division
+     *         (vanaAmount * totalShares / activeRewardPool) so truncation falls on
+     *         the last wei of the result rather than on the price. The two-step
+     *         form (vanaToEntityShare then multiply) floors the rate, under-issuing
+     *         up to (m-1)/m of the shares when the rate sits just below an integer
+     *         m; this form is exact to within one wei-share. With no shares/active
+     *         outstanding the pool prices 1:1.
+     */
+    function vanaToShares(uint256 entityId, uint256 vanaAmount) external view override returns (uint256) {
+        Entity storage entity = _entities[entityId];
+
+        if (entity.totalShares == 0 || entity.activeRewardPool == 0) {
+            return vanaAmount; // 1:1 bootstrap
+        }
+
+        return (vanaAmount * entity.totalShares) / entity.activeRewardPool;
+    }
+
+    /**
      * @notice Gets entity information by name
      * @param entityName The name of the entity
      * @return Entity information

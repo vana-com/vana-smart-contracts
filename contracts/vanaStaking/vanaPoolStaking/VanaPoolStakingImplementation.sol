@@ -484,9 +484,9 @@ contract VanaPoolStakingImplementation is
         // Process entity rewards through VanaPoolEntity to ensure current share price is used
         vanaPoolEntity.processRewards(entityId);
 
-        // Calculate shares
-        uint256 vanaToShare = vanaPoolEntity.vanaToEntityShare(entityId);
-        sharesIssued = (vanaToShare * stakeAmount) / 1e18;
+        // Calculate shares in a single division (truncation on the result, not the
+        // rate), so the price cannot be rigged to under-issue the depositor.
+        sharesIssued = vanaPoolEntity.vanaToShares(entityId, stakeAmount);
 
         if (sharesIssued == 0) {
             revert InsufficientStakeAmount();
@@ -587,7 +587,6 @@ contract VanaPoolStakingImplementation is
         // Process rewards to get accurate share prices
         vanaPoolEntity.processRewards(entityId);
 
-        uint256 vanaToShare = vanaPoolEntity.vanaToEntityShare(entityId);
         bool isInBondingPeriod = block.timestamp < stakerEntity.rewardEligibilityTimestamp;
 
         // Calculate shares to unstake based on bonding status
@@ -601,10 +600,9 @@ contract VanaPoolStakingImplementation is
             }
             shareAmount = (vanaAmount * stakerEntity.shares) / stakerEntity.costBasis;
         } else {
-            // Reward eligible: user receives share value
-            // vanaToReturn = (shareAmount * shareToVana) / 1e18
-            // So: shareAmount = (vanaAmount * vanaToShare) / 1e18
-            shareAmount = (vanaAmount * vanaToShare) / 1e18;
+            // Reward eligible: user receives share value. Single division so the
+            // conversion matches vanaToShares (truncation on the result, not the rate).
+            shareAmount = vanaPoolEntity.vanaToShares(entityId, vanaAmount);
         }
 
         // Ensure we don't exceed user's shares
@@ -638,8 +636,18 @@ contract VanaPoolStakingImplementation is
         bool skipProcessRewards
     ) internal returns (uint256 vanaToReturn) {
         StakerEntity storage stakerEntity = _stakers[staker].entities[entityId];
-        if (stakerEntity.shares == 0 || shareAmount == 0) {
+        if (stakerEntity.shares == 0 || shareAmount == 0 || shareAmount > stakerEntity.shares) {
             revert InvalidAmount();
+        }
+        // The entity owner cannot drain their seed below minRegistrationStake, so
+        // totalShares can never reach the dust that would let the share price be
+        // rigged (or the entity self-brick). Reads the current owner and floor, so
+        // it protects entities created before this upgrade with no migration.
+        if (
+            staker == vanaPoolEntity.entities(entityId).ownerAddress &&
+            stakerEntity.shares - shareAmount < vanaPoolEntity.minRegistrationStake()
+        ) {
+            revert CannotRemoveRegistrationStake();
         }
 
         // Process entity rewards through VanaPoolEntity to ensure current share price is used
@@ -818,7 +826,7 @@ contract VanaPoolStakingImplementation is
         vanaPoolEntity.updateEntityPool(fromEntityId, shareAmount, movedValue, false);
 
         // ---- enter `to`: mint shares for movedValue, carry principal + bond ----
-        sharesIssued = (vanaPoolEntity.vanaToEntityShare(toEntityId) * movedValue) / 1e18;
+        sharesIssued = vanaPoolEntity.vanaToShares(toEntityId, movedValue); // single division
         if (sharesIssued == 0 || sharesIssued < minSharesOut) {
             revert InvalidSlippage();
         }
@@ -872,6 +880,8 @@ contract VanaPoolStakingImplementation is
         StakerEntity storage stakerEntity = _stakers[ownerAddress].entities[entityId];
         stakerEntity.shares = registrationStake;
         stakerEntity.costBasis = registrationStake;
+        // Bond the seed like any other stake (it was unbonded from birth).
+        stakerEntity.rewardEligibilityTimestamp = block.timestamp + bondingPeriod;
 
         _addStaker(ownerAddress);
 
