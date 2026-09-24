@@ -177,3 +177,21 @@ rate; correct `deployments-official/moksha` (treasury proxy record + new impleme
 deploy wrote fresh records to `deployments/moksha/`). Blockscout: implementation and proxy sources are
 verified; the helper's proxy→implementation "link" step reported a warning, harmless.
 
+## 10. Address parity with mainnet (RewardSplitter)
+
+The Entity and Staking proxies already share their addresses across Moksha and mainnet (both were deployed
+by `0xb11B37A47b120bEAED9b06910d951209d5Cf80f1`). The mainnet treasury record is `0x143BE72C…` — the same
+address as the live Moksha treasury, so the Moksha entry in `deployments-official` should simply be
+corrected to it.
+
+The splitter deployed on 2026-09-24 (`0x742A676A…`) **cannot** reproduce on mainnet: its CREATE2 creation
+code embeds `initialize(owner=0x2AC9…, entity)`, and the owner differs per chain. The deploy script now
+uses `RewardSplitterDeployer` (CREATE2, fixed salt, no constructor args → same address on every chain),
+which creates the proxy with empty constructor data and calls `initialize` atomically, so the proxy
+address depends only on (deployer contract, **signer EOA**, `CREATE2_SALT`, implementation). Parity
+therefore requires, on mainnet: the **same signer EOA** (it only signs; the owner passed in `initData` is
+the mainnet admin), the **same commit** (implementation bytecode), the same salt. `0xb11B…` is the natural
+signer since it already produced parity for the other proxies. Re-running the script on Moksha with that
+signer redeploys the splitter at the parity address and re-wires the entity (rotating the role off
+`0x742A…`, which is unfunded).
+
