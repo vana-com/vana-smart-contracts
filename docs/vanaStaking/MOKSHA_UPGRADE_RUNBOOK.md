@@ -164,13 +164,17 @@ before the next. No unstake window was opened at any point (treasury step used t
 | VanaPoolEntity | `0x44f20490A82e1f1F1cC25Dd3BA8647034eDdce30` | `0x6F8ad03e92A242FD837f3Fd4f51855C2DfcD2D8e` | 4 |
 | VanaPoolStaking | `0x641C18E2F286c86f96CE95C8ec1EB9fC0415Ca0e` | `0x6F575694f9C0aB740d3aBcA9A3791e9B8fBAe43B` | 4 |
 | VanaPoolTreasury (live) | `0x143BE72CF2541604A7691933CAccd6D9cC17c003` | `0xb484b57b5D9b6Aece84fAFb15f92F418448235d4` | 2 |
-| RewardSplitter (new) | `0x742A676A0b400DeB7d46dF5037f8C57332aAE9d4` | `0x9b53808c51De5c82149373a0DFAf789Aa41285ec` | — |
+| RewardSplitter (parity address) | `0x7A7B89b6925A8156b9A51E520327c0701023b344` | `0x9b53808c51De5c82149373a0DFAf789Aa41285ec` | — |
+| RewardSplitterDeployer | `0xd08C61d69e10B82ff79b6b53c9F5a638EAa11372` (same on mainnet) | — | — |
 
 State after: entity 1 unchanged and floor recorded (`0x2AC9…`, 1e20 shares); treasury `SPENDER_ROLE` held by
 Staking and Entity, Staking's `DEFAULT_ADMIN_ROLE` revoked, admin EOA retained; treasury balance unchanged
 (377,692.79 VANA); a simulated 1-share unstake by the admin returns 1.0937 VANA (transferVana passes the new
 gate). Splitter wired (`REWARD_SPLITTER_ROLE`), `rewardVestingDuration` 604800 s, `payEntityCommission` true,
-`burnRate` 0, owner holds admin/maintainer/distributor, **unfunded**.
+`burnRate` 0, owner holds admin/maintainer/distributor, **unfunded**. The splitter was redeployed the same
+day at the chain-independent address `0x7A7B89b6…` via `RewardSplitterDeployer` (§10); the first
+splitter `0x742A676A…` is unwired (role revoked), unfunded and inert. Mainnet, deployed from the same commit
+with salt `RewardSplitterProxySalt`, lands at the same `0x7A7B89b6…` regardless of signer.
 
 Remaining (product decisions): fund the splitter; first `distribute([1])` is baseline-only; decide the burn
 rate; correct `deployments-official/moksha` (treasury proxy record + new implementation addresses — hardhat-

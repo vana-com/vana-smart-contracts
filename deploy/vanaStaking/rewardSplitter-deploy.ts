@@ -89,7 +89,17 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   await verifyContract(deployerDeploy.address, []);
   await verifyContract(implDeploy.address, []);
-  await verifyContract(proxyAddress, [implDeploy.address, "0x"]);
+  // Every *Proxy.sol in this repo is an identical ERC1967 shell, so the verifier
+  // cannot pick the source from bytecode alone: name it fully qualified.
+  try {
+    await hre.run("verify:verify", {
+      address: proxyAddress,
+      constructorArguments: [implDeploy.address, "0x"],
+      contract: "contracts/vanaStaking/rewardSplitter/RewardSplitterProxy.sol:RewardSplitterProxy",
+    });
+  } catch (e) {
+    console.log(`proxy verification: ${(e as Error).message.split("\n")[0]} (already verified is fine)`);
+  }
 
   // Step 4: wire REWARD_SPLITTER_ROLE on the entity (revokes any previous splitter)
   console.log(`\n********** Step 4: wire the splitter into VanaPoolEntity **********`);
