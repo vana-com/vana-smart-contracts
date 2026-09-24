@@ -86,6 +86,7 @@ contract VanaPoolStakingImplementation is
     error InvalidSlippage();
     error InvalidBondingPeriod();
     error StakingBlocked();
+    error RegistrationAlreadyRecorded();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() ERC2771ContextUpgradeable(address(0)) {
@@ -930,6 +931,40 @@ contract VanaPoolStakingImplementation is
 
         emit Staked(entityId, ownerAddress, registrationStake, registrationStake);
         emit RegistrationStakeRecorded(entityId, ownerAddress, registrationStake);
+    }
+
+    /**
+     * @notice One-time migration for an entity created before the registration
+     *         floor existed (no registrant record): record who seeded it and the
+     *         shares they must keep, so the floor applies to it exactly as it
+     *         does to every entity created since. Callable only while no record
+     *         exists, and only for shares the registrant actually holds there.
+     *
+     * @param entityId                          entity to backfill
+     * @param registrant                        address that seeded the entity at creation
+     * @param shares                            its registration shares (the seed; minRegistrationStake at creation)
+     */
+    function backfillRegistration(
+        uint256 entityId,
+        address registrant,
+        uint256 shares
+    ) external onlyRole(MAINTAINER_ROLE) {
+        if (registrant == address(0)) {
+            revert InvalidAddress();
+        }
+        if (entityRegistrant[entityId] != address(0)) {
+            revert RegistrationAlreadyRecorded();
+        }
+        if (vanaPoolEntity.entities(entityId).ownerAddress == address(0)) {
+            revert InvalidEntity();
+        }
+        if (shares == 0 || _stakers[registrant].entities[entityId].shares < shares) {
+            revert InvalidAmount();
+        }
+        entityRegistrant[entityId] = registrant;
+        entityRegistrationShares[entityId] = shares;
+
+        emit RegistrationStakeRecorded(entityId, registrant, shares);
     }
 
     /**
