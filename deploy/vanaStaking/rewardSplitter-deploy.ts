@@ -13,12 +13,13 @@ import { verifyContract } from "../helpers";
  * itself CREATE2-deployed with a fixed salt and no constructor args, so it has the
  * same address everywhere -- creates the proxy with EMPTY constructor data and
  * calls initialize atomically. The proxy address then depends only on:
- *   (deployer contract, SIGNER EOA, CREATE2_SALT, implementation address)
- * The signer is mixed into the salt so nobody can front-run our address with a
- * different owner. Therefore, for the same address on mainnet:
- *   - sign with the SAME EOA (it only signs; the owner is passed in initData),
+ *   (deployer contract, CREATE2_SALT, VanaPoolEntity address, implementation address)
+ * -- none of which depends on who signs or who the owner is. Only a MAINTAINER of the
+ * entity may deploy (otherwise anyone could occupy the address with a different
+ * owner). Therefore, for the same address on mainnet:
  *   - deploy from the SAME commit (the implementation bytecode/address is part of it),
- *   - use the SAME CREATE2_SALT.
+ *   - use the SAME CREATE2_SALT (the entity address is already identical on both chains),
+ *   - sign with ANY maintainer of the entity.
  * Idempotent: if code already exists at the predicted address, creation is skipped.
  *
  * The splitter needs no treasury role (addStakerRewards forwards value to the
@@ -46,7 +47,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const saltHash = ethers.keccak256(ethers.toUtf8Bytes(salt));
 
   console.log(`\n********** RewardSplitter: deterministic deploy + wiring **********`);
-  console.log(`Signer (mixed into the salt): ${signer.address}`);
+  console.log(`Signer (must be an entity maintainer): ${signer.address}`);
   console.log(`VanaPoolEntity proxy:         ${entityProxyAddress}`);
   console.log(`Splitter owner:               ${ownerAddress}`);
 
@@ -63,17 +64,20 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   // Step 3: predicted proxy address, then create + initialize atomically (if absent)
   const deployerC = await ethers.getContractAt(deployerContractName, deployerDeploy.address);
-  const predicted: string = await deployerC.computeAddress(signer.address, saltHash, implDeploy.address);
+  const predicted: string = await deployerC.computeAddress(saltHash, implDeploy.address, entityProxyAddress);
   console.log(`\nPredicted proxy address: ${predicted}`);
-  console.log(`(same on any chain where signer ${signer.address}, salt "${salt}" and this commit's implementation are used)`);
+  console.log(`(same on any chain with this commit's implementation, salt "${salt}" and entity ${entityProxyAddress}, whoever signs)`);
 
-  const implFactory = await ethers.getContractFactory(implementationContractName);
-  const initData = implFactory.interface.encodeFunctionData("initialize", [ownerAddress, entityProxyAddress]);
+  const entity = await ethers.getContractAt("VanaPoolEntityImplementation", entityProxyAddress);
+  const maintainerRole = await entity.MAINTAINER_ROLE();
+  if (!(await entity.hasRole(maintainerRole, signer.address))) {
+    throw new Error(`signer ${signer.address} is not a MAINTAINER of the entity; RewardSplitterDeployer.deploy would revert NotEntityMaintainer`);
+  }
 
   if ((await ethers.provider.getCode(predicted)) !== "0x") {
     console.log(`Proxy already exists at the predicted address; skipping creation.`);
   } else {
-    const tx = await deployerC.deploy(saltHash, implDeploy.address, initData);
+    const tx = await deployerC.deploy(saltHash, implDeploy.address, entityProxyAddress, ownerAddress);
     const r = await tx.wait();
     if (!r || r.status !== 1) throw new Error("RewardSplitterDeployer.deploy failed");
     if ((await ethers.provider.getCode(predicted)) === "0x") throw new Error("proxy did not land at the predicted address");
@@ -89,8 +93,6 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   // Step 4: wire REWARD_SPLITTER_ROLE on the entity (revokes any previous splitter)
   console.log(`\n********** Step 4: wire the splitter into VanaPoolEntity **********`);
-  const entity = await ethers.getContractAt("VanaPoolEntityImplementation", entityProxyAddress);
-  const maintainerRole = await entity.MAINTAINER_ROLE();
   if (await entity.hasRole(maintainerRole, signer.address)) {
     if ((await entity.rewardSplitter()).toLowerCase() === proxyAddress.toLowerCase()) {
       console.log(`Already wired.`);
