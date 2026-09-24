@@ -587,20 +587,22 @@ contract VanaPoolStakingImplementation is
         return _unstake(_msgSender(), entityId, shareAmount, vanaAmountMin, false);
     }
 
-    /**
-     * @notice Unstake a specific VANA amount from an entity
-     * @dev Converts the VANA amount to shares and calls internal unstake.
-     *      During bonding period: calculates shares needed to receive vanaAmount as principal
-     *      After eligibility: calculates shares needed to receive vanaAmount as full value
+        /**
+     * @notice Unstake by VANA amount: burns the shares worth `vanaAmount` at the
+     *         current price (at cost basis while bonding) and pays them out.
      *
-     * @param entityId                          ID of the entity to unstake from
-     * @param vanaAmount                        VANA amount to receive
-     * @param shareAmountMax                    maximum shares to burn (slippage protection, 0 to skip)
+     * @param entityId                          ID of the entity
+     * @param vanaAmount                        VANA to withdraw; reverts if it exceeds the position
+     * @param shareAmountMax                    max shares to burn, 0 to skip (bounds the cost)
+     * @param vanaAmountMin                     min VANA to receive, 0 to skip (bounds the proceeds).
+     *                                          The payout may be a few wei under `vanaAmount`, so
+     *                                          pass a floor with dust tolerance, not `vanaAmount`.
      */
     function unstakeVana(
         uint256 entityId,
         uint256 vanaAmount,
-        uint256 shareAmountMax
+        uint256 shareAmountMax,
+        uint256 vanaAmountMin
     ) external nonReentrant whenNotPaused {
         address staker = _msgSender();
         StakerEntity storage stakerEntity = _stakers[staker].entities[entityId];
@@ -629,18 +631,25 @@ contract VanaPoolStakingImplementation is
             shareAmount = vanaPoolEntity.vanaToShares(entityId, vanaAmount);
         }
 
-        // Ensure we don't exceed user's shares
+        // A request larger than the position is an error, not a request for the
+        // whole position: revert rather than silently serving a different
+        // operation from the one asked for (NM-1052 [Low]).
         if (shareAmount > stakerEntity.shares) {
-            shareAmount = stakerEntity.shares;
+            revert InvalidAmount();
         }
 
-        // Slippage protection
+        // Slippage protection on what is burned (shares)...
         if (shareAmountMax > 0 && shareAmount > shareAmountMax) {
             revert InvalidSlippage();
         }
 
-        // Call internal unstake, skip processRewards since already called above
-        _unstake(staker, entityId, shareAmount, 0, true);
+        // ...and on what is received (VANA): the caller's floor is forwarded to
+        // _unstake exactly as the share-denominated unstake() does, instead of
+        // the hard-coded 0 that disabled it on this path (NM-1052 [Low]). The
+        // payout can land a few wei under `vanaAmount` (shares are floored from
+        // the request, then valued by a floored rate), so a floor should carry
+        // dust tolerance rather than be `vanaAmount` itself.
+        _unstake(staker, entityId, shareAmount, vanaAmountMin, true);
     }
 
     /**

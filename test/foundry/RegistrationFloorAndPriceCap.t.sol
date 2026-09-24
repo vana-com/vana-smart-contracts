@@ -205,7 +205,7 @@ contract RegistrationFloorAndPriceCapTest is Test {
         vm.expectRevert(sel);
         staking.unstake(str, 1, 0);
         vm.expectRevert(sel);
-        staking.unstakeVana(str, 1, 0);
+        staking.unstakeVana(str, 1, 0, 0);
         vm.expectRevert(sel);
         staking.redelegate(str, apy, 1, 0); // redelegate-out was the bypass of the owner-bound check
         vm.stopPrank();
@@ -456,7 +456,7 @@ contract RegistrationFloorAndPriceCapTest is Test {
 
         uint256 before = _shares(depositor, apy);
         vm.prank(depositor);
-        staking.unstakeVana(apy, want, expectedBurn);
+        staking.unstakeVana(apy, want, expectedBurn, 0);
         assertEq(before - _shares(depositor, apy), expectedBurn, "burns floor(vana * S / P)");
     }
 
