@@ -58,6 +58,7 @@ cast call $ENT 'version()(uint256)' --rpc-url $RPC        # expect 2
 cast call $TRE 'version()(uint256)' --rpc-url $RPC        # expect 1
 cast call $STK 'vanaPoolTreasury()(address)' --rpc-url $RPC   # MUST equal $TRE
 cast call $TRE 'vanaPool()(address)' --rpc-url $RPC           # MUST equal $STK
+cast call $STK 'hasRole(bytes32,address)(bool)' $(cast keccak VANA_POOL_ENTITY_ROLE) $ENT --rpc-url $RPC   # MUST be true, or createEntity reverts
 cast balance $TRE --rpc-url $RPC
 cast call $ENT 'entities(uint256)((uint256,address,uint8,string,uint256,uint256,uint256,uint256,uint256,uint256))' 1 --rpc-url $RPC
 # solvency: treasury balance >= active + locked (+ accruedCommission, 0 on v2)
@@ -198,3 +199,19 @@ is also the guard: only an entity `MAINTAINER_ROLE` holder may call `deploy`, so
 address first. Parity requires on mainnet: the **same commit** (implementation bytecode) and the **same
 salt**; the entity address is already identical. Re-running the script on Moksha redeploys the splitter at
 the parity address and re-wires the entity (rotating the role off `0x742A…`, which is unfunded).
+
+## 11. Post-upgrade e2e on the live contracts (fork test)
+
+`test/foundry/fork/MokshaE2E.t.sol` runs the full scenario against the real Moksha bytecode and state
+(forked at the latest block; nothing broadcast): three new entities at 40% APY with 10% commission,
+entity 1 blocked for new stake, every live staker of entity 1 migrated by `redelegate`, splitter funded,
+10% burn, two distribution rounds (round 1 is baseline-only by design), commission claimed by the owners
+through the treasury's `SPENDER_ROLE`, stakers' positions grown by both the splitter track and the APY
+drip, burn executed to `address(0)`, treasury solvency asserted at every stage.
+Run: `MOKSHA_FORK=1 forge test --match-path test/foundry/fork/MokshaE2E.t.sol -vv` (skipped otherwise).
+
+**Finding from its first run (2026-09-24):** the Moksha entity did **not** hold `VANA_POOL_ENTITY_ROLE` on
+Staking, so `createEntity` reverted — a pre-existing Moksha misconfiguration (the gate exists in v2 as
+well; mainnet holds the role). Fixed the same day with `grantRole(VANA_POOL_ENTITY_ROLE, entity)` from the
+admin. The pre-flight above now checks it.
+
