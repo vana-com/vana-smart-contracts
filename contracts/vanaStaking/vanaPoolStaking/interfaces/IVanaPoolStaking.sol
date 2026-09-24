@@ -31,7 +31,7 @@ interface IVanaPoolStaking {
         address recipient,
         uint256 shareAmountMin
     ) external payable returns (uint256 sharesIssued);
-    function unstake(uint256 entityId, uint256 amount, uint256 vanaAmountMin) external returns (uint256 vanaAmount);
+    function unstake(uint256 entityId, uint256 shareAmount, uint256 vanaAmountMin) external returns (uint256 vanaAmount);
     function redelegate(
         uint256 fromEntityId,
         uint256 toEntityId,

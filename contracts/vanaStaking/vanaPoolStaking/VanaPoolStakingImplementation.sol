@@ -74,26 +74,16 @@ contract VanaPoolStakingImplementation is
      */
     event BondingPeriodUpdated(uint256 newBondingPeriod);
 
-    /**
-     * @notice Triggered when an entity stake is registered
-     *
-     * @param entityId                         ID of the entity
-     * @param ownerAddress                     address of the owner
-     */
-    event EntityStakeRegistered(uint256 indexed entityId, address indexed ownerAddress);
 
     error InsufficientStakeAmount();
     error InvalidRecipient();
-    error InsufficientShares();
     error TransferFailed();
     error InvalidAmount();
-    error EntityNotFound();
     error EntityNotActive();
     error InvalidAddress();
     error InvalidEntity();
     error NotEntityOwner();
     error CannotRemoveRegistrationStake();
-    error NotAuthorized();
     error InvalidSlippage();
     error InvalidBondingPeriod();
     error StakingBlocked();
@@ -756,7 +746,12 @@ contract VanaPoolStakingImplementation is
         // Update staker's position
         stakerEntity.shares -= shareAmount;
 
-        _removeStaker(staker);
+        // Only a full exit can make the staker inactive; a partial withdrawal
+        // leaves this position alive, so skip _removeStaker's scan over every
+        // entity ever created (NM-1052 [Info]: unstake cost grew with entity count).
+        if (stakerEntity.shares == 0) {
+            _removeStaker(staker);
+        }
 
         // Update entity staking data in VanaPoolEntity contract
         vanaPoolEntity.updateEntityPool(entityId, shareAmount, shareValue, false);

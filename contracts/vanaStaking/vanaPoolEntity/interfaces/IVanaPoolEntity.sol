@@ -127,7 +127,7 @@ interface IVanaPoolEntity {
 
     function pause() external;
     function unpause() external;
-    function updateVanaPool(address vanaPoolStakingAddress) external;
+    function updateVanaPool(address newVanaPoolStakingAddress) external;
     // The RewardSplitter holding REWARD_SPLITTER_ROLE, and the first-class wiring
     // that grants it (revoking the previous one).
     function rewardSplitter() external view returns (address);
@@ -178,7 +178,9 @@ interface IVanaPoolEntity {
     function returnForfeitedRewards(uint256 entityId, uint256 amount) external;
     function redelegateDistributedRewards(uint256 fromEntityId, uint256 toEntityId, uint256 amount) external;
 
-    function calculateYield(uint256 apy, uint256 principal, uint256 time) external pure returns (uint256);
+    // Parameter order matches the implementation (principal first): all three are
+    // uint256, so a transposed declaration compiles and silently returns nonsense.
+    function calculateYield(uint256 principal, uint256 apy, uint256 time) external pure returns (uint256);
 
     function calculateContinuousAPYByEntity(uint256 entityId) external view returns (uint256);
 

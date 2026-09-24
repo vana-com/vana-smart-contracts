@@ -116,7 +116,11 @@ contract RewardSplitterImplementation is
 
     /// @notice Fund the splitter's distributable balance.
     receive() external payable {
-        emit Funded(msg.sender, msg.value);
+        // A zero-value call funds nothing: emit only for real funding so the
+        // event cannot be spammed for free (NM-1052 [Best Practice]).
+        if (msg.value > 0) {
+            emit Funded(msg.sender, msg.value);
+        }
     }
 
     /**

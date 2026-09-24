@@ -53,19 +53,14 @@ contract VanaPoolEntityImplementation is
 
     // Custom errors
     error InvalidParam();
-    error InvalidEntityId();
     error InvalidEntityStatus();
     error InvalidAddress();
     error InvalidName();
     error NotEntityOwner();
-    error EntityNameAlreadyExists();
-    error NameTooShort();
     error InvalidRegistrationStake();
     error SharePriceOutOfRange();
-    error StakersStillPresent();
     error InvalidRewardModel();
     error InsufficientRewardFunds();
-    error NotAuthorized();
     error TransferFailed();
     error SweepNotUnlocked();
     error InvalidSweepTime();
@@ -1166,10 +1161,6 @@ contract VanaPoolEntityImplementation is
         uint256 amount,
         bool isStake
     ) external override whenNotPaused onlyRole(VANA_POOL_ROLE) {
-        if (!hasRole(VANA_POOL_ROLE, msg.sender)) {
-            revert NotAuthorized();
-        }
-
         Entity storage entity = _entities[entityId];
 
         if (entity.status != EntityStatus.Active) {

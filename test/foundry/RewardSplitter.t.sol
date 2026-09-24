@@ -483,4 +483,17 @@ contract RewardSplitterTest is Test {
         assertEq(t.balanceOf(owner), 30 ether, "excess recovered");
         assertEq(splitter.pendingConversion(address(t)), 100 ether, "reserve intact");
     }
+    // ---- receive(): a zero-value call funds nothing and emits nothing ----
+
+    function test_zeroValueFundingEmitsNoEvent() public {
+        vm.recordLogs();
+        (bool ok, ) = address(splitter).call{value: 0}("");
+        assertTrue(ok, "zero-value call is accepted");
+        assertEq(vm.getRecordedLogs().length, 0, "no Funded event to spam");
+
+        vm.recordLogs();
+        (ok, ) = address(splitter).call{value: 1 ether}("");
+        assertTrue(ok);
+        assertEq(vm.getRecordedLogs().length, 1, "real funding still emits Funded");
+    }
 }
