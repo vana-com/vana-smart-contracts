@@ -1330,9 +1330,11 @@ contract VanaPoolEntityImplementation is
      *      lockedRewardPool to activeRewardPool. Vesting is linear over
      *      [start, start + duration].
      *
-     *      While totalShares is zero the watermark is not advanced, so the
-     *      elapsed interval is preserved and vests once shares exist again,
-     *      rather than adding rewards to a pool with no shares to receive them.
+     *      While totalShares is zero the interval still elapses (watermark
+     *      advanced, ended entries promoted) but vests to nobody: the elapsed
+     *      portion stays in lockedRewardPool as unscheduled residue instead of
+     *      being preserved for whoever stakes next, which would let a 1 wei
+     *      bootstrap deposit capture the whole backlog (NM-1052 [Low]).
      *
      * @param schedule     the entity's reward schedule (mutated in place)
      * @param totalShares  the entity's current total shares
@@ -1342,9 +1344,8 @@ contract VanaPoolEntityImplementation is
         RewardSchedule storage schedule,
         uint256 totalShares
     ) internal returns (uint256 toVest) {
-        // Nothing scheduled, or no shares to receive it: preserve the interval
-        // by returning without advancing the watermark.
-        if (schedule.scheduledValue == 0 || totalShares == 0) {
+        // Nothing scheduled: nothing to vest and no watermark to advance.
+        if (schedule.scheduledValue == 0) {
             return 0;
         }
 
@@ -1393,6 +1394,16 @@ contract VanaPoolEntityImplementation is
         // but harmless SSTORE); when it promoted an empty slot it short-circuited
         // on the scheduledValue == 0 guard without writing, so this is required.
         schedule.lastUpdate = uint64(block.timestamp);
+
+        // No shares to receive it: the interval still elapses (watermark
+        // advanced and ended entries promoted above) but vests to nobody. The
+        // elapsed portion stays in the locked pool as unscheduled residue,
+        // re-schedulable by the owner and re-streamed by the splitter's rebase.
+        // Preserving it for whoever stakes next would let a 1 wei bootstrap
+        // deposit capture the entire backlog (NM-1052 [Low]).
+        if (totalShares == 0) {
+            toVest = 0;
+        }
     }
 
     /**

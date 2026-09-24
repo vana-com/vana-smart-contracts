@@ -130,16 +130,56 @@ contract VestStreamTest is Test {
 
     // ---- zero-shares preserve behavior ----
 
-    function test_zeroShares_returnsZeroAndPreservesInterval() public {
+    /// @dev NM-1052 [Low]: with no shares to receive it, the elapsed interval
+    ///      must NOT be preserved for whoever stakes next (a 1 wei bootstrap
+    ///      deposit would capture all of it). The watermark advances and the
+    ///      elapsed portion stays in the locked pool as residue.
+    function test_zeroShares_advancesWatermarkAndDoesNotPreserveInterval() public {
         uint64 start = START;
         _install(start, DURATION, VALUE);
 
         vm.warp(start + DURATION / 2); // half elapses with no shares
         assertEq(h.vest(0), 0, "no vest with zero shares");
-        assertEq(h.schedule().lastUpdate, start, "watermark preserved");
+        assertEq(h.schedule().lastUpdate, start + DURATION / 2, "watermark advanced past the empty interval");
 
-        // shares return; the whole elapsed half is now claimable
-        assertEq(h.vest(1000), VALUE / 2, "preserved interval vests once shares exist");
+        // shares return: only what elapses from here on vests
+        assertEq(h.vest(1000), 0, "the empty interval is not paid to the next holder");
+        vm.warp(start + (3 * DURATION) / 4);
+        assertEq(h.vest(1000), VALUE / 4, "vesting resumes at the normal rate");
+    }
+
+    /// @dev An active entry that ends while the pool is empty must still be
+    ///      promoted, so the watermark never lands past an un-promoted entry's
+    ///      end (which would make the next vest's vestedAtLast exceed value
+    ///      and underflow).
+    function test_zeroShares_promotesEndedEntryWithoutUnderflow() public {
+        uint64 start = START;
+        h.setSchedule(
+            IVanaPoolEntity.RewardSchedule({
+                scheduledValue: VALUE,
+                start: start,
+                duration: DURATION,
+                lastUpdate: uint64(start),
+                nextScheduledValue: 20_000 ether,
+                nextStart: start + DURATION,
+                nextDuration: 20 days
+            })
+        );
+
+        // day 15 with no shares: the active entry fully elapsed and 5 of the
+        // queued entry's 20 days passed -- none of it may vest to anyone
+        vm.warp(start + 15 days);
+        assertEq(h.vest(0), 0, "nothing vests to an empty pool");
+        IVanaPoolEntity.RewardSchedule memory s = h.schedule();
+        assertEq(s.scheduledValue, 20_000 ether, "ended entry promoted while empty");
+        assertEq(s.start, start + DURATION, "promoted start");
+        assertEq(s.nextScheduledValue, 0, "queue slot cleared");
+        assertEq(s.lastUpdate, start + 15 days, "watermark advanced");
+
+        // shares return: neither the 10k nor the 5k head is paid out
+        assertEq(h.vest(1000), 0, "backlog discarded, no underflow");
+        vm.warp(start + 20 days); // 5 more days of the 20k / 20-day entry
+        assertEq(h.vest(1000), 5_000 ether, "resumes linearly on the promoted entry");
     }
 
     // ---- instant entry (duration 0) ----
