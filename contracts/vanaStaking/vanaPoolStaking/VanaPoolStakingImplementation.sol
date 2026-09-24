@@ -82,7 +82,6 @@ contract VanaPoolStakingImplementation is
     error EntityNotActive();
     error InvalidAddress();
     error InvalidEntity();
-    error NotEntityOwner();
     error CannotRemoveRegistrationStake();
     error InvalidSlippage();
     error InvalidBondingPeriod();
