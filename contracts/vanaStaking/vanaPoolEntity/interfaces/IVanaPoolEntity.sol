@@ -108,6 +108,9 @@ interface IVanaPoolEntity {
     function entityStakerLockedRewardPool(uint256 entityId) external view returns (uint256);
     function entityStakerRewardSchedule(uint256 entityId) external view returns (RewardSchedule memory);
     function committedRewards(uint256 entityId) external view returns (uint256);
+    // activeRewardPool as it will stand right after processRewards (actual reward
+    // model, commission, splitter track); the one source for settlement quotes.
+    function previewActiveRewardPool(uint256 entityId) external view returns (uint256);
     function principalSecondsAt(uint256 entityId) external view returns (uint256);
     function entityNameToId(string calldata entityName) external view returns (uint256);
 

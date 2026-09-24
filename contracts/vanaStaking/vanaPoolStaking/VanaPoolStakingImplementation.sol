@@ -248,19 +248,12 @@ contract VanaPoolStakingImplementation is
             return (0, 0, 0, false);
         }
 
-        // Get entity info and simulate processRewards to get accurate values
         IVanaPoolEntity.EntityInfo memory entityInfo = vanaPoolEntity.entities(entityId);
 
-        // Simulate processRewards: calculate pending rewards to distribute
-        uint256 simulatedActiveRewardPool = entityInfo.activeRewardPool;
-        uint256 timeElapsed = block.timestamp - entityInfo.lastUpdateTimestamp;
-        if (timeElapsed > 0 && entityInfo.lockedRewardPool > 0) {
-            uint256 toDistribute = vanaPoolEntity.calculateYield(simulatedActiveRewardPool, entityInfo.maxAPY, timeElapsed);
-            if (toDistribute > entityInfo.lockedRewardPool) {
-                toDistribute = entityInfo.lockedRewardPool;
-            }
-            simulatedActiveRewardPool += toDistribute;
-        }
+        // The pool as it will stand once unstake's own processRewards has run.
+        // The entity previews its settlement for its actual reward model, both
+        // tracks and commission, so this quote cannot drift from execution.
+        uint256 simulatedActiveRewardPool = vanaPoolEntity.previewActiveRewardPool(entityId);
 
         // Calculate share price using simulated activeRewardPool
         uint256 shareToVana = entityInfo.totalShares > 0
@@ -287,7 +280,9 @@ contract VanaPoolStakingImplementation is
         // Constraint 2: Entity's activeRewardPool (use simulated value)
         uint256 entityPoolBalance = simulatedActiveRewardPool;
 
-        // Constraint 3: Treasury balance
+        // Constraint 3: the shared treasury's cash. This is not per-entity
+        // headroom (the treasury backs every entity) but the hard ceiling on any
+        // single payout; it only binds if the solvency invariant is already broken.
         uint256 treasuryBalance = address(vanaPoolTreasury).balance;
 
         // Find the minimum constraint
@@ -306,7 +301,13 @@ contract VanaPoolStakingImplementation is
 
         // Convert maxVana back to shares
         if (maxVana > 0) {
-            if (isInBondingPeriod) {
+            if (limitingFactor == 0) {
+                // The position itself is the binding constraint, so the answer
+                // is the whole position. Quote it directly: converting maxVana
+                // back through the share price would floor away a few wei-shares
+                // and leave an integrator sizing from this view with a dust remainder.
+                maxShares = stakerEntity.shares;
+            } else if (isInBondingPeriod) {
                 // In bonding period: shares = maxVana * totalShares / costBasis
                 // Because vanaToReturn = (costBasis * shareAmount) / totalShares
                 // So shareAmount = vanaToReturn * totalShares / costBasis

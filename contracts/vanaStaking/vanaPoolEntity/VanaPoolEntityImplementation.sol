@@ -1354,26 +1354,13 @@ contract VanaPoolEntityImplementation is
             return 0;
         }
 
-        uint256 value = schedule.scheduledValue;
         uint256 start = schedule.start;
         uint256 duration = schedule.duration;
-        uint256 last = schedule.lastUpdate;
 
-        // vested(t): the total that has vested by time t, a line clamped to
-        // [0, value]. The amount owed now is vested(now) - vested(lastUpdate).
-        uint256 vestedNow;
-        uint256 vestedAtLast;
-        if (duration == 0) {
-            // Instant entry: the whole value vests at/after start.
-            vestedNow = value;
-            vestedAtLast = last >= start ? value : 0;
-        } else {
-            uint256 end = start + duration;
-            vestedNow = block.timestamp >= end ? value : (value * (block.timestamp - start)) / duration;
-            vestedAtLast = last >= start ? (value * (last - start)) / duration : 0;
-        }
-
-        toVest = vestedNow - vestedAtLast;
+        // The amount owed now is vested(now) - vested(lastUpdate). Computed by
+        // _streamDelta, shared with _previewVestStream so the quoting path can
+        // never drift from this executing one.
+        toVest = _streamDelta(schedule.scheduledValue, start, duration, schedule.lastUpdate);
 
         // Once the active entry has fully vested, promote the queued entry and
         // vest its head in the same call (mirrors Synthetix updateEntry). Done
@@ -1404,6 +1391,96 @@ contract VanaPoolEntityImplementation is
         if (totalShares == 0) {
             toVest = 0;
         }
+    }
+
+    /**
+     * @dev vested(now) - vested(last) for a single entry. vested(t) is the total
+     *      vested by time t: a line over [start, start + duration] clamped to
+     *      [0, value], or the whole value at/after start when duration == 0.
+     *      Pure arithmetic, no writes. The single source of truth for both
+     *      _vestStream (executes) and _previewVestStream (quotes). Callers
+     *      guarantee block.timestamp >= start and last <= start + duration.
+     */
+    function _streamDelta(uint256 value, uint256 start, uint256 duration, uint256 last) internal view returns (uint256) {
+        uint256 vestedNow;
+        uint256 vestedAtLast;
+        if (duration == 0) {
+            // Instant entry: the whole value vests at/after start.
+            vestedNow = value;
+            vestedAtLast = last >= start ? value : 0;
+        } else {
+            uint256 end = start + duration;
+            vestedNow = block.timestamp >= end ? value : (value * (block.timestamp - start)) / duration;
+            vestedAtLast = last >= start ? (value * (last - start)) / duration : 0;
+        }
+        return vestedNow - vestedAtLast;
+    }
+
+    /**
+     * @dev Read-only twin of _vestStream: exactly what it would return right
+     *      now, without writing. Reproduces its guards, the head of a queued
+     *      entry it would promote (vested against the same pre-promotion
+     *      watermark, which predates that entry's start), and the empty-pool
+     *      discard. Built on _streamDelta so the two cannot disagree.
+     */
+    function _previewVestStream(
+        RewardSchedule storage schedule,
+        uint256 totalShares
+    ) internal view returns (uint256 toVest) {
+        if (schedule.scheduledValue == 0 || totalShares == 0 || block.timestamp < schedule.start) {
+            return 0;
+        }
+        uint256 start = schedule.start;
+        uint256 duration = schedule.duration;
+        uint256 last = schedule.lastUpdate;
+        toVest = _streamDelta(schedule.scheduledValue, start, duration, last);
+
+        if (
+            block.timestamp >= start + duration &&
+            schedule.nextScheduledValue > 0 &&
+            block.timestamp >= schedule.nextStart
+        ) {
+            toVest += _streamDelta(schedule.nextScheduledValue, schedule.nextStart, schedule.nextDuration, last);
+        }
+    }
+
+    /**
+     * @notice activeRewardPool as it will stand immediately after processRewards:
+     *         the entity's actual reward model (APY drip or STREAM vesting), the
+     *         commission skim, and the splitter track, all without writing.
+     *         Quotes (e.g. VanaPoolStaking.getMaxUnstakeAmount) must use this
+     *         rather than re-deriving settlement themselves, so the quoting and
+     *         executing paths cannot drift apart (NM-1052 [Low]: the unstake
+     *         view simulated the APY model only and ignored commission).
+     *
+     * @param entityId                          ID of the entity
+     * @return active                           post-settlement activeRewardPool
+     */
+    function previewActiveRewardPool(uint256 entityId) external view override returns (uint256 active) {
+        Entity storage entity = _entities[entityId];
+        active = entity.activeRewardPool;
+        if (entity.status != EntityStatus.Active) {
+            return active; // processRewards would revert: nothing settles
+        }
+
+        // Model track, mirroring processRewards (APY base is the pre-splitter pool).
+        uint256 timeElapsed = block.timestamp - entity.lastUpdateTimestamp;
+        if (timeElapsed > 0) {
+            uint256 toDistribute = entity.rewardModel == RewardModel.APY
+                ? calculateYield(active, entity.maxAPY, timeElapsed)
+                : _previewVestStream(entity.rewardSchedule, entity.totalShares);
+            if (toDistribute > entity.lockedRewardPool) {
+                toDistribute = entity.lockedRewardPool;
+            }
+            active += toDistribute - (toDistribute * entity.commissionRate) / MAX_COMMISSION;
+        }
+
+        // Splitter track, mirroring _vestStakerRewards (commission already taken up front).
+        uint256 toVest = _previewVestStream(entity.stakerRewardSchedule, entity.totalShares);
+        if (toVest > entity.stakerLockedRewardPool) {
+            toVest = entity.stakerLockedRewardPool;
+        }
+        active += toVest;
     }
 
     /**
