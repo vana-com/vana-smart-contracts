@@ -3801,17 +3801,16 @@ describe("VanaPool", () => {
           .updateMinRegistrationStake(0)
           .should.be.rejectedWith("InvalidParam()");
 
-        // An entity contract initialised with 0 cannot create entities either.
-        const zeroMinEntity = await upgrades.deployProxy(
-          await ethers.getContractFactory("VanaPoolEntityImplementation"),
-          [owner.address, vanaPoolStaking.target, 0, maxDefaultApy],
-          { kind: "uups" },
-        );
-        const zeroMin = await ethers.getContractAt("VanaPoolEntityImplementation", zeroMinEntity.target);
-        await zeroMin
-          .connect(owner)
-          ["createEntity((address,string))"]({ ownerAddress: user1.address, name: "No Floor" }, { value: 0 })
-          .should.be.rejectedWith("InvalidRegistrationStake()");
+        // The invariant is enforced at the source: an entity contract cannot
+        // even be initialised with 0, so createEntity can rely on min > 0
+        // and needs no separate zero-value clause.
+        await upgrades
+          .deployProxy(
+            await ethers.getContractFactory("VanaPoolEntityImplementation"),
+            [owner.address, vanaPoolStaking.target, 0, maxDefaultApy],
+            { kind: "uups" },
+          )
+          .should.be.rejectedWith("InvalidParam()");
       });
     });
 

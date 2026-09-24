@@ -98,6 +98,12 @@ contract VanaPoolEntityImplementation is
         __Pausable_init();
 
         vanaPoolStaking = IVanaPoolStaking(vanaPoolStakingAddress);
+        // Same invariant as updateMinRegistrationStake: the registration stake
+        // is the registrant's non-removable share floor, so it is never zero.
+        // Enforcing it here too means createEntity can rely on min > 0.
+        if (initialMinRegistrationStake == 0) {
+            revert InvalidParam();
+        }
         minRegistrationStake = initialMinRegistrationStake;
         maxAPYDefault = initialMaxAPYDefault;
 
@@ -395,9 +401,11 @@ contract VanaPoolEntityImplementation is
             revert InvalidName();
         }
 
-        // Exactly the minimum, and never zero: the registration shares are the
-        // floor the registrant can never unstake below.
-        if (msg.value != minRegistrationStake || msg.value == 0) {
+        // Exactly the minimum: the registration shares are the floor the
+        // registrant can never unstake below. minRegistrationStake is never
+        // zero (enforced by initialize and updateMinRegistrationStake), so
+        // this alone also rules out a zero-stake entity.
+        if (msg.value != minRegistrationStake) {
             revert InvalidRegistrationStake();
         }
 
