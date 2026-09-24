@@ -12,10 +12,16 @@ import { deterministicDeployProxy, verifyProxy } from "../helpers";
  * script performs it. Without this step every addStakerRewards call reverts
  * (NM-1052 [High] follow-up: "REWARD_SPLITTER_ROLE is not granted").
  *
+ * The splitter needs no treasury role: addStakerRewards forwards the value to
+ * the treasury itself; the splitter only ever pays INTO the entity.
+ *
  * Env:
  *   VANA_POOL_ENTITY_PROXY_ADDRESS  (required) the VanaPoolEntity proxy
- *   OWNER_ADDRESS                   (optional) splitter admin; defaults to deployer
+ *   OWNER_ADDRESS                   (optional) splitter admin/maintainer/distributor; defaults to deployer
  *   CREATE2_SALT                    (optional) deterministic proxy salt
+ *   REWARD_VESTING_DURATION         (optional) seconds; sets updateRewardVestingDuration (distribute
+ *                                   reverts VestingDurationNotSet while it is 0)
+ *   DISTRIBUTOR_ADDRESS             (optional) grants DISTRIBUTOR_ROLE to a dedicated distributor
  */
 const implementationContractName = "RewardSplitterImplementation";
 const proxyContractName = "RewardSplitterProxy";
@@ -73,10 +79,49 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     console.log(`  VanaPoolEntity(${entityProxyAddress}).updateRewardSplitter(${proxyDeploy.proxyAddress})`);
   }
 
-  console.log(`\nNext steps before the first distribution:`);
-  console.log(`  - RewardSplitter.updateRewardVestingDuration(seconds)  (distribute reverts VestingDurationNotSet while 0)`);
-  console.log(`  - fund the splitter (plain VANA transfer) and grant DISTRIBUTOR_ROLE to the distributor`);
-  console.log(`  - confirm entity.hasRole(REWARD_SPLITTER_ROLE, ${proxyDeploy.proxyAddress}) == true`);
+  // Step 3: splitter configuration (roles on the splitter itself)
+  console.log(`\n********** Step 3: configure the splitter **********`);
+  const splitter = await ethers.getContractAt(implementationContractName, proxyDeploy.proxyAddress);
+  const splitterMaintainer = await splitter.hasRole(await splitter.MAINTAINER_ROLE(), deployer.address);
+  const splitterAdmin = await splitter.hasRole(ethers.ZeroHash, deployer.address);
+
+  const vesting = process.env.REWARD_VESTING_DURATION;
+  if (vesting) {
+    if (splitterMaintainer) {
+      const tx = await splitter.updateRewardVestingDuration(Number(vesting));
+      await tx.wait();
+      console.log(`rewardVestingDuration = ${await splitter.rewardVestingDuration()} s`);
+    } else {
+      console.log(`Deployer lacks the splitter's MAINTAINER_ROLE; from ${ownerAddress}:`);
+      console.log(`  RewardSplitter(${proxyDeploy.proxyAddress}).updateRewardVestingDuration(${vesting})`);
+    }
+  } else {
+    console.log(`REWARD_VESTING_DURATION not set: distribute() will revert VestingDurationNotSet until it is.`);
+  }
+
+  const distributor = process.env.DISTRIBUTOR_ADDRESS;
+  if (distributor) {
+    const DISTRIBUTOR_ROLE = await splitter.DISTRIBUTOR_ROLE();
+    if (splitterAdmin) {
+      const tx = await splitter.grantRole(DISTRIBUTOR_ROLE, distributor);
+      await tx.wait();
+      console.log(`DISTRIBUTOR_ROLE granted to ${distributor}: ${await splitter.hasRole(DISTRIBUTOR_ROLE, distributor)}`);
+    } else {
+      console.log(`Deployer lacks the splitter's DEFAULT_ADMIN_ROLE; from ${ownerAddress}:`);
+      console.log(`  RewardSplitter(${proxyDeploy.proxyAddress}).grantRole(DISTRIBUTOR_ROLE, ${distributor})`);
+    }
+  }
+
+  // Final state
+  const REWARD_SPLITTER_ROLE = await entity.REWARD_SPLITTER_ROLE();
+  console.log(`\nFinal state:`);
+  console.log(`  entity.rewardSplitter()                      = ${await entity.rewardSplitter()}`);
+  console.log(`  entity.hasRole(REWARD_SPLITTER_ROLE, splitter) = ${await entity.hasRole(REWARD_SPLITTER_ROLE, proxyDeploy.proxyAddress)}`);
+  console.log(`  splitter.rewardVestingDuration()             = ${await splitter.rewardVestingDuration()} s`);
+  console.log(`  splitter.payEntityCommission()               = ${await splitter.payEntityCommission()}`);
+  console.log(`  splitter admin/maintainer/distributor        = ${ownerAddress}${distributor ? ` (+ distributor ${distributor})` : ""}`);
+  console.log(`\nRemaining: fund the splitter with VANA (plain transfer to ${proxyDeploy.proxyAddress}). The first`);
+  console.log(`distribute() round only records baselines and pays nothing; the second round pays.`);
 };
 
 export default func;

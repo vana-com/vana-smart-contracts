@@ -116,13 +116,17 @@ from a test staker and confirm it pays out.
 ### Step 4 — RewardSplitter deploy + wiring
 ```bash
 VANA_POOL_ENTITY_PROXY_ADDRESS=$ENT OWNER_ADDRESS=0x2AC93684679a5bdA03C6160def908CdB8D46792f \
+REWARD_VESTING_DURATION=604800 DISTRIBUTOR_ADDRESS=<distributor or the owner> \
 npx hardhat deploy --network moksha --tags RewardSplitterDeploy
 ```
-The script calls `entity.updateRewardSplitter(splitter)` itself when the deployer is a maintainer.
-Verify: `entity.rewardSplitter() == splitter`; `entity.hasRole(REWARD_SPLITTER_ROLE, splitter)`.
-Then, as splitter admin: `updateRewardVestingDuration(<seconds>)` (distribute reverts
-`VestingDurationNotSet` while 0), fund the splitter with VANA, grant `DISTRIBUTOR_ROLE`. The first
-`distribute([1])` only records the baseline and pays nothing; the second round pays.
+One run does all of it: deploys implementation + proxy (owner = admin/maintainer/distributor of the
+splitter), wires `entity.updateRewardSplitter(splitter)` (grants `REWARD_SPLITTER_ROLE` on the entity),
+sets `rewardVestingDuration`, grants `DISTRIBUTOR_ROLE` to `DISTRIBUTOR_ADDRESS`, and prints the final
+state. Any step the deployer lacks the role for is printed as the exact call instead. The splitter needs
+no treasury role (`addStakerRewards` forwards value to the treasury itself).
+Verify: `entity.rewardSplitter() == splitter`; `entity.hasRole(REWARD_SPLITTER_ROLE, splitter)`;
+`splitter.rewardVestingDuration() > 0`. Then fund the splitter with VANA. The first `distribute([1])`
+only records the baseline and pays nothing; the second round pays.
 
 ## 6. Rollback
 
