@@ -77,6 +77,11 @@ the `REWARD_SPLITTER_ROLE` *constant*, which occupies no slot). New contracts ap
 `Entity` struct (held only in the `_entities` mapping) gained 12 fields strictly after main's 9. The
 Foundry tests prove the Staking slot map live (`vm.load(slot 9) == bondingPeriod`).
 
+**Mainnet reference:** mainnet's pre-upgrade implementations (`0x61d6…`, `0x60bf…`, `0x6afe…`) are
+different contracts from Moksha's, but their bytecode differs *only* in the UUPS `__self` immutable (each
+implementation's own address, embedded 2–3×); with that masked they are byte-identical. So they are the
+same `origin/main` source, and the layout argument above applies to mainnet unchanged.
+
 Hardhat is broken under Node 24 in this repo; run the scripts under Node 18/20.
 
 ## 5. Execution
