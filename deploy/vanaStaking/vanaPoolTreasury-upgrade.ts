@@ -16,13 +16,20 @@ const implementationContractName = "VanaPoolTreasuryImplementation";
  * contract is granted SPENDER_ROLE (updateVanaPool re-pointing to the same
  * address revokes a role nobody holds, then grants it). Then
  * updateVanaPoolEntity(entity) grants the entity its spend right
- * (claimCommission / sweepUnallocatedRewards pay out through it).
+ * (claimCommission / sweepUnallocatedRewards pay out through it). Finally,
+ * once BOTH spender grants are confirmed on-chain, the v1-era
+ * DEFAULT_ADMIN_ROLE is revoked from the staking contract: v2's design gives
+ * it only SPENDER_ROLE (a spender must not be able to upgrade or pause the
+ * treasury that custodies all principal).
+ *
+ * Rollback note: v1 gates transferVana on DEFAULT_ADMIN_ROLE, so a rollback to
+ * the v1 implementation must be preceded by grantRole(DEFAULT_ADMIN_ROLE,
+ * staking) from the admin, or every unstake reverts.
  *
  * Env:
  *   VANA_POOL_TREASURY_PROXY_ADDRESS (required)  the LIVE treasury (staking.vanaPoolTreasury())
  *   VANA_POOL_STAKING_PROXY_ADDRESS  (required)
  *   VANA_POOL_ENTITY_PROXY_ADDRESS   (required)
- *   REVOKE_STAKING_ADMIN=true        also revoke the v1-era DEFAULT_ADMIN_ROLE from the staking contract
  *   DEPLOY_ONLY=true                 deploy the implementation only; print the multisig calls
  */
 const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
@@ -61,7 +68,7 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     console.log(`\nDEPLOY_ONLY=true — skipping upgrade. Multisig calls, in order (1 is atomic and MUST carry the payload):`);
     console.log(`  1. ${proxyAddress}.upgradeToAndCall(${implementationDeploy.address}, ${grantStakingData})`);
     console.log(`  2. ${proxyAddress}.updateVanaPoolEntity(${entityAddress})`);
-    if (process.env.REVOKE_STAKING_ADMIN === "true") console.log(`  3. ${proxyAddress}.revokeRole(DEFAULT_ADMIN_ROLE, ${stakingAddress})`);
+    console.log(`  3. ${proxyAddress}.revokeRole(0x${"0".repeat(64)}, ${stakingAddress})   // DEFAULT_ADMIN_ROLE; only after 1 and 2 are confirmed`);
     return;
   }
 
@@ -73,21 +80,26 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   if (!(await proxy.hasRole(SPENDER_ROLE, stakingAddress))) throw new Error("staking did not receive SPENDER_ROLE");
   console.log(`Upgrade confirmed. version = ${await proxy.version()}; staking holds SPENDER_ROLE.`);
 
-  console.log(`\n********** Step 3: updateVanaPoolEntity(entity) **********`);
+  console.log(`\n********** Step 3: updateVanaPoolEntity(entity) — SPENDER grant to the entity **********`);
   const entTx = await proxy.updateVanaPoolEntity(entityAddress, txOverrides());
   const entR = await entTx.wait();
   if (!entR || entR.status !== 1) throw new Error("updateVanaPoolEntity failed");
-  console.log(`entity holds SPENDER_ROLE: ${await proxy.hasRole(SPENDER_ROLE, entityAddress)}`);
+  if (!(await proxy.hasRole(SPENDER_ROLE, entityAddress))) throw new Error("entity did not receive SPENDER_ROLE");
+  console.log(`entity holds SPENDER_ROLE.`);
 
-  if (process.env.REVOKE_STAKING_ADMIN === "true") {
-    console.log(`\n********** Step 4: revoke v1-era DEFAULT_ADMIN_ROLE from staking **********`);
-    const rvTx = await proxy.revokeRole(ethers.ZeroHash, stakingAddress, txOverrides());
-    await rvTx.wait();
-    console.log(`staking DEFAULT_ADMIN_ROLE: ${await proxy.hasRole(ethers.ZeroHash, stakingAddress)}`);
-  } else {
-    console.log(`\nNote: the staking contract still holds the v1-era DEFAULT_ADMIN_ROLE on the treasury; v2's design`);
-    console.log(`gives it only SPENDER_ROLE. Re-run with REVOKE_STAKING_ADMIN=true (or revoke via multisig) to narrow it.`);
-  }
+  // Both spender grants are confirmed on-chain; only now is it safe to narrow
+  // the staking contract to SPENDER_ROLE alone.
+  console.log(`\n********** Step 4: revoke v1-era DEFAULT_ADMIN_ROLE from staking **********`);
+  const rvTx = await proxy.revokeRole(ethers.ZeroHash, stakingAddress, txOverrides());
+  const rvR = await rvTx.wait();
+  if (!rvR || rvR.status !== 1) throw new Error("revokeRole failed");
+  if (await proxy.hasRole(ethers.ZeroHash, stakingAddress)) throw new Error("staking still holds DEFAULT_ADMIN_ROLE");
+  console.log(`staking no longer holds DEFAULT_ADMIN_ROLE; it holds SPENDER_ROLE only.`);
+
+  console.log(`\nFinal roles on ${proxyAddress}:`);
+  console.log(`  SPENDER_ROLE       staking=${await proxy.hasRole(SPENDER_ROLE, stakingAddress)} entity=${await proxy.hasRole(SPENDER_ROLE, entityAddress)}`);
+  console.log(`  DEFAULT_ADMIN_ROLE staking=${await proxy.hasRole(ethers.ZeroHash, stakingAddress)} deployer=${await proxy.hasRole(ethers.ZeroHash, deployer.address)}`);
+  console.log(`Rollback to v1 would require grantRole(DEFAULT_ADMIN_ROLE, ${stakingAddress}) first (v1 gates transferVana on it).`);
 };
 
 export default func;

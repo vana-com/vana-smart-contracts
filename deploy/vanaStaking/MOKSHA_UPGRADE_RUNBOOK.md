@@ -106,9 +106,12 @@ Note: `unstakeVana` gained a 4th parameter (`vanaAmountMin`); it is not in any p
 VANA_POOL_TREASURY_PROXY_ADDRESS=$TRE VANA_POOL_STAKING_PROXY_ADDRESS=$STK VANA_POOL_ENTITY_PROXY_ADDRESS=$ENT \
 npx hardhat deploy --network moksha --tags VanaPoolTreasuryUpgrade
 ```
+The script, in order: `upgradeToAndCall(impl, updateVanaPool($STK))` (SPENDER to Staking, atomic),
+`updateVanaPoolEntity($ENT)` (SPENDER to Entity), and — only once both grants are confirmed on-chain —
+`revokeRole(DEFAULT_ADMIN_ROLE, $STK)`, so the Staking contract ends holding `SPENDER_ROLE` only.
 Verify: `version() == 2`; `hasRole(SPENDER_ROLE, $STK) == true`; `hasRole(SPENDER_ROLE, $ENT) == true`;
-`vanaPoolEntity() == $ENT`. **Then perform one small real unstake** from a test staker and confirm it
-pays out. Do **not** pass `REVOKE_STAKING_ADMIN=true` yet — see Rollback.
+`hasRole(0x00…00, $STK) == false`; `vanaPoolEntity() == $ENT`. **Then perform one small real unstake**
+from a test staker and confirm it pays out.
 
 ### Step 4 — RewardSplitter deploy + wiring
 ```bash
@@ -126,10 +129,10 @@ Then, as splitter admin: `updateRewardVestingDuration(<seconds>)` (distribute re
 Old implementations (table in §1) stay deployed; rollback is `upgradeToAndCall(oldImpl, "0x")` from
 the admin. Appended storage written by v4/v2 is invisible to the old code and harmless.
 
-**Treasury caveat:** v1 gates `transferVana` on `DEFAULT_ADMIN_ROLE`, which the Staking proxy still
-holds today. If `REVOKE_STAKING_ADMIN=true` had been run, a rollback to v1 would break every unstake.
-Therefore: keep the v1-era admin grant through a soak period, and revoke it (the narrowed design the
-audit asked for) only once rollback is no longer contemplated: `revokeRole(0x00…00, $STK)`.
+**Treasury caveat:** v1 gates `transferVana` on `DEFAULT_ADMIN_ROLE`, and step 3 revokes that role
+from the Staking proxy. A rollback of the treasury to v1 must therefore be **preceded** by
+`grantRole(0x00…00, $STK)` from the admin EOA, or every unstake reverts on the rolled-back v1. Order:
+grant admin to Staking → `upgradeToAndCall(v1Impl, "0x")` → verify an unstake pays out.
 
 ## 7. Post-upgrade checklist
 - [ ] versions 4 / 4 / 2; splitter wired
@@ -138,7 +141,8 @@ audit asked for) only once rollback is no longer contemplated: `revokeRole(0x00�
 - [ ] owner of entity 1 cannot unstake below 1e20 shares (`CannotRemoveRegistrationStake`)
 - [ ] `getMaxUnstakeAmount` quote equals an actual payout for a test staker
 - [ ] first splitter round: baseline only; second round: entity 1 `entityStakerLockedRewardPool` increases
-- [ ] decide on: revoking Staking's treasury admin (after soak); correcting `deployments-official/moksha`
+- [ ] Staking holds treasury `SPENDER_ROLE` only (`DEFAULT_ADMIN_ROLE` revoked by step 3)
+- [ ] decide on: correcting `deployments-official/moksha`
 
 ## 8. Commits this upgrade ships (audit remediation, NM-1052)
 `0d83fc5` `2a6c350` `6b7b2d6` `c583cc7` `d7d52ff` `32f757f` (PR #82) `e41f64f` `5700086` `d8e459d`
