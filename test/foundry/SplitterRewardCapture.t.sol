@@ -79,7 +79,7 @@ contract SplitterRewardCaptureTest is Test {
         vm.startPrank(owner);
         staking.updateVanaPoolEntity(address(entity));
         staking.updateVanaPoolTreasury(address(treasury));
-        treasury.grantRole(treasury.DEFAULT_ADMIN_ROLE(), address(entity)); // commission claims
+        treasury.updateVanaPoolEntity(address(entity)); // commission claims
         entity.grantRole(entity.REWARD_SPLITTER_ROLE(), address(splitter));
         splitter.updateRewardVestingDuration(7 days);
         vm.stopPrank();

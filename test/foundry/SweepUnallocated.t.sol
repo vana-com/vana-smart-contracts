@@ -66,7 +66,7 @@ contract SweepUnallocatedTest is Test {
         staking.updateVanaPoolEntity(address(entity));
         staking.updateVanaPoolTreasury(address(treasury));
         // the entity pulls VANA from the treasury for the sweep (as it does for commission)
-        treasury.grantRole(treasury.DEFAULT_ADMIN_ROLE(), address(entity));
+        treasury.updateVanaPoolEntity(address(entity));
         vm.stopPrank();
 
         vm.deal(owner, 10_000 ether);
