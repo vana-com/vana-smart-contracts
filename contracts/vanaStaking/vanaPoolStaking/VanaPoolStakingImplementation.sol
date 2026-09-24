@@ -546,6 +546,13 @@ contract VanaPoolStakingImplementation is
             uint256 oldValue = (stakerEntity.shares * shareToVana) / 1e18;
             uint256 remainingTime = stakerEntity.rewardEligibilityTimestamp - currentTimestamp;
             uint256 weightedTime = (oldValue * remainingTime + stakeAmount * bondingPeriod) / newTotalValue;
+            // Cap at full bonding period: remainingTime can exceed the configured
+            // period after governance shortens it, and the blend must never write
+            // a deadline beyond what the protocol advertises (the same cap the
+            // partial-unstake and redelegate-source paths already apply).
+            if (weightedTime > bondingPeriod) {
+                weightedTime = bondingPeriod;
+            }
             stakerEntity.rewardEligibilityTimestamp = currentTimestamp + weightedTime;
         }
 
@@ -851,6 +858,11 @@ contract VanaPoolStakingImplementation is
             : 0;
         uint256 newTotalValue = existingValue + movedValue;
         uint256 weightedTime = (existingValue * existingRemaining + movedValue * remainingBond) / newTotalValue;
+        // Cap at full bonding period (see stake()): neither carried remainder is
+        // itself bounded by the current period, so their blend may exceed it.
+        if (weightedTime > bondingPeriod) {
+            weightedTime = bondingPeriod;
+        }
         to.rewardEligibilityTimestamp = currentTimestamp + weightedTime;
 
         // Heal a legacy (V1) zero-costBasis destination too, so merging the moved
