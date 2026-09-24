@@ -20,6 +20,16 @@ contract VanaPoolEntityImplementation is
     // 100% == 100e18 and this is the divisor when skimming a distribution.
     uint256 public constant MAX_COMMISSION = 100e18;
 
+    /// @notice Upper bound on activeRewardPool / totalShares (wei of VANA per
+    ///         share unit) at which an entity still accepts new stake. Shares
+    ///         start 1:1 with wei and the price only grows with rewards, so an
+    ///         honest entity sits many orders of magnitude below this. A pool
+    ///         whose share count was reduced to dust against a large parked
+    ///         balance cannot mint against that price: the loss a depositor can
+    ///         take to share rounding is at most one share, i.e. at most this
+    ///         many wei. Ops-independent complement to the registration floor.
+    uint256 public constant MAX_ACTIVE_POOL_PER_SHARE = 1e12;
+
     // Events for entity lifecycle and operations
     event EntityCreated(uint256 indexed entityId, address ownerAddress, string name, uint256 maxAPY);
     event EntityUpdated(uint256 indexed entityId, address ownerAddress, string name);
@@ -50,6 +60,7 @@ contract VanaPoolEntityImplementation is
     error EntityNameAlreadyExists();
     error NameTooShort();
     error InvalidRegistrationStake();
+    error SharePriceOutOfRange();
     error StakersStillPresent();
     error InvalidRewardModel();
     error InsufficientRewardFunds();
@@ -125,7 +136,7 @@ contract VanaPoolEntityImplementation is
      * @notice Returns the version of the contract
      */
     function version() external pure virtual override returns (uint256) {
-        return 3;
+        return 4;
     }
 
     /**
@@ -219,7 +230,12 @@ contract VanaPoolEntityImplementation is
     }
 
     /**
-     * @notice Convert share to VANA for a specific entity
+     * @notice Share price for a specific entity, VANA per share (1e18-scaled).
+     * @dev The price is always >= 1e18 (shares start 1:1 with wei and only
+     *      appreciate), so its floor() error is at most 1 part in 1e18 and it
+     *      is safe for valuing and burning positions. Share issuance must go
+     *      through vanaToShares (single division), never through
+     *      vanaToEntityShare.
      *
      * @param entityId                          ID of the entity
      * @return uint256                          corresponding VANA value
@@ -231,7 +247,12 @@ contract VanaPoolEntityImplementation is
     }
 
     /**
-     * @notice Convert VANA to shares for a specific entity
+     * @notice Shares per VANA for a specific entity (1e18-scaled).
+     * @dev Display rate only. It is floor()'d BEFORE being multiplied by a
+     *      deposit, so once the price per share is high (totalShares small
+     *      against activeRewardPool) it under-states what a deposit is worth by
+     *      up to floor(r)/r. Never mint from it: stake() and redelegate() use
+     *      vanaToShares, which truncates on the last wei of the result instead.
      *
      * @param entityId                          ID of the entity
      * @return uint256                          corresponding shares amount
@@ -267,6 +288,24 @@ contract VanaPoolEntityImplementation is
         }
 
         return (vanaAmount * entity.totalShares) / entity.activeRewardPool;
+    }
+
+    /**
+     * @notice VANA value of `shares` in an entity, as a single division.
+     *         Prices 1:1 while the pool has no shares.
+     *
+     * @param entityId                          ID of the entity
+     * @param shares                            shares to convert
+     * @return uint256                          VANA (wei), rounded down
+     */
+    function sharesToVana(uint256 entityId, uint256 shares) external view override returns (uint256) {
+        Entity storage entity = _entities[entityId];
+
+        if (entity.totalShares == 0) {
+            return shares;
+        }
+
+        return (shares * entity.activeRewardPool) / entity.totalShares;
     }
 
     /**
@@ -313,6 +352,12 @@ contract VanaPoolEntityImplementation is
      * @param newMinRegistrationStake The new minimum registration stake
      */
     function updateMinRegistrationStake(uint256 newMinRegistrationStake) external override onlyRole(MAINTAINER_ROLE) {
+        // The registration stake is also the registrant's non-removable share
+        // floor (see VanaPoolStaking.registerEntityStake): zero would create
+        // entities with no floor, so it is never allowed.
+        if (newMinRegistrationStake == 0) {
+            revert InvalidParam();
+        }
         minRegistrationStake = newMinRegistrationStake;
     }
 
@@ -350,7 +395,9 @@ contract VanaPoolEntityImplementation is
             revert InvalidName();
         }
 
-        if (msg.value != minRegistrationStake) {
+        // Exactly the minimum, and never zero: the registration shares are the
+        // floor the registrant can never unstake below.
+        if (msg.value != minRegistrationStake || msg.value == 0) {
             revert InvalidRegistrationStake();
         }
 
@@ -390,7 +437,14 @@ contract VanaPoolEntityImplementation is
     }
 
     /**
-     * @notice Updates an entity
+     * @notice Updates an entity's owner and/or name.
+     * @dev Ownership transfer moves control only. Staking positions stay where
+     *      they are: the original registrant keeps its registration shares and
+     *      remains unable to unstake below them (VanaPoolStaking's registration
+     *      floor is bound to the registrant, not to this owner field), and the
+     *      new owner holds no registration stake. The price cap in
+     *      updateEntityPool bounds what any owner can do with a share count
+     *      it does not control.
      * @param entityId The ID of the entity
      * @param entityRegistrationInfo The updated entity information
      */
@@ -426,7 +480,7 @@ contract VanaPoolEntityImplementation is
         // Update fields
         entity.ownerAddress = entityRegistrationInfo.ownerAddress;
 
-        //todo: move owner's shares to new address if we allow public entity registration
+        // Registration shares intentionally stay with the registrant (see @dev).
 
         emit EntityUpdated(entityId, entityRegistrationInfo.ownerAddress, entityRegistrationInfo.name);
     }
@@ -1096,6 +1150,13 @@ contract VanaPoolEntityImplementation is
 
         // Update entity totals based on whether it's a stake or unstake
         if (isStake) {
+            // Refuse to mint against a dust share count: at this price a
+            // deposit would lose more than MAX_ACTIVE_POOL_PER_SHARE wei to
+            // share rounding. Unreachable for an entity whose registration
+            // floor is intact; closes legacy entities with no floor record.
+            if (entity.totalShares > 0 && entity.activeRewardPool > entity.totalShares * MAX_ACTIVE_POOL_PER_SHARE) {
+                revert SharePriceOutOfRange();
+            }
             entity.totalShares += shares;
             entity.activeRewardPool += amount;
             // `amount` is the VANA committed by this stake (or redelegated in).

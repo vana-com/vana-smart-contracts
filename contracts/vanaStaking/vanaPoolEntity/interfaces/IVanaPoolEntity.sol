@@ -116,6 +116,7 @@ interface IVanaPoolEntity {
     // Shares minted for `vanaAmount`, in a SINGLE division so truncation lands on
     // the last wei of the result (<= 1 wei-share) rather than on the rate.
     function vanaToShares(uint256 entityId, uint256 vanaAmount) external view returns (uint256);
+    function sharesToVana(uint256 entityId, uint256 shares) external view returns (uint256);
 
     function entitySweepableAfter(uint256 entityId) external view returns (uint256);
     function updateEntitySweepableAfter(uint256 entityId, uint256 timestamp) external;
