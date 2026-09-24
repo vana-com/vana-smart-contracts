@@ -848,8 +848,17 @@ contract VanaPoolStakingImplementation is
         // principal into it does not under-value the existing position in a bond.
         _healLegacyCostBasis(to, toShareToVana);
 
-        // Carry the principal (not the full value): the reward portion rides as
-        // unrealized gain, kept only if the carried bond is served in `to`.
+        // If `to` is already matured, crystallize its earned gain into cost basis
+        // before the new bond is applied -- mirrors stake()'s eligible branch -- so
+        // redelegation can't put an already-safe reward back at risk. Only fires
+        // when `to` has no remaining bond (existingRemaining == 0).
+        if (existingRemaining == 0 && to.shares > 0 && existingValue > to.costBasis) {
+            to.vestedRewards += existingValue - to.costBasis;
+            to.costBasis = existingValue;
+        }
+
+        // Carry the principal (not the full value): the moved reward portion rides
+        // as unrealized gain, kept only if the carried bond is served in `to`.
         to.costBasis += movedCostBasis;
         to.vestedRewards += movedVested;
         to.shares += sharesIssued;
