@@ -166,9 +166,8 @@ contract MaxUnstakePreviewTest is Test {
         staking.stake{value: 100 ether}(str, alice, 0);
         vm.prank(reg);
         entity.distributeRewards{value: 100 ether}(str, 100 ether, uint64(T0 + 1), 100 days);
-        bytes32 splitterRole = entity.REWARD_SPLITTER_ROLE(); // read before pranking: a call in args eats the prank
         vm.prank(owner);
-        entity.grantRole(splitterRole, address(this));
+        entity.updateRewardSplitter(address(this)); // first-class wiring: grants REWARD_SPLITTER_ROLE
         entity.addStakerRewards{value: 50 ether}(str, true, 20 days);
         vm.warp(T0 + 3 days);
         _assertPreviewMatchesSettlement(str);

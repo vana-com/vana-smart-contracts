@@ -101,7 +101,7 @@ contract RewardModelsE2ETest is Test {
         // let the entity pull commission from the treasury (commission upgrade wiring)
         treasury.updateVanaPoolEntity(address(entity));
         // the splitter pays delegators directly via addStakerRewards
-        entity.grantRole(entity.REWARD_SPLITTER_ROLE(), address(splitter));
+        entity.updateRewardSplitter(address(splitter)); // first-class wiring: grants REWARD_SPLITTER_ROLE
         splitter.updateRewardVestingDuration(7 days);
         vm.stopPrank();
 

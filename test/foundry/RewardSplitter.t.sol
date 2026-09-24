@@ -84,7 +84,7 @@ contract RewardSplitterTest is Test {
         staking.updateVanaPoolEntity(address(entity));
         staking.updateVanaPoolTreasury(address(treasury));
         // the splitter pays delegators directly via addStakerRewards
-        entity.grantRole(entity.REWARD_SPLITTER_ROLE(), address(splitter));
+        entity.updateRewardSplitter(address(splitter)); // first-class wiring: grants REWARD_SPLITTER_ROLE
         splitter.updateRewardVestingDuration(7 days);
         vm.stopPrank();
 

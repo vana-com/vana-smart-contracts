@@ -128,6 +128,10 @@ interface IVanaPoolEntity {
     function pause() external;
     function unpause() external;
     function updateVanaPool(address vanaPoolStakingAddress) external;
+    // The RewardSplitter holding REWARD_SPLITTER_ROLE, and the first-class wiring
+    // that grants it (revoking the previous one).
+    function rewardSplitter() external view returns (address);
+    function updateRewardSplitter(address newRewardSplitter) external;
     function updateMinRegistrationStake(uint256 newMinRegistrationStake) external;
 
     struct EntityRegistrationInfo {

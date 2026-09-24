@@ -5,14 +5,14 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
-import "./interfaces/VanaPoolEntityStorageV1.sol";
+import "./interfaces/VanaPoolEntityStorageV2.sol";
 
 contract VanaPoolEntityImplementation is
     UUPSUpgradeable,
     PausableUpgradeable,
     AccessControlUpgradeable,
     ReentrancyGuardUpgradeable,
-    VanaPoolEntityStorageV1
+    VanaPoolEntityStorageV2
 {
     using EnumerableSet for EnumerableSet.UintSet;
 
@@ -42,6 +42,7 @@ contract VanaPoolEntityImplementation is
     event CommissionClaimed(uint256 indexed entityId, address indexed to, uint256 amount);
     event StakerRewardsAdded(uint256 indexed entityId, uint256 delegatorReward, uint256 commission);
     event EntityStakingBlockedUpdated(uint256 indexed entityId, bool blocked);
+    event RewardSplitterUpdated(address indexed previousSplitter, address indexed newSplitter);
     event EntitySweepableAfterUpdated(uint256 indexed entityId, uint256 timestamp);
     event UnallocatedRewardsSwept(uint256 indexed entityId, address indexed to, uint256 amount);
     event RewardsAdded(uint256 indexed entityId, uint256 amount);
@@ -351,6 +352,29 @@ contract VanaPoolEntityImplementation is
         _grantRole(VANA_POOL_ROLE, address(newVanaPoolStakingAddress));
 
         vanaPoolStaking = IVanaPoolStaking(newVanaPoolStakingAddress);
+    }
+
+    /**
+     * @notice Wire the RewardSplitter: grant it REWARD_SPLITTER_ROLE (so it can
+     *         pay delegator-earned rewards via addStakerRewards) and revoke the
+     *         role from the previously wired splitter. First-class wiring, like
+     *         VanaPoolTreasury.updateVanaPoolEntity: the role cannot be granted
+     *         in initialize (the splitter is deployed after the entity) and a
+     *         deployment must not be able to forget it.
+     * @param newRewardSplitter The RewardSplitter proxy address
+     */
+    function updateRewardSplitter(address newRewardSplitter) external override onlyRole(MAINTAINER_ROLE) {
+        if (newRewardSplitter == address(0)) {
+            revert InvalidAddress();
+        }
+        address previous = rewardSplitter;
+        if (previous != address(0)) {
+            _revokeRole(REWARD_SPLITTER_ROLE, previous);
+        }
+        rewardSplitter = newRewardSplitter;
+        _grantRole(REWARD_SPLITTER_ROLE, newRewardSplitter);
+
+        emit RewardSplitterUpdated(previous, newRewardSplitter);
     }
 
     /**

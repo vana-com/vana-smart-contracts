@@ -80,7 +80,7 @@ contract SplitterRewardCaptureTest is Test {
         staking.updateVanaPoolEntity(address(entity));
         staking.updateVanaPoolTreasury(address(treasury));
         treasury.updateVanaPoolEntity(address(entity)); // commission claims
-        entity.grantRole(entity.REWARD_SPLITTER_ROLE(), address(splitter));
+        entity.updateRewardSplitter(address(splitter)); // first-class wiring: grants REWARD_SPLITTER_ROLE
         splitter.updateRewardVestingDuration(7 days);
         vm.stopPrank();
 
