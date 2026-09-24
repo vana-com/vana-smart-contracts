@@ -204,6 +204,58 @@ contract RewardSplitterTest is Test {
         assertApproxEqRel(shareA, shareB, 1e15, "flash stake did not inflate A's share");
     }
 
+    // ---- settlement invariance: early processRewards cannot inflate weight ----
+    //
+    // Two entities with identical stake and identical APY-funded rewards. A's
+    // operator calls processRewards aggressively (settling its drip into
+    // activeRewardPool early and often); B is left untouched until distribution.
+    // Under the old activeRewardPool-based metric this let A out-earn B for free.
+    // With principal-seconds the split is settlement-invariant, so A ~= B.
+    function test_earlySettlementDoesNotInflateSplitShare() public {
+        uint256 a = _createEntity("pool-a");
+        uint256 b = _createEntity("pool-b");
+        _stake(a, 100 ether);
+        _stake(b, 100 ether);
+
+        // fund identical APY rewards on both and crank the rate so the drip is large
+        vm.startPrank(owner);
+        entity.addRewards{value: 100 ether}(a);
+        entity.addRewards{value: 100 ether}(b);
+        entity.updateEntityMaxAPY(a, 100e18);
+        entity.updateEntityMaxAPY(b, 100e18);
+        vm.stopPrank();
+
+        // round 1: baselines
+        vm.warp(block.timestamp + 1 days);
+        vm.prank(owner);
+        splitter.distribute(100 ether, _ids(a, b));
+
+        // the round: A is settled every day, B is never settled
+        for (uint256 d = 0; d < 20; d++) {
+            vm.warp(block.timestamp + 1 days);
+            entity.processRewards(a); // aggressive early settlement of A's drip
+        }
+
+        // A's activeRewardPool is now far larger than B's (its rewards vested in),
+        // yet its committed principal is identical -> weights must match.
+        assertGt(entity.entities(a).activeRewardPool, entity.entities(b).activeRewardPool, "A settled, B did not");
+        assertApproxEqRel(splitter.pendingWeight(a), splitter.pendingWeight(b), 1e12, "equal principal-seconds");
+
+        uint256 la = _stakerLocked(a);
+        uint256 lb = _stakerLocked(b);
+        uint256 budget = 100 ether;
+
+        vm.prank(owner);
+        splitter.distribute(budget, _ids(a, b));
+
+        uint256 shareA = _stakerLocked(a) - la;
+        uint256 shareB = _stakerLocked(b) - lb;
+
+        // settlement cadence bought A nothing: the split is ~50/50
+        assertApproxEqRel(shareA, shareB, 1e12, "early settlement did not inflate A's share");
+        assertApproxEqAbs(shareA + shareB, budget, 2, "conserved minus dust");
+    }
+
     // ---- guards ----
 
     function test_rejectsBudgetOverBalance() public {

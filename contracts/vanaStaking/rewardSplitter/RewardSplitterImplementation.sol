@@ -11,8 +11,10 @@ import {IVanaPoolEntity} from "../vanaPoolEntity/interfaces/IVanaPoolEntity.sol"
 
 /**
  * @notice Splits a VANA reward budget across VanaPool entities in proportion to
- *         their stake-seconds accrued since the previous distribution -- i.e. by
- *         committed stake over time, not a snapshot. Each entity's share is paid
+ *         their principal-seconds accrued since the previous distribution -- i.e.
+ *         by committed principal over time (settlement-invariant: vesting rewards
+ *         into a pool via processRewards does not change its weight), not a
+ *         snapshot and not pool value. Each entity's share is paid
  *         via addRewards, so the entity then vests it to its own stakers under
  *         its own model (APY or STREAM). The splitter holds a VANA balance
  *         (funded by governance) and pays out of it.
@@ -37,8 +39,8 @@ contract RewardSplitterImplementation is
 
     IVanaPoolEntity public vanaPoolEntity;
 
-    // last stake-seconds reading taken for an entity (the round baseline)
-    mapping(uint256 entityId => uint256 stakeSeconds) public baseline;
+    // last principal-seconds reading taken for an entity (the round baseline)
+    mapping(uint256 entityId => uint256 principalSeconds) public baseline;
     // whether an entity has been seen before (distinguishes "baseline 0" from unset)
     mapping(uint256 entityId => bool) public seen;
 
@@ -178,13 +180,15 @@ contract RewardSplitterImplementation is
     }
 
     /**
-     * @notice Split `budget` across `entityIds` by their stake-seconds accrued
+     * @notice Split `budget` across `entityIds` by their principal-seconds accrued
      *         since the previous distribution (the delta from each entity's
-     *         baseline -- absolute stake-seconds would re-pay all past rounds and
-     *         let old/empty pools dominate). A first-seen entity only has its
+     *         baseline -- absolute principal-seconds would re-pay all past rounds
+     *         and let old/empty pools dominate). A first-seen entity only has its
      *         baseline recorded (it earns from the next round); flash stake
      *         integrates to ~0 weight; only a pool's own stakers can reduce its
-     *         weight, so no third party can skew the split.
+     *         weight, so no third party can skew the split. The weight tracks
+     *         committed principal, not pool value, so it cannot be inflated by
+     *         timing processRewards calls (settlement-invariant).
      *
      * @param budget      wei to distribute (<= the splitter's balance)
      * @param entityIds   entities to split across
@@ -208,11 +212,11 @@ contract RewardSplitterImplementation is
         uint256[] memory weights = new uint256[](n);
         uint256 totalWeight;
 
-        // Pass 1: read each entity's cumulative stake-seconds; its weight is the
-        // growth since the last distribution (its baseline).
+        // Pass 1: read each entity's cumulative principal-seconds; its weight is
+        // the growth since the last distribution (its baseline).
         for (uint256 i = 0; i < n; i++) {
             uint256 id = entityIds[i];
-            uint256 s = vanaPoolEntity.stakeSecondsAt(id);
+            uint256 s = vanaPoolEntity.principalSecondsAt(id);
             current[i] = s;
 
             if (!seen[id]) {
@@ -265,14 +269,14 @@ contract RewardSplitterImplementation is
     }
 
     /**
-     * @notice The weight an entity would receive right now (stake-seconds since
-     *         its baseline). 0 for a first-seen entity.
+     * @notice The weight an entity would receive right now (principal-seconds
+     *         since its baseline). 0 for a first-seen entity.
      */
     function pendingWeight(uint256 entityId) external view returns (uint256) {
         if (!seen[entityId]) {
             return 0;
         }
-        return vanaPoolEntity.stakeSecondsAt(entityId) - baseline[entityId];
+        return vanaPoolEntity.principalSecondsAt(entityId) - baseline[entityId];
     }
 
     function updateVanaPoolEntity(address newVanaPoolEntityAddress) external onlyRole(MAINTAINER_ROLE) {

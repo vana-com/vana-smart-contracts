@@ -190,27 +190,32 @@ contract VanaPoolEntityImplementation is
     }
 
     /**
-     * @notice The entity's cumulative stake-seconds (integral of activeRewardPool
-     *         over time) as of now, computed without a write. Monotone
+     * @notice The entity's cumulative principal-seconds (integral of committed
+     *         principal over time) as of now, computed without a write. Monotone
      *         non-decreasing. A reward splitter reads the delta between two calls
      *         as the entity's weight for that interval.
      *
-     *         Exact, not approximate: every activeRewardPool write is preceded by
-     *         _checkpointStakeSeconds, so if stakeSecondsUpdatedAt has not moved,
-     *         activeRewardPool is provably constant over [updatedAt, now].
+     *         Integrates stakedPrincipal, NOT activeRewardPool: the weight is
+     *         driven purely by how much capital is committed and for how long, so
+     *         calling processRewards early (which vests rewards into
+     *         activeRewardPool) cannot inflate it.
+     *
+     *         Exact, not approximate: every stakedPrincipal write is preceded by
+     *         _checkpointPrincipalSeconds, so if principalSecondsUpdatedAt has not
+     *         moved, stakedPrincipal is provably constant over [updatedAt, now].
      */
-    function stakeSecondsAt(uint256 entityId) external view override returns (uint256) {
+    function principalSecondsAt(uint256 entityId) external view override returns (uint256) {
         Entity storage entity = _entities[entityId];
         // Frozen for a not-yet-checkpointed or non-Active entity, matching
-        // _checkpointStakeSeconds (entity removal is currently disabled, so the
-        // status branch is defensive future-proofing).
-        if (entity.stakeSecondsUpdatedAt == 0 || entity.status != EntityStatus.Active) {
-            return entity.stakeSeconds;
+        // _checkpointPrincipalSeconds (entity removal is currently disabled, so
+        // the status branch is defensive future-proofing).
+        if (entity.principalSecondsUpdatedAt == 0 || entity.status != EntityStatus.Active) {
+            return entity.principalSeconds;
         }
         return
-            entity.stakeSeconds +
-            entity.activeRewardPool *
-            (block.timestamp - entity.stakeSecondsUpdatedAt);
+            entity.principalSeconds +
+            entity.stakedPrincipal *
+            (block.timestamp - entity.principalSecondsUpdatedAt);
     }
 
     /**
@@ -367,7 +372,8 @@ contract VanaPoolEntityImplementation is
         // Initialize share values directly in the entity
         entity.totalShares = registrationStake;
         entity.activeRewardPool = registrationStake;
-        entity.stakeSecondsUpdatedAt = block.timestamp; // start stake-seconds accrual now
+        entity.stakedPrincipal = registrationStake; // registration stake is committed principal
+        entity.principalSecondsUpdatedAt = block.timestamp; // start principal-seconds accrual now
 
         // Call VanaPoolStaking to register the entity stake
         vanaPoolStaking.registerEntityStake(entityId, entityRegistrationInfo.ownerAddress, registrationStake);
@@ -510,9 +516,9 @@ contract VanaPoolEntityImplementation is
             revert InvalidParam();
         }
 
-        // Settle first: vests the splitter track up to now (and the owner's model),
-        // and checkpoints stake-seconds. Leaves stakerLockedRewardPool holding only
-        // the not-yet-vested remainder.
+        // Settle first: vests the splitter track up to now (and the owner's
+        // model). Leaves stakerLockedRewardPool holding only the not-yet-vested
+        // remainder.
         processRewards(entityId);
 
         uint256 commission = payCommission ? (msg.value * entity.commissionRate) / MAX_COMMISSION : 0;
@@ -649,8 +655,10 @@ contract VanaPoolEntityImplementation is
             revert InvalidEntityStatus();
         }
 
-        // Checkpoint stake-seconds before the drip changes activeRewardPool.
-        _checkpointStakeSeconds(entity);
+        // No principal-seconds checkpoint here: processRewards changes
+        // activeRewardPool but never stakedPrincipal, so the weight integral is
+        // unaffected. This is precisely what makes the split settlement-invariant
+        // -- calling processRewards early can no longer inflate an entity's weight.
 
         // Owner-controlled model track (APY drip / STREAM), gated on the entity's
         // own elapsed time. Runs first so the APY base excludes this round's
@@ -1082,15 +1090,24 @@ contract VanaPoolEntityImplementation is
             revert InvalidEntityStatus();
         }
 
-        // Bank the elapsed interval at the OLD activeRewardPool before this
+        // Bank the elapsed interval at the OLD stakedPrincipal before this
         // stake/unstake changes it (the just-elapsed time ran at the old rate).
-        _checkpointStakeSeconds(entity);
+        _checkpointPrincipalSeconds(entity);
 
         // Update entity totals based on whether it's a stake or unstake
         if (isStake) {
             entity.totalShares += shares;
             entity.activeRewardPool += amount;
+            // `amount` is the VANA committed by this stake (or redelegated in).
+            entity.stakedPrincipal += amount;
         } else {
+            // Remove principal proportional to the shares withdrawn (the reward
+            // portion of `amount` is not principal), computed before totalShares
+            // shrinks. On a full exit this zeroes stakedPrincipal exactly.
+            uint256 principalOut = entity.totalShares == 0
+                ? 0
+                : (entity.stakedPrincipal * shares) / entity.totalShares;
+            entity.stakedPrincipal -= principalOut;
             entity.totalShares -= shares;
             entity.activeRewardPool -= amount;
         }
@@ -1386,9 +1403,9 @@ contract VanaPoolEntityImplementation is
     }
 
     /**
-     * @dev Bank the stake-seconds accrued since the last checkpoint at the
-     *      current (pre-change) activeRewardPool, then advance the watermark.
-     *      MUST be called before every activeRewardPool mutation so the rate is
+     * @dev Bank the principal-seconds accrued since the last checkpoint at the
+     *      current (pre-change) stakedPrincipal, then advance the watermark.
+     *      MUST be called before every stakedPrincipal mutation so the rate is
      *      constant across each [updatedAt, now] interval. Frozen for non-Active
      *      entities: a paused entity does not accrue weight.
      *
@@ -1397,15 +1414,24 @@ contract VanaPoolEntityImplementation is
      *      integrate from -- accruing here would integrate from the Unix epoch --
      *      so we only start the clock and accrue nothing this call.
      */
-    function _checkpointStakeSeconds(Entity storage entity) internal {
-        if (entity.stakeSecondsUpdatedAt == 0) {
-            entity.stakeSecondsUpdatedAt = block.timestamp; // first touch: start accruing now
+    function _checkpointPrincipalSeconds(Entity storage entity) internal {
+        if (entity.principalSecondsUpdatedAt == 0) {
+            // First touch: a new entity (seeded at registration), or a pre-upgrade
+            // entity migrating onto this accumulator. For a migrated entity that
+            // already holds stake but has no stakedPrincipal yet, seed committed
+            // principal from the current pool value (a one-time, slight over-count
+            // of already-accrued rewards; exact from here on). Start the clock and
+            // accrue nothing this call -- there is no prior watermark.
+            if (entity.stakedPrincipal == 0 && entity.totalShares > 0) {
+                entity.stakedPrincipal = entity.activeRewardPool;
+            }
+            entity.principalSecondsUpdatedAt = block.timestamp;
             return;
         }
         if (entity.status == EntityStatus.Active) {
-            entity.stakeSeconds += entity.activeRewardPool * (block.timestamp - entity.stakeSecondsUpdatedAt);
+            entity.principalSeconds += entity.stakedPrincipal * (block.timestamp - entity.principalSecondsUpdatedAt);
         }
-        entity.stakeSecondsUpdatedAt = block.timestamp;
+        entity.principalSecondsUpdatedAt = block.timestamp;
     }
 
     // This function is copied from solmate/utils/SignedWadMath.sol

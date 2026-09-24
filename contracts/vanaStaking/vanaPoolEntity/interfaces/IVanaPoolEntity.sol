@@ -56,9 +56,15 @@ interface IVanaPoolEntity {
         // --- appended in the commission upgrade; append-safe as above ---
         uint256 commissionRate; // operator cut of each distribution, percent * 1e18 (100% = 100e18); default 0
         uint256 accruedCommission; // wei owed to the entity owner, not yet claimed
-        // --- appended in the stake-seconds upgrade; append-safe as above ---
-        uint256 stakeSeconds; // cumulative integral of activeRewardPool over time (monotone)
-        uint256 stakeSecondsUpdatedAt; // last time stakeSeconds was checkpointed
+        // --- appended in the principal-seconds upgrade; append-safe as above ---
+        // Weight metric for the cross-entity reward split. Integrates COMMITTED
+        // PRINCIPAL (not activeRewardPool) over time, so it is invariant to when
+        // processRewards is called: settling vested rewards early can no longer
+        // inflate an entity's weight. Only real stake / unstake / redelegate move
+        // stakedPrincipal, and flash movements integrate to ~0.
+        uint256 stakedPrincipal; // VANA principal currently delegated (settlement-invariant)
+        uint256 principalSeconds; // cumulative integral of stakedPrincipal over time (monotone)
+        uint256 principalSecondsUpdatedAt; // last time principalSeconds was checkpointed
         // --- appended in the stake-block upgrade; append-safe as above ---
         bool stakingBlocked; // when true, no new stake may enter (stake / redelegate-in); unstake and redelegate-out stay open
         // --- appended in the sweep upgrade; append-safe as above ---
@@ -102,7 +108,7 @@ interface IVanaPoolEntity {
     function entityStakerLockedRewardPool(uint256 entityId) external view returns (uint256);
     function entityStakerRewardSchedule(uint256 entityId) external view returns (RewardSchedule memory);
     function committedRewards(uint256 entityId) external view returns (uint256);
-    function stakeSecondsAt(uint256 entityId) external view returns (uint256);
+    function principalSecondsAt(uint256 entityId) external view returns (uint256);
     function entityNameToId(string calldata entityName) external view returns (uint256);
 
     function entityShareToVana(uint256 entityId) external view returns (uint256);
