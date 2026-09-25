@@ -678,6 +678,14 @@ contract VanaPoolStakingImplementation is
         }
 
         uint256 shareToVana = vanaPoolEntity.entityShareToVana(entityId);
+
+        // The minimum applies on the way out as well as in: a partial exit may
+        // leave nothing, or a position still worth at least minStakeAmount --
+        // never a dust remainder (NM-1052 [Info] re-review).
+        uint256 remainingShares = stakerEntity.shares - shareAmount;
+        if (remainingShares > 0 && (remainingShares * shareToVana) / 1e18 < minStakeAmount) {
+            revert InsufficientStakeAmount();
+        }
         uint256 currentTimestamp = block.timestamp;
 
         // Heal a legacy (V1) zero-costBasis position before it is read below, so
@@ -830,6 +838,16 @@ contract VanaPoolStakingImplementation is
         // its real value and cannot be under-valued during a bond in `to`.
         _healLegacyCostBasis(from, fromShareToVana);
         movedValue = (shareAmount * fromShareToVana) / 1e18; // full value incl. rewards
+        // A redelegation is a stake into `to` and a partial exit from `from`:
+        // both ends respect minStakeAmount (moved value at least the minimum;
+        // the source residual zero or at least the minimum).
+        if (movedValue < minStakeAmount) {
+            revert InsufficientStakeAmount();
+        }
+        uint256 fromRemainingShares = from.shares - shareAmount;
+        if (fromRemainingShares > 0 && (fromRemainingShares * fromShareToVana) / 1e18 < minStakeAmount) {
+            revert InsufficientStakeAmount();
+        }
         uint256 movedCostBasis = (from.costBasis * shareAmount) / from.shares; // principal portion
         uint256 movedVested = (from.vestedRewards * shareAmount) / from.shares;
         uint256 remainingBond = currentTimestamp < from.rewardEligibilityTimestamp
