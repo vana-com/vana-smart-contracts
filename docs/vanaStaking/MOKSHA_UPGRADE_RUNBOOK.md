@@ -208,7 +208,7 @@ the parity address and re-wires the entity (rotating the role off `0x742A…`, w
 ## 11. Post-upgrade e2e on the live contracts (fork test)
 
 `test/foundry/fork/MokshaE2E.t.sol` runs the full scenario against the real Moksha bytecode and state
-(pinned at Moksha block 9189108 before the seed cutoff; nothing broadcast): three new entities at 40% APY with 10% commission,
+(pinned at Moksha block 9199119 before the seed cutoff; nothing broadcast): the live pools Basalt, Quartz and Obsidian (ids 2-4, created 2026-09-25, 40% APY, 10% commission, owned by the deployer wallet),
 entity 1 blocked for new stake, every live staker of entity 1 migrated by `redelegate`, splitter funded,
 10% burn, two distribution rounds (round 1 is baseline-only by design), commission claimed by the owners
 through the treasury's `SPENDER_ROLE`, stakers' positions grown by both the splitter track and the APY

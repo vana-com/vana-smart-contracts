@@ -22,7 +22,8 @@ import {IVanaPoolStaking} from "../../../contracts/vanaStaking/vanaPoolStaking/i
 ///           MOKSHA_FORK=1 forge test --match-path test/foundry/fork/MokshaE2E.t.sol -vv
 ///         Skipped otherwise so the default suite stays network-free.
 ///
-///         Scenario: three new entities at 40% APY with 10% commission; entity 1
+///         Scenario: the three live pools Basalt, Quartz and Obsidian (ids 2-4, owned
+///         by the deployer wallet, 40% APY ceiling, 10% commission); entity 1
 ///         blocked for new stake; every live staker of entity 1 migrates (redelegate)
 ///         into the new entities; entity 1's unallocated APY reserve is swept
 ///         (time-locked) to an address and re-sent by three manual addRewards calls
@@ -47,8 +48,8 @@ contract MokshaE2ETest is Test {
     uint256 constant BURN_RATE = 10e18; // 10%
     uint256 constant BUDGET = 100 ether; // splitter round budget
     uint256 constant ONE = 1e18;
-    uint256 constant MOKSHA_FORK_BLOCK = 9_189_108;
-    uint256 constant MOKSHA_FORK_TIMESTAMP = 1_790_293_302;
+    uint256 constant MOKSHA_FORK_BLOCK = 9_199_119;
+    uint256 constant MOKSHA_FORK_TIMESTAMP = 1_790_353_368;
     uint256 constant SEED_CUTOFF = 1_793_404_800; // 2026-10-31 00:00 UTC
 
     uint256[3] newIds;
@@ -68,9 +69,6 @@ contract MokshaE2ETest is Test {
         assertEq(entity.version(), 4);
         assertEq(treasury.version(), 2);
         assertEq(entity.rewardSplitter(), address(splitter), "splitter wired");
-        owners[0] = makeAddr("owner-alpha");
-        owners[1] = makeAddr("owner-bravo");
-        owners[2] = makeAddr("owner-charlie");
         vm.deal(admin, 100_000 ether);
     }
 
@@ -126,28 +124,24 @@ contract MokshaE2ETest is Test {
         _logEntity("source", OLD);
         _assertSolvent("start");
 
-        // ---- 1. three new entities: 40% APY, 10% commission, APY pool funded ----
-        _step("STEP 1: create three new entities (40% APY, 10% commission)");
-        string[3] memory names = ["e2e-basalt", "e2e-quartz", "e2e-obsidian"];
-        uint256 reg = entity.minRegistrationStake();
+        // ---- 1. the three live pools, created and configured on Moksha on 2026-09-25 ----
+        _step("STEP 1: use the live pools Basalt, Quartz and Obsidian (owner = deployer wallet)");
+        string[3] memory names = ["Basalt", "Quartz", "Obsidian"];
         for (uint256 i = 0; i < 3; i++) {
-            vm.prank(admin);
-            entity.createEntity{value: reg}(
-                IVanaPoolEntity.EntityRegistrationInfo({ownerAddress: owners[i], name: names[i]})
-            );
-            newIds[i] = entity.entitiesCount();
-            vm.prank(admin);
-            entity.updateEntityMaxAPY(newIds[i], TARGET_APY);
-            vm.prank(owners[i]);
-            entity.proposeCommissionRate(newIds[i], COMMISSION);
-            vm.prank(admin);
-            entity.approveCommissionRate(newIds[i]);
-            assertEq(entity.entities(newIds[i]).maxAPY, TARGET_APY);
-            assertEq(entity.entityCommissionRate(newIds[i]), COMMISSION);
-            assertEq(staking.entityRegistrant(newIds[i]), owners[i], "registrant floor recorded at creation");
+            newIds[i] = entity.entityNameToId(names[i]);
+            assertGt(newIds[i], OLD, "live pool exists");
+            IVanaPoolEntity.EntityInfo memory e = entity.entities(newIds[i]);
+            owners[i] = e.ownerAddress;
+            assertEq(owners[i], admin, "owned by the deployer wallet");
+            assertEq(uint256(e.status), 1, "active");
+            assertEq(e.maxAPY, TARGET_APY, "40% APY ceiling configured");
+            assertEq(entity.entityCommissionRate(newIds[i]), COMMISSION, "10% commission configured");
+            assertEq(staking.entityRegistrant(newIds[i]), admin, "deployer is the registrant");
+            assertEq(staking.entityRegistrationShares(newIds[i]), entity.minRegistrationStake(), "100 VANA seed floor");
             console.log(string.concat("  entity ", vm.toString(newIds[i]), " '", names[i], "' owner ", vm.toString(owners[i]), " | maxAPY 40% | commission 10% | registration floor ", _vana(staking.entityRegistrationShares(newIds[i])), " (shares)"));
+            _logEntity("live", newIds[i]);
         }
-        _assertSolvent("after entity creation");
+        _assertSolvent("live pools");
 
         // ---- 2. sweep entity 1's unallocated APY reserve and seed Basalt, Quartz, and Obsidian ----
         _step("STEP 2: sweep the source reserve to custody and seed the three pools equally");
