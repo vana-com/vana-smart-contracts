@@ -92,10 +92,43 @@ contract MinStakeResidualTest is Test {
 
     // ---- redelegate ----
 
-    function test_redelegateMustMoveAtLeastTheMinimum() public {
+    function test_redelegateSplitMustMoveAtLeastTheMinimum() public {
         vm.prank(alice);
         vm.expectRevert(VanaPoolStakingImplementation.InsufficientStakeAmount.selector);
-        staking.redelegate(a, b, 0.5 ether, 0); // dust position would be minted in b
+        staking.redelegate(a, b, 0.5 ether, 0); // a split that would mint dust in b
+    }
+
+    /// @dev Re-review: a legacy position that fell below the minimum (here
+    ///      because governance raised it) must still be able to MIGRATE as a
+    ///      whole -- relocating existing dust creates none. Only splitting it
+    ///      is refused. Without this the position would be exit-only, since
+    ///      stake() enforces the same minimum on re-entry.
+    function test_fullRedelegateOfASubMinimumLegacyPositionIsAllowed() public {
+        // a second staker enters at 0.5 VANA while the minimum is lower, then the minimum rises
+        address legacy = makeAddr("legacy");
+        vm.deal(legacy, 10 ether);
+        vm.prank(owner);
+        staking.updateMinStakeAmount(0.1 ether);
+        vm.prank(legacy);
+        staking.stake{value: 0.5 ether}(a, legacy, 0);
+        vm.prank(owner);
+        staking.updateMinStakeAmount(MIN); // 1 VANA: the 0.5 VANA position is now sub-minimum
+        vm.warp(block.timestamp + BOND + 1);
+
+        uint256 pos = _shares(legacy, a);
+        // splitting it is refused (either half would be dust)
+        vm.prank(legacy);
+        vm.expectRevert(VanaPoolStakingImplementation.InsufficientStakeAmount.selector);
+        staking.redelegate(a, b, pos / 2, 0);
+        // moving it whole is allowed: it migrates, it does not create dust
+        vm.prank(legacy);
+        staking.redelegate(a, b, pos, 0);
+        assertEq(_shares(legacy, a), 0);
+        assertEq(_shares(legacy, b), pos, "whole sub-minimum position relocated");
+        // and it can still fully exit
+        vm.prank(legacy);
+        staking.unstake(b, pos, 0);
+        assertEq(_shares(legacy, b), 0);
     }
 
     function test_redelegateCannotLeaveADustResidual() public {

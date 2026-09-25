@@ -838,14 +838,17 @@ contract VanaPoolStakingImplementation is
         // its real value and cannot be under-valued during a bond in `to`.
         _healLegacyCostBasis(from, fromShareToVana);
         movedValue = (shareAmount * fromShareToVana) / 1e18; // full value incl. rewards
-        // A redelegation is a stake into `to` and a partial exit from `from`:
-        // both ends respect minStakeAmount (moved value at least the minimum;
-        // the source residual zero or at least the minimum).
-        if (movedValue < minStakeAmount) {
-            revert InsufficientStakeAmount();
-        }
+        // Moving a WHOLE position is always allowed: it relocates an existing
+        // position (possibly a legacy one now below the minimum) and creates no
+        // dust -- refusing it would leave such positions exit-only, since
+        // stake() enforces the minimum on re-entry. SPLITTING a position must
+        // respect minStakeAmount on both sides: the moved value (a stake into
+        // `to`) and the source residual.
         uint256 fromRemainingShares = from.shares - shareAmount;
-        if (fromRemainingShares > 0 && (fromRemainingShares * fromShareToVana) / 1e18 < minStakeAmount) {
+        if (
+            fromRemainingShares > 0 &&
+            (movedValue < minStakeAmount || (fromRemainingShares * fromShareToVana) / 1e18 < minStakeAmount)
+        ) {
             revert InsufficientStakeAmount();
         }
         uint256 movedCostBasis = (from.costBasis * shareAmount) / from.shares; // principal portion
