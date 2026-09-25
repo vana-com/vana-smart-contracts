@@ -139,12 +139,56 @@ contract EntityCommissionTest is Test {
         vm.prank(entityOwner);
         h.proposeCommissionRate(ID, 20e18); // owner proposes 20%
         vm.prank(maintainer);
-        h.approveCommissionRate(ID); // maintainer approves -> applies, settling at old 10%
+        h.approveCommissionRate(ID, 20e18); // maintainer approves -> applies, settling at old 10%
 
         IVanaPoolEntity.Entity memory e = h.getEntity(ID);
         assertEq(e.commissionRate, 20e18, "new rate applied");
         assertEq(e.pendingCommissionRate, 0, "proposal cleared");
         assertEq(e.accruedCommission, pending / 10, "pending settled at OLD 10%");
+    }
+
+    // ---- the approval commits to a value: a front-run proposal cannot swap it ----
+
+    /// @dev NM-1052 [High] re-review: an owner could front-run the maintainer's
+    ///      approveCommissionRate with a new proposal and have an unreviewed
+    ///      value approved. The maintainer now states the rate they approve.
+    function test_approveCommission_rejectsFrontRunProposal() public {
+        _seed(IVanaPoolEntity.RewardModel.APY, 1_000 ether, 100 ether, 10e18, _empty()); // 10%
+        vm.prank(entityOwner);
+        h.proposeCommissionRate(ID, 20e18); // the maintainer reviews 20% ...
+
+        // ... but the owner re-proposes 100% just before the approval lands
+        vm.prank(entityOwner);
+        h.proposeCommissionRate(ID, 100e18);
+        assertEq(h.entityPendingCommissionRate(ID), 100e18, "pending swapped by the front-run");
+
+        vm.prank(maintainer);
+        vm.expectRevert(VanaPoolEntityImplementation.PendingCommissionMismatch.selector);
+        h.approveCommissionRate(ID, 20e18); // approving what was reviewed fails safely
+
+        assertEq(h.entityCommissionRate(ID), 10e18, "rate unchanged");
+        assertEq(h.entityPendingCommissionRate(ID), 100e18, "the swapped proposal stays pending, visibly");
+        // only an explicit approval of the swapped value applies it
+        vm.prank(maintainer);
+        h.approveCommissionRate(ID, 100e18);
+        assertEq(h.entityCommissionRate(ID), 100e18);
+    }
+
+    function test_approveCommission_requiresTheExactPendingValue() public {
+        _seed(IVanaPoolEntity.RewardModel.APY, 1_000 ether, 100 ether, 10e18, _empty());
+        vm.prank(maintainer);
+        vm.expectRevert(VanaPoolEntityImplementation.InvalidParam.selector);
+        h.approveCommissionRate(ID, 20e18); // nothing proposed yet
+
+        vm.prank(entityOwner);
+        h.proposeCommissionRate(ID, 20e18);
+        vm.prank(maintainer);
+        vm.expectRevert(VanaPoolEntityImplementation.PendingCommissionMismatch.selector);
+        h.approveCommissionRate(ID, 25e18); // wrong value
+        vm.prank(maintainer);
+        h.approveCommissionRate(ID, 20e18); // exact value
+        assertEq(h.entityCommissionRate(ID), 20e18);
+        assertEq(h.entityPendingCommissionRate(ID), 0);
     }
 
     // ---- two-phase gating ----
@@ -162,7 +206,7 @@ contract EntityCommissionTest is Test {
         vm.startPrank(entityOwner);
         h.proposeCommissionRate(ID, 50e18);
         vm.expectRevert(); // approveCommissionRate is MAINTAINER_ROLE-gated
-        h.approveCommissionRate(ID);
+        h.approveCommissionRate(ID, 50e18);
         vm.stopPrank();
     }
 
@@ -196,7 +240,7 @@ contract EntityCommissionTest is Test {
         _seed(IVanaPoolEntity.RewardModel.APY, 1_000 ether, 100 ether, 0, _empty());
         vm.startPrank(maintainer);
         h.proposeCommissionRate(ID, 15e18);
-        h.approveCommissionRate(ID);
+        h.approveCommissionRate(ID, 15e18);
         vm.stopPrank();
         assertEq(h.entityCommissionRate(ID), 15e18);
     }

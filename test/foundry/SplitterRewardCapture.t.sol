@@ -154,7 +154,7 @@ contract SplitterRewardCaptureTest is Test {
         vm.prank(entityOwner);
         entity.proposeCommissionRate(id, 100e18);
         vm.prank(owner);
-        entity.approveCommissionRate(id);
+        entity.approveCommissionRate(id, 100e18);
 
         // the already-paid reward is untouched: it vests on the splitter track,
         // which carries no commission, so a later 100% rate cannot skim it
@@ -241,7 +241,7 @@ contract SplitterRewardCaptureTest is Test {
         vm.prank(entityOwner);
         entity.proposeCommissionRate(id, 20e18);
         vm.prank(owner);
-        entity.approveCommissionRate(id);
+        entity.approveCommissionRate(id, 20e18);
 
         _deliverReward(id, X);
 
@@ -257,7 +257,7 @@ contract SplitterRewardCaptureTest is Test {
         vm.prank(entityOwner);
         entity.proposeCommissionRate(id, 100e18);
         vm.prank(owner);
-        entity.approveCommissionRate(id);
+        entity.approveCommissionRate(id, 100e18);
         vm.prank(owner);
         splitter.updatePayEntityCommission(false);
 

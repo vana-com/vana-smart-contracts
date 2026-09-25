@@ -64,6 +64,7 @@ contract VanaPoolEntityImplementation is
     error TransferFailed();
     error SweepNotUnlocked();
     error InvalidSweepTime();
+    error PendingCommissionMismatch();
 
     modifier onlyEntityOwner(uint256 entityId) {
         if (_entities[entityId].ownerAddress != msg.sender) {
@@ -138,7 +139,7 @@ contract VanaPoolEntityImplementation is
      * @notice Returns the version of the contract
      */
     function version() external pure virtual override returns (uint256) {
-        return 4;
+        return 5;
     }
 
     /**
@@ -933,7 +934,7 @@ contract VanaPoolEntityImplementation is
      *
      * @param entityId The entity ID
      */
-    function approveCommissionRate(uint256 entityId) external override onlyRole(MAINTAINER_ROLE) {
+    function approveCommissionRate(uint256 entityId, uint256 expectedRate) external override onlyRole(MAINTAINER_ROLE) {
         Entity storage entity = _entities[entityId];
 
         if (entity.status != EntityStatus.Active) {
@@ -942,6 +943,12 @@ contract VanaPoolEntityImplementation is
         uint256 pending = entity.pendingCommissionRate;
         if (pending == 0) {
             revert InvalidParam(); // nothing proposed
+        }
+        // The approval commits to a specific value: an owner could otherwise
+        // front-run the maintainer's transaction with a new proposal and have an
+        // unreviewed rate approved (NM-1052 [High] re-review).
+        if (pending != expectedRate) {
+            revert PendingCommissionMismatch();
         }
 
         // Settle at the old rate so the new rate only applies to future rewards.

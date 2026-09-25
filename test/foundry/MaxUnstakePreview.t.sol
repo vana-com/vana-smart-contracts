@@ -82,7 +82,7 @@ contract MaxUnstakePreviewTest is Test {
         vm.prank(reg);
         entity.proposeCommissionRate(id, rate);
         vm.prank(owner);
-        entity.approveCommissionRate(id);
+        entity.approveCommissionRate(id, rate);
     }
 
     /// @dev Quote alice's full exit, then perform it, and return both amounts.

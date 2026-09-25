@@ -281,7 +281,7 @@ contract RewardModelsE2ETest is Test {
         // raise commission via the two-phase path (owner proposes, maintainer approves)
         vm.startPrank(owner);
         entity.proposeCommissionRate(entityId, 20e18);
-        entity.approveCommissionRate(entityId);
+        entity.approveCommissionRate(entityId, 20e18);
         entity.addRewards{value: 100 ether}(entityId);
         vm.stopPrank();
         assertEq(entity.entityCommissionRate(entityId), 20e18);

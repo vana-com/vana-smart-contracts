@@ -162,7 +162,7 @@ interface IVanaPoolEntity {
 
     function updateEntityCommission(uint256 entityId, uint256 newCommissionRate) external; // decreases only
     function proposeCommissionRate(uint256 entityId, uint256 newCommissionRate) external; // increases: owner proposes
-    function approveCommissionRate(uint256 entityId) external; // increases: maintainer approves
+    function approveCommissionRate(uint256 entityId, uint256 expectedRate) external; // increases: maintainer approves exactly `expectedRate` (must equal the pending proposal)
     function claimCommission(uint256 entityId) external;
     function entityCommissionRate(uint256 entityId) external view returns (uint256);
     function entityPendingCommissionRate(uint256 entityId) external view returns (uint256);
