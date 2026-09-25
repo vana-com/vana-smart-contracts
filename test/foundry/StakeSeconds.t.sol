@@ -155,7 +155,13 @@ contract StakeSecondsTest is Test {
 
     // ---- migration: a pre-upgrade entity with stake but no stakedPrincipal ----
 
-    function test_migrationSeedsPrincipalFromPoolOnFirstTouch() public {
+    /// @dev NM-1052 [Medium] re-review: between the upgrade and the first
+    ///      stake/unstake, rewards settled into activeRewardPool must NOT be
+    ///      seeded as principal. The seed is the share supply (rewards never
+    ///      mint shares), a lower bound on principal that nothing in that
+    ///      window can inflate. Here 400 shares stand against a 500 pool: the
+    ///      100 of settled rewards are excluded.
+    function test_migrationSeedsPrincipalFromShareSupplyNotPoolValue() public {
         // Simulate a pre-upgrade entity: has stake (activeRewardPool/totalShares)
         // but stakedPrincipal == 0 and never checkpointed.
         h.setEntity(
@@ -195,7 +201,46 @@ contract StakeSecondsTest is Test {
         assertEq(updatedAt, block.timestamp, "clock started now");
 
         vm.warp(block.timestamp + 10);
-        assertEq(h.principalSecondsAt(ID), 500 * 10, "accrues on the seeded principal (= pool value)");
+        assertEq(h.principalSecondsAt(ID), 400 * 10, "accrues on the seeded principal (= share supply, not the 500 pool)");
+    }
+
+    /// @dev Whatever is settled into the pool before the first touch, the seed
+    ///      does not move: two entities with the same share supply but very
+    ///      different pool values (one had rewards parked) seed identically.
+    function test_migrationSeedIsInsensitiveToRewardsSettledBeforeFirstTouch() public {
+        uint256[2] memory pools = [uint256(400), uint256(400_000)]; // same 400 shares, 1000x the rewards
+        for (uint256 i = 0; i < 2; i++) {
+            h.setEntity(
+                ID + i,
+                IVanaPoolEntity.Entity({
+                    ownerAddress: address(0xE),
+                    status: IVanaPoolEntity.EntityStatus.Active,
+                    name: "e",
+                    maxAPY: 0,
+                    lockedRewardPool: 0,
+                    activeRewardPool: pools[i],
+                    totalShares: 400,
+                    lastUpdateTimestamp: START,
+                    totalDistributedRewards: 0,
+                    rewardModel: IVanaPoolEntity.RewardModel.APY,
+                    rewardSchedule: IVanaPoolEntity.RewardSchedule(0, 0, 0, 0, 0, 0, 0),
+                    commissionRate: 0,
+                    accruedCommission: 0,
+                    stakedPrincipal: 0,
+                    principalSeconds: 0,
+                    principalSecondsUpdatedAt: 0,
+                    stakingBlocked: false,
+                    sweepableAfter: 0,
+                    pendingCommissionRate: 0,
+                    stakerLockedRewardPool: 0,
+                    stakerRewardSchedule: IVanaPoolEntity.RewardSchedule(0, 0, 0, 0, 0, 0, 0)
+                })
+            );
+            h.checkpoint(ID + i);
+        }
+        vm.warp(block.timestamp + 10);
+        assertEq(h.principalSecondsAt(ID), h.principalSecondsAt(ID + 1), "parked rewards did not inflate the seed");
+        assertEq(h.principalSecondsAt(ID + 1), 400 * 10);
     }
 
     // ---- non-Active entity is frozen (view + checkpoint agree) ----

@@ -91,8 +91,9 @@ Hardhat is broken under Node 24 in this repo; run the scripts under Node 18/20.
 VANA_POOL_ENTITY_PROXY_ADDRESS=$ENT npx hardhat deploy --network moksha --tags VanaPoolEntityUpgrade
 ```
 Verify: `version() == 4`; `entities(1)` unchanged; `entityRewardModel(1) == 0` (APY);
-`rewardSplitter() == 0x0` (wired in step 4). Principal-seconds seeding for entity 1 is automatic on its
-first stake/unstake (`stakedPrincipal` seeds from `activeRewardPool`); nothing to do.
+`rewardSplitter() == 0x0` (wired in step 4). Then call `checkpointPrincipal(1)` (permissionless) for every pre-upgrade entity, ideally in the same
+block as the upgrade: it seeds `stakedPrincipal` from the share supply (a lower bound on principal that rewards
+cannot inflate) and starts the accumulator, instead of leaving the seed to whoever stakes first.
 (The script's trailing "call addTotalDistributedRewards" note is from the v2 upgrade — ignore.)
 
 ### Step 2 — Staking v2 → v4, with the legacy floor backfill

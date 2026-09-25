@@ -218,6 +218,17 @@ contract VanaPoolEntityImplementation is
      *         _checkpointPrincipalSeconds, so if principalSecondsUpdatedAt has not
      *         moved, stakedPrincipal is provably constant over [updatedAt, now].
      */
+    /**
+     * @notice Checkpoint an entity's principal-seconds now. Permissionless and
+     *         idempotent; on a pre-upgrade entity's first call it seeds
+     *         stakedPrincipal from the share supply. Intended for the upgrade
+     *         procedure, so legacy entities are seeded in (or right after) the
+     *         upgrade transaction rather than by whoever stakes first.
+     */
+    function checkpointPrincipal(uint256 entityId) external override {
+        _checkpointPrincipalSeconds(_entities[entityId]);
+    }
+
     function principalSecondsAt(uint256 entityId) external view override returns (uint256) {
         Entity storage entity = _entities[entityId];
         // Frozen for a not-yet-checkpointed or non-Active entity, matching
@@ -1598,11 +1609,18 @@ contract VanaPoolEntityImplementation is
             // First touch: a new entity (seeded at registration), or a pre-upgrade
             // entity migrating onto this accumulator. For a migrated entity that
             // already holds stake but has no stakedPrincipal yet, seed committed
-            // principal from the current pool value (a one-time, slight over-count
-            // of already-accrued rewards; exact from here on). Start the clock and
-            // accrue nothing this call -- there is no prior watermark.
+            // principal from the SHARE SUPPLY, not the pool value: rewards never
+            // mint shares, so nothing settled or parked between the upgrade and
+            // this first touch can inflate it (NM-1052 [Medium] re-review), and
+            // since a deposit of v at price p >= 1 mints v/p <= v shares it is a
+            // lower bound on principal -- it can only under-weight a legacy pool,
+            // never over-weight it. Capped at the pool value for safety. Exact
+            // from here on. Start the clock and accrue nothing this call -- there
+            // is no prior watermark.
             if (entity.stakedPrincipal == 0 && entity.totalShares > 0) {
-                entity.stakedPrincipal = entity.activeRewardPool;
+                entity.stakedPrincipal = entity.totalShares < entity.activeRewardPool
+                    ? entity.totalShares
+                    : entity.activeRewardPool;
             }
             entity.principalSecondsUpdatedAt = block.timestamp;
             return;

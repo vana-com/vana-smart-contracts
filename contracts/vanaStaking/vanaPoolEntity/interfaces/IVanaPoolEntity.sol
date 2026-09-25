@@ -112,6 +112,7 @@ interface IVanaPoolEntity {
     // model, commission, splitter track); the one source for settlement quotes.
     function previewActiveRewardPool(uint256 entityId) external view returns (uint256);
     function principalSecondsAt(uint256 entityId) external view returns (uint256);
+    function checkpointPrincipal(uint256 entityId) external; // permissionless; seeds a legacy entity on first call
     function entityNameToId(string calldata entityName) external view returns (uint256);
 
     function entityShareToVana(uint256 entityId) external view returns (uint256);
