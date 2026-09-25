@@ -180,7 +180,7 @@ describe("VanaPool", () => {
       (
         await vanaPoolEntity.hasRole(VANA_POOL_ROLE, vanaPoolStaking.target)
       ).should.eq(true);
-      (await vanaPoolEntity.version()).should.eq(5);
+      (await vanaPoolEntity.version()).should.eq(4);
       (await vanaPoolEntity.minRegistrationStake()).should.eq(
         minRegistrationStake,
       );

@@ -139,7 +139,7 @@ contract VanaPoolEntityImplementation is
      * @notice Returns the version of the contract
      */
     function version() external pure virtual override returns (uint256) {
-        return 5;
+        return 4;
     }
 
     /**

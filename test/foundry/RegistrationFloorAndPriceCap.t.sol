@@ -180,7 +180,7 @@ contract RegistrationFloorAndPriceCapTest is Test {
 
     function test_versionBumpedOnBothContracts() public view {
         assertEq(staking.version(), 4);
-        assertEq(entity.version(), 5);
+        assertEq(entity.version(), 4);
     }
 
     // ============================ registration floor (removes the dust precondition)
