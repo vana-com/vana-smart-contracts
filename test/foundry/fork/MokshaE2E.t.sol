@@ -129,6 +129,10 @@ contract MokshaE2ETest is Test {
 
         // ---- 2. sweep entity 1's unallocated APY reserve and seed Basalt, Quartz, and Obsidian ----
         address custody = makeAddr("reserve-custody");
+        // the sweep is disabled until the maintainer arms the time-lock
+        vm.prank(admin);
+        vm.expectRevert(VanaPoolEntityImplementation.SweepNotUnlocked.selector);
+        entity.sweepUnallocatedRewards(OLD, payable(custody));
         vm.warp(SEED_CUTOFF - 1);
         vm.prank(admin);
         entity.updateEntitySweepableAfter(OLD, SEED_CUTOFF);
@@ -171,6 +175,17 @@ contract MokshaE2ETest is Test {
         assertEq(address(splitter).balance, splitterBeforeSeed, "initial seed did not fund the splitter");
         _assertSolvent("after equal reserve seed");
 
+        // the swept source pays nothing further: with no reserve the drip is zero,
+        // so a retained position is flat (its principal and earned value intact)
+        uint256 registrantValueAfterSweep = (staking.stakerEntities(admin, OLD).shares * entity.entityShareToVana(OLD)) / ONE;
+        vm.warp(block.timestamp + 1 days);
+        entity.processRewards(OLD);
+        assertEq(
+            (staking.stakerEntities(admin, OLD).shares * entity.entityShareToVana(OLD)) / ONE,
+            registrantValueAfterSweep,
+            "no more yield in the swept entity"
+        );
+
         // ---- 3. block new stake into the old entity; exits and redelegate-out stay open ----
         vm.prank(admin); // entity-1 owner
         entity.updateEntityStakingBlocked(OLD, true);
@@ -203,51 +218,6 @@ contract MokshaE2ETest is Test {
         assertGt(migrated, 1, "the real stakers of entity 1 moved");
         assertEq(entity.entities(OLD).totalShares, floorShares, "only the registrant's floor remains in entity 1");
         _assertSolvent("after migration");
-
-        // ---- 3b. one-time manual move of entity 1's reward reserve to the new pools ----
-        // arm the time-locked sweep (maintainer), wait for it, sweep to an address
-        address to = makeAddr("sweep-destination");
-        uint256 reserveBefore = entity.entities(OLD).lockedRewardPool;
-        assertGt(reserveBefore, 0, "entity 1 still holds an unallocated APY reserve");
-        vm.prank(admin);
-        vm.expectRevert(VanaPoolEntityImplementation.SweepNotUnlocked.selector);
-        entity.sweepUnallocatedRewards(OLD, payable(to)); // not armed yet
-        uint256 unlockAt = block.timestamp + 1 days;
-        vm.prank(admin);
-        entity.updateEntitySweepableAfter(OLD, unlockAt);
-        vm.warp(unlockAt);
-        vm.prank(admin);
-        entity.sweepUnallocatedRewards(OLD, payable(to));
-        uint256 swept = to.balance;
-        assertGt(swept, 0, "reserve swept to the destination");
-        assertLe(swept, reserveBefore, "at most the reserve (the drip owed until the sweep is credited first)");
-        assertEq(entity.entities(OLD).lockedRewardPool, 0, "entity 1 has no reserve left");
-        console.log("swept from entity 1 (wei):", swept);
-        _assertSolvent("after sweep");
-
-        // entity 1 pays nothing further: the remaining position (the owner's floor) is flat
-        uint256 ownerValueAfterSweep = _value(registrant, OLD);
-        vm.warp(block.timestamp + 1 days);
-        entity.processRewards(OLD);
-        assertEq(_value(registrant, OLD), ownerValueAfterSweep, "no more yield in the swept entity");
-
-        // three manual transactions from the destination: split by pool size (a
-        // stand-in for the operator's decision), everything re-sent to the wei
-        uint256 sizeTotal;
-        for (uint256 i = 0; i < 3; i++) sizeTotal += entity.entities(newIds[i]).activeRewardPool;
-        uint256 sent;
-        for (uint256 i = 0; i < 3; i++) {
-            uint256 amount = i == 2 ? swept - sent : (swept * entity.entities(newIds[i]).activeRewardPool) / sizeTotal;
-            uint256 lockedBeforeAdd = entity.entities(newIds[i]).lockedRewardPool;
-            vm.prank(to);
-            entity.addRewards{value: amount}(newIds[i]);
-            assertEq(entity.entities(newIds[i]).lockedRewardPool - lockedBeforeAdd, amount, "booked to the pool's reserve");
-            sent += amount;
-            console.log("addRewards to entity", newIds[i], "(wei):", amount);
-        }
-        assertEq(sent, swept, "all of it re-sent");
-        assertEq(to.balance, 0, "destination holds nothing afterwards");
-        _assertSolvent("after redistribution");
 
         // snapshot a migrated staker's position in its new entity before any rewards
         address sample = stakers[0] == registrant ? stakers[1] : stakers[0];
