@@ -142,4 +142,34 @@ contract RedelegateMaturedForfeitTest is Test {
         // the manual path always preserved the matured gain (baseline for parity)
         assertApproxEqAbs(payout, fullValue, 1e9, "manual path preserves full value");
     }
+
+    /// @dev NM-1052 [Medium] re-review: the mirror case. A MATURED source with an
+    ///      earned gain is redelegated into a BONDED destination; the merged
+    ///      position is re-bonded, and the source's gain must already be in cost
+    ///      basis (crystallized) or an early exit forfeits it.
+    function test_scenario2_redelegateMaturedAintoBondedB() public {
+        (uint256 a, uint256 b, uint256 aGain) = _build();
+        uint256 fullValue = _value(a) + _value(b);
+
+        uint256 aShares = _shares(a);
+        vm.prank(staker);
+        staking.redelegate(a, b, aShares, 0); // matured A (with gain) -> bonded B
+
+        // the merged position is bonded (B's bond blended in) ...
+        assertGt(staking.stakerEntities(staker, b).rewardEligibilityTimestamp, block.timestamp, "B is bonded");
+        // ... so exit B during that bond
+        uint256 bal0 = staker.balance;
+        uint256 bShares = _shares(b);
+        vm.prank(staker);
+        staking.unstake(b, bShares, 0);
+        uint256 payout = staker.balance - bal0;
+
+        console.log("A matured gain:        ", aGain);
+        console.log("full position value:   ", fullValue);
+        console.log("scenario 2 payout:     ", payout);
+        console.log("forfeited:             ", fullValue > payout ? fullValue - payout : 0);
+
+        assertGt(aGain, 1 ether, "A has a meaningful matured gain to protect");
+        assertApproxEqAbs(payout, fullValue, 1e9, "A's matured gain survives the move into a bonded B (no forfeiture)");
+    }
 }

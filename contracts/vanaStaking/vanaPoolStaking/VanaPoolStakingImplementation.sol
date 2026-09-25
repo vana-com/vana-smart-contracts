@@ -828,6 +828,19 @@ contract VanaPoolStakingImplementation is
             ? from.rewardEligibilityTimestamp - currentTimestamp
             : 0;
 
+        // What the destination receives. If the source is MATURED, its unrealized
+        // gain (movedValue - movedCostBasis) is already earned: crystallize it
+        // into the carried cost basis (and vestedRewards) exactly as stake() does
+        // when topping up a matured position, so a bond imposed by the
+        // destination can never make it forfeitable again. `from` itself is
+        // debited by the proportional originals: its cost basis holds principal only.
+        uint256 carryCostBasis = movedCostBasis;
+        uint256 carryVested = movedVested;
+        if (remainingBond == 0 && movedValue > movedCostBasis) {
+            carryVested += movedValue - movedCostBasis;
+            carryCostBasis = movedValue;
+        }
+
         uint256 fromSharesBefore = from.shares;
         from.shares -= shareAmount;
         from.costBasis -= movedCostBasis;
@@ -884,8 +897,8 @@ contract VanaPoolStakingImplementation is
 
         // Carry the principal (not the full value): the moved reward portion rides
         // as unrealized gain, kept only if the carried bond is served in `to`.
-        to.costBasis += movedCostBasis;
-        to.vestedRewards += movedVested;
+        to.costBasis += carryCostBasis;
+        to.vestedRewards += carryVested;
         to.shares += sharesIssued;
 
         _addStaker(staker);
