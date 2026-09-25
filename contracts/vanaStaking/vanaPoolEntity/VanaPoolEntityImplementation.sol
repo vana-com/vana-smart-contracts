@@ -195,9 +195,12 @@ contract VanaPoolEntityImplementation is
     }
 
     /**
-     * @notice Wei a STREAM entity still owes: active-unvested + queued. Its
-     *         lockedRewardPool is kept at least this large. Returns 0 for an
-     *         APY entity or one with no schedule.
+     * @notice The STREAM escrow an entity still owes: the active entry's value not
+     *         yet paid out (measured at its settlement watermark, not the clock)
+     *         plus the whole queued entry. Exactly what still has to leave
+     *         lockedRewardPool, so the value does not depend on whether
+     *         processRewards has run recently; lockedRewardPool - committedRewards
+     *         is the unscheduled residue.
      */
     function committedRewards(uint256 entityId) external view override returns (uint256) {
         return _committedRewards(_entities[entityId].rewardSchedule);
@@ -1573,21 +1576,28 @@ contract VanaPoolEntityImplementation is
      *      at least this so every future vest is backed by real funds.
      */
     function _committedRewards(RewardSchedule storage schedule) internal view returns (uint256) {
+        // What the schedule still owes == what still has to leave lockedRewardPool.
+        // Escrow is released by SETTLEMENT (_vestStream moves vested(now) -
+        // vested(lastUpdate)), not by the clock, so the active entry's remainder
+        // is measured at the watermark: its value minus what has already been
+        // paid out. This makes the figure independent of when it is read; right
+        // after settlement (lastUpdate == now) it equals the clock-based value.
+        // An ended-but-unpromoted entry therefore still counts in full, and the
+        // queued entry always counts in full: none of it vests before promotion.
+        // (NM-1052 [Info]: the view reported a stale value before settlement.)
         uint256 activeRemaining;
         if (schedule.scheduledValue > 0) {
-            uint256 end = uint256(schedule.start) + schedule.duration;
+            uint256 value = schedule.scheduledValue;
+            uint256 start = schedule.start;
+            uint256 last = schedule.lastUpdate;
+            uint256 vestedAtLast;
             if (schedule.duration == 0) {
-                // instant: outstanding until it has vested (lastUpdate >= start)
-                activeRemaining = schedule.lastUpdate >= schedule.start ? 0 : schedule.scheduledValue;
-            } else if (block.timestamp >= end) {
-                activeRemaining = 0; // fully vested
-            } else if (block.timestamp <= schedule.start) {
-                activeRemaining = schedule.scheduledValue; // not started: all outstanding
-            } else {
-                uint256 vested = (uint256(schedule.scheduledValue) * (block.timestamp - schedule.start)) /
-                    schedule.duration;
-                activeRemaining = schedule.scheduledValue - vested;
+                vestedAtLast = last >= start ? value : 0; // instant: paid once lastUpdate reaches start
+            } else if (last > start) {
+                uint256 elapsed = last - start;
+                vestedAtLast = elapsed >= schedule.duration ? value : (value * elapsed) / schedule.duration;
             }
+            activeRemaining = value - vestedAtLast;
         }
         return activeRemaining + schedule.nextScheduledValue;
     }

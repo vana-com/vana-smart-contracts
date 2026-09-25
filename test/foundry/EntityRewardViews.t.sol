@@ -78,16 +78,23 @@ contract EntityRewardViewsTest is Test {
             IVanaPoolEntity.RewardSchedule(10_000 ether, START, 10 days, 20 days, 20_000 ether, START + 10 days, uint64(START));
         _seed(IVanaPoolEntity.RewardModel.STREAM, 30_000 ether, sched);
 
-        // at start: nothing vested → 10k active + 20k queued
+        // at start: nothing paid out -> 10k active + 20k queued
         assertEq(h.committedRewards(ID), 30_000 ether, "at start");
 
-        // halfway: 5k of active vested → 5k remaining + 20k queued
+        // The view reports what still has to LEAVE the locked pool, and escrow
+        // leaves on settlement, not on the clock: halfway through, unsettled,
+        // all 30k is still owed; settling pays 5k out and 25k remains.
         vm.warp(START + 5 days);
-        assertEq(h.committedRewards(ID), 25_000 ether, "halfway");
+        assertEq(h.committedRewards(ID), 30_000 ether, "halfway, unsettled: nothing has left escrow yet");
+        h.processRewards(ID);
+        assertEq(h.committedRewards(ID), 25_000 ether, "halfway, settled: 5k paid, 5k active + 20k queued remain");
 
-        // past active end: active fully vested → only 20k queued remains
+        // past the active end, unsettled: the 5k remainder and the queued 20k
+        // are still owed; settling pays the 5k and promotes the queued entry
         vm.warp(START + 10 days);
-        assertEq(h.committedRewards(ID), 20_000 ether, "active ended");
+        assertEq(h.committedRewards(ID), 25_000 ether, "active ended, unsettled: still owed in full");
+        h.processRewards(ID);
+        assertEq(h.committedRewards(ID), 20_000 ether, "active ended, settled: only the queued 20k remains");
     }
 
     function test_committedRewards_zeroForApyEntity() public {
