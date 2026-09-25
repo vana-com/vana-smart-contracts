@@ -2,11 +2,17 @@
 pragma solidity 0.8.24;
 
 import {Test} from "forge-std/Test.sol";
-import {VanaPoolStakingImplementation} from "../../contracts/vanaStaking/vanaPoolStaking/VanaPoolStakingImplementation.sol";
+import {
+    VanaPoolStakingImplementation
+} from "../../contracts/vanaStaking/vanaPoolStaking/VanaPoolStakingImplementation.sol";
 import {VanaPoolStakingProxy} from "../../contracts/vanaStaking/vanaPoolStaking/VanaPoolStakingProxy.sol";
-import {VanaPoolEntityImplementation} from "../../contracts/vanaStaking/vanaPoolEntity/VanaPoolEntityImplementation.sol";
+import {
+    VanaPoolEntityImplementation
+} from "../../contracts/vanaStaking/vanaPoolEntity/VanaPoolEntityImplementation.sol";
 import {VanaPoolEntityProxy} from "../../contracts/vanaStaking/vanaPoolEntity/VanaPoolEntityProxy.sol";
-import {VanaPoolTreasuryImplementation} from "../../contracts/vanaStaking/vanaPoolTreasury/VanaPoolTreasuryImplementation.sol";
+import {
+    VanaPoolTreasuryImplementation
+} from "../../contracts/vanaStaking/vanaPoolTreasury/VanaPoolTreasuryImplementation.sol";
 import {VanaPoolTreasuryProxy} from "../../contracts/vanaStaking/vanaPoolTreasury/VanaPoolTreasuryProxy.sol";
 import {IVanaPoolEntity} from "../../contracts/vanaStaking/vanaPoolEntity/interfaces/IVanaPoolEntity.sol";
 
@@ -22,6 +28,8 @@ contract SweepUnallocatedTest is Test {
     address staker = makeAddr("staker");
     address stranger = makeAddr("stranger");
     address recipient = makeAddr("recipient");
+    address custody = makeAddr("custody");
+    address splitter = makeAddr("splitter");
 
     uint256 constant MIN_STAKE = 1 ether;
     uint256 constant MIN_REG_STAKE = 1 ether;
@@ -35,31 +43,24 @@ contract SweepUnallocatedTest is Test {
         VanaPoolTreasuryImplementation ti = new VanaPoolTreasuryImplementation();
 
         staking = VanaPoolStakingImplementation(
-            payable(
-                new VanaPoolStakingProxy(
+            payable(new VanaPoolStakingProxy(
                     address(si),
                     abi.encodeCall(VanaPoolStakingImplementation.initialize, (address(0), owner, MIN_STAKE))
-                )
-            )
+                ))
         );
         entity = VanaPoolEntityImplementation(
-            payable(
-                new VanaPoolEntityProxy(
+            payable(new VanaPoolEntityProxy(
                     address(ei),
                     abi.encodeCall(
                         VanaPoolEntityImplementation.initialize,
                         (owner, address(staking), MIN_REG_STAKE, MAX_APY_DEFAULT)
                     )
-                )
-            )
+                ))
         );
         treasury = VanaPoolTreasuryImplementation(
-            payable(
-                new VanaPoolTreasuryProxy(
-                    address(ti),
-                    abi.encodeCall(VanaPoolTreasuryImplementation.initialize, (owner, address(staking)))
-                )
-            )
+            payable(new VanaPoolTreasuryProxy(
+                    address(ti), abi.encodeCall(VanaPoolTreasuryImplementation.initialize, (owner, address(staking)))
+                ))
         );
 
         vm.startPrank(owner);
@@ -75,9 +76,13 @@ contract SweepUnallocatedTest is Test {
 
     /// @dev Create an APY entity and fund its locked reserve with `reward`.
     function _apyEntityWithReserve(uint256 reward) internal returns (uint256 id) {
+        return _apyEntityWithReserveNamed(reward, "sweep-pool");
+    }
+
+    function _apyEntityWithReserveNamed(uint256 reward, string memory name) internal returns (uint256 id) {
         vm.startPrank(owner);
         entity.createEntity{value: MIN_REG_STAKE}(
-            IVanaPoolEntity.EntityRegistrationInfo({ownerAddress: entityOwner, name: "sweep-pool"})
+            IVanaPoolEntity.EntityRegistrationInfo({ownerAddress: entityOwner, name: name})
         );
         id = entity.entitiesCount();
         entity.addRewards{value: reward}(id); // funds lockedRewardPool
@@ -185,7 +190,67 @@ contract SweepUnallocatedTest is Test {
         uint256 shares = staking.stakerEntities(staker, id).shares;
         vm.prank(staker);
         staking.unstake(id, shares, 0);
-        assertGt(int256(staker.balance) - int256(balBefore), int256(0), "staker kept the rewards earned before the sweep");
+        assertGt(
+            int256(staker.balance) - int256(balBefore), int256(0), "staker kept the rewards earned before the sweep"
+        );
+    }
+
+    function test_sweepAndSeedThreeDestinationsEqually() public {
+        uint256 sourceId = _apyEntityWithReserve(100 ether + 2 wei);
+        uint256[3] memory destinationIds = [
+            _apyEntityWithReserveNamed(1 wei, "basalt-seed"),
+            _apyEntityWithReserveNamed(1 wei, "quartz-seed"),
+            _apyEntityWithReserveNamed(1 wei, "obsidian-seed")
+        ];
+        vm.prank(owner);
+        entity.updateRewardSplitter(splitter);
+
+        vm.prank(staker);
+        staking.stake{value: 100 ether}(sourceId, staker, 0);
+        uint256 splitterBalanceBefore = splitter.balance;
+
+        uint256 unlockAt = block.timestamp + 30 days;
+        vm.prank(owner);
+        entity.updateEntitySweepableAfter(sourceId, unlockAt);
+        vm.warp(unlockAt);
+
+        uint256 sourceSharesAtCutoff = staking.stakerEntities(staker, sourceId).shares;
+        IVanaPoolEntity.EntityInfo memory sourceAtCutoff = entity.entities(sourceId);
+        uint256 expectedSourceActive = entity.previewActiveRewardPool(sourceId);
+        uint256 expectedSourcePosition = (sourceSharesAtCutoff * expectedSourceActive) / sourceAtCutoff.totalShares;
+        uint256 custodyBeforeSweep = custody.balance;
+        vm.prank(owner);
+        entity.sweepUnallocatedRewards(sourceId, payable(custody));
+        uint256 sweptAmount = custody.balance - custodyBeforeSweep;
+        uint256 creditPerPool = sweptAmount / 3;
+        uint256 remainder = sweptAmount % 3;
+        IVanaPoolEntity.EntityInfo memory sourceAfterSweep = entity.entities(sourceId);
+        assertGt(sweptAmount, 0, "sweep transferred the remaining reserve");
+        assertEq(sourceAfterSweep.lockedRewardPool, 0, "source locked reserve swept");
+        assertEq(sourceAfterSweep.totalShares, sourceAtCutoff.totalShares, "source total shares unchanged");
+        assertEq(
+            staking.stakerEntities(staker, sourceId).shares, sourceSharesAtCutoff, "source staker shares unchanged"
+        );
+        assertEq(sourceAfterSweep.activeRewardPool, expectedSourceActive, "source settled to cutoff preview");
+        assertEq(
+            (sourceSharesAtCutoff * sourceAfterSweep.activeRewardPool) / sourceAfterSweep.totalShares,
+            expectedSourcePosition,
+            "source staker position equals cutoff-settled value"
+        );
+
+        for (uint256 i = 0; i < destinationIds.length; i++) {
+            uint256 lockedBefore = entity.entities(destinationIds[i]).lockedRewardPool;
+            vm.prank(custody);
+            entity.addRewards{value: creditPerPool}(destinationIds[i]);
+            assertEq(
+                entity.entities(destinationIds[i]).lockedRewardPool - lockedBefore,
+                creditPerPool,
+                "destination received one equal credit"
+            );
+        }
+
+        assertEq(custody.balance, custodyBeforeSweep + remainder, "only the division remainder stays in custody");
+        assertEq(splitter.balance, splitterBalanceBefore, "initial seed did not fund the splitter");
     }
 
     // ---- model + access guards ----

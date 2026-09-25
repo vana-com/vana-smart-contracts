@@ -208,7 +208,7 @@ the parity address and re-wires the entity (rotating the role off `0x742A…`, w
 ## 11. Post-upgrade e2e on the live contracts (fork test)
 
 `test/foundry/fork/MokshaE2E.t.sol` runs the full scenario against the real Moksha bytecode and state
-(forked at the latest block; nothing broadcast): three new entities at 40% APY with 10% commission,
+(pinned at Moksha block 9189108 before the seed cutoff; nothing broadcast): three new entities at 40% APY with 10% commission,
 entity 1 blocked for new stake, every live staker of entity 1 migrated by `redelegate`, splitter funded,
 10% burn, two distribution rounds (round 1 is baseline-only by design), commission claimed by the owners
 through the treasury's `SPENDER_ROLE`, stakers' positions grown by both the splitter track and the APY
@@ -220,3 +220,65 @@ Staking, so `createEntity` reverted — a pre-existing Moksha misconfiguration (
 well; mainnet holds the role). Fixed the same day with `grantRole(VANA_POOL_ENTITY_ROLE, entity)` from the
 admin. The pre-flight above now checks it.
 
+## 12. Sweep the undistributed reserve and seed three pools
+
+This procedure moves the source entity's remaining APY reserve to three destination pools in equal parts. It does not fund the RewardSplitter. Run the later splitter distribution, commission, and burn checks separately in §11.
+
+The cutoff is **31 October 2026 at 00:00 UTC** (`1793404800`). Supply the live Entity proxy, Treasury proxy, RewardSplitter, source entity ID, the Basalt, Quartz, and Obsidian entity IDs, and the custody address as operator inputs. Do not copy addresses or entity IDs from another environment. The three destination IDs must name exactly Basalt, Quartz, and Obsidian, with no duplicate IDs.
+
+### Preflight
+
+Set these values from the current deployment and approved migration record. Keep the entity IDs as decimal integers.
+
+```bash
+export RPC=<moksha-rpc-url>
+export ENT=<live-v4-entity-proxy>
+export TRE=<live-v2-treasury-proxy>
+export SPLITTER=<live-reward-splitter>
+export SOURCE_ID=<source-entity-id>
+export BASALT_ID=<basalt-entity-id>
+export QUARTZ_ID=<quartz-entity-id>
+export OBSIDIAN_ID=<obsidian-entity-id>
+export CUSTODY=<approved-custody-address>
+export CUTOFF=1793404800
+```
+
+Before arming the sweep, confirm each item and save its output with the change record.
+
+- Confirm `eth_chainId` is Moksha (`0x39d0`) and each contract address has code.
+- Confirm Entity is version 4, Treasury is version 2, and `entity.rewardSplitter()` equals `$SPLITTER`.
+- Confirm `entity.entityRewardModel($SOURCE_ID) == 0` (APY), the source is active, and `lockedRewardPool` is greater than zero.
+- Confirm `block.timestamp < $CUTOFF` and `entity.entitySweepableAfter($SOURCE_ID) == 0`. The timer only moves later, so an existing timer after the cutoff blocks this procedure.
+- Confirm the three destination IDs are active, distinct from the source, and map to Basalt, Quartz, and Obsidian in the approved migration record.
+- Record the source `activeRewardPool`, `lockedRewardPool`, `totalShares`, and the shares held by each retained source position. Also record the Treasury balance, custody balance, and RewardSplitter balance.
+- Confirm the maintainer can call `updateEntitySweepableAfter` and `sweepUnallocatedRewards`. Use a custody account that can submit the three `addRewards` calls without paying their gas from its VANA balance. For example, use a relayed smart-account transaction and record the relayer as the gas payer. A custody EOA that pays its own gas will not retain the exact remainder.
+
+### Actors and calls
+
+The Entity maintainer arms the source timer and sweeps the reserve. The custody signer authorizes the three `addRewards` calls, and the relayer pays their gas. Assign a second operator to check the receipts and balances before marking the seed complete.
+
+1. Before the cutoff, the maintainer calls `updateEntitySweepableAfter($SOURCE_ID, $CUTOFF)`. Save the transaction hash, block number, and receipt. Read `entity.entitySweepableAfter($SOURCE_ID)` and confirm it equals `1793404800`.
+2. At or after the cutoff, immediately before submitting the sweep, read and record `previewActiveRewardPool($SOURCE_ID)` and the observation block timestamp. Record the source `totalShares` and the shares held by each retained source position, then calculate each previewed position value as `positionShares * previewActiveRewardPool / totalShares`. Also record the stored active pool, locked reserve, custody balance, Treasury balance, and RewardSplitter balance.
+3. The maintainer calls `sweepUnallocatedRewards($SOURCE_ID, payable($CUSTODY))` once. Save the transaction hash, block number, and receipt. Record the `UnallocatedRewardsSwept` event amount.
+4. Read custody's balance again. Set `sweptAmount` to the custody balance increase across the sweep transaction. Confirm it equals the event amount, the source `lockedRewardPool` is zero, and the Treasury balance fell by `sweptAmount`. Record the sweep receipt block timestamp. Confirm the source shares and `totalShares` did not change, the stored `activeRewardPool` is at least the pre-submit `previewActiveRewardPool`, and each retained position value is at least its previewed calculation. The sweep can execute in a later block than the preview, so later APY accrual makes an equality check invalid. Record the active-pool increase from the pre-submit stored value.
+5. Calculate `creditPerPool = sweptAmount / 3` and `remainder = sweptAmount % 3` using integer division. Do not assign the remainder to any destination.
+6. The relayer submits one custody-authorized call to `entity.addRewards{value: creditPerPool}($BASALT_ID)`, then repeats once for `$QUARTZ_ID` and once for `$OBSIDIAN_ID`. Save each transaction hash, block number, `RewardsAdded` event, and before-and-after `lockedRewardPool` for that destination. Confirm each pool's increase equals `creditPerPool`.
+7. Read all final balances. Confirm custody holds its pre-sweep balance plus `remainder`; the Treasury gained exactly `3 * creditPerPool` across the three seed calls; and the RewardSplitter balance is unchanged from the pre-sweep snapshot. Confirm the source active pool, shares, `totalShares`, and retained position values still exactly match their post-sweep values.
+
+### Reconcile and retain evidence
+
+Record these values in the migration record, along with the signer addresses and all five transaction receipts:
+
+```text
+sweptAmount       = custodyAfterSweep - custodyBeforeSweep
+creditPerPool     = sweptAmount / 3
+remainder         = sweptAmount % 3
+custodyAfterSeed  = custodyBeforeSweep + remainder
+treasuryAfterSeed = treasuryAfterSweep + 3 * creditPerPool
+previewedSourceActive  = previewActiveRewardPool(sourceId) before the sweep
+expectedSourcePosition = sourcePositionShares * previewedSourceActive / sourceTotalShares
+```
+
+Use the Treasury balance immediately after the sweep for `treasuryAfterSweep`. After the sweep, require the stored source `activeRewardPool >= previewedSourceActive` and every retained source position value is at least its corresponding `expectedSourcePosition`. Use the pre-submit observation timestamp and the sweep receipt timestamp to explain any increase. Check each equation against the receipts and on-chain balances. If any value differs, stop before the next transaction and investigate. Leave `remainder` in custody. Do not send it to a destination or the RewardSplitter.
+
+This seed does not replace the splitter test. Keep the later splitter funding, baseline round, paid distribution round, commission claims, and burn proof separate. In the fork test, confirm that the splitter's balance does not change during the sweep and three seed calls, then rerun its existing distribution, commission, and burn assertions.
