@@ -24,9 +24,11 @@ import {IVanaPoolStaking} from "../../../contracts/vanaStaking/vanaPoolStaking/i
 ///
 ///         Scenario: three new entities at 40% APY with 10% commission; entity 1
 ///         blocked for new stake; every live staker of entity 1 migrates (redelegate)
-///         into the new entities; the splitter is funded, burns 10%, and distributes
-///         to the new entities; stakers, owners (commission) and the burn all receive
-///         what the books say; treasury stays solvent throughout.
+///         into the new entities; entity 1's unallocated APY reserve is swept
+///         (time-locked) to an address and re-sent by three manual addRewards calls
+///         to the new pools; the splitter is funded, burns 10%, and distributes to
+///         the new entities; stakers, owners (commission on both tracks) and the
+///         burn all receive what the books say; treasury stays solvent throughout.
 contract MokshaE2ETest is Test {
     // Moksha (chainId 14800), post-upgrade 2026-09-24
     VanaPoolStakingImplementation constant staking =
@@ -43,7 +45,6 @@ contract MokshaE2ETest is Test {
     uint256 constant TARGET_APY = 40e18; // 40%
     uint256 constant COMMISSION = 10e18; // 10%
     uint256 constant BURN_RATE = 10e18; // 10%
-    uint256 constant APY_FUND = 500 ether; // per new entity, feeds the APY drip (not the splitter track)
     uint256 constant BUDGET = 100 ether; // splitter round budget
     uint256 constant ONE = 1e18;
     uint256 constant MOKSHA_FORK_BLOCK = 9_189_108;
@@ -119,8 +120,6 @@ contract MokshaE2ETest is Test {
             entity.proposeCommissionRate(newIds[i], COMMISSION);
             vm.prank(admin);
             entity.approveCommissionRate(newIds[i]);
-            vm.prank(admin);
-            entity.addRewards{value: APY_FUND}(newIds[i]);
             assertEq(entity.entities(newIds[i]).maxAPY, TARGET_APY);
             assertEq(entity.entityCommissionRate(newIds[i]), COMMISSION);
             assertEq(staking.entityRegistrant(newIds[i]), owners[i], "registrant floor recorded at creation");
@@ -205,6 +204,51 @@ contract MokshaE2ETest is Test {
         assertEq(entity.entities(OLD).totalShares, floorShares, "only the registrant's floor remains in entity 1");
         _assertSolvent("after migration");
 
+        // ---- 3b. one-time manual move of entity 1's reward reserve to the new pools ----
+        // arm the time-locked sweep (maintainer), wait for it, sweep to an address
+        address to = makeAddr("sweep-destination");
+        uint256 reserveBefore = entity.entities(OLD).lockedRewardPool;
+        assertGt(reserveBefore, 0, "entity 1 still holds an unallocated APY reserve");
+        vm.prank(admin);
+        vm.expectRevert(VanaPoolEntityImplementation.SweepNotUnlocked.selector);
+        entity.sweepUnallocatedRewards(OLD, payable(to)); // not armed yet
+        uint256 unlockAt = block.timestamp + 1 days;
+        vm.prank(admin);
+        entity.updateEntitySweepableAfter(OLD, unlockAt);
+        vm.warp(unlockAt);
+        vm.prank(admin);
+        entity.sweepUnallocatedRewards(OLD, payable(to));
+        uint256 swept = to.balance;
+        assertGt(swept, 0, "reserve swept to the destination");
+        assertLe(swept, reserveBefore, "at most the reserve (the drip owed until the sweep is credited first)");
+        assertEq(entity.entities(OLD).lockedRewardPool, 0, "entity 1 has no reserve left");
+        console.log("swept from entity 1 (wei):", swept);
+        _assertSolvent("after sweep");
+
+        // entity 1 pays nothing further: the remaining position (the owner's floor) is flat
+        uint256 ownerValueAfterSweep = _value(registrant, OLD);
+        vm.warp(block.timestamp + 1 days);
+        entity.processRewards(OLD);
+        assertEq(_value(registrant, OLD), ownerValueAfterSweep, "no more yield in the swept entity");
+
+        // three manual transactions from the destination: split by pool size (a
+        // stand-in for the operator's decision), everything re-sent to the wei
+        uint256 sizeTotal;
+        for (uint256 i = 0; i < 3; i++) sizeTotal += entity.entities(newIds[i]).activeRewardPool;
+        uint256 sent;
+        for (uint256 i = 0; i < 3; i++) {
+            uint256 amount = i == 2 ? swept - sent : (swept * entity.entities(newIds[i]).activeRewardPool) / sizeTotal;
+            uint256 lockedBeforeAdd = entity.entities(newIds[i]).lockedRewardPool;
+            vm.prank(to);
+            entity.addRewards{value: amount}(newIds[i]);
+            assertEq(entity.entities(newIds[i]).lockedRewardPool - lockedBeforeAdd, amount, "booked to the pool's reserve");
+            sent += amount;
+            console.log("addRewards to entity", newIds[i], "(wei):", amount);
+        }
+        assertEq(sent, swept, "all of it re-sent");
+        assertEq(to.balance, 0, "destination holds nothing afterwards");
+        _assertSolvent("after redistribution");
+
         // snapshot a migrated staker's position in its new entity before any rewards
         address sample = stakers[0] == registrant ? stakers[1] : stakers[0];
         uint256 sampleEntity = 0;
@@ -276,9 +320,17 @@ contract MokshaE2ETest is Test {
         vm.warp(block.timestamp + 7 days);
         for (uint256 i = 0; i < 3; i++) {
             uint256 apyLockedBefore = entity.entities(newIds[i]).lockedRewardPool;
+            uint256 commBeforeDrip = entity.entityAccruedCommission(newIds[i]); // 0: just claimed
             entity.processRewards(newIds[i]);
             assertLt(entity.entityStakerLockedRewardPool(newIds[i]), 1e9, "splitter track fully vested to stakers");
-            assertLt(entity.entities(newIds[i]).lockedRewardPool, apyLockedBefore, "40% APY drip vested too");
+            uint256 dripped = apyLockedBefore - entity.entities(newIds[i]).lockedRewardPool;
+            assertGt(dripped, 0, "40% APY drip from the swept reserve vested too");
+            // commission is skimmed at vesting time, so the owner earns it on
+            // addRewards-funded rewards as well: 10% of what dripped
+            uint256 dripComm = entity.entityAccruedCommission(newIds[i]) - commBeforeDrip;
+            assertApproxEqAbs(dripComm * 10, dripped, 10, "owner commission == 10% of the APY drip");
+            console.log("entity", newIds[i], "APY drip (wei):", dripped);
+            console.log("   owner commission on it:", dripComm);
         }
         uint256 sampleAfter = _value(sample, sampleEntity);
         assertGt(sampleAfter, sampleBefore, "a migrated staker's position grew");
