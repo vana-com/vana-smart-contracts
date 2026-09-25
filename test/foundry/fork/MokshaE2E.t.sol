@@ -93,6 +93,24 @@ contract MokshaE2ETest is Test {
         assertGe(address(treasury).balance, _owed(), string.concat("treasury covers all books: ", at));
     }
 
+    /// @dev wei -> "1234.5678 VANA" for readable logs
+    function _vana(uint256 amount) internal pure returns (string memory) {
+        uint256 frac = (amount % ONE) / 1e14; // 4 decimals
+        string memory f = vm.toString(frac);
+        while (bytes(f).length < 4) f = string.concat("0", f);
+        return string.concat(vm.toString(amount / ONE), ".", f, " VANA");
+    }
+
+    function _step(string memory title) internal pure {
+        console.log("");
+        console.log(string.concat("==== ", title));
+    }
+
+    function _logEntity(string memory label, uint256 id) internal view {
+        IVanaPoolEntity.EntityInfo memory e = entity.entities(id);
+        console.log(string.concat("  ", label, " entity ", vm.toString(id), ": active ", _vana(e.activeRewardPool), " | locked reserve ", _vana(e.lockedRewardPool), " | splitter track ", _vana(entity.entityStakerLockedRewardPool(id)), " | accrued commission ", _vana(entity.entityAccruedCommission(id))));
+    }
+
     function _ids() internal view returns (uint256[] memory ids) {
         ids = new uint256[](3);
         for (uint256 i = 0; i < 3; i++) {
@@ -103,9 +121,13 @@ contract MokshaE2ETest is Test {
     // ------------------------------------------------------------------ scenario
 
     function test_e2e_migrateToNewEntitiesAndDistribute() public {
+        _step("START: live Moksha state at the pinned block");
+        console.log(string.concat("  block ", vm.toString(block.number), " | treasury ", _vana(address(treasury).balance), " | active stakers ", vm.toString(staking.activeStakersListCount())));
+        _logEntity("source", OLD);
         _assertSolvent("start");
 
         // ---- 1. three new entities: 40% APY, 10% commission, APY pool funded ----
+        _step("STEP 1: create three new entities (40% APY, 10% commission)");
         string[3] memory names = ["e2e-basalt", "e2e-quartz", "e2e-obsidian"];
         uint256 reg = entity.minRegistrationStake();
         for (uint256 i = 0; i < 3; i++) {
@@ -123,12 +145,14 @@ contract MokshaE2ETest is Test {
             assertEq(entity.entities(newIds[i]).maxAPY, TARGET_APY);
             assertEq(entity.entityCommissionRate(newIds[i]), COMMISSION);
             assertEq(staking.entityRegistrant(newIds[i]), owners[i], "registrant floor recorded at creation");
+            console.log(string.concat("  entity ", vm.toString(newIds[i]), " '", names[i], "' owner ", vm.toString(owners[i]), " | maxAPY 40% | commission 10% | registration floor ", _vana(staking.entityRegistrationShares(newIds[i])), " (shares)"));
         }
-        console.log("new entities:", newIds[0], newIds[1], newIds[2]);
         _assertSolvent("after entity creation");
 
         // ---- 2. sweep entity 1's unallocated APY reserve and seed Basalt, Quartz, and Obsidian ----
+        _step("STEP 2: sweep the source reserve to custody and seed the three pools equally");
         address custody = makeAddr("reserve-custody");
+        console.log("  sweep before arming -> reverts SweepNotUnlocked");
         // the sweep is disabled until the maintainer arms the time-lock
         vm.prank(admin);
         vm.expectRevert(VanaPoolEntityImplementation.SweepNotUnlocked.selector);
@@ -136,6 +160,8 @@ contract MokshaE2ETest is Test {
         vm.warp(SEED_CUTOFF - 1);
         vm.prank(admin);
         entity.updateEntitySweepableAfter(OLD, SEED_CUTOFF);
+        console.log(string.concat("  time-lock armed: sweepable after ", vm.toString(SEED_CUTOFF), " (2026-10-31 00:00 UTC)"));
+        _logEntity("source before sweep", OLD);
         uint256 splitterBeforeSeed = address(splitter).balance;
         uint256 custodyBeforeSweep = custody.balance;
         vm.warp(SEED_CUTOFF);
@@ -149,6 +175,8 @@ contract MokshaE2ETest is Test {
         uint256 sweptAmount = custody.balance - custodyBeforeSweep;
         uint256 creditPerPool = sweptAmount / 3;
         uint256 remainder = sweptAmount % 3;
+        console.log(string.concat("  swept to custody: ", _vana(sweptAmount), " | per pool: ", _vana(creditPerPool), " | remainder left in custody: ", vm.toString(remainder), " wei"));
+        _logEntity("source after sweep", OLD);
         IVanaPoolEntity.EntityInfo memory sourceAfterSweep = entity.entities(OLD);
         assertGt(sweptAmount, 0, "custody received the source reserve");
         assertEq(sourceAfterSweep.lockedRewardPool, 0, "source locked reserve swept");
@@ -170,7 +198,9 @@ contract MokshaE2ETest is Test {
                 creditPerPool,
                 "one equal seed reached each destination"
             );
+            console.log(string.concat("  addRewards -> entity ", vm.toString(newIds[i]), ": reserve ", _vana(seedLockedBefore), " -> ", _vana(entity.entities(newIds[i]).lockedRewardPool)));
         }
+        console.log(string.concat("  splitter balance unchanged at ", _vana(address(splitter).balance), " | treasury ", _vana(address(treasury).balance)));
         assertEq(custody.balance, custodyBeforeSweep + remainder, "division remainder stays in custody");
         assertEq(address(splitter).balance, splitterBeforeSeed, "initial seed did not fund the splitter");
         _assertSolvent("after equal reserve seed");
@@ -185,8 +215,10 @@ contract MokshaE2ETest is Test {
             registrantValueAfterSweep,
             "no more yield in the swept entity"
         );
+        console.log(string.concat("  1 day later, source registrant position flat at ", _vana(registrantValueAfterSweep), " (no reserve, no drip)"));
 
         // ---- 3. block new stake into the old entity; exits and redelegate-out stay open ----
+        _step("STEP 3: block new stake into the source entity");
         vm.prank(admin); // entity-1 owner
         entity.updateEntityStakingBlocked(OLD, true);
         assertTrue(entity.entityStakingBlocked(OLD));
@@ -195,8 +227,10 @@ contract MokshaE2ETest is Test {
         vm.prank(newcomer);
         vm.expectRevert(VanaPoolStakingImplementation.StakingBlocked.selector);
         staking.stake{value: 5 ether}(OLD, newcomer, 0);
+        console.log("  stakingBlocked(1) = true; a fresh 5 VANA stake into entity 1 -> reverts StakingBlocked");
 
         // ---- 4. every live staker of entity 1 migrates into the new entities ----
+        _step("STEP 4: every live staker of entity 1 redelegates into the new entities");
         address[] memory stakers = staking.activeStakersListValues(0, staking.activeStakersListCount());
         uint256 floorShares = staking.entityRegistrationShares(OLD);
         address registrant = staking.entityRegistrant(OLD);
@@ -211,10 +245,12 @@ contract MokshaE2ETest is Test {
             vm.prank(s);
             (uint256 movedValue, uint256 issued) = staking.redelegate(OLD, target, shares, 0);
             assertGt(issued, 0, "shares minted in the destination");
+            console.log(string.concat("  ", vm.toString(s), " -> entity ", vm.toString(target), ": moved ", _vana(movedValue), s == registrant ? " (registrant, floor kept)" : ""));
             movedTotal += movedValue;
             migrated++;
         }
-        console.log("stakers migrated:", migrated, " total value moved (wei):", movedTotal);
+        console.log(string.concat("  migrated ", vm.toString(migrated), " stakers, ", _vana(movedTotal), " total | entity 1 totalShares now == registration floor"));
+        for (uint256 i = 0; i < 3; i++) _logEntity("after migration", newIds[i]);
         assertGt(migrated, 1, "the real stakers of entity 1 moved");
         assertEq(entity.entities(OLD).totalShares, floorShares, "only the registrant's floor remains in entity 1");
         _assertSolvent("after migration");
@@ -229,8 +265,10 @@ contract MokshaE2ETest is Test {
         uint256 sampleBefore = _value(sample, sampleEntity);
 
         // ---- 5. fund the splitter (the admin/deployer wallet), 10% burn, two rounds ----
+        _step("STEP 5: fund the splitter, set a 10% burn, run two distribution rounds");
         (bool ok,) = payable(address(splitter)).call{value: BUDGET}("");
         assertTrue(ok);
+        console.log(string.concat("  splitter funded with ", _vana(BUDGET), " by ", vm.toString(address(this)), " | burn rate 10%"));
         vm.prank(admin);
         splitter.updateBurnRate(BURN_RATE);
         uint256 lockedBefore0 = entity.entityStakerLockedRewardPool(newIds[0]);
@@ -238,6 +276,8 @@ contract MokshaE2ETest is Test {
         splitter.distribute(BUDGET, _ids()); // round 1: baselines only, by design
         assertEq(entity.entityStakerLockedRewardPool(newIds[0]), lockedBefore0, "round 1 pays nothing");
         assertEq(splitter.pendingBurn(), 0, "no burn accrued on a zero-weight round");
+        console.log("  round 1: baselines recorded, nothing paid, no burn (by design)");
+        console.log("  ... 3 days of principal-seconds accrue ...");
 
         vm.warp(block.timestamp + 3 days); // accrue principal-seconds
         // Settle the 40% APY drip first (it pays 10% commission too), so the
@@ -266,16 +306,16 @@ contract MokshaE2ETest is Test {
             assertApproxEqAbs(dComm * 9, dLocked, 9, "commission == 10% of the entity's share");
             paidToStakers += dLocked;
             paidCommission += dComm;
-            console.log("entity", newIds[i], "stakers' track +", dLocked);
-            console.log("   owner commission +", dComm);
+            console.log(string.concat("  round 2 -> entity ", vm.toString(newIds[i]), ": stakers' track +", _vana(dLocked), " | owner commission +", _vana(dComm), " (10%)"));
         }
         uint256 burn = splitter.pendingBurn();
         assertEq(burn, (BUDGET * BURN_RATE) / splitter.MAX_BURN_RATE(), "burn = 10% of the budget");
         assertApproxEqAbs(paidToStakers + paidCommission + burn, BUDGET, 3, "budget conserved (dust)");
-        console.log("burn accrued:", burn);
+        console.log(string.concat("  burn accrued: ", _vana(burn), " | stakers ", _vana(paidToStakers), " + commission ", _vana(paidCommission), " + burn = ", _vana(paidToStakers + paidCommission + burn), " (budget ", _vana(BUDGET), ")"));
         _assertSolvent("after distribution");
 
         // ---- 6. owners claim their commission (entity pays through the treasury: SPENDER_ROLE) ----
+        _step("STEP 6: owners claim their commission (paid by the treasury via SPENDER_ROLE)");
         for (uint256 i = 0; i < 3; i++) {
             uint256 accrued = entity.entityAccruedCommission(newIds[i]);
             uint256 before = owners[i].balance;
@@ -283,10 +323,12 @@ contract MokshaE2ETest is Test {
             entity.claimCommission(newIds[i]);
             assertEq(owners[i].balance - before, accrued, "owner received the commission");
             assertEq(entity.entityAccruedCommission(newIds[i]), 0);
+            console.log(string.concat("  owner of entity ", vm.toString(newIds[i]), " claimed ", _vana(accrued), " -> wallet ", _vana(owners[i].balance)));
         }
         _assertSolvent("after commission claims");
 
         // ---- 7. rewards reach the stakers: vest the splitter track (7 d) + the 40% APY drip ----
+        _step("STEP 7: 7 days later, rewards reach the stakers (splitter track vests + 40% APY drips)");
         vm.warp(block.timestamp + 7 days);
         for (uint256 i = 0; i < 3; i++) {
             uint256 apyLockedBefore = entity.entities(newIds[i]).lockedRewardPool;
@@ -299,19 +341,23 @@ contract MokshaE2ETest is Test {
             // addRewards-funded rewards as well: 10% of what dripped
             uint256 dripComm = entity.entityAccruedCommission(newIds[i]) - commBeforeDrip;
             assertApproxEqAbs(dripComm * 10, dripped, 10, "owner commission == 10% of the APY drip");
-            console.log("entity", newIds[i], "APY drip (wei):", dripped);
-            console.log("   owner commission on it:", dripComm);
+            console.log(string.concat("  entity ", vm.toString(newIds[i]), ": splitter track vested to stakers | APY drip ", _vana(dripped), " | owner commission on the drip ", _vana(dripComm), " (10%)"));
+            _logEntity("after vesting", newIds[i]);
         }
         uint256 sampleAfter = _value(sample, sampleEntity);
         assertGt(sampleAfter, sampleBefore, "a migrated staker's position grew");
-        console.log("sample staker value before/after (wei):", sampleBefore, sampleAfter);
+        console.log(string.concat("  sample migrated staker ", vm.toString(sample), " in entity ", vm.toString(sampleEntity), ": ", _vana(sampleBefore), " -> ", _vana(sampleAfter), " (+", _vana(sampleAfter - sampleBefore), ")"));
 
         // ---- 8. burn: the reserve leaves the splitter to address(0) ----
+        _step("STEP 8: execute the burn");
         uint256 zeroBefore = address(0).balance;
         splitter.executeBurn();
         assertEq(address(0).balance - zeroBefore, burn, "burned to the zero address");
         assertEq(splitter.pendingBurn(), 0);
+        console.log(string.concat("  ", _vana(burn), " sent to address(0) | pendingBurn = 0"));
 
+        _step("END: solvency");
+        console.log(string.concat("  treasury ", _vana(address(treasury).balance), " >= all books ", _vana(_owed())));
         _assertSolvent("end");
     }
 }
