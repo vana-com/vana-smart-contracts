@@ -488,4 +488,32 @@ contract RegistrationFloorAndPriceCapTest is Test {
         assertLe(pos.costBasis, a1 + a2, "never above the raw deposits");
         assertLe(pos.costBasis, _value(depositor, apy), "never above position value");
     }
+
+    // ============================ bonding deadline: the eligible branch is capped too
+
+    /// @dev NM-1052 [Low] re-review: stake()'s eligible branch writes
+    ///      now + stakeAmount * bondingPeriod / newTotalValue, and newTotalValue is
+    ///      the minted shares' floored value. At a high price per share a deposit
+    ///      of 1.9 shares' worth mints ONE share worth 1.0 -> the ratio is 1.9 and
+    ///      the deadline overshoots the configured period. Must be capped like the
+    ///      other three deadline writes.
+    function test_eligibleBranchDeadlineIsCappedAtBondingPeriod() public {
+        _forgetRegistration(str);
+        uint256 keep = 2_000_000_000;
+        vm.prank(reg);
+        staking.unstake(str, regShares - keep, 0);
+        _park(str, 1000 ether); // 5e11 wei per share, under the cap
+        IVanaPoolEntity.EntityInfo memory e = entity.entities(str);
+        uint256 pps = e.activeRewardPool / e.totalShares;
+        assertLe(pps, entity.MAX_ACTIVE_POOL_PER_SHARE(), "still accepts stake");
+
+        uint256 deposit = (pps * 19) / 10; // 1.9 shares' worth -> mints exactly 1 share
+        vm.prank(depositor);
+        staking.stake{value: deposit}(str, depositor, 0);
+        assertEq(_shares(depositor, str), 1, "one share minted");
+
+        uint256 bond = staking.stakerEntities(depositor, str).rewardEligibilityTimestamp - block.timestamp;
+        assertLe(bond, staking.bondingPeriod(), "first-stake deadline never exceeds the configured period");
+        assertEq(bond, staking.bondingPeriod(), "capped exactly at bondingPeriod");
+    }
 }

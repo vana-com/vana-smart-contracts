@@ -525,7 +525,15 @@ contract VanaPoolStakingImplementation is
             // All current value becomes new cost basis (includes old principal + old rewards + new stake)
             // Weighted time: only new stake contributes (old stake has 0 remaining time)
             stakerEntity.costBasis = newTotalValue;
-            stakerEntity.rewardEligibilityTimestamp = currentTimestamp + (stakeAmount * bondingPeriod) / newTotalValue;
+            // newTotalValue is the minted shares' floored value, which can be
+            // below stakeAmount at a high price per share (a deposit worth 1.9
+            // shares mints one), so this quotient can exceed the period: cap it
+            // like every other deadline write.
+            uint256 bondTime = (stakeAmount * bondingPeriod) / newTotalValue;
+            if (bondTime > bondingPeriod) {
+                bondTime = bondingPeriod;
+            }
+            stakerEntity.rewardEligibilityTimestamp = currentTimestamp + bondTime;
         } else {
             // Still in bonding period: add the value of the shares actually
             // minted (not the raw deposit) to cost basis, so the principal the
