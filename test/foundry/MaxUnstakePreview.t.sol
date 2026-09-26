@@ -133,6 +133,106 @@ contract MaxUnstakePreviewTest is Test {
         assertGt(paid, 101 ether, "the drip really vested");
         assertEq(quoted, paid, "quote == payout (APY + commission)");
     }
+    // ---- NM-1052 [Info] re-review: the quoted maxVana must be accepted by unstakeVana ----
+
+    /// @dev Set up a matured APY position with a non-integer share price and
+    ///      return the quote. Rewards are settled first so the quote and the
+    ///      raw conversion below see the same price.
+    function _maturedQuote() internal returns (uint256 maxVana, uint256 maxShares) {
+        vm.prank(alice);
+        staking.stake{value: 100 ether}(apy, alice, 0);
+        vm.prank(reg);
+        entity.addRewards{value: 100 ether}(apy);
+        vm.prank(owner);
+        entity.updateEntityMaxAPY(apy, 100e18);
+        vm.warp(T0 + 8 days);
+        entity.processRewards(apy);
+        uint256 lf;
+        bool bonding;
+        (maxVana, maxShares, lf, bonding) = staking.getMaxUnstakeAmount(alice, apy);
+        assertFalse(bonding);
+        assertEq(lf, 0, "limited by the position itself");
+        assertEq(maxShares, staking.stakerEntities(alice, apy).shares);
+    }
+
+    function test_maxVanaQuoteAcceptedByUnstakeVana() public {
+        (uint256 maxVana, uint256 maxShares) = _maturedQuote();
+        // The finding's premise: the round trip floors below the full holding, and
+        // that remainder is worth less than minStakeAmount (1e15 here).
+        uint256 floored = entity.vanaToShares(apy, maxVana);
+        assertLt(floored, maxShares, "round trip lands under the position");
+        assertLt(((maxShares - floored) * entity.entityShareToVana(apy)) / 1e18, staking.minStakeAmount(), "dust remainder");
+
+        uint256 before = alice.balance;
+        vm.prank(alice);
+        staking.unstakeVana(apy, maxVana, maxShares, 0); // the pair the view returns
+        assertEq(staking.stakerEntities(alice, apy).shares, 0, "served as a full exit");
+        assertEq(alice.balance - before, maxVana, "paid exactly the quote");
+    }
+
+    /// @dev The quote goes stale the moment more rewards settle. While the
+    ///      drift is worth less than minStakeAmount the request is still a full
+    ///      exit in all but rounding, and is served as one.
+    function test_maxVanaQuoteAcceptedAfterSmallDrift() public {
+        (uint256 maxVana, uint256 maxShares) = _maturedQuote();
+        vm.warp(T0 + 8 days + 1 minutes); // ~0.0002 VANA of drip at 100% APY: under the 1e15 minimum
+        uint256 before = alice.balance;
+        vm.prank(alice);
+        staking.unstakeVana(apy, maxVana, maxShares, maxVana);
+        assertEq(staking.stakerEntities(alice, apy).shares, 0, "full exit despite the stale quote");
+        assertGe(alice.balance - before, maxVana, "price only rose");
+    }
+
+    /// @dev Once the drift itself is worth at least the minimum, the request is
+    ///      a genuine partial exit: exactly the requested VANA leaves and the
+    ///      remainder (>= minStakeAmount) stays, as the exit rule intends.
+    function test_staleQuoteBeyondMinimumIsPartialExit() public {
+        (uint256 maxVana, uint256 maxShares) = _maturedQuote();
+        vm.warp(T0 + 8 days + 1 hours); // ~0.011 VANA of drip: above the minimum
+        vm.prank(alice);
+        staking.unstakeVana(apy, maxVana, maxShares, 0);
+        uint256 left = staking.stakerEntities(alice, apy).shares;
+        assertGt(left, 0, "remainder kept");
+        assertGe((left * entity.entityShareToVana(apy)) / 1e18, staking.minStakeAmount(), "remainder clears the minimum");
+    }
+
+    /// @dev shareAmountMax remains the ceiling on what is burned: a bound that
+    ///      does not admit the whole position is honoured, and the dust remainder
+    ///      then fails the exit rule as before. Nothing is taken without consent.
+    function test_dustSweepNeedsShareBoundConsent() public {
+        (uint256 maxVana, ) = _maturedQuote();
+        uint256 tight = entity.vanaToShares(apy, maxVana);
+        vm.prank(alice);
+        vm.expectRevert(VanaPoolStakingImplementation.InsufficientStakeAmount.selector);
+        staking.unstakeVana(apy, maxVana, tight, 0);
+    }
+
+    /// @dev A genuine partial exit that leaves at least the minimum is untouched
+    ///      by the sweep: exactly the floored shares are burned.
+    function test_partialExitNotSwept() public {
+        (uint256 maxVana, uint256 maxShares) = _maturedQuote();
+        uint256 half = maxVana / 2;
+        uint256 expectShares = entity.vanaToShares(apy, half);
+        vm.prank(alice);
+        staking.unstakeVana(apy, half, 0, 0);
+        assertEq(staking.stakerEntities(alice, apy).shares, maxShares - expectShares, "floored shares burned, no more");
+    }
+
+    /// @dev Within the bond the quote is the cost basis, which converts back to
+    ///      the whole position exactly; the VANA path clears it too.
+    function test_bondingMaxVanaAcceptedByUnstakeVana() public {
+        vm.prank(alice);
+        staking.stake{value: 100 ether}(apy, alice, 0);
+        vm.prank(reg);
+        entity.addRewards{value: 100 ether}(apy);
+        vm.warp(T0 + 2 days);
+        (uint256 maxVana, uint256 maxShares, , bool bonding) = staking.getMaxUnstakeAmount(alice, apy);
+        assertTrue(bonding);
+        vm.prank(alice);
+        staking.unstakeVana(apy, maxVana, maxShares, maxVana);
+        assertEq(staking.stakerEntities(alice, apy).shares, 0, "full exit at cost basis");
+    }
+
     // ---- previewActiveRewardPool == activeRewardPool right after processRewards ----
 
     function _assertPreviewMatchesSettlement(uint256 id) internal {

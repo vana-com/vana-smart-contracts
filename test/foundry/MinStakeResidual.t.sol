@@ -90,6 +90,16 @@ contract MinStakeResidualTest is Test {
         assertEq(_shares(alice, a), 1 ether);
     }
 
+    /// @dev With a share bound that admits the whole position, the same
+    ///      dust-stranding request is served as the full exit it amounts to.
+    function test_unstakeVanaSweepsDustWithConsent() public {
+        uint256 before = alice.balance;
+        vm.prank(alice);
+        staking.unstakeVana(a, 9.5 ether, 10 ether, 0); // bound covers all 10 shares
+        assertEq(_shares(alice, a), 0, "whole position burned");
+        assertEq(alice.balance - before, 10 ether, "paid the whole position, not 9.5");
+    }
+
     // ---- redelegate ----
 
     function test_redelegateSplitMustMoveAtLeastTheMinimum() public {

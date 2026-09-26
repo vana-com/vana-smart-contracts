@@ -296,6 +296,9 @@ contract VanaPoolStakingImplementation is
                 // is the whole position. Quote it directly: converting maxVana
                 // back through the share price would floor away a few wei-shares
                 // and leave an integrator sizing from this view with a dust remainder.
+                // For a full exit, unstake(maxShares) is exact; unstakeVana(maxVana,
+                // maxShares, ..) is served as the whole position as well, because
+                // that share bound admits it (a bound of 0 would not).
                 maxShares = stakerEntity.shares;
             } else if (isInBondingPeriod) {
                 // In bonding period: shares = maxVana * totalShares / costBasis
@@ -591,7 +594,11 @@ contract VanaPoolStakingImplementation is
      *
      * @param entityId                          ID of the entity
      * @param vanaAmount                        VANA to withdraw; reverts if it exceeds the position
-     * @param shareAmountMax                    max shares to burn, 0 to skip (bounds the cost)
+     * @param shareAmountMax                    max shares to burn, 0 to skip (bounds the cost).
+     *                                          Also the consent for a full exit: a request that
+     *                                          would strand a remainder below minStakeAmount is
+     *                                          served as the whole position when this bound
+     *                                          admits it (pass the view's maxShares); 0 does not.
      * @param vanaAmountMin                     min VANA to receive, 0 to skip (bounds the proceeds).
      *                                          The payout may be a few wei under `vanaAmount`, so
      *                                          pass a floor with dust tolerance, not `vanaAmount`.
@@ -639,6 +646,27 @@ contract VanaPoolStakingImplementation is
         // Slippage protection on what is burned (shares)...
         if (shareAmountMax > 0 && shareAmount > shareAmountMax) {
             revert InvalidSlippage();
+        }
+
+        // A VANA request is floored into shares, so the maxVana quoted by
+        // getMaxUnstakeAmount (itself a floored value, and stale by any rewards
+        // settled since) lands a few share units under the position and would
+        // strand a remainder the exit rule below rejects. Such a request is a
+        // full exit in all but rounding: serve it as one, but only with the
+        // caller's explicit consent -- a share bound that admits the whole
+        // position (the maxShares the view returns; 0 = "no bound" is not
+        // consent) -- and within the registration floor. Otherwise the exit
+        // rule rejects it as before, so nothing is ever burned beyond what the
+        // caller allowed (NM-1052 [Info] re-review).
+        uint256 remainingShares = stakerEntity.shares - shareAmount;
+        if (remainingShares > 0 && shareAmountMax >= stakerEntity.shares) {
+            uint256 shareToVana = vanaPoolEntity.entityShareToVana(entityId);
+            if (
+                (remainingShares * shareToVana) / 1e18 < minStakeAmount &&
+                stakerEntity.shares <= _burnableShares(staker, entityId, stakerEntity.shares)
+            ) {
+                shareAmount = stakerEntity.shares;
+            }
         }
 
         // ...and on what is received (VANA): the caller's floor is forwarded to
