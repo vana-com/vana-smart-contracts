@@ -1,0 +1,29 @@
+{
+  "version": "1.0",
+  "chainId": "1480",
+  "createdAt": 1790432358041,
+  "meta": {
+    "name": "VanaPool step 1: Entity v4",
+    "description": "Upgrade VanaPoolEntity 0x44f20490A82e1f1F1cC25Dd3BA8647034eDdce30 to 0x899DB70a0d5c4A3C2bd76F5E91dd44BAE9450289; seed entity 1 principal-seconds.",
+    "txBuilderVersion": "1.16.5",
+    "createdFromSafeAddress": "0x5ECA5208F29e32879a711467916965B2D753bAf4",
+    "createdFromOwnerAddress": "",
+    "checksum": "0x5f2ee3fb8250d591b16208a6ff38f01d4ac8deca7128c415a37c0ab58f45c127"
+  },
+  "transactions": [
+    {
+      "to": "0x44f20490A82e1f1F1cC25Dd3BA8647034eDdce30",
+      "value": "0",
+      "data": "0x4f1ef286000000000000000000000000899db70a0d5c4a3c2bd76f5e91dd44bae945028900000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000",
+      "contractMethod": null,
+      "contractInputsValues": null
+    },
+    {
+      "to": "0x44f20490A82e1f1F1cC25Dd3BA8647034eDdce30",
+      "value": "0",
+      "data": "0xf8559be60000000000000000000000000000000000000000000000000000000000000001",
+      "contractMethod": null,
+      "contractInputsValues": null
+    }
+  ]
+}

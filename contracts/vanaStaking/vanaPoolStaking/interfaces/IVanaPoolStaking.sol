@@ -23,9 +23,21 @@ interface IVanaPoolStaking {
     function vanaPoolTreasury() external view returns (IVanaPoolTreasury);
     function minStakeAmount() external view returns (uint256);
     function bondingPeriod() external view returns (uint256);
+    function entityRegistrant(uint256 entityId) external view returns (address);
+    function entityRegistrationShares(uint256 entityId) external view returns (uint256);
 
-    function stake(uint256 entityId, address recipient, uint256 shareAmountMin) external payable;
-    function unstake(uint256 entityId, uint256 amount, uint256 vanaAmountMin) external;
+    function stake(
+        uint256 entityId,
+        address recipient,
+        uint256 shareAmountMin
+    ) external payable returns (uint256 sharesIssued);
+    function unstake(uint256 entityId, uint256 shareAmount, uint256 vanaAmountMin) external returns (uint256 vanaAmount);
+    function redelegate(
+        uint256 fromEntityId,
+        uint256 toEntityId,
+        uint256 shareAmount,
+        uint256 minSharesOut
+    ) external returns (uint256 movedValue, uint256 sharesIssued);
 
     function activeStakersListCount() external view returns (uint256);
     function activeStakersListValues(uint256 from, uint256 to) external view returns (address[] memory);

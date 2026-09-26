@@ -1,0 +1,29 @@
+{
+  "version": "1.0",
+  "chainId": "1480",
+  "createdAt": 1790432358042,
+  "meta": {
+    "name": "VanaPool step 2: Staking v4",
+    "description": "Upgrade VanaPoolStaking 0x641C18E2F286c86f96CE95C8ec1EB9fC0415Ca0e to 0xB8420fe4856a22f16Cb74830e9CE01D05fb5143F; backfill legacy registration floors.",
+    "txBuilderVersion": "1.16.5",
+    "createdFromSafeAddress": "0x5ECA5208F29e32879a711467916965B2D753bAf4",
+    "createdFromOwnerAddress": "",
+    "checksum": "0x1662ce28b2f7131c37cf3ccb7a5fbe0ac365ce3a4d033bb9fd3f6ed0ee25e679"
+  },
+  "transactions": [
+    {
+      "to": "0x641C18E2F286c86f96CE95C8ec1EB9fC0415Ca0e",
+      "value": "0",
+      "data": "0x4f1ef286000000000000000000000000b8420fe4856a22f16cb74830e9ce01d05fb5143f00000000000000000000000000000000000000000000000000000000000000400000000000000000000000000000000000000000000000000000000000000000",
+      "contractMethod": null,
+      "contractInputsValues": null
+    },
+    {
+      "to": "0x641C18E2F286c86f96CE95C8ec1EB9fC0415Ca0e",
+      "value": "0",
+      "data": "0x544be4dc00000000000000000000000000000000000000000000000000000000000000010000000000000000000000005eca5208f29e32879a711467916965b2d753baf4000000000000000000000000000000000000000000000000016345785d8a0000",
+      "contractMethod": null,
+      "contractInputsValues": null
+    }
+  ]
+}

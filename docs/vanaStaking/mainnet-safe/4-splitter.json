@@ -1,0 +1,29 @@
+{
+  "version": "1.0",
+  "chainId": "1480",
+  "createdAt": 1790432358042,
+  "meta": {
+    "name": "VanaPool step 4: RewardSplitter",
+    "description": "Create the RewardSplitter proxy at 0x7A7B89b6925A8156b9A51E520327c0701023b344 (owner 0x5ECA5208F29e32879a711467916965B2D753bAf4) and wire it into VanaPoolEntity.",
+    "txBuilderVersion": "1.16.5",
+    "createdFromSafeAddress": "0x5ECA5208F29e32879a711467916965B2D753bAf4",
+    "createdFromOwnerAddress": "",
+    "checksum": "0x45710c93b2b48c142592a815792219dd1238b4cee29ff7848a6432335b66675a"
+  },
+  "transactions": [
+    {
+      "to": "0xd08C61d69e10B82ff79b6b53c9F5a638EAa11372",
+      "value": "0",
+      "data": "0xae417c194d7936b499518e9d69df75b19f904275f659b5c5ade9ddca36baf748d02c96200000000000000000000000009b53808c51de5c82149373a0dfaf789aa41285ec00000000000000000000000044f20490a82e1f1f1cc25dd3ba8647034eddce300000000000000000000000005eca5208f29e32879a711467916965b2d753baf4",
+      "contractMethod": null,
+      "contractInputsValues": null
+    },
+    {
+      "to": "0x44f20490A82e1f1F1cC25Dd3BA8647034eDdce30",
+      "value": "0",
+      "data": "0x22d8d1b60000000000000000000000007a7b89b6925a8156b9a51e520327c0701023b344",
+      "contractMethod": null,
+      "contractInputsValues": null
+    }
+  ]
+}
