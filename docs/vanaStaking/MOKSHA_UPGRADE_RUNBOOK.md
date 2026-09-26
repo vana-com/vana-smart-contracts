@@ -188,6 +188,22 @@ rate; correct `deployments-official/moksha` (treasury proxy record + new impleme
 deploy wrote fresh records to `deployments/moksha/`). Blockscout: implementation and proxy sources are
 verified; the helper's proxy→implementation "link" step reported a warning, harmless.
 
+## 9b. Re-upgraded on Moksha — 2026-09-26 (mainnet rehearsal, audited bytecode e04a872)
+
+Same four scripts as mainnet will use, run from the Moksha admin EOA `0x2AC93684…` end to end (no
+DEPLOY_ONLY). Purpose: bring Moksha to the audit-approved bytecode and prove the CREATE2 path — every
+implementation landed at the address predicted for mainnet in §13.
+
+| Contract | New implementation (== mainnet prediction) | Version |
+|---|---|---|
+| VanaPoolEntity | `0x899DB70a0d5c4A3C2bd76F5E91dd44BAE9450289` | 4 |
+| VanaPoolStaking | `0xB8420fe4856a22f16Cb74830e9CE01D05fb5143F` | 4 |
+| VanaPoolTreasury | `0x45889be377396c8268e26174112f47627A400581` | 2 |
+| RewardSplitter / Deployer | unchanged (`0x7A7B89b6…` / `0xd08C61d6…`, idempotent run) | — |
+
+Also executed: `checkpointPrincipal(1)` (as mainnet batch 1 does). Treasury after: `SPENDER_ROLE` staking + entity,
+Staking's `DEFAULT_ADMIN_ROLE` absent, `vanaPool() == staking`. All three implementations verified on Moksha Vanascan.
+
 ## 10. Address parity with mainnet (RewardSplitter)
 
 The Entity and Staking proxies already share their addresses across Moksha and mainnet (both were deployed

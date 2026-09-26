@@ -58,9 +58,10 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   const deployOnly = process.env.DEPLOY_ONLY === "true";
   if (deployOnly) {
-    console.log(`\nDEPLOY_ONLY=true — skipping upgrade.`);
-    console.log(`New implementation address: ${implementationDeploy.address}`);
-    console.log(`To upgrade via multisig, call upgradeToAndCall(${implementationDeploy.address}, "0x") on ${proxyAddress}`);
+    console.log(`\nDEPLOY_ONLY=true — skipping upgrade. Multisig calls, in order:`);
+    console.log(`  1. ${proxyAddress}.upgradeToAndCall(${implementationDeploy.address}, "0x")`);
+    console.log(`  2. ${proxyAddress}.checkpointPrincipal(<entityId>) for every pre-existing entity (permissionless):`);
+    console.log(`     seeds its principal-seconds weight from the share supply; until then its weight is frozen at 0.`);
     return;
   }
 
@@ -81,8 +82,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const version = await proxy.version();
   console.log(`Contract version: ${version}`);
 
-  console.log(`\nNext step: call addTotalDistributedRewards() to seed historical values.`);
-  console.log(`Use scripts/vanaStaking/calculateDistributedRewards.ts to compute them.`);
+  console.log(`\nNext step: checkpointPrincipal(<entityId>) for every pre-existing entity (permissionless),`);
+  console.log(`so its principal-seconds weight starts from the share supply instead of staying frozen at 0.`);
 };
 
 export default func;

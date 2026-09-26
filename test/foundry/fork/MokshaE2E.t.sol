@@ -60,7 +60,8 @@ contract MokshaE2ETest is Test {
             vm.skip(true);
             return;
         }
-        vm.createSelectFork(vm.envOr("MOKSHA_RPC_URL", string("https://rpc.moksha.vana.org")), MOKSHA_FORK_BLOCK);
+        // MOKSHA_FORK_BLOCK=<n> re-pins (e.g. to rehearse against a freshly upgraded chain state).
+        vm.createSelectFork(vm.envOr("MOKSHA_RPC_URL", string("https://rpc.moksha.vana.org")), vm.envOr("MOKSHA_FORK_BLOCK", MOKSHA_FORK_BLOCK));
         console.log("forked Moksha at block", block.number);
         assertEq(block.timestamp, MOKSHA_FORK_TIMESTAMP, "pinned fork timestamp changed");
         assertLt(block.timestamp, SEED_CUTOFF, "pinned fork must precede the seed cutoff");
