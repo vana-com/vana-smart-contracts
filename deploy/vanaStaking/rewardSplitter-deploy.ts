@@ -22,6 +22,12 @@ import { verifyContract } from "../helpers";
  *   - sign with ANY maintainer of the entity.
  * Idempotent: if code already exists at the predicted address, creation is skipped.
  *
+ * Ordering: the splitter may be created BEFORE the entity/staking/treasury upgrades.
+ * Creation needs only MAINTAINER_ROLE on the entity (present in every version); the
+ * v4-only wiring (updateRewardSplitter) is printed for later when the entity is < v4.
+ * A non-maintainer signer still deploys the deployer contract + implementation and
+ * gets the exact deploy(...) call to submit from a maintainer (e.g. the multisig).
+ *
  * The splitter needs no treasury role (addStakerRewards forwards value to the
  * treasury itself).
  *
@@ -70,12 +76,22 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   const entity = await ethers.getContractAt("VanaPoolEntityImplementation", entityProxyAddress);
   const maintainerRole = await entity.MAINTAINER_ROLE();
-  if (!(await entity.hasRole(maintainerRole, signer.address))) {
-    throw new Error(`signer ${signer.address} is not a MAINTAINER of the entity; RewardSplitterDeployer.deploy would revert NotEntityMaintainer`);
-  }
+  const signerIsMaintainer = await entity.hasRole(maintainerRole, signer.address);
+  // The splitter can be created before the entity is upgraded to v4 (creation only
+  // needs MAINTAINER_ROLE, which every version has); it just stays inert until the
+  // v4 wiring below is possible.
+  const entityVersion = Number(await entity.version());
 
   if ((await ethers.provider.getCode(predicted)) !== "0x") {
     console.log(`Proxy already exists at the predicted address; skipping creation.`);
+  } else if (!signerIsMaintainer) {
+    console.log(`\nSigner ${signer.address} is not a MAINTAINER of the entity, so it cannot create the proxy.`);
+    console.log(`Deployer contract and implementation are in place; submit from a maintainer (e.g. the multisig):`);
+    console.log(`  RewardSplitterDeployer(${deployerDeploy.address}).deploy(${saltHash}, ${implDeploy.address}, ${entityProxyAddress}, ${ownerAddress})`);
+    console.log(`then re-run this script for verification and wiring.`);
+    await verifyContract(deployerDeploy.address, []);
+    await verifyContract(implDeploy.address, []);
+    return;
   } else {
     const tx = await deployerC.deploy(saltHash, implDeploy.address, entityProxyAddress, ownerAddress);
     const r = await tx.wait();
@@ -103,7 +119,10 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
 
   // Step 4: wire REWARD_SPLITTER_ROLE on the entity (revokes any previous splitter)
   console.log(`\n********** Step 4: wire the splitter into VanaPoolEntity **********`);
-  if (await entity.hasRole(maintainerRole, signer.address)) {
+  if (entityVersion < 4) {
+    console.log(`Entity is still version ${entityVersion}: updateRewardSplitter does not exist yet. After the v4 upgrade, from a maintainer:`);
+    console.log(`  VanaPoolEntity(${entityProxyAddress}).updateRewardSplitter(${proxyAddress})`);
+  } else if (signerIsMaintainer) {
     if ((await entity.rewardSplitter()).toLowerCase() === proxyAddress.toLowerCase()) {
       console.log(`Already wired.`);
     } else {
@@ -154,6 +173,11 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     }
   }
 
+  if (entityVersion < 4) {
+    console.log(`\nEntity v${entityVersion}: wiring summary skipped (v4 getters absent). Splitter is deployed but inert until wired.`);
+    console.log(`  splitter.rewardVestingDuration()             = ${await splitter.rewardVestingDuration()} s`);
+    return;
+  }
   const REWARD_SPLITTER_ROLE = await entity.REWARD_SPLITTER_ROLE();
   console.log(`\nFinal state:`);
   console.log(`  deployer contract                            = ${deployerDeploy.address}`);

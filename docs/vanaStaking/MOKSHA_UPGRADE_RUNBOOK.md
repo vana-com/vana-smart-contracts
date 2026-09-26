@@ -332,7 +332,7 @@ exact Safe calls, payloads included. Never put an admin key in `.env`.
    `upgradeToAndCall(impl, updateVanaPool(staking))` (atomic `SPENDER_ROLE`; a plain upgrade would break every
    unstake), `updateVanaPoolEntity(entity)`, `revokeRole(0x00…00, staking)`. Rollback to v1 requires
    `grantRole(DEFAULT_ADMIN_ROLE, staking)` first.
-4. **RewardSplitter** — `VANA_POOL_ENTITY_PROXY_ADDRESS=…44f2… OWNER_ADDRESS=<splitter admin, e.g. the Safe>
+4. **RewardSplitter** (may also run first: creation needs only `MAINTAINER_ROLE`, present on v3; the script then prints the v4 wiring call for after step 1) — `VANA_POOL_ENTITY_PROXY_ADDRESS=…44f2… OWNER_ADDRESS=<splitter admin, e.g. the Safe>
    REWARD_VESTING_DURATION=<seconds> [DISTRIBUTOR_ADDRESS=…] npx hardhat deploy --network vana --tags
    RewardSplitterDeploy`, **submitted by an entity maintainer** (the deployer contract requires it) — i.e. from a
    Safe, not the deployer key; `DEPLOY_ONLY` is not needed for this step since it prints unauthorised calls
