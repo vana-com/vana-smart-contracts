@@ -283,3 +283,64 @@ expectedSourcePosition = sourcePositionShares * previewedSourceActive / sourceTo
 Use the Treasury balance immediately after the sweep for `treasuryAfterSweep`. After the sweep, require the stored source `activeRewardPool >= previewedSourceActive` and every retained source position value is at least its corresponding `expectedSourcePosition`. Use the pre-submit observation timestamp and the sweep receipt timestamp to explain any increase. Check each equation against the receipts and on-chain balances. If any value differs, stop before the next transaction and investigate. Leave `remainder` in custody. Do not send it to a destination or the RewardSplitter.
 
 This seed does not replace the splitter test. Keep the later splitter funding, baseline round, paid distribution round, commission claims, and burn proof separate. In the fork test, confirm that the splitter's balance does not change during the sweep and three seed calls, then rerun its existing distribution, commission, and burn assertions.
+
+## 13. Mainnet parameters (verified on-chain 2026-09-25)
+
+Same scripts, same order, same proxy addresses as Moksha. Two things differ: governance is a Safe, and the
+treasury is 9 wei short of its books before the upgrade.
+
+### Environment
+```
+VANA_RPC_URL=https://rpc.vana.org          # the `vana` network
+VANA_API_URL=https://vanascan.io/api       # verification
+VANA_BROWSER_URL=https://vanascan.io
+DEPLOYER_PRIVATE_KEY=0x...                 # ANY funded EOA: it only deploys + verifies implementations
+```
+Run under Node 20 (`nvm use 20`). Every upgrade step uses **`DEPLOY_ONLY=true`**; the scripts print the
+exact Safe calls, payloads included. Never put an admin key in `.env`.
+
+### Governance
+| Role | Holder |
+|---|---|
+| `DEFAULT_ADMIN_ROLE` on Staking, Entity, Treasury (+ `MAINTAINER_ROLE`) | Safe `0x5eca5208f29e32879a711467916965b2d753baf4` (threshold 3) |
+| `MAINTAINER_ROLE` on Staking + Entity only | Safe `0xe6a285b08e2745ec75ed70e4fe41e61b390bbb86` (threshold 3) |
+| Treasury `DEFAULT_ADMIN_ROLE` (v1 design) | the Staking proxy — revoked in step 3 |
+
+`VANA_POOL_ENTITY_ROLE` is correctly wired on mainnet (§11's Moksha gap does not exist there).
+
+### Pre-flight
+- Storage layout `origin/main` → branch verified **compatible** (append-only; every pre-existing variable and
+  mapped-struct member keeps slot, offset and type; OpenZeppelin 5.0.2 on both sides). Mainnet's
+  implementations are bytecode-identical to `origin/main` modulo the UUPS `__self` immutable.
+- **Send ≥ 9 wei to the treasury `0x143BE72C…`.** It holds 740,405.646960546490795441 VANA against books of
+  …795450: 9 wei short (the pre-fix v2 rounding of the audit's "pays out more than it debits" Low). The
+  post-upgrade solvency check requires treasury ≥ Σ books.
+- `minStakeAmount` is 1 wei on mainnet: the residual-minimum rule is a no-op until raised.
+- `bondingPeriod` 432000 s; `entitiesCount` 1; `minRegistrationStake` 0.1 VANA.
+
+### Steps (Safe calls printed by each script)
+1. **Entity** — `VANA_POOL_ENTITY_PROXY_ADDRESS=0x44f20490A82e1f1F1cC25Dd3BA8647034eDdce30 DEPLOY_ONLY=true
+   npx hardhat deploy --network vana --tags VanaPoolEntityUpgrade` → Safe: `upgradeToAndCall(impl, "0x")`, then
+   `checkpointPrincipal(1)` (permissionless; seeds legacy principal from the share supply; same block ideally).
+2. **Staking** — `VANA_POOL_STAKING_PROXY_ADDRESS=0x641C18E2F286c86f96CE95C8ec1EB9fC0415Ca0e
+   BACKFILL_REGISTRATIONS="1:0x5ECA5208F29e32879a711467916965B2D753bAf4:100000000000000000" DEPLOY_ONLY=true
+   npx hardhat deploy --network vana --tags VanaPoolStakingUpgrade` → Safe: `upgradeToAndCall(impl, "0x")`, then
+   `backfillRegistration(1, 0x5ECA5208…, 1e17)`. Entity 1 is the only legacy entity; its registrant is the admin
+   Safe and its registration was 1e17 shares (0.1 VANA; first `Staked` at block 2,496,026).
+3. **Treasury** — `VANA_POOL_TREASURY_PROXY_ADDRESS=0x143BE72CF2541604A7691933CAccd6D9cC17c003` + the Staking and
+   Entity addresses, `DEPLOY_ONLY=true`, `--tags VanaPoolTreasuryUpgrade` → Safe, in order:
+   `upgradeToAndCall(impl, updateVanaPool(staking))` (atomic `SPENDER_ROLE`; a plain upgrade would break every
+   unstake), `updateVanaPoolEntity(entity)`, `revokeRole(0x00…00, staking)`. Rollback to v1 requires
+   `grantRole(DEFAULT_ADMIN_ROLE, staking)` first.
+4. **RewardSplitter** — `VANA_POOL_ENTITY_PROXY_ADDRESS=…44f2… OWNER_ADDRESS=<splitter admin, e.g. the Safe>
+   REWARD_VESTING_DURATION=<seconds> [DISTRIBUTOR_ADDRESS=…] npx hardhat deploy --network vana --tags
+   RewardSplitterDeploy`, **submitted by an entity maintainer** (the deployer contract requires it) — i.e. from a
+   Safe, not the deployer key; `DEPLOY_ONLY` is not needed for this step since it prints unauthorised calls
+   instead of failing. Keep `CREATE2_SALT` at its default. From the current HEAD the proxy lands at
+   **`0x7A7B89b6925A8156b9A51E520327c0701023b344`** (deployer contract `0xd08C61d69e10B82ff79b6b53c9F5a638EAa11372`);
+   the script prints the predicted address first — if it differs, stop: the implementation bytecode changed.
+
+### Still to decide
+Splitter owner, vesting duration, distributor, burn rate; whether to raise `minStakeAmount`; the seed-cutoff
+date for the §12 reserve sweep (entity 1 locked reserve ≈ 10,567 VANA on mainnet).
+
