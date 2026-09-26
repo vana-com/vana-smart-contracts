@@ -294,10 +294,13 @@ treasury is 9 wei short of its books before the upgrade.
 VANA_RPC_URL=https://rpc.vana.org          # the `vana` network
 VANA_API_URL=https://vanascan.io/api       # verification
 VANA_BROWSER_URL=https://vanascan.io
-DEPLOYER_PRIVATE_KEY=0x...                 # ANY funded EOA: it only deploys + verifies implementations
+LEDGER_ADDRESS=0xf08bC343F01ef1856eEf3138B975Ccf42748Ee54   # hardware wallet that deploys + verifies
 ```
-Run under Node 20 (`nvm use 20`). Every upgrade step uses **`DEPLOY_ONLY=true`**; the scripts print the
-exact Safe calls, payloads included. Never put an admin key in `.env`.
+The `vana` network signs **only** through `@nomicfoundation/hardhat-ledger` (`accounts: "remote"` +
+`ledgerAccounts: [LEDGER_ADDRESS]`); `DEPLOYER_PRIVATE_KEY` is a testnet key and is never offered on
+mainnet. Ledger: Ethereum app open, blind signing enabled (the deploys are calls to the CREATE2 factory
+with data). Balance needed ≈ 0.02 VANA. Run under Node 20 (`nvm use 20`). Every upgrade step uses
+**`DEPLOY_ONLY=true`**; the scripts print the exact Safe calls, payloads included. Never put an admin key in `.env`.
 
 ### Governance
 | Role | Holder |
