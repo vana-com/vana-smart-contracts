@@ -41,6 +41,9 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     {
       from: deployer.address,
       args: [],
+    // CREATE2 via the shared factory, so the implementation address is known before it
+    // is deployed: multisig upgrade calldata can be prepared and signed ahead of time.
+    deterministicDeployment: ethers.keccak256(ethers.toUtf8Bytes("VanaPoolEntityImplementation-v4")),
       log: true,
       gasPrice: gasPrice.toString(),
       nonce: deployOverrides.nonce,

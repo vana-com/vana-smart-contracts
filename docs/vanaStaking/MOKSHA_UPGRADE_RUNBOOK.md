@@ -318,6 +318,32 @@ exact Safe calls, payloads included. Never put an admin key in `.env`.
 - `minStakeAmount` is 1 wei on mainnet: the residual-minimum rule is a no-op until raised.
 - `bondingPeriod` 432000 s; `entitiesCount` 1; `minRegistrationStake` 0.1 VANA.
 
+### Multisig batches (prepared offline, signable before deployment)
+All four implementations are CREATE2 deployments through the shared factory `0x4e59…956C` with fixed
+salts, so their addresses follow from this commit's bytecode alone (validated: the same derivation
+reproduces the Moksha splitter implementation `0x9b53…85ec` and proxy `0x7A7B…b344`):
+
+| Contract | Salt | Address (this commit) |
+|---|---|---|
+| VanaPoolEntityImplementation v4 | `VanaPoolEntityImplementation-v4` | `0x899DB70a0d5c4A3C2bd76F5E91dd44BAE9450289` |
+| VanaPoolStakingImplementation v4 | `VanaPoolStakingImplementation-v4` | `0xB8420fe4856a22f16Cb74830e9CE01D05fb5143F` |
+| VanaPoolTreasuryImplementation v2 | `VanaPoolTreasuryImplementation-v2` | `0x45889be377396c8268e26174112f47627A400581` |
+| RewardSplitterDeployer | `VanaRewardSplitterDeployer` | `0xd08C61d69e10B82ff79b6b53c9F5a638EAa11372` |
+| RewardSplitterImplementation | `RewardSplitterProxySalt` | `0x9b53808c51De5c82149373a0DFAf789Aa41285ec` |
+| RewardSplitter proxy | bound to the entity | `0x7A7B89b6925A8156b9A51E520327c0701023b344` |
+
+`npx hardhat run scripts/vanaStaking/mainnetSafeBatches.ts` (Node 20, after `npx hardhat compile`) prints
+the calls and writes `docs/vanaStaking/mainnet-safe/{1-entity,2-staking,3-treasury,4-splitter}.json`,
+importable in the Safe UI's Transaction Builder (checksummed). **Any contract change moves the
+implementation addresses: regenerate and re-sign after every commit that touches `contracts/`.**
+
+Sequence: the deployer key runs each step's `deploy --network vana --tags … DEPLOY_ONLY=true` (puts the
+bytecode at the predicted address, verifies it, changes no state), the script's printed address must
+equal the table, and only then does the Safe execute that step's batch. Signatures can be collected
+in advance; execution before the bytecode exists reverts harmlessly. For step 4 the `deploy()` call
+comes from the Safe itself (it holds `MAINTAINER_ROLE`), so the deployer key only needs to have run
+the splitter script far enough to place the deployer contract and implementation.
+
 ### Steps (Safe calls printed by each script)
 1. **Entity** — `VANA_POOL_ENTITY_PROXY_ADDRESS=0x44f20490A82e1f1F1cC25Dd3BA8647034eDdce30 DEPLOY_ONLY=true
    npx hardhat deploy --network vana --tags VanaPoolEntityUpgrade` → Safe: `upgradeToAndCall(impl, "0x")`, then

@@ -56,7 +56,10 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   console.log(`\n********** Step 1: Deploy new ${implementationContractName} **********`);
   const deployOverrides = txOverrides();
   const implementationDeploy = await deployments.deploy(implementationContractName, {
-    from: deployer.address, args: [], log: true, gasPrice: gasPrice.toString(), nonce: deployOverrides.nonce,
+    from: deployer.address, args: [],
+    // CREATE2 via the shared factory, so the implementation address is known before it
+    // is deployed: multisig upgrade calldata can be prepared and signed ahead of time.
+    deterministicDeployment: ethers.keccak256(ethers.toUtf8Bytes("VanaPoolTreasuryImplementation-v2")), log: true, gasPrice: gasPrice.toString(), nonce: deployOverrides.nonce,
   });
   console.log(`${implementationContractName} deployed at: ${implementationDeploy.address}`);
   await delay(6000);
