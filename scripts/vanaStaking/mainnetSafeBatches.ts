@@ -27,8 +27,7 @@
  *   OUT_DIR                    docs/vanaStaking/mainnet-safe
  */
 import { artifacts, ethers } from "hardhat";
-import * as fs from "fs";
-import * as path from "path";
+import { tx, writeBatch } from "./safeBatch";
 
 const FACTORY = "0x4e59b44847b379578588920cA78FbF26c0B4956C";
 const ZERO32 = ethers.ZeroHash;
@@ -43,37 +42,6 @@ const BACKFILLS = env("BACKFILL_REGISTRATIONS", `1:${SAFE}:100000000000000000`);
 const SPLITTER_SALT = ethers.keccak256(ethers.toUtf8Bytes(env("CREATE2_SALT", "RewardSplitterProxySalt")));
 const CHAIN_ID = env("CHAIN_ID", "1480");
 const OUT_DIR = env("OUT_DIR", "docs/vanaStaking/mainnet-safe");
-
-// ---- Safe Transaction Builder checksum (port of apps/tx-builder/src/lib/checksum.ts) ----
-const replacer = (_: string, v: unknown) => (v === undefined ? null : v);
-function serialize(json: unknown): string {
-  if (Array.isArray(json)) return `[${json.map(serialize).join(",")}]`;
-  if (typeof json === "object" && json !== null) {
-    const keys = Object.keys(json).sort();
-    let acc = `{${JSON.stringify(keys, replacer)}`;
-    for (const k of keys) acc += `${serialize((json as Record<string, unknown>)[k])},`;
-    return `${acc}}`;
-  }
-  return `${JSON.stringify(json, replacer)}`;
-}
-function withChecksum(batch: { meta: Record<string, unknown> }) {
-  const checksum = ethers.keccak256(ethers.toUtf8Bytes(serialize({ ...batch, meta: { ...batch.meta, name: null } })));
-  return { ...batch, meta: { ...batch.meta, checksum } };
-}
-
-type Tx = { to: string; value: string; data: string; contractMethod: null; contractInputsValues: null; note: string };
-const tx = (to: string, data: string, note: string): Tx => ({ to, value: "0", data, contractMethod: null, contractInputsValues: null, note });
-
-function batchFile(name: string, description: string, txs: Tx[]) {
-  const transactions = txs.map(({ note, ...t }) => t);
-  return withChecksum({
-    version: "1.0",
-    chainId: CHAIN_ID,
-    createdAt: Date.now(),
-    meta: { name, description, txBuilderVersion: "1.16.5", createdFromSafeAddress: SAFE, createdFromOwnerAddress: "" },
-    transactions,
-  });
-}
 
 // ---- deterministic addresses ----
 async function create2Impl(contract: string, salt: string): Promise<string> {
@@ -165,14 +133,8 @@ async function main() {
     },
   ];
 
-  fs.mkdirSync(OUT_DIR, { recursive: true });
   for (const s of steps) {
-    const out = path.join(OUT_DIR, s.file);
-    fs.writeFileSync(out, JSON.stringify(batchFile(s.name, s.description, s.txs), null, 2) + "\n");
-    console.log(`\n${s.name}  ->  ${out}`);
-    s.txs.forEach((t, i) => {
-      console.log(`  ${i + 1}. to   ${t.to}\n     data ${t.data}\n     // ${t.note}`);
-    });
+    writeBatch(OUT_DIR, s.file, SAFE, CHAIN_ID, s.name, s.description, s.txs);
   }
   console.log(`\nExecute each batch only after its implementation(s) exist at the predicted address(es).`);
 }
