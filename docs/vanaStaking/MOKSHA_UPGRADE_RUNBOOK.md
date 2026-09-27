@@ -385,6 +385,21 @@ the splitter script far enough to place the deployer contract and implementation
    **`0x7A7B89b6925A8156b9A51E520327c0701023b344`** (deployer contract `0xd08C61d69e10B82ff79b6b53c9F5a638EAa11372`);
    the script prints the predicted address first — if it differs, stop: the implementation bytecode changed.
 
+### Executed on mainnet — 2026-09-26: implementations deployed (no proxy touched)
+Signed on the Ledger `0xf08bC343…` via hardhat-ledger; every address equals the prediction above and is verified
+on Vanascan. Proxies still report Entity 2 / Staking 2 / Treasury 1 until the Safe executes the batches.
+
+| Contract | Address | Tx |
+|---|---|---|
+| VanaPoolEntityImplementation v4 | `0x899DB70a0d5c4A3C2bd76F5E91dd44BAE9450289` | `0x2b92737234c7474aa45f88c1e43ff861b3aae98be6c36d427a9453cbe40c9f64` |
+| VanaPoolStakingImplementation v4 | `0xB8420fe4856a22f16Cb74830e9CE01D05fb5143F` | (see Vanascan) |
+| VanaPoolTreasuryImplementation v2 | `0x45889be377396c8268e26174112f47627A400581` | (see Vanascan) |
+| RewardSplitterDeployer | `0xd08C61d69e10B82ff79b6b53c9F5a638EAa11372` | (see Vanascan) |
+| RewardSplitterImplementation | `0x9b53808c51De5c82149373a0DFAf789Aa41285ec` | (see Vanascan) |
+
+Remaining: Safe executes `mainnet-safe/1-entity.json` → `2-staking.json` → `3-treasury.json` → `4-splitter.json`
+(batch 4 creates the proxy at `0x7A7B89b6…` and wires it), with the checks between steps listed above.
+
 ### Still to decide
 Splitter owner, vesting duration, distributor, burn rate; whether to raise `minStakeAmount`; the seed-cutoff
 date for the §12 reserve sweep (entity 1 locked reserve ≈ 10,567 VANA on mainnet).
