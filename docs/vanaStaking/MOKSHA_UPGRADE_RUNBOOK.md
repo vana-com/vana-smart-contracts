@@ -444,3 +444,22 @@ mainnet: succeeds. Until it executes only the Safe can call `distribute()`.
 Splitter owner, vesting duration, distributor, burn rate; whether to raise `minStakeAmount`; the seed-cutoff
 date for the §12 reserve sweep (entity 1 locked reserve ≈ 10,567 VANA on mainnet).
 
+## 14. Mainnet smoke test — distribute + burn (dry-run on a fork 2026-09-28)
+
+Prerequisite: batch 7 executed (`0xd33F…` holds `DISTRIBUTOR_ROLE`). Budget 1 VANA; pools 2/3/4 as they stand
+(0.3 / 0.1 / 0.1 VANA staked). `SPL=0x7A7B89b6925A8156b9A51E520327c0701023b344`, `E=0x44f20490…ce30`, `RPC=https://rpc.vana.org`.
+
+| # | Who | Command | Expect |
+|---|---|---|---|
+| 1 | anyone | `cast send $SPL --value 1ether --rpc-url $RPC …` (plain transfer; `Funded` event) | `cast balance $SPL` = 1 VANA |
+| 2 | distributor | `cast send $SPL "distribute(uint256,uint256[])" 1000000000000000000 "[2,3,4]"` | round 1 = baselines only: balance still 1 VANA, `pendingBurn()` 0, `RoundDistributed(1e18, 0, 3)` |
+| 3 | — | wait ≥ 1 day; `cast call $SPL "pendingWeight(uint256)(uint256)" 2` | weights grow (≈ 0.3·t / 0.1·t / 0.1·t) |
+| 4 | distributor | same `distribute` call again | balance 0.25 VANA (+dust); `pendingBurn()` = 0.25e18; treasury +0.75 VANA; `entityStakerLockedRewardPool(2/3/4)` ≈ 0.4275 / 0.1425 / 0.1425; `entityAccruedCommission(2/3/4)` ≈ 0.0225 / 0.0075 / 0.0075 |
+| 5 | anyone | `cast send $SPL "executeBurn()"` | `pendingBurn()` 0; `cast balance 0x000…000` +0.25 VANA; `Burned(0.25e18)` |
+| 6 | anyone, later | `cast send $E "processRewards(uint256)" 2` | `entityStakerLockedRewardPool(2)` falls linearly to 0 over 30 days (≈ half after 15); share price rises |
+| 7 | pool owner | `cast send $E "claimCommission(uint256)" 2` | owner receives `entityAccruedCommission(2)` from the treasury |
+
+Reconciliation at 1 VANA: burn 25% = 0.25; 0.75 to pools by principal-seconds (60/20/20 with 0.3/0.1/0.1 staked);
+commission 5% off each pool's share up front. All values above were reproduced exactly on a fork of the live chain.
+Ratios hold for any budget; the split follows whatever is staked when round 2 runs (weights are stake × time since round 1).
+
