@@ -448,7 +448,13 @@ so its budget is 1 wei. `8-baseline-234.json` = pools 2/3/4 only; `8-baseline-12
 Safe: succeeds, balance unchanged, `seen(id)` true. Later rounds: same script with the real budget — never 1 wei
 (it would consume the accrued weight and re-stretch vesting).
 
-### Batch 9 — first paying round + burn (execute at least one block after batch 8)
+### Batch 9 — first paying round + burn (two id-set options; load ONE)
+Baselines for all four entities went live at Safe nonce 70 (2026-09-28 21:16 UTC, `8-baseline-1234.json`).
+`9-distribute-and-burn-1234.json` pays all four pools: entity 1 (~657k VANA committed) takes 99.99992% —
+stakers +5.23379 VANA (0% commission), pools 2/3/4 get 2.3 / 0.76 / 0.76 µVANA; burn 1.7445975; fork-verified on the
+live baselines. `9-distribute-and-burn.json` (below) pays pools 2/3/4 only.
+
+#### Original variant — pools 2/3/4 only
 `9-distribute-and-burn.json`: `distribute(6978390000000000000, [2,3,4])` (the splitter's whole 6.97839 VANA; the 1-wei
 baseline round spends nothing, so the full balance is available) then `executeBurn()`. Fork-simulated after the baseline
 round: burn 1.7445975 VANA, treasury +5.2337925, pools 2/3/4 ≈ 60/20/20 (stakers 2.9833 / 0.9944 / 0.9944 vesting 30 d;
