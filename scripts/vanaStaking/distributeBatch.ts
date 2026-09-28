@@ -7,6 +7,9 @@
  * baselines: give it the budget you mean to pay.
  *
  *   ENTITY_IDS=2,3,4 BUDGET_WEI=1 OUT_FILE=8-baseline.json npx hardhat run scripts/vanaStaking/distributeBatch.ts
+ *
+ * WITH_BURN=true appends executeBurn() (permissionless; a no-op when nothing is
+ * pending) so a paying round and its burn land in one Safe transaction.
  */
 import { ethers } from "hardhat";
 import { tx, writeBatch } from "./safeBatch";
@@ -27,11 +30,15 @@ async function main() {
   const budget = BigInt(env("BUDGET_WEI"));
   if (ids.length === 0 || budget === 0n) throw new Error("ENTITY_IDS and a non-zero BUDGET_WEI are required");
 
-  const iface = new ethers.Interface(["function distribute(uint256,uint256[])"]);
-  const note = `distribute(${budget} wei, [${ids.join(",")}])` +
+  const iface = new ethers.Interface(["function distribute(uint256,uint256[])", "function executeBurn()"]);
+  const note = `distribute(${budget} wei = ${ethers.formatEther(budget)} VANA, [${ids.join(",")}])` +
     (budget === 1n ? " — baseline round: records each pool's principal-seconds, pays nothing" : "");
-  writeBatch(OUT_DIR, OUT_FILE, SAFE, CHAIN_ID, `VanaPool: distribute round [${ids.join(",")}]`,
-    `RewardSplitter ${SPLITTER}: ${note}.`, [tx(SPLITTER, iface.encodeFunctionData("distribute", [budget, ids]), note)]);
+  const txs = [tx(SPLITTER, iface.encodeFunctionData("distribute", [budget, ids]), note)];
+  if (process.env.WITH_BURN === "true") {
+    txs.push(tx(SPLITTER, iface.encodeFunctionData("executeBurn", []), "executeBurn(): send the accrued pendingBurn to 0x000…000 (no-op if nothing pending)"));
+  }
+  writeBatch(OUT_DIR, OUT_FILE, SAFE, CHAIN_ID, `VanaPool: distribute round [${ids.join(",")}]${txs.length > 1 ? " + burn" : ""}`,
+    `RewardSplitter ${SPLITTER}: ${txs.map((t) => t.note.split(" — ")[0].split(":")[0]).join("; ")}.`, txs);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });

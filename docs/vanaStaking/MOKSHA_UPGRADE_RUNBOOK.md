@@ -448,6 +448,14 @@ so its budget is 1 wei. `8-baseline-234.json` = pools 2/3/4 only; `8-baseline-12
 Safe: succeeds, balance unchanged, `seen(id)` true. Later rounds: same script with the real budget — never 1 wei
 (it would consume the accrued weight and re-stretch vesting).
 
+### Batch 9 — first paying round + burn (execute at least one block after batch 8)
+`9-distribute-and-burn.json`: `distribute(6978390000000000000, [2,3,4])` (the splitter's whole 6.97839 VANA; the 1-wei
+baseline round spends nothing, so the full balance is available) then `executeBurn()`. Fork-simulated after the baseline
+round: burn 1.7445975 VANA, treasury +5.2337925, pools 2/3/4 ≈ 60/20/20 (stakers 2.9833 / 0.9944 / 0.9944 vesting 30 d;
+owner commission 0.1570 / 0.0523 / 0.0523), entity 1 untouched, 2 wei of dust left. If executed in the same block as
+batch 8 the round has zero weight: it only rolls baselines, pays nothing, and `executeBurn` is a no-op — check
+`pendingWeight(2) > 0` before executing, and the `Burned` event after.
+
 ### Still to decide
 Splitter owner, vesting duration, distributor, burn rate; whether to raise `minStakeAmount`; the seed-cutoff
 date for the §12 reserve sweep (entity 1 locked reserve ≈ 10,567 VANA on mainnet).
