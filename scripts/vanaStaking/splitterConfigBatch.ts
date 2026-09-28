@@ -25,10 +25,11 @@ async function main() {
   const CHAIN_ID = env("CHAIN_ID", "1480");
   const OUT_DIR = env("OUT_DIR", "docs/vanaStaking/mainnet-safe");
   const OUT_FILE = env("OUT_FILE", "6-splitter-config.json");
-  const duration = Number(env("REWARD_VESTING_DURATION"));
-  const burn = ethers.parseUnits(env("BURN_RATE_PERCENT"), 18); // percent * 1e18; 100e18 = 100%
-  if (!(duration > 0 && duration < 2 ** 32)) throw new Error("REWARD_VESTING_DURATION must be a positive uint32");
-  if (burn > ethers.parseUnits("100", 18)) throw new Error("BURN_RATE_PERCENT > 100");
+  // Each setting is optional; the batch carries only what is given (e.g. a distributor grant alone).
+  const duration = process.env.REWARD_VESTING_DURATION ? Number(process.env.REWARD_VESTING_DURATION) : undefined;
+  const burn = process.env.BURN_RATE_PERCENT ? ethers.parseUnits(process.env.BURN_RATE_PERCENT, 18) : undefined; // percent * 1e18
+  if (duration !== undefined && !(duration > 0 && duration < 2 ** 32)) throw new Error("REWARD_VESTING_DURATION must be a positive uint32");
+  if (burn !== undefined && burn > ethers.parseUnits("100", 18)) throw new Error("BURN_RATE_PERCENT > 100");
 
   const iface = new ethers.Interface([
     "function updateRewardVestingDuration(uint32)",
@@ -37,17 +38,21 @@ async function main() {
   ]);
   const enc = (fn: string, args: unknown[]) => iface.encodeFunctionData(fn, args);
 
-  const txs = [
-    tx(SPLITTER, enc("updateRewardVestingDuration", [duration]),
-      `updateRewardVestingDuration(${duration}) = ${(duration / 86400).toFixed(2)} days; distribute() reverts VestingDurationNotSet until set`),
-    tx(SPLITTER, enc("updateBurnRate", [burn]), `updateBurnRate(${ethers.formatUnits(burn, 18)}%): share of each distribute() budget reserved for burn`),
-  ];
+  const txs = [];
+  if (duration !== undefined) {
+    txs.push(tx(SPLITTER, enc("updateRewardVestingDuration", [duration]),
+      `updateRewardVestingDuration(${duration}) = ${(duration / 86400).toFixed(2)} days; distribute() reverts VestingDurationNotSet until set`));
+  }
+  if (burn !== undefined) {
+    txs.push(tx(SPLITTER, enc("updateBurnRate", [burn]), `updateBurnRate(${ethers.formatUnits(burn, 18)}%): share of each distribute() budget reserved for burn`));
+  }
   if (process.env.DISTRIBUTOR_ADDRESS) {
     const d = ethers.getAddress(process.env.DISTRIBUTOR_ADDRESS);
     txs.push(tx(SPLITTER, enc("grantRole", [ethers.keccak256(ethers.toUtf8Bytes("DISTRIBUTOR_ROLE")), d]), `grantRole(DISTRIBUTOR_ROLE, ${d})`));
   }
+  if (txs.length === 0) throw new Error("nothing to do: set REWARD_VESTING_DURATION, BURN_RATE_PERCENT and/or DISTRIBUTOR_ADDRESS");
   writeBatch(OUT_DIR, OUT_FILE, SAFE, CHAIN_ID, "VanaPool: configure RewardSplitter",
-    `RewardSplitter ${SPLITTER}: vesting ${duration}s, burn ${ethers.formatUnits(burn, 18)}%. Execute after the batch that creates the splitter.`, txs);
+    `RewardSplitter ${SPLITTER}: ${txs.map((t) => t.note.split(":")[0].split(";")[0]).join("; ")}. Execute after the batch that creates the splitter.`, txs);
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
