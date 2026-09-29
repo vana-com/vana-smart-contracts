@@ -1,0 +1,22 @@
+{
+  "version": "1.0",
+  "chainId": "1480",
+  "createdAt": 1790601898374,
+  "meta": {
+    "name": "VanaPool: configure RewardSplitter",
+    "description": "RewardSplitter 0x7A7B89b6925A8156b9A51E520327c0701023b344: grantRole(DISTRIBUTOR_ROLE, 0xd33Fa35c5a8c36fb6c8da7A70297F2fD6599A4F9). Execute after the batch that creates the splitter.",
+    "txBuilderVersion": "1.16.5",
+    "createdFromSafeAddress": "0x5ECA5208F29e32879a711467916965B2D753bAf4",
+    "createdFromOwnerAddress": "",
+    "checksum": "0x058c7e1ddb2c5752bf1df6fc463b711cfe83c565cb60e7eb21f5bd8c8f3ea851"
+  },
+  "transactions": [
+    {
+      "to": "0x7A7B89b6925A8156b9A51E520327c0701023b344",
+      "value": "0",
+      "data": "0x2f2ff15dfbd454f36a7e1a388bd6fc3ab10d434aa4578f811acbbcf33afb1c697486313c000000000000000000000000d33fa35c5a8c36fb6c8da7a70297f2fd6599a4f9",
+      "contractMethod": null,
+      "contractInputsValues": null
+    }
+  ]
+}

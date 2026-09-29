@@ -1,0 +1,36 @@
+{
+  "version": "1.0",
+  "chainId": "1480",
+  "createdAt": 1790432358042,
+  "meta": {
+    "name": "VanaPool step 3: Treasury v2",
+    "description": "Upgrade VanaPoolTreasury 0x143BE72CF2541604A7691933CAccd6D9cC17c003 to 0x45889be377396c8268e26174112f47627A400581 with the atomic SPENDER grant to Staking; grant Entity; drop Staking's admin.",
+    "txBuilderVersion": "1.16.5",
+    "createdFromSafeAddress": "0x5ECA5208F29e32879a711467916965B2D753bAf4",
+    "createdFromOwnerAddress": "",
+    "checksum": "0x59947b92f663cba32d67a328ab41d7309bb27359a1a99d98ebe4d514324482c8"
+  },
+  "transactions": [
+    {
+      "to": "0x143BE72CF2541604A7691933CAccd6D9cC17c003",
+      "value": "0",
+      "data": "0x4f1ef28600000000000000000000000045889be377396c8268e26174112f47627a4005810000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000002454d3d52a000000000000000000000000641c18e2f286c86f96ce95c8ec1eb9fc0415ca0e00000000000000000000000000000000000000000000000000000000",
+      "contractMethod": null,
+      "contractInputsValues": null
+    },
+    {
+      "to": "0x143BE72CF2541604A7691933CAccd6D9cC17c003",
+      "value": "0",
+      "data": "0xff037e8e00000000000000000000000044f20490a82e1f1f1cc25dd3ba8647034eddce30",
+      "contractMethod": null,
+      "contractInputsValues": null
+    },
+    {
+      "to": "0x143BE72CF2541604A7691933CAccd6D9cC17c003",
+      "value": "0",
+      "data": "0xd547741f0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000641c18e2f286c86f96ce95c8ec1eb9fc0415ca0e",
+      "contractMethod": null,
+      "contractInputsValues": null
+    }
+  ]
+}

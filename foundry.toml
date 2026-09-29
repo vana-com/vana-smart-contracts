@@ -1,14 +1,15 @@
-# Foundry is used only for Solidity unit tests (test/foundry).
-# Hardhat remains the build/deploy system for the repo, so `src` is scoped to
-# the contracts under test instead of the whole contracts/ tree, and the cache
-# is kept out of hardhat's ./cache.
+# Foundry is used for Solidity unit tests only (test/foundry); Hardhat remains
+# the build/deploy system. src is scoped to a tree under test so forge does not
+# compile the whole contracts/ tree (which spans settings that need different
+# compiler options); the other tested trees (e.g. contracts/chain/l1Deposit)
+# are still compiled because the test files import them.
+# Compiler options mirror FIRST_COMPILER_SETTINGS in hardhat.config.ts.
 [profile.default]
-src = "contracts/chain/l1Deposit"
+src = "contracts/vanaStaking"
 test = "test/foundry"
 out = "out"
 cache_path = "cache_forge"
 libs = ["lib", "node_modules"]
-# match FIRST_COMPILER_SETTINGS in hardhat.config.ts
 solc = "0.8.24"
 via_ir = true
 optimizer = true

@@ -1,0 +1,29 @@
+{
+  "version": "1.0",
+  "chainId": "1480",
+  "createdAt": 1790558540313,
+  "meta": {
+    "name": "VanaPool: configure RewardSplitter",
+    "description": "RewardSplitter 0x7A7B89b6925A8156b9A51E520327c0701023b344: vesting 2592000s, burn 25.0%. Execute after the batch that creates the splitter.",
+    "txBuilderVersion": "1.16.5",
+    "createdFromSafeAddress": "0x5ECA5208F29e32879a711467916965B2D753bAf4",
+    "createdFromOwnerAddress": "",
+    "checksum": "0xd8cc7675a57b1c46f5801e619b4413b7cb1b0ab6e3629a36a25594a5c922982e"
+  },
+  "transactions": [
+    {
+      "to": "0x7A7B89b6925A8156b9A51E520327c0701023b344",
+      "value": "0",
+      "data": "0x11e295960000000000000000000000000000000000000000000000000000000000278d00",
+      "contractMethod": null,
+      "contractInputsValues": null
+    },
+    {
+      "to": "0x7A7B89b6925A8156b9A51E520327c0701023b344",
+      "value": "0",
+      "data": "0x2b7887870000000000000000000000000000000000000000000000015af1d78b58c40000",
+      "contractMethod": null,
+      "contractInputsValues": null
+    }
+  ]
+}

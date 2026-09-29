@@ -6,7 +6,7 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
-import "./interfaces/VanaPoolStakingStorageV2.sol";
+import "./interfaces/VanaPoolStakingStorageV3.sol";
 
 contract VanaPoolStakingImplementation is
     UUPSUpgradeable,
@@ -14,7 +14,7 @@ contract VanaPoolStakingImplementation is
     AccessControlUpgradeable,
     ReentrancyGuardUpgradeable,
     ERC2771ContextUpgradeable,
-    VanaPoolStakingStorageV2
+    VanaPoolStakingStorageV3
 {
     using EnumerableSet for EnumerableSet.AddressSet;
 
@@ -34,6 +34,15 @@ contract VanaPoolStakingImplementation is
     event Staked(uint256 indexed entityId, address indexed staker, uint256 amount, uint256 sharesIssued);
 
     /**
+     * @notice Triggered when an entity's registration-stake floor is recorded
+     *
+     * @param entityId                         ID of the entity
+     * @param registrant                       address that must keep the floor
+     * @param shares                           shares the registrant cannot go below
+     */
+    event RegistrationStakeRecorded(uint256 indexed entityId, address indexed registrant, uint256 shares);
+
+    /**
      * @notice Triggered when a user unstakes VANA from an entity
      *
      * @param entityId                         ID of the entity
@@ -42,6 +51,14 @@ contract VanaPoolStakingImplementation is
      * @param sharesBurned                     shares burned
      */
     event Unstaked(uint256 indexed entityId, address indexed staker, uint256 amount, uint256 sharesBurned);
+    event Redelegated(
+        uint256 indexed fromEntityId,
+        uint256 indexed toEntityId,
+        address indexed staker,
+        uint256 valueMoved,
+        uint256 sharesBurned,
+        uint256 sharesIssued
+    );
 
     /**
      * @notice Triggered when minimum stake amount is updated
@@ -57,28 +74,19 @@ contract VanaPoolStakingImplementation is
      */
     event BondingPeriodUpdated(uint256 newBondingPeriod);
 
-    /**
-     * @notice Triggered when an entity stake is registered
-     *
-     * @param entityId                         ID of the entity
-     * @param ownerAddress                     address of the owner
-     */
-    event EntityStakeRegistered(uint256 indexed entityId, address indexed ownerAddress);
 
     error InsufficientStakeAmount();
     error InvalidRecipient();
-    error InsufficientShares();
     error TransferFailed();
     error InvalidAmount();
-    error EntityNotFound();
     error EntityNotActive();
     error InvalidAddress();
     error InvalidEntity();
-    error NotEntityOwner();
     error CannotRemoveRegistrationStake();
-    error NotAuthorized();
     error InvalidSlippage();
     error InvalidBondingPeriod();
+    error StakingBlocked();
+    error RegistrationAlreadyRecorded();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() ERC2771ContextUpgradeable(address(0)) {
@@ -153,7 +161,7 @@ contract VanaPoolStakingImplementation is
      * @notice Returns the version of the contract
      */
     function version() external pure virtual override returns (uint256) {
-        return 2;
+        return 4;
     }
 
     /**
@@ -217,7 +225,7 @@ contract VanaPoolStakingImplementation is
      * @param entityId                          ID of the entity
      * @return maxVana                          maximum VANA that can be unstaked
      * @return maxShares                        corresponding shares to unstake for maxVana
-     * @return limitingFactor                   0 = user shares/costBasis, 1 = activeRewardPool, 2 = treasury
+     * @return limitingFactor                   0 = user shares/costBasis, 1 = activeRewardPool, 2 = treasury, 3 = registration floor
      * @return isInBondingPeriod                true if staker is still in bonding period
      */
     function getMaxUnstakeAmount(
@@ -230,26 +238,16 @@ contract VanaPoolStakingImplementation is
             return (0, 0, 0, false);
         }
 
-        // Get entity info and simulate processRewards to get accurate values
         IVanaPoolEntity.EntityInfo memory entityInfo = vanaPoolEntity.entities(entityId);
 
-        // Simulate processRewards: calculate pending rewards to distribute
-        uint256 simulatedActiveRewardPool = entityInfo.activeRewardPool;
-        uint256 timeElapsed = block.timestamp - entityInfo.lastUpdateTimestamp;
-        if (timeElapsed > 0 && entityInfo.lockedRewardPool > 0) {
-            uint256 toDistribute = vanaPoolEntity.calculateYield(simulatedActiveRewardPool, entityInfo.maxAPY, timeElapsed);
-            if (toDistribute > entityInfo.lockedRewardPool) {
-                toDistribute = entityInfo.lockedRewardPool;
-            }
-            simulatedActiveRewardPool += toDistribute;
-        }
+        // The pool as it will stand once unstake's own processRewards has run.
+        // The entity previews its settlement for its actual reward model, both
+        // tracks and commission, so this quote cannot drift from execution.
+        uint256 simulatedActiveRewardPool = vanaPoolEntity.previewActiveRewardPool(entityId);
 
-        // Calculate share prices using simulated activeRewardPool
+        // Calculate share price using simulated activeRewardPool
         uint256 shareToVana = entityInfo.totalShares > 0
             ? (simulatedActiveRewardPool * 1e18) / entityInfo.totalShares
-            : 1e18;
-        uint256 vanaToShare = simulatedActiveRewardPool > 0
-            ? (entityInfo.totalShares * 1e18) / simulatedActiveRewardPool
             : 1e18;
 
         // Check if staker is in bonding period
@@ -272,7 +270,9 @@ contract VanaPoolStakingImplementation is
         // Constraint 2: Entity's activeRewardPool (use simulated value)
         uint256 entityPoolBalance = simulatedActiveRewardPool;
 
-        // Constraint 3: Treasury balance
+        // Constraint 3: the shared treasury's cash. This is not per-entity
+        // headroom (the treasury backs every entity) but the hard ceiling on any
+        // single payout; it only binds if the solvency invariant is already broken.
         uint256 treasuryBalance = address(vanaPoolTreasury).balance;
 
         // Find the minimum constraint
@@ -291,7 +291,16 @@ contract VanaPoolStakingImplementation is
 
         // Convert maxVana back to shares
         if (maxVana > 0) {
-            if (isInBondingPeriod) {
+            if (limitingFactor == 0) {
+                // The position itself is the binding constraint, so the answer
+                // is the whole position. Quote it directly: converting maxVana
+                // back through the share price would floor away a few wei-shares
+                // and leave an integrator sizing from this view with a dust remainder.
+                // For a full exit, unstake(maxShares) is exact; unstakeVana(maxVana,
+                // maxShares, ..) is served as the whole position as well, because
+                // that share bound admits it (a bound of 0 would not).
+                maxShares = stakerEntity.shares;
+            } else if (isInBondingPeriod) {
                 // In bonding period: shares = maxVana * totalShares / costBasis
                 // Because vanaToReturn = (costBasis * shareAmount) / totalShares
                 // So shareAmount = vanaToReturn * totalShares / costBasis
@@ -299,13 +308,20 @@ contract VanaPoolStakingImplementation is
                     maxShares = (maxVana * stakerEntity.shares) / stakerEntity.costBasis;
                 }
             } else {
-                // Reward eligible: shares = maxVana / shareToVana
-                maxShares = (maxVana * vanaToShare) / 1e18;
+                // Reward eligible: single division, mirrors vanaToShares
+                maxShares = simulatedActiveRewardPool > 0
+                    ? (maxVana * entityInfo.totalShares) / simulatedActiveRewardPool
+                    : maxVana;
             }
 
-            // Ensure we don't exceed user's actual shares
-            if (maxShares > stakerEntity.shares) {
-                maxShares = stakerEntity.shares;
+            // Ensure we don't exceed the shares the staker may actually burn
+            uint256 burnable = _burnableShares(staker, entityId, stakerEntity.shares);
+            if (maxShares > burnable) {
+                maxShares = burnable;
+                maxVana = isInBondingPeriod
+                    ? (stakerEntity.costBasis * burnable) / stakerEntity.shares
+                    : (burnable * shareToVana) / 1e18;
+                limitingFactor = 3; // registration floor
             }
         }
 
@@ -452,9 +468,14 @@ contract VanaPoolStakingImplementation is
         uint256 entityId,
         address recipient,
         uint256 shareAmountMin
-    ) external payable override nonReentrant whenNotPaused {
+    ) external payable override nonReentrant whenNotPaused returns (uint256 sharesIssued) {
         if (!_isValidEntity(entityId)) {
             revert EntityNotActive();
+        }
+        // Blocked entities reject new stake from anyone (new or existing staker);
+        // only unstake and redelegate-out remain open.
+        if (vanaPoolEntity.entityStakingBlocked(entityId)) {
+            revert StakingBlocked();
         }
 
         uint256 stakeAmount = msg.value;
@@ -463,12 +484,16 @@ contract VanaPoolStakingImplementation is
             revert InvalidRecipient();
         }
 
+        if (stakeAmount < minStakeAmount) {
+            revert InsufficientStakeAmount();
+        }
+
         // Process entity rewards through VanaPoolEntity to ensure current share price is used
         vanaPoolEntity.processRewards(entityId);
 
-        // Calculate shares
-        uint256 vanaToShare = vanaPoolEntity.vanaToEntityShare(entityId);
-        uint256 sharesIssued = (vanaToShare * stakeAmount) / 1e18;
+        // Calculate shares in a single division (truncation on the result, not the
+        // rate), so the price cannot be rigged to under-issue the depositor.
+        sharesIssued = vanaPoolEntity.vanaToShares(entityId, stakeAmount);
 
         if (sharesIssued == 0) {
             revert InsufficientStakeAmount();
@@ -482,6 +507,10 @@ contract VanaPoolStakingImplementation is
         StakerEntity storage stakerEntity = _stakers[recipient].entities[entityId];
         uint256 currentTimestamp = block.timestamp;
         uint256 shareToVana = vanaPoolEntity.entityShareToVana(entityId);
+
+        // Heal a legacy (V1) zero-costBasis position before it is read below, so
+        // its principal is not mis-booked as reward into vestedRewards.
+        _healLegacyCostBasis(stakerEntity, shareToVana);
 
         // Calculate new total shares and their VANA value after this stake
         uint256 newTotalShares = stakerEntity.shares + sharesIssued;
@@ -499,14 +528,32 @@ contract VanaPoolStakingImplementation is
             // All current value becomes new cost basis (includes old principal + old rewards + new stake)
             // Weighted time: only new stake contributes (old stake has 0 remaining time)
             stakerEntity.costBasis = newTotalValue;
-            stakerEntity.rewardEligibilityTimestamp = currentTimestamp + (stakeAmount * bondingPeriod) / newTotalValue;
+            // newTotalValue is the minted shares' floored value, which can be
+            // below stakeAmount at a high price per share (a deposit worth 1.9
+            // shares mints one), so this quotient can exceed the period: cap it
+            // like every other deadline write.
+            uint256 bondTime = (stakeAmount * bondingPeriod) / newTotalValue;
+            if (bondTime > bondingPeriod) {
+                bondTime = bondingPeriod;
+            }
+            stakerEntity.rewardEligibilityTimestamp = currentTimestamp + bondTime;
         } else {
-            // Still in bonding period: add new stake to cost basis, calculate weighted average time
-            stakerEntity.costBasis += stakeAmount;
+            // Still in bonding period: add the value of the shares actually
+            // minted (not the raw deposit) to cost basis, so the principal the
+            // early-exit path refunds can never exceed what the shares are
+            // worth; then calculate weighted average time.
+            stakerEntity.costBasis += (sharesIssued * shareToVana) / 1e18;
 
             uint256 oldValue = (stakerEntity.shares * shareToVana) / 1e18;
             uint256 remainingTime = stakerEntity.rewardEligibilityTimestamp - currentTimestamp;
             uint256 weightedTime = (oldValue * remainingTime + stakeAmount * bondingPeriod) / newTotalValue;
+            // Cap at full bonding period: remainingTime can exceed the configured
+            // period after governance shortens it, and the blend must never write
+            // a deadline beyond what the protocol advertises (the same cap the
+            // partial-unstake and redelegate-source paths already apply).
+            if (weightedTime > bondingPeriod) {
+                weightedTime = bondingPeriod;
+            }
             stakerEntity.rewardEligibilityTimestamp = currentTimestamp + weightedTime;
         }
 
@@ -537,24 +584,30 @@ contract VanaPoolStakingImplementation is
         uint256 entityId,
         uint256 shareAmount,
         uint256 vanaAmountMin
-    ) external override nonReentrant whenNotPaused {
-        _unstake(_msgSender(), entityId, shareAmount, vanaAmountMin, false);
+    ) external override nonReentrant whenNotPaused returns (uint256 vanaAmount) {
+        return _unstake(_msgSender(), entityId, shareAmount, vanaAmountMin, false);
     }
 
-    /**
-     * @notice Unstake a specific VANA amount from an entity
-     * @dev Converts the VANA amount to shares and calls internal unstake.
-     *      During bonding period: calculates shares needed to receive vanaAmount as principal
-     *      After eligibility: calculates shares needed to receive vanaAmount as full value
+        /**
+     * @notice Unstake by VANA amount: burns the shares worth `vanaAmount` at the
+     *         current price (at cost basis while bonding) and pays them out.
      *
-     * @param entityId                          ID of the entity to unstake from
-     * @param vanaAmount                        VANA amount to receive
-     * @param shareAmountMax                    maximum shares to burn (slippage protection, 0 to skip)
+     * @param entityId                          ID of the entity
+     * @param vanaAmount                        VANA to withdraw; reverts if it exceeds the position
+     * @param shareAmountMax                    max shares to burn, 0 to skip (bounds the cost).
+     *                                          Also the consent for a full exit: a request that
+     *                                          would strand a remainder below minStakeAmount is
+     *                                          served as the whole position when this bound
+     *                                          admits it (pass the view's maxShares); 0 does not.
+     * @param vanaAmountMin                     min VANA to receive, 0 to skip (bounds the proceeds).
+     *                                          The payout may be a few wei under `vanaAmount`, so
+     *                                          pass a floor with dust tolerance, not `vanaAmount`.
      */
     function unstakeVana(
         uint256 entityId,
         uint256 vanaAmount,
-        uint256 shareAmountMax
+        uint256 shareAmountMax,
+        uint256 vanaAmountMin
     ) external nonReentrant whenNotPaused {
         address staker = _msgSender();
         StakerEntity storage stakerEntity = _stakers[staker].entities[entityId];
@@ -565,7 +618,6 @@ contract VanaPoolStakingImplementation is
         // Process rewards to get accurate share prices
         vanaPoolEntity.processRewards(entityId);
 
-        uint256 vanaToShare = vanaPoolEntity.vanaToEntityShare(entityId);
         bool isInBondingPeriod = block.timestamp < stakerEntity.rewardEligibilityTimestamp;
 
         // Calculate shares to unstake based on bonding status
@@ -579,24 +631,51 @@ contract VanaPoolStakingImplementation is
             }
             shareAmount = (vanaAmount * stakerEntity.shares) / stakerEntity.costBasis;
         } else {
-            // Reward eligible: user receives share value
-            // vanaToReturn = (shareAmount * shareToVana) / 1e18
-            // So: shareAmount = (vanaAmount * vanaToShare) / 1e18
-            shareAmount = (vanaAmount * vanaToShare) / 1e18;
+            // Reward eligible: user receives share value. Single division so the
+            // conversion matches vanaToShares (truncation on the result, not the rate).
+            shareAmount = vanaPoolEntity.vanaToShares(entityId, vanaAmount);
         }
 
-        // Ensure we don't exceed user's shares
+        // A request larger than the position is an error, not a request for the
+        // whole position: revert rather than silently serving a different
+        // operation from the one asked for (NM-1052 [Low]).
         if (shareAmount > stakerEntity.shares) {
-            shareAmount = stakerEntity.shares;
+            revert InvalidAmount();
         }
 
-        // Slippage protection
+        // Slippage protection on what is burned (shares)...
         if (shareAmountMax > 0 && shareAmount > shareAmountMax) {
             revert InvalidSlippage();
         }
 
-        // Call internal unstake, skip processRewards since already called above
-        _unstake(staker, entityId, shareAmount, 0, true);
+        // A VANA request is floored into shares, so the maxVana quoted by
+        // getMaxUnstakeAmount (itself a floored value, and stale by any rewards
+        // settled since) lands a few share units under the position and would
+        // strand a remainder the exit rule below rejects. Such a request is a
+        // full exit in all but rounding: serve it as one, but only with the
+        // caller's explicit consent -- a share bound that admits the whole
+        // position (the maxShares the view returns; 0 = "no bound" is not
+        // consent) -- and within the registration floor. Otherwise the exit
+        // rule rejects it as before, so nothing is ever burned beyond what the
+        // caller allowed (NM-1052 [Info] re-review).
+        uint256 remainingShares = stakerEntity.shares - shareAmount;
+        if (remainingShares > 0 && shareAmountMax >= stakerEntity.shares) {
+            uint256 shareToVana = vanaPoolEntity.entityShareToVana(entityId);
+            if (
+                (remainingShares * shareToVana) / 1e18 < minStakeAmount &&
+                stakerEntity.shares <= _burnableShares(staker, entityId, stakerEntity.shares)
+            ) {
+                shareAmount = stakerEntity.shares;
+            }
+        }
+
+        // ...and on what is received (VANA): the caller's floor is forwarded to
+        // _unstake exactly as the share-denominated unstake() does, instead of
+        // the hard-coded 0 that disabled it on this path (NM-1052 [Low]). The
+        // payout can land a few wei under `vanaAmount` (shares are floored from
+        // the request, then valued by a floored rate), so a floor should carry
+        // dust tolerance rather than be `vanaAmount` itself.
+        _unstake(staker, entityId, shareAmount, vanaAmountMin, true);
     }
 
     /**
@@ -614,11 +693,12 @@ contract VanaPoolStakingImplementation is
         uint256 shareAmount,
         uint256 vanaAmountMin,
         bool skipProcessRewards
-    ) internal {
+    ) internal returns (uint256 vanaToReturn) {
         StakerEntity storage stakerEntity = _stakers[staker].entities[entityId];
-        if (stakerEntity.shares == 0 || shareAmount == 0) {
+        if (stakerEntity.shares == 0 || shareAmount == 0 || shareAmount > stakerEntity.shares) {
             revert InvalidAmount();
         }
+        _enforceRegistrationFloor(staker, entityId, stakerEntity.shares, shareAmount);
 
         // Process entity rewards through VanaPoolEntity to ensure current share price is used
         if (!skipProcessRewards) {
@@ -626,7 +706,19 @@ contract VanaPoolStakingImplementation is
         }
 
         uint256 shareToVana = vanaPoolEntity.entityShareToVana(entityId);
+
+        // The minimum applies on the way out as well as in: a partial exit may
+        // leave nothing, or a position still worth at least minStakeAmount --
+        // never a dust remainder (NM-1052 [Info] re-review).
+        uint256 remainingShares = stakerEntity.shares - shareAmount;
+        if (remainingShares > 0 && (remainingShares * shareToVana) / 1e18 < minStakeAmount) {
+            revert InsufficientStakeAmount();
+        }
         uint256 currentTimestamp = block.timestamp;
+
+        // Heal a legacy (V1) zero-costBasis position before it is read below, so
+        // the payout and reward accounting use its real principal.
+        _healLegacyCostBasis(stakerEntity, shareToVana);
 
         // If past bonding period, vest all unrealized rewards first (for entire position)
         // This ensures clean accounting: all rewards become vested before proportional withdrawal
@@ -642,7 +734,6 @@ contract VanaPoolStakingImplementation is
         uint256 shareValue = (shareAmount * shareToVana) / 1e18;
 
         // Calculate the VANA amount to return based on reward eligibility
-        uint256 vanaToReturn;
         uint256 proportionalCostBasis = (stakerEntity.costBasis * shareAmount) / stakerEntity.shares;
         uint256 forfeitedRewards = 0;
 
@@ -659,8 +750,10 @@ contract VanaPoolStakingImplementation is
             vanaToReturn = shareValue;
             // Note: rewards already tracked above via vestedRewards -> realizedRewards
         } else {
-            // Still in bonding period: user receives only principal (forfeits rewards)
-            vanaToReturn = proportionalCostBasis;
+            // Still in bonding period: user receives only principal (forfeits rewards).
+            // Share issuance is floor()'d, so cost basis can sit a wei above the
+            // burned shares' value; never pay out more than the pool is debited.
+            vanaToReturn = proportionalCostBasis < shareValue ? proportionalCostBasis : shareValue;
             // Calculate forfeited rewards (difference between share value and cost basis)
             if (shareValue > proportionalCostBasis) {
                 forfeitedRewards = shareValue - proportionalCostBasis;
@@ -697,7 +790,12 @@ contract VanaPoolStakingImplementation is
         // Update staker's position
         stakerEntity.shares -= shareAmount;
 
-        _removeStaker(staker);
+        // Only a full exit can make the staker inactive; a partial withdrawal
+        // leaves this position alive, so skip _removeStaker's scan over every
+        // entity ever created (NM-1052 [Info]: unstake cost grew with entity count).
+        if (stakerEntity.shares == 0) {
+            _removeStaker(staker);
+        }
 
         // Update entity staking data in VanaPoolEntity contract
         vanaPoolEntity.updateEntityPool(entityId, shareAmount, shareValue, false);
@@ -716,6 +814,166 @@ contract VanaPoolStakingImplementation is
     }
 
     /**
+     * @notice Move a staking position from one entity to another (redelegation).
+     *         The full share value -- principal plus accrued rewards -- travels
+     *         with the staker (no forfeiture, no VANA leaves the shared treasury),
+     *         and the bond carries: `to` inherits the remaining bond time, so the
+     *         rewards stay locked behind the original maturity and cannot be
+     *         extracted early. Only the principal is carried as cost basis, so an
+     *         early exit from `to` forfeits the reward portion exactly as it would
+     *         have in `from`.
+     *
+     * @param fromEntityId  entity to move out of
+     * @param toEntityId    entity to move into
+     * @param shareAmount   shares of `from` to move
+     * @param minSharesOut  minimum shares to receive in `to` (slippage guard)
+     */
+    function redelegate(
+        uint256 fromEntityId,
+        uint256 toEntityId,
+        uint256 shareAmount,
+        uint256 minSharesOut
+    ) external override nonReentrant whenNotPaused returns (uint256 movedValue, uint256 sharesIssued) {
+        if (fromEntityId == toEntityId) {
+            revert InvalidEntity();
+        }
+        if (!_isValidEntity(toEntityId)) {
+            revert EntityNotActive();
+        }
+        // Redelegating in is new stake into `to`, so a blocked destination
+        // rejects it. `from` is never checked here: moving out of (and unstaking
+        // from) a blocked entity stays open.
+        if (vanaPoolEntity.entityStakingBlocked(toEntityId)) {
+            revert StakingBlocked();
+        }
+
+        address staker = _msgSender();
+        StakerEntity storage from = _stakers[staker].entities[fromEntityId];
+        if (from.shares == 0 || shareAmount == 0 || shareAmount > from.shares) {
+            revert InvalidAmount();
+        }
+        _enforceRegistrationFloor(staker, fromEntityId, from.shares, shareAmount);
+
+        // Settle both entities so each side's share price is current.
+        vanaPoolEntity.processRewards(fromEntityId);
+        vanaPoolEntity.processRewards(toEntityId);
+
+        uint256 currentTimestamp = block.timestamp;
+
+        // ---- exit `from`: carry full value, principal, vested, and bond ----
+        uint256 fromShareToVana = vanaPoolEntity.entityShareToVana(fromEntityId);
+        // Heal a legacy (V1) zero-costBasis source, so the carried principal is
+        // its real value and cannot be under-valued during a bond in `to`.
+        _healLegacyCostBasis(from, fromShareToVana);
+        movedValue = (shareAmount * fromShareToVana) / 1e18; // full value incl. rewards
+        // Moving a WHOLE position is always allowed: it relocates an existing
+        // position (possibly a legacy one now below the minimum) and creates no
+        // dust -- refusing it would leave such positions exit-only, since
+        // stake() enforces the minimum on re-entry. SPLITTING a position must
+        // respect minStakeAmount on both sides: the moved value (a stake into
+        // `to`) and the source residual.
+        uint256 fromRemainingShares = from.shares - shareAmount;
+        if (
+            fromRemainingShares > 0 &&
+            (movedValue < minStakeAmount || (fromRemainingShares * fromShareToVana) / 1e18 < minStakeAmount)
+        ) {
+            revert InsufficientStakeAmount();
+        }
+        uint256 movedCostBasis = (from.costBasis * shareAmount) / from.shares; // principal portion
+        uint256 movedVested = (from.vestedRewards * shareAmount) / from.shares;
+        uint256 remainingBond = currentTimestamp < from.rewardEligibilityTimestamp
+            ? from.rewardEligibilityTimestamp - currentTimestamp
+            : 0;
+
+        // What the destination receives. If the source is MATURED, its unrealized
+        // gain (movedValue - movedCostBasis) is already earned: crystallize it
+        // into the carried cost basis (and vestedRewards) exactly as stake() does
+        // when topping up a matured position, so a bond imposed by the
+        // destination can never make it forfeitable again. `from` itself is
+        // debited by the proportional originals: its cost basis holds principal only.
+        uint256 carryCostBasis = movedCostBasis;
+        uint256 carryVested = movedVested;
+        if (remainingBond == 0 && movedValue > movedCostBasis) {
+            carryVested += movedValue - movedCostBasis;
+            carryCostBasis = movedValue;
+        }
+
+        uint256 fromSharesBefore = from.shares;
+        from.shares -= shareAmount;
+        from.costBasis -= movedCostBasis;
+        from.vestedRewards -= movedVested;
+
+        // Anti-wash: extend the bond on `from`'s remainder for a partial move
+        // mid-bond (same inverse-weighted rule as _unstake).
+        if (remainingBond > 0 && from.shares > 0) {
+            uint256 extendedTime = (remainingBond * fromSharesBefore) / from.shares;
+            if (extendedTime > bondingPeriod) {
+                extendedTime = bondingPeriod;
+            }
+            from.rewardEligibilityTimestamp = currentTimestamp + extendedTime;
+        }
+
+        vanaPoolEntity.updateEntityPool(fromEntityId, shareAmount, movedValue, false);
+
+        // ---- enter `to`: mint shares for movedValue, carry principal + bond ----
+        sharesIssued = vanaPoolEntity.vanaToShares(toEntityId, movedValue); // single division
+        if (sharesIssued == 0 || sharesIssued < minSharesOut) {
+            revert InvalidSlippage();
+        }
+
+        StakerEntity storage to = _stakers[staker].entities[toEntityId];
+
+        // Weighted-average the existing `to` bond with the carried bond, by value
+        // (mirrors stake()'s bonding math using the carried remaining bond).
+        uint256 toShareToVana = vanaPoolEntity.entityShareToVana(toEntityId);
+        uint256 existingValue = (to.shares * toShareToVana) / 1e18;
+        uint256 existingRemaining = currentTimestamp < to.rewardEligibilityTimestamp
+            ? to.rewardEligibilityTimestamp - currentTimestamp
+            : 0;
+        uint256 newTotalValue = existingValue + movedValue;
+        uint256 weightedTime = (existingValue * existingRemaining + movedValue * remainingBond) / newTotalValue;
+        // Cap at full bonding period (see stake()): neither carried remainder is
+        // itself bounded by the current period, so their blend may exceed it.
+        if (weightedTime > bondingPeriod) {
+            weightedTime = bondingPeriod;
+        }
+        to.rewardEligibilityTimestamp = currentTimestamp + weightedTime;
+
+        // Heal a legacy (V1) zero-costBasis destination too, so merging the moved
+        // principal into it does not under-value the existing position in a bond.
+        _healLegacyCostBasis(to, toShareToVana);
+
+        // If `to` is already matured, crystallize its earned gain into cost basis
+        // before the new bond is applied -- mirrors stake()'s eligible branch -- so
+        // redelegation can't put an already-safe reward back at risk. Only fires
+        // when `to` has no remaining bond (existingRemaining == 0).
+        if (existingRemaining == 0 && to.shares > 0 && existingValue > to.costBasis) {
+            to.vestedRewards += existingValue - to.costBasis;
+            to.costBasis = existingValue;
+        }
+
+        // Carry the principal (not the full value): the moved reward portion rides
+        // as unrealized gain, kept only if the carried bond is served in `to`.
+        to.costBasis += carryCostBasis;
+        to.vestedRewards += carryVested;
+        to.shares += sharesIssued;
+
+        _addStaker(staker);
+
+        vanaPoolEntity.updateEntityPool(toEntityId, sharesIssued, movedValue, true);
+
+        // Carry the distributed-reward ledger for the moved reward portion so a
+        // later forfeiture in `to` decrements a counter that was credited.
+        // Rounding on a previous redelegate-in can leave the principal a few
+        // wei above the position's value; there is then no reward to carry,
+        // and the move must not revert on that dust.
+        uint256 movedReward = movedValue > movedCostBasis ? movedValue - movedCostBasis : 0;
+        vanaPoolEntity.redelegateDistributedRewards(fromEntityId, toEntityId, movedReward);
+
+        emit Redelegated(fromEntityId, toEntityId, staker, movedValue, shareAmount, sharesIssued);
+    }
+
+    /**
      * @notice Register stake for a new entity (called by VanaPoolEntity contract)
      *
      * @param entityId                          ID of the entity
@@ -730,10 +988,77 @@ contract VanaPoolStakingImplementation is
         StakerEntity storage stakerEntity = _stakers[ownerAddress].entities[entityId];
         stakerEntity.shares = registrationStake;
         stakerEntity.costBasis = registrationStake;
+        // Bond the seed like any other stake (it was unbonded from birth).
+        stakerEntity.rewardEligibilityTimestamp = block.timestamp + bondingPeriod;
+
+        // The registration shares are a floor the registrant can never unstake
+        // or redelegate below, so the entity's totalShares cannot be reduced to
+        // dust (which is what makes share rounding exploitable).
+        entityRegistrant[entityId] = ownerAddress;
+        entityRegistrationShares[entityId] = registrationStake;
 
         _addStaker(ownerAddress);
 
         emit Staked(entityId, ownerAddress, registrationStake, registrationStake);
+        emit RegistrationStakeRecorded(entityId, ownerAddress, registrationStake);
+    }
+
+    /**
+     * @notice One-time migration for an entity created before the registration
+     *         floor existed (no registrant record): record who seeded it and the
+     *         shares they must keep, so the floor applies to it exactly as it
+     *         does to every entity created since. Callable only while no record
+     *         exists, and only for shares the registrant actually holds there.
+     *
+     * @param entityId                          entity to backfill
+     * @param registrant                        address that seeded the entity at creation
+     * @param shares                            its registration shares (the seed; minRegistrationStake at creation)
+     */
+    function backfillRegistration(
+        uint256 entityId,
+        address registrant,
+        uint256 shares
+    ) external onlyRole(MAINTAINER_ROLE) {
+        if (registrant == address(0)) {
+            revert InvalidAddress();
+        }
+        if (entityRegistrant[entityId] != address(0)) {
+            revert RegistrationAlreadyRecorded();
+        }
+        if (vanaPoolEntity.entities(entityId).ownerAddress == address(0)) {
+            revert InvalidEntity();
+        }
+        if (shares == 0 || _stakers[registrant].entities[entityId].shares < shares) {
+            revert InvalidAmount();
+        }
+        entityRegistrant[entityId] = registrant;
+        entityRegistrationShares[entityId] = shares;
+
+        emit RegistrationStakeRecorded(entityId, registrant, shares);
+    }
+
+    /**
+     * @notice Shares of a position that may be burned (unstaked or redelegated
+     *         out). Everything for an ordinary staker; everything above the
+     *         registration floor for the entity's registrant.
+     */
+    function _burnableShares(address staker, uint256 entityId, uint256 shares) internal view returns (uint256) {
+        if (staker != entityRegistrant[entityId]) {
+            return shares;
+        }
+        uint256 floorShares = entityRegistrationShares[entityId];
+        return shares > floorShares ? shares - floorShares : 0;
+    }
+
+    function _enforceRegistrationFloor(
+        address staker,
+        uint256 entityId,
+        uint256 shares,
+        uint256 shareAmount
+    ) internal view {
+        if (staker == entityRegistrant[entityId] && shareAmount > _burnableShares(staker, entityId, shares)) {
+            revert CannotRemoveRegistrationStake();
+        }
     }
 
     /**
@@ -746,6 +1071,23 @@ contract VanaPoolStakingImplementation is
         // Check if entity exists in VanaPoolEntity contract
         IVanaPoolEntity.EntityInfo memory entityInfo = vanaPoolEntity.entities(entityId);
         return entityInfo.status == IVanaPoolEntity.EntityStatus.Active;
+    }
+
+    /**
+     * @notice Heal a legacy position whose costBasis was never migrated from V1
+     *         (the V1 struct stored only `shares`, leaving costBasis == 0). Treat
+     *         its entire current value as principal, so no accounting path
+     *         mis-reads the principal as reward or under-values it during bonding.
+     *         Idempotent: a no-op once costBasis is nonzero, and skips empty
+     *         positions (shares == 0), so it never touches a fresh first stake.
+     *
+     * @param se          the staker position to heal
+     * @param shareToVana the entity's current share price (VANA per share, 1e18)
+     */
+    function _healLegacyCostBasis(StakerEntity storage se, uint256 shareToVana) internal {
+        if (se.costBasis == 0 && se.shares > 0) {
+            se.costBasis = (se.shares * shareToVana) / 1e18;
+        }
     }
 
     function _addStaker(address staker) internal {
