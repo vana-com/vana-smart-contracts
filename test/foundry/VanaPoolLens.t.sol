@@ -99,7 +99,7 @@ contract VanaPoolLensTest is Test {
 
     // ---- owner track, APY model ----
 
-    function test_apyOwnerTrack_grossMatchesEntityView_netIsCompoundedNetRate() public {
+    function _fundApyReserve() internal {
         vm.prank(alice);
         staking.stake{value: 100 ether}(apy, alice, 0);
         vm.prank(reg);
@@ -107,23 +107,43 @@ contract VanaPoolLensTest is Test {
         vm.prank(owner);
         entity.updateEntityMaxAPY(apy, 40e18);
         entity.processRewards(apy);
+    }
 
+    function test_apyOwnerTrack_simpleRates() public {
+        _fundApyReserve();
         VanaPoolLens.EntityAPY memory r = lens.entityAPY(apy);
-        assertApproxEqRel(r.ownerGrossAPY, entity.currentAPYByEntity(apy), 1e12, "gross == currentAPYByEntity");
-        assertApproxEqRel(r.ownerGrossAPY, 49.1824697e18, 1e12, "e^0.40 - 1");
-        assertApproxEqRel(r.ownerNetAPY, 43.3329415e18, 1e12, "e^(0.40*0.9) - 1");
-        assertLt(r.ownerNetAPY, (r.ownerGrossAPY * 90) / 100, "not the naive gross*(1-c)");
+        assertEq(r.ownerGrossAPY, 40e18, "gross = maxAPY (the drip's pace)");
+        assertEq(r.ownerNetAPY, 36e18, "net = maxAPY * (1 - 10%)");
         assertEq(r.splitterAPY, 0);
-        assertEq(r.apy, r.ownerNetAPY);
+        assertEq(r.apy, 36e18);
+    }
 
-        // Realised: settle daily for a year; growth must match the quoted net rate.
+    /// @dev The simple net rate is what one period of share-price growth,
+    ///      annualised, delivers — the same measure the front end tracks.
+    function test_apyOwnerTrack_netMatchesAnnualisedShortPeriodGrowth() public {
+        _fundApyReserve();
+        VanaPoolLens.EntityAPY memory r = lens.entityAPY(apy);
+        uint256 p0 = _price(apy);
+        vm.warp(T0 + 1 hours);
+        entity.processRewards(apy);
+        assertApproxEqRel(_annualised(p0, _price(apy), 1 hours), r.ownerNetAPY, 1e14, "one hour, annualised");
+    }
+
+    function test_apyOwnerTrack_effectiveMatchesAYearOfDailySettlements() public {
+        _fundApyReserve();
+        VanaPoolLens.EntityAPY memory r = lens.entityAPY(apy);
+        assertApproxEqRel(r.ownerNetEffectiveAPY, 43.3329415e18, 1e12, "e^(0.40*0.9) - 1");
+        assertApproxEqRel(
+            (entity.currentAPYByEntity(apy) * 90) / 100 > r.ownerNetEffectiveAPY ? 1 : 0, 1, 0,
+            "compounded net is below the naive (e^0.40 - 1) * 0.9"
+        );
         uint256 p0 = _price(apy);
         for (uint256 d = 1; d <= 365; d++) {
             vm.warp(T0 + d * 1 days);
             entity.processRewards(apy);
         }
         uint256 realised = ((_price(apy) - p0) * 100e18) / p0;
-        assertApproxEqRel(realised, r.ownerNetAPY, 2e15, "a year of daily settlements delivers the quoted net rate");
+        assertApproxEqRel(realised, r.ownerNetEffectiveAPY, 2e15, "a year of daily settlements compounds to the effective rate");
     }
 
     function test_apyOwnerTrack_zeroWithoutReserve() public {
@@ -144,9 +164,9 @@ contract VanaPoolLensTest is Test {
         entity.updateEntityMaxAPY(apy, 40e18);
 
         VanaPoolLens.EntityAPY memory r = lens.entityAPY(apy);
-        assertGt(r.ownerNetAPY, 40e18, "pays the full rate right now");
-        // 0.01 VANA against ~49.7 VANA/yr of drip: under two hours of runway.
-        assertLt(r.ownerFundedUntil, block.timestamp + 2 hours, "runway shows the rate is about to stop");
+        assertEq(r.ownerNetAPY, 36e18, "pays the full rate right now");
+        // 0.01 VANA against 40% of ~101 VANA = 40.4 VANA/yr of drip: ~2.2 hours of runway.
+        assertApproxEqAbs(r.ownerFundedUntil, block.timestamp + 7_808, 60, "runway shows the rate is about to stop");
         assertGt(r.ownerFundedUntil, block.timestamp);
     }
 
@@ -163,6 +183,7 @@ contract VanaPoolLensTest is Test {
         VanaPoolLens.EntityAPY memory r = lens.entityAPY(str);
         assertApproxEqRel(r.ownerGrossAPY, entity.currentAPYByEntity(str), 1e12, "gross == currentAPYByEntity");
         assertEq(r.ownerNetAPY, (r.ownerGrossAPY * 90) / 100, "linear: net = gross * (1 - 10%)");
+        assertEq(r.ownerNetEffectiveAPY, r.ownerNetAPY, "a linear schedule does not compound");
         assertEq(r.ownerFundedUntil, T0 + 30 days, "reserve covers the whole entry");
 
         uint256 p0 = _price(str);
@@ -221,12 +242,21 @@ contract VanaPoolLensTest is Test {
         assertGt(r.splitterAPY, 0);
         assertEq(r.apy, r.ownerNetAPY + r.splitterAPY);
 
+
         uint256[] memory ids = new uint256[](2);
         ids[0] = apy;
         ids[1] = str;
         VanaPoolLens.EntityAPY[] memory all = lens.entityAPYs(ids);
         assertEq(all[0].apy, r.apy, "batch == single");
         assertEq(all[1].apy, 0, "str: no stake, no rewards");
+
+        // The sum is what the pool delivers: one day of growth, annualised
+        // (the Moksha-fork check that exposed the compounded/simple mix).
+        entity.processRewards(apy);
+        uint256 p0 = _price(apy);
+        vm.warp(T0 + 1 days);
+        entity.processRewards(apy);
+        assertApproxEqRel(_annualised(p0, _price(apy), 1 days), r.apy, 1e16, "headline == annualised growth");
     }
 
     function test_unknownEntityIsZero() public {
