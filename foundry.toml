@@ -19,6 +19,9 @@ remappings = [
     "@openzeppelin/contracts/=node_modules/@openzeppelin/contracts/",
     "@openzeppelin/contracts-upgradeable/=node_modules/@openzeppelin/contracts-upgradeable/",
 ]
+# fork tests that must reproduce a Hardhat deployment byte-for-byte (CREATE2
+# addresses) read the Hardhat artifacts
+fs_permissions = [{ access = "read", path = "./artifacts" }]
 
 # named endpoints: `--rpc-url vana` resolves VANA_RPC_URL from .env (forge
 # auto-loads .env from the project root; the shell does not)
