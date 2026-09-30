@@ -21,11 +21,14 @@ import {IVanaPoolEntity} from "../vanaPoolEntity/interfaces/IVanaPoolEntity.sol"
  *
  *         Rates are percent * 1e18 (40% == 40e18), annualised over the active
  *         pool as the next settlement would leave it (previewActiveRewardPool).
- *         APY-model rates are effective annual rates of the continuous drip, as
- *         currentAPYByEntity reports them (maxAPY 40% -> ~49.18%); linear
- *         schedules are simple annualised rates. It is not a realised yield —
- *         use share-price history for that — and it says nothing about how long
- *         a rate lasts: read ownerFundedUntil / splitterEndsAt for that.
+ *         Every component is a SIMPLE annualised rate (the current pace * 1 year),
+ *         so the components add and the sum is directly comparable with
+ *         annualised share-price growth. For the APY model that is the nominal
+ *         rate maxAPY * (1 - commission); the compounded equivalent, which is
+ *         what currentAPYByEntity reports gross, is given separately as
+ *         ownerNetEffectiveAPY. It is not a realised yield — use share-price
+ *         history for that — and it says nothing about how long a rate lasts:
+ *         read ownerFundedUntil / splitterEndsAt for that.
  */
 contract VanaPoolLens {
     uint256 private constant YEAR = 365 days;
@@ -34,13 +37,14 @@ contract VanaPoolLens {
     IVanaPoolEntity public immutable vanaPoolEntity;
 
     struct EntityAPY {
-        uint256 apy; // ownerNetAPY + splitterAPY
-        uint256 ownerGrossAPY; // owner track before commission
-        uint256 ownerNetAPY; // owner track after commission
-        uint256 splitterAPY; // splitter track (already net of commission)
+        uint256 apy; // ownerNetAPY + splitterAPY (simple, annualised)
+        uint256 ownerGrossAPY; // owner track before commission (simple)
+        uint256 ownerNetAPY; // owner track after commission (simple)
+        uint256 splitterAPY; // splitter track, already net of commission (simple)
         uint256 ownerFundedUntil; // when lockedRewardPool runs dry at the current pace (0 if not paying)
         uint256 splitterEndsAt; // end of the splitter schedule (0 if not paying)
         uint256 activePool; // the denominator
+        uint256 ownerNetEffectiveAPY; // owner track after commission, compounded over a year (APY model: e^(maxAPY*(1-c)) - 1)
     }
 
     constructor(IVanaPoolEntity vanaPoolEntity_) {
@@ -66,7 +70,12 @@ contract VanaPoolLens {
         r.activePool = pool;
 
         uint256 commission = vanaPoolEntity.entityCommissionRate(entityId);
-        (r.ownerGrossAPY, r.ownerNetAPY, r.ownerFundedUntil) = _ownerTrack(entityId, info, pool, commission);
+        (r.ownerGrossAPY, r.ownerNetAPY, r.ownerNetEffectiveAPY, r.ownerFundedUntil) = _ownerTrack(
+            entityId,
+            info,
+            pool,
+            commission
+        );
         (r.splitterAPY, r.splitterEndsAt) = _splitterTrack(entityId, pool);
         r.apy = r.ownerNetAPY + r.splitterAPY;
     }
@@ -78,26 +87,27 @@ contract VanaPoolLens {
         IVanaPoolEntity.EntityInfo memory info,
         uint256 pool,
         uint256 commission
-    ) internal view returns (uint256 gross, uint256 net, uint256 fundedUntil) {
+    ) internal view returns (uint256 gross, uint256 net, uint256 netEffective, uint256 fundedUntil) {
         uint256 locked = info.lockedRewardPool;
         if (locked == 0) {
-            return (0, 0, 0);
+            return (0, 0, 0, 0);
         }
 
         if (vanaPoolEntity.entityRewardModel(entityId) == IVanaPoolEntity.RewardModel.APY) {
             if (info.maxAPY == 0) {
-                return (0, 0, 0);
+                return (0, 0, 0, 0);
             }
-            // Settlement compounds the net drip (the skimmed commission never
-            // enters the pool), so the net effective rate is e^(maxAPY*(1-c)) - 1,
-            // not (e^maxAPY - 1)*(1-c).
-            uint256 grossPerYear = vanaPoolEntity.calculateYield(pool, info.maxAPY, YEAR);
-            uint256 netAPYRate = (info.maxAPY * (PERCENT - commission)) / PERCENT;
-            gross = (grossPerYear * PERCENT) / pool;
-            net = (vanaPoolEntity.calculateYield(pool, netAPYRate, YEAR) * PERCENT) / pool;
+            // The drip pays maxAPY continuously on the pool: that is its current
+            // pace, i.e. its simple annualised rate. Commission is skimmed from
+            // each settlement, so stakers keep maxAPY * (1 - c).
+            gross = info.maxAPY;
+            net = (info.maxAPY * (PERCENT - commission)) / PERCENT;
+            // Compounded equivalent: only the net drip re-enters the pool, so it
+            // compounds at the net rate: e^net - 1 (not (e^maxAPY - 1) * (1 - c)).
+            netEffective = (vanaPoolEntity.calculateYield(pool, net, YEAR) * PERCENT) / pool;
             // The drip draws gross (commission included) from the reserve.
-            fundedUntil = grossPerYear == 0 ? 0 : block.timestamp + (locked * YEAR) / grossPerYear;
-            return (gross, net, fundedUntil);
+            fundedUntil = block.timestamp + (locked * YEAR * PERCENT) / (pool * gross);
+            return (gross, net, netEffective, fundedUntil);
         }
 
         // STREAM: the entry vesting now (the active one, or the queued one the
@@ -105,10 +115,11 @@ contract VanaPoolLens {
         IVanaPoolEntity.RewardSchedule memory s = vanaPoolEntity.entityRewardSchedule(entityId);
         (uint256 value, uint256 end, uint256 duration) = _vestingEntry(s);
         if (value == 0) {
-            return (0, 0, 0);
+            return (0, 0, 0, 0);
         }
         gross = (value * YEAR * PERCENT) / (duration * pool);
         net = (gross * (PERCENT - commission)) / PERCENT;
+        netEffective = net; // fixed amounts released linearly: nothing compounds on the schedule itself
         uint256 dry = block.timestamp + (locked * duration) / value; // reserve / (value per second)
         fundedUntil = dry < end ? dry : end;
     }
