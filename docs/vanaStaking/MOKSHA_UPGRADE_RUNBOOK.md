@@ -351,7 +351,7 @@ reproduces the Moksha splitter implementation `0x9b53â€¦85ec` and proxy `0x7A7Bâ
 | RewardSplitterImplementation | `RewardSplitterProxySalt` | `0x9b53808c51De5c82149373a0DFAf789Aa41285ec` |
 | RewardSplitter proxy | bound to the entity | `0x7A7B89b6925A8156b9A51E520327c0701023b344` |
 
-`npx hardhat run scripts/vanaStaking/mainnetSafeBatches.ts` (Node 20, after `npx hardhat compile`) prints
+The batch files are generated locally and are **not committed** (`docs/vanaStaking/mainnet-safe/` is git-ignored); regenerate them with the scripts below. `npx hardhat run scripts/vanaStaking/mainnetSafeBatches.ts` (Node 20, after `npx hardhat compile`) prints
 the calls and writes `docs/vanaStaking/mainnet-safe/{1-entity,2-staking,3-treasury,4-splitter}.json`,
 importable in the Safe UI's Transaction Builder (checksummed). **Any contract change moves the
 implementation addresses: regenerate and re-sign after every commit that touches `contracts/`.**
