@@ -485,3 +485,11 @@ Reconciliation at 1 VANA: burn 25% = 0.25; 0.75 to pools by principal-seconds (6
 commission 5% off each pool's share up front. All values above were reproduced exactly on a fork of the live chain.
 Ratios hold for any budget; the split follows whatever is staked when round 2 runs (weights are stake × time since round 1).
 
+## 15. VanaPoolLens (read-only APY views) — mainnet 2026-10-01
+
+`0x6F800Be40cc91bcFb9e0b64809B16009Ec157B7d` (CREATE2, salt `VanaPoolLens-v1`; same address on Moksha once deployed
+there), deployed from the Ledger `0xf08bC343…`, tx `0x5aa0acc614b24e65437e9741a6edf1583c388b286815bb6b6ee565345ac3188e`,
+verified on Vanascan. Non-upgradeable, no owner, no funds; reads `VanaPoolEntity` only. Front end: `entityAPY(id)` /
+`entityAPYs(ids)` → `apy` (simple, net of commission, both reward tracks), with `ownerFundedUntil` / `splitterEndsAt`
+for how long it lasts. A new version = a new salt + a new address; nothing to migrate.
+
