@@ -31,3 +31,5 @@ test/dlpRewards/dlpReward2.ts
 
 
 ./CLAUDE.md
+# Safe Transaction Builder batches: generated locally by scripts/vanaStaking/*Batch*.ts, not committed
+docs/vanaStaking/mainnet-safe/
