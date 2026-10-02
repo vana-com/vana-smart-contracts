@@ -16,7 +16,7 @@ contract DataLiquidityPoolImplementationV2Mock is DataLiquidityPoolImplementatio
      * return the version of the contract
      */
     function version() external pure virtual override returns (uint256) {
-        return 2;
+        return 3;
     }
 
     /**
