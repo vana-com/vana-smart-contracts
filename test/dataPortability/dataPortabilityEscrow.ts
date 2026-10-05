@@ -1701,7 +1701,7 @@ describe("DataPortabilityEscrow", () => {
       );
       const serversDeploy = await upgrades.deployProxy(
         ServersFactory,
-        [ethers.ZeroAddress, owner.address],
+        [owner.address],
         { kind: "uups" },
       );
       servers = await ethers.getContractAt(

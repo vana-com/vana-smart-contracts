@@ -146,15 +146,11 @@ interface IDataPortabilityServersV2 {
     /// @notice Total number of server records ever registered.
     function serversCount() external view returns (uint256);
 
-    function trustedForwarder() external view returns (address);
-
     // ====================== Admin ======================
 
     function pause() external;
 
     function unpause() external;
-
-    function updateTrustedForwarder(address trustedForwarderAddress) external;
 
     // ====================== Writes ======================
 

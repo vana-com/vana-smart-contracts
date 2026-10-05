@@ -19,8 +19,10 @@ abstract contract DataPortabilityServersV2StorageV1 is IDataPortabilityServersV2
         uint256 revokedAtBlock; // 0 while active
     }
 
-    /// @dev Trusted forwarder for ERC-2771 meta-transactions.
-    address internal _trustedForwarder;
+    /// @dev Unused since ERC-2771 was removed (Hashlock M-01); kept so the
+    ///      storage layout of deployed proxies does not shift.
+    /// @custom:oz-renamed-from _trustedForwarder
+    address internal _deprecatedTrustedForwarder;
 
     /// @dev Monotonic count of every server ever registered.
     uint256 public override serversCount;

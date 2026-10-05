@@ -3,7 +3,6 @@ pragma solidity 0.8.24;
 
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import "@openzeppelin/contracts-upgradeable/metatx/ERC2771ContextUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
@@ -13,12 +12,17 @@ import "./interfaces/DataPortabilityServersV2StorageV1.sol";
  * @title DataPortabilityServersV2Implementation
  * @notice Gateway-compatible server registry. See `IDataPortabilityServersV2`
  *         for the full contract surface and design rationale.
+ * @dev    No ERC-2771: registration and deregistration authenticate the
+ *         EIP-712 signer, so a relayer already submits them on the owner's
+ *         behalf, and every role-gated call authenticates the direct
+ *         msg.sender. A rotatable trusted forwarder let MAINTAINER_ROLE
+ *         append an admin's address to calldata and act as DEFAULT_ADMIN_ROLE
+ *         (Hashlock 6th audit, M-01).
  */
 contract DataPortabilityServersV2Implementation is
     UUPSUpgradeable,
     PausableUpgradeable,
     AccessControlUpgradeable,
-    ERC2771ContextUpgradeable,
     EIP712Upgradeable,
     DataPortabilityServersV2StorageV1
 {
@@ -40,11 +44,11 @@ contract DataPortabilityServersV2Implementation is
         );
 
     /// @custom:oz-upgrades-unsafe-allow constructor
-    constructor() ERC2771ContextUpgradeable(address(0)) {
+    constructor() {
         _disableInitializers();
     }
 
-    function initialize(address trustedForwarderAddress, address ownerAddress) external initializer {
+    function initialize(address ownerAddress) external initializer {
         if (ownerAddress == address(0)) revert ZeroAddress();
 
         __AccessControl_init();
@@ -52,52 +56,11 @@ contract DataPortabilityServersV2Implementation is
         __Pausable_init();
         __EIP712_init(SIGNING_DOMAIN, SIGNATURE_VERSION);
 
-        _trustedForwarder = trustedForwarderAddress;
-
         _grantRole(DEFAULT_ADMIN_ROLE, ownerAddress);
         _grantRole(MAINTAINER_ROLE, ownerAddress);
     }
 
     function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
-
-    // ====================== ERC-2771 plumbing ======================
-
-    function _msgSender()
-        internal
-        view
-        override(ContextUpgradeable, ERC2771ContextUpgradeable)
-        returns (address)
-    {
-        return ERC2771ContextUpgradeable._msgSender();
-    }
-
-    function _msgData()
-        internal
-        view
-        override(ContextUpgradeable, ERC2771ContextUpgradeable)
-        returns (bytes calldata)
-    {
-        return ERC2771ContextUpgradeable._msgData();
-    }
-
-    function _contextSuffixLength()
-        internal
-        view
-        override(ContextUpgradeable, ERC2771ContextUpgradeable)
-        returns (uint256)
-    {
-        return ERC2771ContextUpgradeable._contextSuffixLength();
-    }
-
-    function trustedForwarder()
-        public
-        view
-        virtual
-        override(ERC2771ContextUpgradeable, IDataPortabilityServersV2)
-        returns (address)
-    {
-        return _trustedForwarder;
-    }
 
     // ====================== Admin ======================
 
@@ -107,14 +70,6 @@ contract DataPortabilityServersV2Implementation is
 
     function unpause() external override onlyRole(MAINTAINER_ROLE) {
         _unpause();
-    }
-
-    function updateTrustedForwarder(address trustedForwarderAddress)
-        external
-        override
-        onlyRole(MAINTAINER_ROLE)
-    {
-        _trustedForwarder = trustedForwarderAddress;
     }
 
     // ====================== Pure / view helpers ======================

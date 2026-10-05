@@ -200,7 +200,7 @@ describe("DataPortabilityPermissionsV2", () => {
       await ethers.getContractFactory(
         "DataPortabilityServersV2Implementation",
       ),
-      [ethers.ZeroAddress, owner.address],
+      [owner.address],
       { kind: "uups" },
     );
     serversContract = await ethers.getContractAt(
@@ -678,7 +678,7 @@ describe("DataPortabilityPermissionsV2", () => {
         await ethers.getContractFactory(
           "DataPortabilityServersV2Implementation",
         ),
-        [ethers.ZeroAddress, owner.address],
+        [owner.address],
         { kind: "uups" },
       );
       await expect(

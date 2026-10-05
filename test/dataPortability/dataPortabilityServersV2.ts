@@ -10,7 +10,7 @@ chai.use(chaiAsPromised);
 should();
 
 describe("DataPortabilityServersV2", () => {
-  let trustedForwarder: HardhatEthersSigner;
+  let spareSigner: HardhatEthersSigner;
   let deployer: HardhatEthersSigner;
   let owner: HardhatEthersSigner;
   let maintainer: HardhatEthersSigner;
@@ -140,7 +140,7 @@ describe("DataPortabilityServersV2", () => {
 
   const deploy = async () => {
     [
-      trustedForwarder,
+      spareSigner,
       deployer,
       owner,
       maintainer,
@@ -155,11 +155,9 @@ describe("DataPortabilityServersV2", () => {
       "DataPortabilityServersV2Implementation",
     );
 
-    const proxyDeploy = await upgrades.deployProxy(
-      factory,
-      [trustedForwarder.address, owner.address],
-      { kind: "uups" },
-    );
+    const proxyDeploy = await upgrades.deployProxy(factory, [owner.address], {
+      kind: "uups",
+    });
 
     serversContract = await ethers.getContractAt(
       "DataPortabilityServersV2Implementation",
@@ -184,9 +182,6 @@ describe("DataPortabilityServersV2", () => {
       (
         await serversContract.hasRole(MAINTAINER_ROLE, maintainer)
       ).should.eq(true);
-      (await serversContract.trustedForwarder()).should.eq(
-        trustedForwarder.address,
-      );
       (await serversContract.version()).should.eq(1);
       (await serversContract.serversCount()).should.eq(0);
       (await serversContract.paused()).should.eq(false);
@@ -211,7 +206,7 @@ describe("DataPortabilityServersV2", () => {
 
     it("should reject re-initialization", async function () {
       await expect(
-        serversContract.initialize(trustedForwarder.address, owner.address),
+        serversContract.initialize(owner.address),
       ).to.be.revertedWithCustomError(serversContract, "InvalidInitialization");
     });
 
@@ -226,7 +221,6 @@ describe("DataPortabilityServersV2", () => {
         "DataPortabilityServersV2Proxy",
       );
       const initData = implFactory.interface.encodeFunctionData("initialize", [
-        trustedForwarder.address,
         ethers.ZeroAddress,
       ]);
 
@@ -829,57 +823,45 @@ describe("DataPortabilityServersV2", () => {
     });
   });
 
-  describe("ERC-2771 meta-transactions", () => {
-    it("should attribute _msgSender to the appended address for forwarder calls", async function () {
-      // The trusted forwarder appends the real sender (maintainer) as the
-      // last 20 bytes of calldata. pause() is MAINTAINER_ROLE-gated, so this
-      // only succeeds if the override block resolves the appended address.
-      const pauseWithSender = ethers.concat([
-        serversContract.interface.encodeFunctionData("pause"),
-        maintainer.address,
-      ]);
-
-      await trustedForwarder.sendTransaction({
-        to: await serversContract.getAddress(),
-        data: pauseWithSender,
-      });
-      (await serversContract.paused()).should.eq(true);
-
-      const unpauseWithSender = ethers.concat([
-        serversContract.interface.encodeFunctionData("unpause"),
-        maintainer.address,
-      ]);
-      await trustedForwarder.sendTransaction({
-        to: await serversContract.getAddress(),
-        data: unpauseWithSender,
-      });
-      (await serversContract.paused()).should.eq(false);
+  describe("No ERC-2771 (Hashlock M-01)", () => {
+    it("exposes no trusted-forwarder surface", async function () {
+      (serversContract.interface.getFunction("trustedForwarder") === null).should.eq(true);
+      (serversContract.interface.getFunction("updateTrustedForwarder") === null).should.eq(true);
+      (serversContract.interface.getFunction("isTrustedForwarder") === null).should.eq(true);
     });
 
-    it("should ignore the appended address for non-forwarder callers", async function () {
-      // The same suffix trick from anyone else must NOT impersonate the
-      // maintainer — msg.sender (the relayer) is used and lacks the role.
-      const pauseWithSender = ethers.concat([
-        serversContract.interface.encodeFunctionData("pause"),
+    it("a maintainer cannot become admin by appending an admin's address to calldata", async function () {
+      // The audit's PoC minus the forwarder rotation, which no longer exists:
+      // role checks read the direct msg.sender, so the suffix is ignored.
+      const grantAdminCall = serversContract.interface.encodeFunctionData("grantRole", [
+        DEFAULT_ADMIN_ROLE,
         maintainer.address,
       ]);
+      await expect(
+        maintainer.sendTransaction({
+          to: await serversContract.getAddress(),
+          data: ethers.concat([grantAdminCall, ethers.solidityPacked(["address"], [owner.address])]),
+        }),
+      )
+        .to.be.revertedWithCustomError(serversContract, "AccessControlUnauthorizedAccount")
+        .withArgs(maintainer.address, DEFAULT_ADMIN_ROLE);
+      (await serversContract.hasRole(DEFAULT_ADMIN_ROLE, maintainer.address)).should.eq(false);
+    });
 
+    it("the same suffix cannot impersonate a maintainer either", async function () {
       await expect(
         relayer.sendTransaction({
           to: await serversContract.getAddress(),
-          data: pauseWithSender,
+          data: ethers.concat([serversContract.interface.encodeFunctionData("pause"), maintainer.address]),
         }),
       )
-        .to.be.revertedWithCustomError(
-          serversContract,
-          "AccessControlUnauthorizedAccount",
-        )
+        .to.be.revertedWithCustomError(serversContract, "AccessControlUnauthorizedAccount")
         .withArgs(relayer.address, MAINTAINER_ROLE);
       (await serversContract.paused()).should.eq(false);
     });
   });
 
-  describe("Pause / unpause / trusted forwarder", () => {
+  describe("Pause / unpause", () => {
     it("should allow maintainer to pause and unpause", async function () {
       await serversContract.connect(maintainer).pause();
       (await serversContract.paused()).should.eq(true);
@@ -955,28 +937,6 @@ describe("DataPortabilityServersV2", () => {
         .connect(relayer)
         .deregisterServerWithSignature(deregistration, deregSignature).should
         .be.fulfilled;
-    });
-
-    it("should allow maintainer to update the trusted forwarder", async function () {
-      await serversContract
-        .connect(maintainer)
-        .updateTrustedForwarder(serverOwner2.address);
-      (await serversContract.trustedForwarder()).should.eq(
-        serverOwner2.address,
-      );
-    });
-
-    it("should reject updateTrustedForwarder from non-maintainer", async function () {
-      await expect(
-        serversContract
-          .connect(serverOwner1)
-          .updateTrustedForwarder(serverOwner1.address),
-      )
-        .to.be.revertedWithCustomError(
-          serversContract,
-          "AccessControlUnauthorizedAccount",
-        )
-        .withArgs(serverOwner1.address, MAINTAINER_ROLE);
     });
   });
 

@@ -227,7 +227,7 @@ describe("DataRegistryV2", () => {
       await ethers.getContractFactory(
         "DataPortabilityServersV2Implementation",
       ),
-      [ethers.ZeroAddress, owner.address],
+      [owner.address],
       { kind: "uups" },
     );
     servers = await ethers.getContractAt(

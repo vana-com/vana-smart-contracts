@@ -5,7 +5,7 @@ import { deterministicDeployProxy, verifyProxy } from "../helpers";
 
 /**
  * Deploys DataPortabilityServersV2 + DataRegistryV2 on Moksha and wires them:
- *  - DataPortabilityServersV2: initialize(trustedForwarder=0, owner)
+ *  - DataPortabilityServersV2: initialize(owner)
  *  - DataRegistryV2:           initialize(owner)
  *  - DataRegistryV2.setDataPortabilityServers(serversV2 proxy)
  *  - DataRegistryV2.grantRole(FACILITATOR_ROLE, owner)
@@ -35,8 +35,8 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
     "contracts/dataPortability/dataPortabilityServersV2/DataPortabilityServersV2Proxy.sol:DataPortabilityServersV2Proxy";
   const serversSalt = process.env.CREATE2_SALT ?? serversProxy;
 
-  // initialize(trustedForwarderAddress, ownerAddress)
-  const serversInitParams = [ethers.ZeroAddress, ownerAddress];
+  // initialize(ownerAddress)
+  const serversInitParams = [ownerAddress];
 
   const serversDeploy = await deterministicDeployProxy(
     deployer,
