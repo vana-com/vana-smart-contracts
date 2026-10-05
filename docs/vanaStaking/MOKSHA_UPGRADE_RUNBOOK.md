@@ -351,7 +351,7 @@ reproduces the Moksha splitter implementation `0x9b53…85ec` and proxy `0x7A7B�
 | RewardSplitterImplementation | `RewardSplitterProxySalt` | `0x9b53808c51De5c82149373a0DFAf789Aa41285ec` |
 | RewardSplitter proxy | bound to the entity | `0x7A7B89b6925A8156b9A51E520327c0701023b344` |
 
-`npx hardhat run scripts/vanaStaking/mainnetSafeBatches.ts` (Node 20, after `npx hardhat compile`) prints
+The batch files are generated locally and are **not committed** (`docs/vanaStaking/mainnet-safe/` is git-ignored); regenerate them with the scripts below. `npx hardhat run scripts/vanaStaking/mainnetSafeBatches.ts` (Node 20, after `npx hardhat compile`) prints
 the calls and writes `docs/vanaStaking/mainnet-safe/{1-entity,2-staking,3-treasury,4-splitter}.json`,
 importable in the Safe UI's Transaction Builder (checksummed). **Any contract change moves the
 implementation addresses: regenerate and re-sign after every commit that touches `contracts/`.**
@@ -484,4 +484,12 @@ Prerequisite: batch 7 executed (`0xd33F…` holds `DISTRIBUTOR_ROLE`). Budget 1 
 Reconciliation at 1 VANA: burn 25% = 0.25; 0.75 to pools by principal-seconds (60/20/20 with 0.3/0.1/0.1 staked);
 commission 5% off each pool's share up front. All values above were reproduced exactly on a fork of the live chain.
 Ratios hold for any budget; the split follows whatever is staked when round 2 runs (weights are stake × time since round 1).
+
+## 15. VanaPoolLens (read-only APY views) — mainnet 2026-10-01
+
+`0x6F800Be40cc91bcFb9e0b64809B16009Ec157B7d` (CREATE2, salt `VanaPoolLens-v1`; same address on Moksha once deployed
+there), deployed from the Ledger `0xf08bC343…`, tx `0x5aa0acc614b24e65437e9741a6edf1583c388b286815bb6b6ee565345ac3188e`,
+verified on Vanascan. Non-upgradeable, no owner, no funds; reads `VanaPoolEntity` only. Front end: `entityAPY(id)` /
+`entityAPYs(ids)` → `apy` (simple, net of commission, both reward tracks), with `ownerFundedUntil` / `splitterEndsAt`
+for how long it lasts. A new version = a new salt + a new address; nothing to migrate.
 
