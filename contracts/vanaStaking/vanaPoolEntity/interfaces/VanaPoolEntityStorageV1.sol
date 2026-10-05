@@ -27,4 +27,7 @@ abstract contract VanaPoolEntityStorageV1 is IVanaPoolEntity {
 
     bytes32 public constant MAINTAINER_ROLE = keccak256("MAINTAINER_ROLE");
     bytes32 public constant VANA_POOL_ROLE = keccak256("VANA_POOL_ROLE");
+    // Granted to the RewardSplitter so it can pay externally-funded, delegator-
+    // earned rewards straight to stakers via addStakerRewards.
+    bytes32 public constant REWARD_SPLITTER_ROLE = keccak256("REWARD_SPLITTER_ROLE");
 }

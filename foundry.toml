@@ -1,0 +1,30 @@
+# Foundry is used for Solidity unit tests only (test/foundry); Hardhat remains
+# the build/deploy system. src is scoped to a tree under test so forge does not
+# compile the whole contracts/ tree (which spans settings that need different
+# compiler options); the other tested trees (e.g. contracts/chain/l1Deposit)
+# are still compiled because the test files import them.
+# Compiler options mirror FIRST_COMPILER_SETTINGS in hardhat.config.ts.
+[profile.default]
+src = "contracts/vanaStaking"
+test = "test/foundry"
+out = "out"
+cache_path = "cache_forge"
+libs = ["lib", "node_modules"]
+solc = "0.8.24"
+via_ir = true
+optimizer = true
+optimizer_runs = 1
+remappings = [
+    "forge-std/=lib/forge-std/src/",
+    "@openzeppelin/contracts/=node_modules/@openzeppelin/contracts/",
+    "@openzeppelin/contracts-upgradeable/=node_modules/@openzeppelin/contracts-upgradeable/",
+]
+# fork tests that must reproduce a Hardhat deployment byte-for-byte (CREATE2
+# addresses) read the Hardhat artifacts
+fs_permissions = [{ access = "read", path = "./artifacts" }]
+
+# named endpoints: `--rpc-url vana` resolves VANA_RPC_URL from .env (forge
+# auto-loads .env from the project root; the shell does not)
+[rpc_endpoints]
+vana = "${VANA_RPC_URL}"
+moksha = "${MOKSHA_RPC_URL}"

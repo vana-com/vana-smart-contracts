@@ -5,6 +5,11 @@ node_modules
 # Hardhat files
 /cache
 
+# Foundry files
+/out
+/cache_forge
+/broadcast
+
 # TypeChain files
 /typechain
 /typechain-types
@@ -26,3 +31,5 @@ test/dlpRewards/dlpReward2.ts
 
 
 ./CLAUDE.md
+# Safe Transaction Builder batches: generated locally by scripts/vanaStaking/*Batch*.ts, not committed
+docs/vanaStaking/mainnet-safe/

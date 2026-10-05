@@ -3,6 +3,7 @@ import "@nomicfoundation/hardhat-toolbox";
 import "@nomicfoundation/hardhat-verify";
 import "@openzeppelin/hardhat-upgrades";
 import "hardhat-deploy";
+import "@nomicfoundation/hardhat-ledger";
 import * as dotenv from "dotenv";
 
 dotenv.config();
@@ -98,10 +99,13 @@ const config: HardhatUserConfig = {
     vana: {
       url: process.env.VANA_RPC_URL || "",
       chainId: 1480,
-      accounts:
-        process.env.DEPLOYER_PRIVATE_KEY !== undefined
-          ? [process.env.DEPLOYER_PRIVATE_KEY]
-          : [],
+      // Mainnet signs on a hardware wallet only: DEPLOYER_PRIVATE_KEY is a testnet key
+      // and is deliberately not offered here. LEDGER_ADDRESS selects the device account
+      // (Ethereum app open, blind signing enabled). "remote" (not []) matters: an
+      // array installs LocalAccountsProvider, which answers eth_accounts itself and
+      // hides the Ledger account on hardhat < 2.26.
+      accounts: "remote",
+      ledgerAccounts: process.env.LEDGER_ADDRESS ? [process.env.LEDGER_ADDRESS] : [],
       allowUnlimitedContractSize: true,
     },
     moksha: {

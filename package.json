@@ -4,9 +4,14 @@
   "main": "index.js",
   "author": "ec.dumea@gmail.com",
   "license": "MIT",
+  "packageManager": "yarn@1.22.22",
+  "scripts": {
+    "setup": "yarn install --frozen-lockfile && .github/scripts/install-evm-key-scan-hook.sh"
+  },
   "devDependencies": {
     "@nomicfoundation/hardhat-chai-matchers": "^2.0.0",
     "@nomicfoundation/hardhat-ethers": "^3.0.0",
+    "@nomicfoundation/hardhat-ledger": "~1.1.0",
     "@nomicfoundation/hardhat-network-helpers": "^1.0.0",
     "@nomicfoundation/hardhat-toolbox": "^4.0.0",
     "@nomicfoundation/hardhat-verify": "^2.0.8",
