@@ -437,6 +437,50 @@ describe("DataPortabilityPermissionsV2", () => {
         stored.grantVersion.should.eq(2);
         stored.expiresAt.should.eq(secondExpiry);
       });
+
+      // ---- Hashlock 6th audit, L-01: capped step, gaps still allowed ----
+      describe("step cap (MAX_GRANT_VERSION_STEP)", () => {
+        const STEP = 2n ** 64n;
+        const MAX_UINT256 = (1n << 256n) - 1n;
+
+        it("exposes the cap", async () => {
+          (await permissionsContract.MAX_GRANT_VERSION_STEP()).should.eq(STEP);
+        });
+
+        it("accepts gaps below the cap (the gateway submits only a grant's latest version)", async () => {
+          await permissionsContract.connect(grantor).addPermission(makeInput({ grantVersion: 1 }));
+          await permissionsContract.connect(grantor).addPermission(makeInput({ grantVersion: 3 })).should.be.fulfilled;
+          const ts = BigInt(Date.now()); // a client using millisecond timestamps
+          await permissionsContract.connect(grantor).addPermission(makeInput({ grantVersion: ts })).should.be.fulfilled;
+          const id = await computeGrantIdTs(grantor.address, GRANTEE_ID_1);
+          (await permissionsContract.permissions(id)).grantVersion.should.eq(ts);
+        });
+
+        it("accepts a step of exactly the cap and rejects one more", async () => {
+          await permissionsContract.connect(grantor).addPermission(makeInput({ grantVersion: STEP }));
+          await expect(
+            permissionsContract.connect(grantor).addPermission(makeInput({ grantVersion: STEP + STEP + 1n })),
+          )
+            .to.be.revertedWithCustomError(permissionsContract, "InvalidGrantVersion")
+            .withArgs(STEP, STEP + STEP + 1n);
+          await permissionsContract
+            .connect(grantor)
+            .addPermission(makeInput({ grantVersion: STEP + STEP })).should.be.fulfilled;
+        });
+
+        it("rejects a first write above the cap", async () => {
+          await expect(permissionsContract.connect(grantor).addPermission(makeInput({ grantVersion: STEP + 1n })))
+            .to.be.revertedWithCustomError(permissionsContract, "InvalidGrantVersion")
+            .withArgs(0, STEP + 1n);
+        });
+
+        it("rejects type(uint256).max directly (no overflow in the step check)", async () => {
+          await permissionsContract.connect(grantor).addPermission(makeInput({ grantVersion: 1 }));
+          await expect(permissionsContract.connect(grantor).addPermission(makeInput({ grantVersion: MAX_UINT256 })))
+            .to.be.revertedWithCustomError(permissionsContract, "InvalidGrantVersion")
+            .withArgs(1, MAX_UINT256);
+        });
+      });
     });
   });
 
@@ -696,6 +740,35 @@ describe("DataPortabilityPermissionsV2", () => {
       await permissionsContract
         .connect(owner)
         .setDataPortabilityServers(await serversContract.getAddress());
+    });
+
+    // Hashlock 6th audit, L-01: the audit's PoC. A trusted (or compromised)
+    // delegate signs a perpetual grant at type(uint256).max to freeze the slot.
+    it("rejects a delegate-signed grant that jumps to type(uint256).max (L-01 PoC)", async () => {
+      await registerServer(grantor, serverSigner.address);
+      const MAX_UINT256 = (1n << 256n) - 1n;
+      const locked = makeInput({ grantVersion: MAX_UINT256, expiresAt: 0 });
+      const signature = await signGrantRegistration(serverSigner, locked);
+      await expect(permissionsContract.connect(relayer).addPermissionWithSignature(locked, signature))
+        .to.be.revertedWithCustomError(permissionsContract, "InvalidGrantVersion")
+        .withArgs(0, MAX_UINT256);
+    });
+
+    it("after a delegate's largest allowed jump the grantor can still revoke", async () => {
+      await registerServer(grantor, serverSigner.address);
+      const STEP = 2n ** 64n;
+      const grant = makeInput({ grantVersion: STEP, expiresAt: 0 });
+      await permissionsContract
+        .connect(relayer)
+        .addPermissionWithSignature(grant, await signGrantRegistration(serverSigner, grant));
+      const id = await computeGrantIdTs(grantor.address, GRANTEE_ID_1);
+      (await permissionsContract.isActive(id)).should.eq(true);
+
+      // Revocation = upsert with a past expiry and a higher version.
+      await permissionsContract
+        .connect(grantor)
+        .addPermission(makeInput({ grantVersion: STEP + 1n, expiresAt: 1 }));
+      (await permissionsContract.isActive(id)).should.eq(false);
     });
 
     it("should accept a signature from a server registered to the grantor and emit both events", async () => {

@@ -25,6 +25,9 @@ contract DataPortabilityPermissionsV2Implementation is
     string private constant SIGNING_DOMAIN = "Vana Data Portability";
     string private constant SIGNATURE_VERSION = "1";
 
+    /// @inheritdoc IDataPortabilityPermissionsV2
+    uint256 public constant override MAX_GRANT_VERSION_STEP = 2 ** 64;
+
     bytes32 public constant override GRANT_REGISTRATION_TYPEHASH =
         keccak256(
             "GrantRegistration(address grantorAddress,bytes32 granteeId,string[] scopes,uint256 grantVersion,uint256 expiresAt)"
@@ -163,7 +166,18 @@ contract DataPortabilityPermissionsV2Implementation is
         // `grantVersion` acts as a per-grant monotonic nonce: every update must
         // be strictly larger than the stored value. First write has stored = 0,
         // so any input >= 1 passes. Prevents replay and rollback in one check.
-        if (input.grantVersion <= p.grantVersion) {
+        //
+        // The step is capped at MAX_GRANT_VERSION_STEP so no signer -- in
+        // particular a compromised delegate -- can jump to type(uint256).max
+        // and lock the slot against every later update or revocation
+        // (Hashlock 6th audit, L-01): reaching it now takes ~2^192 writes.
+        // Gaps below the cap stay valid on purpose: the gateway accepts any
+        // higher client-chosen version and only submits a grant's latest
+        // version on-chain, so consecutive (+1) versions cannot be required.
+        if (
+            input.grantVersion <= p.grantVersion ||
+            input.grantVersion - p.grantVersion > MAX_GRANT_VERSION_STEP
+        ) {
             revert InvalidGrantVersion(p.grantVersion, input.grantVersion);
         }
 

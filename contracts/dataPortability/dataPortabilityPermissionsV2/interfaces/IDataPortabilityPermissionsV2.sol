@@ -43,7 +43,9 @@ import "../../dataPortabilityServersV2/interfaces/IDataPortabilityServersV2.sol"
  *         per-grant nonce. Every update must use a strictly larger
  *         `grantVersion` than the currently stored one — so signatures can't
  *         be replayed, and updates can't roll back the grant. First write
- *         requires `grantVersion >= 1`.
+ *         requires `grantVersion >= 1`. Each step may be at most
+ *         `MAX_GRANT_VERSION_STEP` (2^64): gaps are allowed, but no signer can
+ *         jump to the terminal value and freeze the slot.
  *
  *         Two registration paths:
  *           - `addPermission`: direct call by the grantor (msg.sender)
@@ -161,6 +163,11 @@ interface IDataPortabilityPermissionsV2 {
     function setDataPortabilityServers(address newDataPortabilityServers) external;
 
     // ====================== Registration ======================
+
+    /// @notice Largest allowed increase of `grantVersion` in one write
+    ///         (2^64). Off-chain intake should reject signed versions above
+    ///         `stored + MAX_GRANT_VERSION_STEP`, or they will revert on-chain.
+    function MAX_GRANT_VERSION_STEP() external view returns (uint256);
 
     /// @notice Create or update a permission. `msg.sender` becomes the grantor.
     /// @return id The deterministic grant id.
