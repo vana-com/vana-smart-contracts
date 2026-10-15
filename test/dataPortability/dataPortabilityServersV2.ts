@@ -86,6 +86,47 @@ describe("DataPortabilityServersV2", () => {
     return await signer.signTypedData(domain, types, deregistration);
   };
 
+  type ServerSelfDeregistration = {
+    serverAddress: string;
+    serverId: string;
+    registeredAtBlock: bigint | number;
+    deadline: bigint | number;
+  };
+
+  // The server key's proof of possession: same fields as the owner's
+  // ServerRegistration, different primary type.
+  const signServerProof = async (
+    signer: HardhatEthersSigner,
+    registration: ServerRegistration,
+  ) => {
+    const domain = await eip712Domain();
+    const types = {
+      ServerProof: [
+        { name: "ownerAddress", type: "address" },
+        { name: "serverAddress", type: "address" },
+        { name: "publicKey", type: "string" },
+        { name: "serverUrl", type: "string" },
+      ],
+    };
+    return await signer.signTypedData(domain, types, registration);
+  };
+
+  const signSelfDeregistration = async (
+    signer: HardhatEthersSigner,
+    deregistration: ServerSelfDeregistration,
+  ) => {
+    const domain = await eip712Domain();
+    const types = {
+      ServerSelfDeregistration: [
+        { name: "serverAddress", type: "address" },
+        { name: "serverId", type: "bytes32" },
+        { name: "registeredAtBlock", type: "uint256" },
+        { name: "deadline", type: "uint256" },
+      ],
+    };
+    return await signer.signTypedData(domain, types, deregistration);
+  };
+
   const futureDeadline = async (secondsFromNow = 3600) => {
     const block = await ethers.provider.getBlock("latest");
     return BigInt(block!.timestamp + secondsFromNow);
@@ -138,6 +179,50 @@ describe("DataPortabilityServersV2", () => {
     return { deregistration, signature, receipt: await tx.wait() };
   };
 
+  // Register with both the owner's signature and the server key's proof.
+  const registerServerWithProof = async (
+    ownerSigner: HardhatEthersSigner,
+    serverSigner: HardhatEthersSigner,
+    publicKey: string,
+    serverUrl: string,
+  ) => {
+    const registration: ServerRegistration = {
+      ownerAddress: ownerSigner.address,
+      serverAddress: serverSigner.address,
+      publicKey,
+      serverUrl,
+    };
+    const ownerSignature = await signRegistration(ownerSigner, registration);
+    const serverSignature = await signServerProof(serverSigner, registration);
+    const tx = await serversContract
+      .connect(relayer)
+      .registerServerWithProof(registration, ownerSignature, serverSignature);
+    const receipt = await tx.wait();
+    const serverId = await serversContract.computeServerId(
+      serverSigner.address,
+      publicKey,
+      serverUrl,
+    );
+    return { serverId, receipt, registration };
+  };
+
+  const deregisterServerByServer = async (
+    serverSigner: HardhatEthersSigner,
+    serverId: string,
+  ) => {
+    const deregistration: ServerSelfDeregistration = {
+      serverAddress: serverSigner.address,
+      serverId,
+      registeredAtBlock: (await serversContract.getServer(serverId)).registeredAtBlock,
+      deadline: await futureDeadline(),
+    };
+    const signature = await signSelfDeregistration(serverSigner, deregistration);
+    const tx = await serversContract
+      .connect(relayer)
+      .deregisterServerByServer(deregistration, signature);
+    return { deregistration, signature, receipt: await tx.wait() };
+  };
+
   const deploy = async () => {
     [
       spareSigner,
@@ -182,7 +267,7 @@ describe("DataPortabilityServersV2", () => {
       (
         await serversContract.hasRole(MAINTAINER_ROLE, maintainer)
       ).should.eq(true);
-      (await serversContract.version()).should.eq(1);
+      (await serversContract.version()).should.eq(2);
       (await serversContract.serversCount()).should.eq(0);
       (await serversContract.paused()).should.eq(false);
     });
@@ -199,6 +284,20 @@ describe("DataPortabilityServersV2", () => {
         ethers.keccak256(
           ethers.toUtf8Bytes(
             "ServerDeregistration(address ownerAddress,address serverAddress,bytes32 serverId,uint256 deadline)",
+          ),
+        ),
+      );
+      (await serversContract.SERVER_PROOF_TYPEHASH()).should.eq(
+        ethers.keccak256(
+          ethers.toUtf8Bytes(
+            "ServerProof(address ownerAddress,address serverAddress,string publicKey,string serverUrl)",
+          ),
+        ),
+      );
+      (await serversContract.SERVER_SELF_DEREGISTRATION_TYPEHASH()).should.eq(
+        ethers.keccak256(
+          ethers.toUtf8Bytes(
+            "ServerSelfDeregistration(address serverAddress,bytes32 serverId,uint256 registeredAtBlock,uint256 deadline)",
           ),
         ),
       );
@@ -823,6 +922,499 @@ describe("DataPortabilityServersV2", () => {
     });
   });
 
+  describe("Server proof of possession", () => {
+    // `spareSigner` plays the attacker: a valid owner key with no control
+    // over the victim's server key (`server1`).
+
+    it("should start with the server-proof requirement off", async function () {
+      (await serversContract.requireServerProof()).should.eq(false);
+    });
+
+    it("should let only the maintainer change the requirement", async function () {
+      await expect(
+        serversContract.connect(serverOwner1).setRequireServerProof(true),
+      )
+        .to.be.revertedWithCustomError(
+          serversContract,
+          "AccessControlUnauthorizedAccount",
+        )
+        .withArgs(serverOwner1.address, MAINTAINER_ROLE);
+
+      await expect(serversContract.connect(maintainer).setRequireServerProof(true))
+        .to.emit(serversContract, "RequireServerProofUpdated")
+        .withArgs(true);
+      (await serversContract.requireServerProof()).should.eq(true);
+
+      await serversContract.connect(maintainer).setRequireServerProof(false);
+      (await serversContract.requireServerProof()).should.eq(false);
+    });
+
+    it("should register with the owner's signature and the server's proof", async function () {
+      const { serverId, receipt } = await registerServerWithProof(
+        serverOwner1,
+        server1,
+        PUBLIC_KEY_1,
+        SERVER_URL_1,
+      );
+
+      await expect(receipt)
+        .to.emit(serversContract, "ServerRegistered")
+        .withArgs(
+          serverId,
+          serverOwner1.address,
+          server1.address,
+          PUBLIC_KEY_1,
+          SERVER_URL_1,
+        );
+      (await serversContract.activeServerId(server1.address)).should.eq(serverId);
+      (await serversContract.serversCount()).should.eq(1);
+    });
+
+    it("should still accept proofs while the requirement is on", async function () {
+      await serversContract.connect(maintainer).setRequireServerProof(true);
+      await registerServerWithProof(
+        serverOwner1,
+        server1,
+        PUBLIC_KEY_1,
+        SERVER_URL_1,
+      ).should.be.fulfilled;
+    });
+
+    it("should block the owner-only path once the requirement is on (squat closed)", async function () {
+      await serversContract.connect(maintainer).setRequireServerProof(true);
+
+      const squat: ServerRegistration = {
+        ownerAddress: spareSigner.address,
+        serverAddress: server1.address,
+        publicKey: PUBLIC_KEY_1,
+        serverUrl: SERVER_URL_1,
+      };
+      const signature = await signRegistration(spareSigner, squat);
+      await expect(
+        serversContract
+          .connect(spareSigner)
+          .registerServerWithSignature(squat, signature),
+      ).to.be.revertedWithCustomError(serversContract, "ServerProofRequired");
+      (await serversContract.activeServerId(server1.address)).should.eq(
+        ethers.ZeroHash,
+      );
+    });
+
+    it("should reject a proof signed by a key other than serverAddress", async function () {
+      const squat: ServerRegistration = {
+        ownerAddress: spareSigner.address,
+        serverAddress: server1.address,
+        publicKey: PUBLIC_KEY_1,
+        serverUrl: SERVER_URL_1,
+      };
+      const ownerSignature = await signRegistration(spareSigner, squat);
+      // The attacker signs the "proof" with its own key.
+      const forgedProof = await signServerProof(spareSigner, squat);
+      await expect(
+        serversContract
+          .connect(spareSigner)
+          .registerServerWithProof(squat, ownerSignature, forgedProof),
+      )
+        .to.be.revertedWithCustomError(serversContract, "ServerMismatch")
+        .withArgs(server1.address, spareSigner.address);
+    });
+
+    it("should reject a real server proof issued to a different owner", async function () {
+      // server1 consents to serverOwner1, and the attacker lifts that proof.
+      const genuine: ServerRegistration = {
+        ownerAddress: serverOwner1.address,
+        serverAddress: server1.address,
+        publicKey: PUBLIC_KEY_1,
+        serverUrl: SERVER_URL_1,
+      };
+      const genuineProof = await signServerProof(server1, genuine);
+
+      const squat: ServerRegistration = { ...genuine, ownerAddress: spareSigner.address };
+      const ownerSignature = await signRegistration(spareSigner, squat);
+      await expect(
+        serversContract
+          .connect(spareSigner)
+          .registerServerWithProof(squat, ownerSignature, genuineProof),
+      ).to.be.revertedWithCustomError(serversContract, "ServerMismatch");
+    });
+
+    it("should reject a proof over a different publicKey or serverUrl", async function () {
+      const registration: ServerRegistration = {
+        ownerAddress: serverOwner1.address,
+        serverAddress: server1.address,
+        publicKey: PUBLIC_KEY_1,
+        serverUrl: SERVER_URL_1,
+      };
+      const ownerSignature = await signRegistration(serverOwner1, registration);
+      const proofForOtherUrl = await signServerProof(server1, {
+        ...registration,
+        serverUrl: SERVER_URL_2,
+      });
+      await expect(
+        serversContract
+          .connect(relayer)
+          .registerServerWithProof(registration, ownerSignature, proofForOtherUrl),
+      ).to.be.revertedWithCustomError(serversContract, "ServerMismatch");
+    });
+
+    it("should not accept the owner's ServerRegistration signature as a proof", async function () {
+      // Owner and server are the same key: the typehashes still differ, so
+      // one signature cannot serve as both.
+      const registration: ServerRegistration = {
+        ownerAddress: server1.address,
+        serverAddress: server1.address,
+        publicKey: PUBLIC_KEY_1,
+        serverUrl: SERVER_URL_1,
+      };
+      const ownerSignature = await signRegistration(server1, registration);
+      await expect(
+        serversContract
+          .connect(relayer)
+          .registerServerWithProof(registration, ownerSignature, ownerSignature),
+      ).to.be.revertedWithCustomError(serversContract, "ServerMismatch");
+    });
+
+    it("should still require the owner's signature", async function () {
+      const registration: ServerRegistration = {
+        ownerAddress: serverOwner1.address,
+        serverAddress: server1.address,
+        publicKey: PUBLIC_KEY_1,
+        serverUrl: SERVER_URL_1,
+      };
+      const notOwner = await signRegistration(spareSigner, registration);
+      const serverSignature = await signServerProof(server1, registration);
+      await expect(
+        serversContract
+          .connect(relayer)
+          .registerServerWithProof(registration, notOwner, serverSignature),
+      )
+        .to.be.revertedWithCustomError(serversContract, "OwnerMismatch")
+        .withArgs(serverOwner1.address, spareSigner.address);
+    });
+
+    it("should reject a proof registration while paused", async function () {
+      await serversContract.connect(maintainer).pause();
+      await expect(
+        registerServerWithProof(serverOwner1, server1, PUBLIC_KEY_1, SERVER_URL_1),
+      ).to.be.revertedWithCustomError(serversContract, "EnforcedPause");
+    });
+  });
+
+  describe("deregisterServerByServer (squat recovery)", () => {
+    it("should let the real server key clear a squatted address and re-register", async function () {
+      // A squat made before the requirement is on: attacker-owned record for server1.
+      const { serverId: squatId } = await registerServer(
+        spareSigner,
+        server1.address,
+        PUBLIC_KEY_1,
+        SERVER_URL_1,
+      );
+
+      // The legitimate operator is locked out.
+      await expect(
+        registerServerWithProof(serverOwner1, server1, PUBLIC_KEY_1, SERVER_URL_2),
+      ).to.be.revertedWithCustomError(serversContract, "ServerAlreadyRegistered");
+
+      const { receipt } = await deregisterServerByServer(server1, squatId);
+      await expect(receipt)
+        .to.emit(serversContract, "ServerDeregistered")
+        .withArgs(squatId, spareSigner.address, server1.address);
+      (await serversContract.activeServerId(server1.address)).should.eq(
+        ethers.ZeroHash,
+      );
+      (await serversContract.getServer(squatId)).revokedAtBlock.should.not.eq(0);
+
+      // The operator now registers its own address.
+      const { serverId } = await registerServerWithProof(
+        serverOwner1,
+        server1,
+        PUBLIC_KEY_1,
+        SERVER_URL_2,
+      );
+      const server = await serversContract.getActiveServerByAddress(server1.address);
+      server.id.should.eq(serverId);
+      server.ownerAddress.should.eq(serverOwner1.address);
+    });
+
+    it("should let the operator reclaim the exact tuple a squatter used", async function () {
+      // The squatter copies the operator's real publicKey and serverUrl.
+      const { serverId: squatId } = await registerServer(
+        spareSigner,
+        server1.address,
+        PUBLIC_KEY_1,
+        SERVER_URL_1,
+      );
+      await deregisterServerByServer(server1, squatId);
+
+      const { serverId, receipt } = await registerServerWithProof(
+        serverOwner1,
+        server1,
+        PUBLIC_KEY_1,
+        SERVER_URL_1,
+      );
+      serverId.should.eq(squatId);
+      await expect(receipt)
+        .to.emit(serversContract, "ServerRegistered")
+        .withArgs(serverId, serverOwner1.address, server1.address, PUBLIC_KEY_1, SERVER_URL_1);
+
+      const server = await serversContract.getServer(serverId);
+      server.ownerAddress.should.eq(serverOwner1.address);
+      server.revokedAtBlock.should.eq(0);
+      (await serversContract.activeServerId(server1.address)).should.eq(serverId);
+
+      // The record is listed under the operator only, not the squatter.
+      (await serversContract.ownerServers(serverOwner1.address)).length.should.eq(1);
+      (await serversContract.ownerServers(spareSigner.address)).length.should.eq(0);
+    });
+
+    it("should not replay any eviction signature against the reclaimed record", async function () {
+      const { serverId: squatId } = await registerServer(
+        spareSigner,
+        server1.address,
+        PUBLIC_KEY_1,
+        SERVER_URL_1,
+      );
+      const squatBlock = (await serversContract.getServer(squatId)).registeredAtBlock;
+      // The operator signs two evictions (e.g. a retry); only one lands.
+      const spare: ServerSelfDeregistration = {
+        serverAddress: server1.address,
+        serverId: squatId,
+        registeredAtBlock: squatBlock,
+        deadline: await futureDeadline(7200),
+      };
+      const spareSignature = await signSelfDeregistration(server1, spare);
+      await deregisterServerByServer(server1, squatId);
+
+      // The reclaimed record reuses squatId but has a later registeredAtBlock.
+      await registerServerWithProof(serverOwner1, server1, PUBLIC_KEY_1, SERVER_URL_1);
+      const reclaimedBlock = (await serversContract.getServer(squatId)).registeredAtBlock;
+      reclaimedBlock.should.be.gt(squatBlock);
+
+      await expect(
+        serversContract
+          .connect(spareSigner)
+          .deregisterServerByServer(spare, spareSignature),
+      )
+        .to.be.revertedWithCustomError(serversContract, "StaleRegistration")
+        .withArgs(reclaimedBlock, squatBlock);
+      (await serversContract.activeServerId(server1.address)).should.eq(squatId);
+    });
+
+    it("should not let the owner-only path reuse a reclaimable tuple", async function () {
+      const { serverId: squatId } = await registerServer(
+        spareSigner,
+        server1.address,
+        PUBLIC_KEY_1,
+        SERVER_URL_1,
+      );
+      await deregisterServerByServer(server1, squatId);
+
+      // The squatter tries to re-take the freed tuple without a proof.
+      await expect(
+        registerServer(spareSigner, server1.address, PUBLIC_KEY_1, SERVER_URL_1),
+      ).to.be.revertedWithCustomError(serversContract, "ServerAlreadyRegistered");
+    });
+
+    it("should keep a proven tuple burnt after the server revokes it (no replay)", async function () {
+      const { serverId, registration } = await registerServerWithProof(
+        serverOwner1,
+        server1,
+        PUBLIC_KEY_1,
+        SERVER_URL_1,
+      );
+      await deregisterServerByServer(server1, serverId);
+
+      // Both signatures are public calldata; replaying them must fail.
+      const ownerSignature = await signRegistration(serverOwner1, registration);
+      const serverSignature = await signServerProof(server1, registration);
+      await expect(
+        serversContract
+          .connect(spareSigner)
+          .registerServerWithProof(registration, ownerSignature, serverSignature),
+      ).to.be.revertedWithCustomError(serversContract, "ServerAlreadyRegistered");
+    });
+
+    it("should reclaim a tuple only once", async function () {
+      const { serverId } = await registerServer(
+        spareSigner,
+        server1.address,
+        PUBLIC_KEY_1,
+        SERVER_URL_1,
+      );
+      await deregisterServerByServer(server1, serverId);
+      await registerServerWithProof(serverOwner1, server1, PUBLIC_KEY_1, SERVER_URL_1);
+      // Now proven: the next revocation burns it.
+      await deregisterServerByServer(server1, serverId);
+      await expect(
+        registerServerWithProof(serverOwner1, server1, PUBLIC_KEY_1, SERVER_URL_1),
+      ).to.be.revertedWithCustomError(serversContract, "ServerAlreadyRegistered");
+    });
+
+    it("should not let the same owner reclaim its own evicted tuple", async function () {
+      // Its old deregistration signatures bind to the id, not the instance,
+      // so a same-owner reuse would let them revoke the new record.
+      const { serverId } = await registerServer(
+        serverOwner1,
+        server1.address,
+        PUBLIC_KEY_1,
+        SERVER_URL_1,
+      );
+      const spare: ServerDeregistration = {
+        ownerAddress: serverOwner1.address,
+        serverAddress: server1.address,
+        serverId,
+        deadline: await futureDeadline(),
+      };
+      const spareSignature = await signDeregistration(serverOwner1, spare);
+      await deregisterServerByServer(server1, serverId);
+
+      await expect(
+        registerServerWithProof(serverOwner1, server1, PUBLIC_KEY_1, SERVER_URL_1),
+      ).to.be.revertedWithCustomError(serversContract, "ServerAlreadyRegistered");
+      // A different tuple works.
+      await registerServerWithProof(serverOwner1, server1, PUBLIC_KEY_1, SERVER_URL_2);
+      await expect(
+        serversContract.connect(relayer).deregisterServerWithSignature(spare, spareSignature),
+      ).to.be.revertedWithCustomError(serversContract, "StaleServerId");
+    });
+
+    it("should reject the squatter's old deregistration signature on the reclaimed record", async function () {
+      const { serverId } = await registerServer(
+        spareSigner,
+        server1.address,
+        PUBLIC_KEY_1,
+        SERVER_URL_1,
+      );
+      const squatterDereg: ServerDeregistration = {
+        ownerAddress: spareSigner.address,
+        serverAddress: server1.address,
+        serverId,
+        deadline: await futureDeadline(),
+      };
+      const squatterSignature = await signDeregistration(spareSigner, squatterDereg);
+      await deregisterServerByServer(server1, serverId);
+      await registerServerWithProof(serverOwner1, server1, PUBLIC_KEY_1, SERVER_URL_1);
+
+      await expect(
+        serversContract
+          .connect(spareSigner)
+          .deregisterServerWithSignature(squatterDereg, squatterSignature),
+      )
+        .to.be.revertedWithCustomError(serversContract, "NotServerOwner")
+        .withArgs(serverId, spareSigner.address, serverOwner1.address);
+    });
+
+    it("should keep an owner-revoked tuple burnt", async function () {
+      const { serverId } = await registerServer(
+        serverOwner1,
+        server1.address,
+        PUBLIC_KEY_1,
+        SERVER_URL_1,
+      );
+      await deregisterServer(serverOwner1, server1.address, serverId);
+      await expect(
+        registerServerWithProof(serverOwner1, server1, PUBLIC_KEY_1, SERVER_URL_1),
+      ).to.be.revertedWithCustomError(serversContract, "ServerAlreadyRegistered");
+    });
+
+    it("should reject a signature from any key other than serverAddress", async function () {
+      const { serverId } = await registerServer(
+        serverOwner1,
+        server1.address,
+        PUBLIC_KEY_1,
+        SERVER_URL_1,
+      );
+      const deregistration: ServerSelfDeregistration = {
+        serverAddress: server1.address,
+        serverId,
+        registeredAtBlock: (await serversContract.getServer(serverId)).registeredAtBlock,
+        deadline: await futureDeadline(),
+      };
+      // Neither a stranger nor the record's owner can use this path.
+      for (const signer of [spareSigner, serverOwner1]) {
+        const signature = await signSelfDeregistration(signer, deregistration);
+        await expect(
+          serversContract
+            .connect(relayer)
+            .deregisterServerByServer(deregistration, signature),
+        )
+          .to.be.revertedWithCustomError(serversContract, "ServerMismatch")
+          .withArgs(server1.address, signer.address);
+      }
+    });
+
+    it("should revert with DeadlineExpired for an expired deadline", async function () {
+      const { serverId } = await registerServer(
+        serverOwner1,
+        server1.address,
+        PUBLIC_KEY_1,
+        SERVER_URL_1,
+      );
+      const deregistration: ServerSelfDeregistration = {
+        serverAddress: server1.address,
+        serverId,
+        registeredAtBlock: (await serversContract.getServer(serverId)).registeredAtBlock,
+        deadline: await futureDeadline(10),
+      };
+      const signature = await signSelfDeregistration(server1, deregistration);
+      await time.increase(11);
+      await expect(
+        serversContract
+          .connect(relayer)
+          .deregisterServerByServer(deregistration, signature),
+      ).to.be.revertedWithCustomError(serversContract, "DeadlineExpired");
+    });
+
+    it("should not replay against a later re-registration of the same address", async function () {
+      const { serverId: firstId } = await registerServer(
+        serverOwner1,
+        server1.address,
+        PUBLIC_KEY_1,
+        SERVER_URL_1,
+      );
+      const { deregistration, signature } = await deregisterServerByServer(
+        server1,
+        firstId,
+      );
+
+      // Replay with nothing active.
+      await expect(
+        serversContract
+          .connect(relayer)
+          .deregisterServerByServer(deregistration, signature),
+      ).to.be.revertedWithCustomError(serversContract, "ServerNotFound");
+
+      // Replay against a fresh registration.
+      const { serverId: secondId } = await registerServerWithProof(
+        serverOwner1,
+        server1,
+        PUBLIC_KEY_1,
+        SERVER_URL_2,
+      );
+      await expect(
+        serversContract
+          .connect(relayer)
+          .deregisterServerByServer(deregistration, signature),
+      )
+        .to.be.revertedWithCustomError(serversContract, "StaleServerId")
+        .withArgs(secondId, firstId);
+    });
+
+    it("should work while paused (revoking only removes trust)", async function () {
+      const { serverId } = await registerServer(
+        spareSigner,
+        server1.address,
+        PUBLIC_KEY_1,
+        SERVER_URL_1,
+      );
+      await serversContract.connect(maintainer).pause();
+      await deregisterServerByServer(server1, serverId).should.be.fulfilled;
+      (await serversContract.activeServerId(server1.address)).should.eq(
+        ethers.ZeroHash,
+      );
+    });
+  });
+
   describe("No ERC-2771 (Hashlock M-01)", () => {
     it("exposes no trusted-forwarder surface", async function () {
       (serversContract.interface.getFunction("trustedForwarder") === null).should.eq(true);
@@ -986,7 +1578,7 @@ describe("DataPortabilityServersV2", () => {
       );
       const server = await serversContract.getServer(serverId);
       server.ownerAddress.should.eq(serverOwner1.address);
-      (await serversContract.version()).should.eq(1);
+      (await serversContract.version()).should.eq(2);
     });
 
     it("should allow admin to upgrade via upgrades.upgradeProxy", async function () {
@@ -1012,7 +1604,7 @@ describe("DataPortabilityServersV2", () => {
       (await serversContract.activeServerId(server1.address)).should.eq(
         serverId,
       );
-      (await serversContract.version()).should.eq(1);
+      (await serversContract.version()).should.eq(2);
     });
   });
 });

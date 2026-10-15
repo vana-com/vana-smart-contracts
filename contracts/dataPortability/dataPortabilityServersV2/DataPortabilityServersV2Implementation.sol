@@ -6,7 +6,7 @@ import "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol"
 import "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
-import "./interfaces/DataPortabilityServersV2StorageV1.sol";
+import "./interfaces/DataPortabilityServersV2StorageV2.sol";
 
 /**
  * @title DataPortabilityServersV2Implementation
@@ -24,7 +24,7 @@ contract DataPortabilityServersV2Implementation is
     PausableUpgradeable,
     AccessControlUpgradeable,
     EIP712Upgradeable,
-    DataPortabilityServersV2StorageV1
+    DataPortabilityServersV2StorageV2
 {
     using ECDSA for bytes32;
 
@@ -41,6 +41,16 @@ contract DataPortabilityServersV2Implementation is
     bytes32 public constant override SERVER_DEREGISTRATION_TYPEHASH =
         keccak256(
             "ServerDeregistration(address ownerAddress,address serverAddress,bytes32 serverId,uint256 deadline)"
+        );
+
+    bytes32 public constant override SERVER_PROOF_TYPEHASH =
+        keccak256(
+            "ServerProof(address ownerAddress,address serverAddress,string publicKey,string serverUrl)"
+        );
+
+    bytes32 public constant override SERVER_SELF_DEREGISTRATION_TYPEHASH =
+        keccak256(
+            "ServerSelfDeregistration(address serverAddress,bytes32 serverId,uint256 registeredAtBlock,uint256 deadline)"
         );
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -72,10 +82,15 @@ contract DataPortabilityServersV2Implementation is
         _unpause();
     }
 
+    function setRequireServerProof(bool required) external override onlyRole(MAINTAINER_ROLE) {
+        requireServerProof = required;
+        emit RequireServerProofUpdated(required);
+    }
+
     // ====================== Pure / view helpers ======================
 
     function version() external pure virtual override returns (uint256) {
-        return 1;
+        return 2;
     }
 
     function domainSeparator() public view override returns (bytes32) {
@@ -118,10 +133,30 @@ contract DataPortabilityServersV2Implementation is
     {
         bytes32[] storage ids = _ownerToServerIds[ownerAddress];
         uint256 len = ids.length;
-        ServerInfo[] memory result = new ServerInfo[](len);
+        // Skip ids the owner no longer holds: a reclaimed squat stays in the
+        // squatter's list but now belongs to the operator.
+        uint256 count;
+        for (uint256 i = 0; i < len; ) {
+            if (_servers[ids[i]].ownerAddress == ownerAddress) {
+                unchecked {
+                    ++count;
+                }
+            }
+            unchecked {
+                ++i;
+            }
+        }
+        ServerInfo[] memory result = new ServerInfo[](count);
+        uint256 j;
         for (uint256 i = 0; i < len; ) {
             bytes32 sId = ids[i];
-            result[i] = _toServerInfo(sId, _servers[sId]);
+            Server storage s = _servers[sId];
+            if (s.ownerAddress == ownerAddress) {
+                result[j] = _toServerInfo(sId, s);
+                unchecked {
+                    ++j;
+                }
+            }
             unchecked {
                 ++i;
             }
@@ -135,18 +170,27 @@ contract DataPortabilityServersV2Implementation is
         ServerRegistration calldata input,
         bytes calldata signature
     ) external override whenNotPaused returns (bytes32 serverId) {
-        if (input.ownerAddress == address(0) || input.serverAddress == address(0)) revert ZeroAddress();
-        if (bytes(input.publicKey).length == 0) revert EmptyPublicKey();
-        if (bytes(input.serverUrl).length == 0) revert EmptyUrl();
-        if (activeServerId[input.serverAddress] != bytes32(0)) {
-            revert ServerAlreadyRegistered(input.serverAddress);
-        }
+        // An owner signature alone proves nothing about the server key, so it
+        // lets anyone claim any serverAddress. Closed once relayers send proofs.
+        if (requireServerProof) revert ServerProofRequired();
+        _validateRegistration(input);
+        _verifyOwnerSignature(input, signature);
+        return _register(input, false);
+    }
 
-        // Verify owner's signature.
+    function registerServerWithProof(
+        ServerRegistration calldata input,
+        bytes calldata ownerSignature,
+        bytes calldata serverSignature
+    ) external override whenNotPaused returns (bytes32 serverId) {
+        _validateRegistration(input);
+        _verifyOwnerSignature(input, ownerSignature);
+
+        // Verify the server key's proof of possession.
         bytes32 digest = _hashTypedDataV4(
             keccak256(
                 abi.encode(
-                    SERVER_REGISTRATION_TYPEHASH,
+                    SERVER_PROOF_TYPEHASH,
                     input.ownerAddress,
                     input.serverAddress,
                     keccak256(bytes(input.publicKey)),
@@ -154,42 +198,10 @@ contract DataPortabilityServersV2Implementation is
                 )
             )
         );
-        address signer = ECDSA.recover(digest, signature);
-        if (signer == address(0)) revert InvalidSignature();
-        if (signer != input.ownerAddress) revert OwnerMismatch(input.ownerAddress, signer);
+        address signer = ECDSA.recover(digest, serverSignature);
+        if (signer != input.serverAddress) revert ServerMismatch(input.serverAddress, signer);
 
-        serverId = _computeServerId(input.serverAddress, input.publicKey, input.serverUrl);
-
-        // The same `(serverAddress, publicKey, serverUrl)` could in principle
-        // collide with a previously revoked registration. That's allowed — it
-        // would just resurrect the same id. Reject explicitly so callers know.
-        // (In practice this means the owner is re-registering an identical
-        // server after revoke, which they probably don't want.)
-        if (_servers[serverId].registeredAtBlock != 0) {
-            revert ServerAlreadyRegistered(input.serverAddress);
-        }
-
-        Server storage s = _servers[serverId];
-        s.ownerAddress = input.ownerAddress;
-        s.serverAddress = input.serverAddress;
-        s.publicKey = input.publicKey;
-        s.serverUrl = input.serverUrl;
-        s.registeredAtBlock = block.number;
-        // s.revokedAtBlock = 0 by default
-
-        activeServerId[input.serverAddress] = serverId;
-        _ownerToServerIds[input.ownerAddress].push(serverId);
-        unchecked {
-            ++serversCount;
-        }
-
-        emit ServerRegistered(
-            serverId,
-            input.ownerAddress,
-            input.serverAddress,
-            input.publicKey,
-            input.serverUrl
-        );
+        return _register(input, true);
     }
 
     function deregisterServerWithSignature(
@@ -235,7 +247,118 @@ contract DataPortabilityServersV2Implementation is
         emit ServerDeregistered(input.serverId, input.ownerAddress, input.serverAddress);
     }
 
+    function deregisterServerByServer(
+        ServerSelfDeregistration calldata input,
+        bytes calldata signature
+    ) external override {
+        if (block.timestamp > input.deadline) revert DeadlineExpired(input.deadline, block.timestamp);
+
+        // Verify the server key's signature.
+        bytes32 digest = _hashTypedDataV4(
+            keccak256(
+                abi.encode(
+                    SERVER_SELF_DEREGISTRATION_TYPEHASH,
+                    input.serverAddress,
+                    input.serverId,
+                    input.registeredAtBlock,
+                    input.deadline
+                )
+            )
+        );
+        address signer = ECDSA.recover(digest, signature);
+        if (signer != input.serverAddress) revert ServerMismatch(input.serverAddress, signer);
+
+        // Bound to the active registration, so the signature cannot revoke a
+        // later re-registration of the same address.
+        bytes32 activeId = activeServerId[input.serverAddress];
+        if (activeId == bytes32(0)) revert ServerNotFound(input.serverId);
+        if (activeId != input.serverId) revert StaleServerId(activeId, input.serverId);
+
+        // A reclaimed record reuses its serverId, so also bind to the
+        // registration instance: an eviction signature for the squat cannot
+        // revoke the operator's reclaimed record.
+        Server storage s = _servers[input.serverId];
+        if (s.registeredAtBlock != input.registeredAtBlock) {
+            revert StaleRegistration(s.registeredAtBlock, input.registeredAtBlock);
+        }
+        s.revokedAtBlock = block.number;
+        activeServerId[input.serverAddress] = bytes32(0);
+        // The server never consented to an unproven record, so let a proven
+        // registration reuse its tuple.
+        if (!_provenServerIds[input.serverId]) _reclaimableServerIds[input.serverId] = true;
+
+        emit ServerDeregistered(input.serverId, s.ownerAddress, input.serverAddress);
+    }
+
     // ====================== Internals ======================
+
+    function _validateRegistration(ServerRegistration calldata input) internal view {
+        if (input.ownerAddress == address(0) || input.serverAddress == address(0)) revert ZeroAddress();
+        if (bytes(input.publicKey).length == 0) revert EmptyPublicKey();
+        if (bytes(input.serverUrl).length == 0) revert EmptyUrl();
+        if (activeServerId[input.serverAddress] != bytes32(0)) {
+            revert ServerAlreadyRegistered(input.serverAddress);
+        }
+    }
+
+    function _verifyOwnerSignature(ServerRegistration calldata input, bytes calldata signature) internal view {
+        bytes32 digest = _hashTypedDataV4(
+            keccak256(
+                abi.encode(
+                    SERVER_REGISTRATION_TYPEHASH,
+                    input.ownerAddress,
+                    input.serverAddress,
+                    keccak256(bytes(input.publicKey)),
+                    keccak256(bytes(input.serverUrl))
+                )
+            )
+        );
+        address signer = ECDSA.recover(digest, signature);
+        if (signer == address(0)) revert InvalidSignature();
+        if (signer != input.ownerAddress) revert OwnerMismatch(input.ownerAddress, signer);
+    }
+
+    function _register(ServerRegistration calldata input, bool proven) internal returns (bytes32 serverId) {
+        serverId = _computeServerId(input.serverAddress, input.publicKey, input.serverUrl);
+
+        // The same `(serverAddress, publicKey, serverUrl)` produces the same id
+        // as a previously revoked registration. Reject it, so a replayed
+        // signature cannot resurrect a revoked server. The one exception is an
+        // unproven record the server key itself revoked, reused with a proof
+        // by a different owner (the squat case). The owner must differ, so the
+        // previous owner's unused deregistration signatures, which bind to the
+        // id and not the instance, fail `NotServerOwner` on the reused record.
+        Server storage s = _servers[serverId];
+        if (s.registeredAtBlock != 0) {
+            if (!proven || !_reclaimableServerIds[serverId] || s.ownerAddress == input.ownerAddress) {
+                revert ServerAlreadyRegistered(input.serverAddress);
+            }
+            delete _reclaimableServerIds[serverId];
+        }
+
+        s.ownerAddress = input.ownerAddress;
+        s.serverAddress = input.serverAddress;
+        s.publicKey = input.publicKey;
+        s.serverUrl = input.serverUrl;
+        s.registeredAtBlock = block.number;
+        s.revokedAtBlock = 0;
+        if (proven) _provenServerIds[serverId] = true;
+
+        activeServerId[input.serverAddress] = serverId;
+        _ownerToServerIds[input.ownerAddress].push(serverId);
+        unchecked {
+            ++serversCount;
+        }
+
+        emit ServerRegistered(
+            serverId,
+            input.ownerAddress,
+            input.serverAddress,
+            input.publicKey,
+            input.serverUrl
+        );
+    }
+
 
     function _computeServerId(
         address serverAddress,

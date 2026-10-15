@@ -51,6 +51,29 @@ interface IDataPortabilityServersV2 {
         uint256 deadline;
     }
 
+    /// @notice EIP-712 payload for the server key's proof of possession.
+    ///         Signed by `serverAddress` over the same fields the owner signs,
+    ///         so the proof binds this server to this owner and this
+    ///         `(publicKey, serverUrl)` and cannot be reused for another owner.
+    struct ServerProof {
+        address ownerAddress;
+        address serverAddress;
+        string publicKey;
+        string serverUrl;
+    }
+
+    /// @notice EIP-712 payload for a server revoking its own active
+    ///         registration. Signed by `serverAddress`. This is the recovery
+    ///         path for a registration made without the server's consent
+    ///         (a squatted address): whoever holds the server key can always
+    ///         free its address.
+    struct ServerSelfDeregistration {
+        address serverAddress;
+        bytes32 serverId;
+        uint256 registeredAtBlock;
+        uint256 deadline;
+    }
+
     /// @notice External view of a server record.
     struct ServerInfo {
         bytes32 id;
@@ -75,6 +98,9 @@ interface IDataPortabilityServersV2 {
     error StaleServerId(bytes32 expected, bytes32 provided);
     error DeadlineExpired(uint256 deadline, uint256 currentTime);
     error AlreadyRevoked(bytes32 serverId);
+    error ServerMismatch(address claimed, address recovered);
+    error ServerProofRequired();
+    error StaleRegistration(uint256 expected, uint256 provided);
 
     // ====================== Events ======================
 
@@ -99,6 +125,10 @@ interface IDataPortabilityServersV2 {
         address indexed serverAddress
     );
 
+    /// @notice Emitted when the maintainer turns the server-proof
+    ///         requirement on or off.
+    event RequireServerProofUpdated(bool required);
+
     // ====================== Pure / view helpers ======================
 
     function version() external pure returns (uint256);
@@ -112,6 +142,12 @@ interface IDataPortabilityServersV2 {
 
     /// @notice Typehash for `ServerDeregistration`.
     function SERVER_DEREGISTRATION_TYPEHASH() external view returns (bytes32);
+
+    /// @notice Typehash for `ServerProof`.
+    function SERVER_PROOF_TYPEHASH() external view returns (bytes32);
+
+    /// @notice Typehash for `ServerSelfDeregistration`.
+    function SERVER_SELF_DEREGISTRATION_TYPEHASH() external view returns (bytes32);
 
     /// @notice Deterministic id for a server. Anyone can compute this off-chain
     ///         with the same formula:
@@ -146,16 +182,28 @@ interface IDataPortabilityServersV2 {
     /// @notice Total number of server records ever registered.
     function serversCount() external view returns (uint256);
 
+    /// @notice When true, `registerServerWithSignature` (owner signature only)
+    ///         reverts and every registration must go through
+    ///         `registerServerWithProof`.
+    function requireServerProof() external view returns (bool);
+
     // ====================== Admin ======================
 
     function pause() external;
 
     function unpause() external;
 
+    /// @notice Turn the server-proof requirement on or off. Off exists only so
+    ///         the upgrade can land before relayers switch to
+    ///         `registerServerWithProof`; turn it on once they have.
+    function setRequireServerProof(bool required) external;
+
     // ====================== Writes ======================
 
     /// @notice Register a server with an EIP-712 signature from the owner.
     ///         The recovered signer must equal `input.ownerAddress`.
+    ///         Proves nothing about control of `serverAddress`, so it reverts
+    ///         with `ServerProofRequired` once `requireServerProof` is on.
     ///         Computes `serverId`, stores the record, emits
     ///         `ServerRegistered`. Reverts if a server with the same
     ///         `serverAddress` is already active.
@@ -163,6 +211,29 @@ interface IDataPortabilityServersV2 {
         ServerRegistration calldata input,
         bytes calldata signature
     ) external returns (bytes32 serverId);
+
+    /// @notice Register a server with an EIP-712 signature from the owner AND
+    ///         a `ServerProof` signature from `input.serverAddress`. The owner
+    ///         signature authorizes the registration; the server signature
+    ///         proves the owner controls the server key. Same checks and
+    ///         effects as `registerServerWithSignature` otherwise.
+    function registerServerWithProof(
+        ServerRegistration calldata input,
+        bytes calldata ownerSignature,
+        bytes calldata serverSignature
+    ) external returns (bytes32 serverId);
+
+    /// @notice Revoke the active registration of `input.serverAddress` with an
+    ///         EIP-712 signature from that server key. Lets the real operator
+    ///         clear a registration someone else made for its address.
+    ///         `input.serverId` must equal the active id and
+    ///         `input.registeredAtBlock` its `registeredAtBlock`, which ties the
+    ///         signature to one registration instance. Works while paused,
+    ///         because revoking only removes trust.
+    function deregisterServerByServer(
+        ServerSelfDeregistration calldata input,
+        bytes calldata signature
+    ) external;
 
     /// @notice Deregister a server with an EIP-712 signature from the owner.
     ///         The recovered signer must equal `input.ownerAddress` AND match
