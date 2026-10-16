@@ -154,6 +154,7 @@ interface IDataPortabilityGrantees {
      * - Grantee address must not be zero
      * - Public key must not be empty
      * - Contract must not be paused
+     * - Caller must be granteeAddress or hold MAINTAINER_ROLE
      * 
      * Effects:
      * - Increments grantees count
@@ -239,6 +240,7 @@ interface IDataPortabilityGrantees {
      * - Grantee must exist
      * - Permission must not already be associated with the grantee
      * - Contract must not be paused
+     * - Caller must be granteeAddress or hold MAINTAINER_ROLE
      * 
      * Effects:
      * - Adds permission ID to grantee's permission set
@@ -258,6 +260,7 @@ interface IDataPortabilityGrantees {
      * - Grantee must exist
      * - Permission must be currently associated with the grantee
      * - Contract must not be paused
+     * - Caller must be granteeAddress or hold MAINTAINER_ROLE
      * 
      * Effects:
      * - Removes permission ID from grantee's permission set
