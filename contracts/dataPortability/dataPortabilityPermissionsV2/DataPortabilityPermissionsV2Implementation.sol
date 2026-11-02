@@ -10,8 +10,9 @@ import "./interfaces/DataPortabilityPermissionsV2StorageV1.sol";
 
 /**
  * @title DataPortabilityPermissionsV2Implementation
- * @notice New-shape permission registry. UUPS upgradeable. Permissions are
- *         immutable after creation; expiry is enforced via `expiresAt`.
+ * @notice New-shape permission registry. UUPS upgradeable. One upsertable
+ *         permission per (grantor, grantee); expiry is enforced via
+ *         `expiresAt`, and the grantor can always revoke via `revokePermission`.
  */
 contract DataPortabilityPermissionsV2Implementation is
     UUPSUpgradeable,
@@ -51,8 +52,10 @@ contract DataPortabilityPermissionsV2Implementation is
 
     function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
+    /// @dev 2: grantVersion step cap (Hashlock L-01) + grantor-only
+    ///      `revokePermission`.
     function version() external pure virtual override returns (uint256) {
-        return 1;
+        return 2;
     }
 
     // ====================== Admin ======================
@@ -150,6 +153,51 @@ contract DataPortabilityPermissionsV2Implementation is
         bytes32 id = _addPermission(input);
         if (isDelegate) emit PermissionSignedByDelegate(id, input.grantorAddress, signer);
         return id;
+    }
+
+    // ====================== Revocation ======================
+
+    /// @inheritdoc IDataPortabilityPermissionsV2
+    /// @dev Deliberately not `whenNotPaused`: revocation only ever narrows
+    ///      access, and a pause is exactly when a grantor may need it.
+    function revokePermission(bytes32 id) external override returns (uint256 newGrantVersion) {
+        Permission storage p = _permissions[id];
+        address grantorAddress = p.grantorAddress;
+        if (grantorAddress == address(0)) revert PermissionNotFound(id);
+        // Direct call only: no signature, no delegate. The stored grantor is
+        // the only authority, whoever (grantor or delegate) wrote the record.
+        if (grantorAddress != msg.sender) revert GrantorMismatch(grantorAddress, msg.sender);
+
+        // Jump by the full step instead of +1. While the stored version is v,
+        // the only versions `_addPermission` can ever accept are (v, v + STEP],
+        // so moving to v + STEP invalidates every signature that could land
+        // before the revoke: grantor-signed updates queued off-chain at v+1,
+        // v+2, ... and anything a delegate signed. A revoke at v+1 would leave
+        // a queued v+2 replayable through the permissionless
+        // `addPermissionWithSignature` and silently re-activate the grant.
+        // Versions above v + STEP become reachable afterwards; honest clients
+        // count up from the stored value and never sign that far ahead, and a
+        // delegate that might has to be deregistered first (its signatures
+        // are checked against the servers registry at execution time).
+        // Saturates at type(uint256).max for a slot that is already that
+        // high (none exist on mainnet): revocation still succeeds, the slot
+        // just cannot be re-issued afterwards.
+        uint256 current = p.grantVersion;
+        newGrantVersion = current > type(uint256).max - MAX_GRANT_VERSION_STEP
+            ? type(uint256).max
+            : current + MAX_GRANT_VERSION_STEP;
+        // Strictly in the past so `isActive` is false from this block on
+        // (`isActive` treats `block.timestamp == expiresAt` as still active),
+        // and never 0, which would mean perpetual.
+        uint256 expiresAt = block.timestamp - 1;
+
+        p.grantVersion = newGrantVersion;
+        p.expiresAt = expiresAt;
+
+        // PermissionSet keeps indexers that rebuild state from it correct;
+        // PermissionRevoked tells them why the version jumped.
+        emit PermissionSet(id, grantorAddress, p.granteeId, p.scopes, newGrantVersion, expiresAt);
+        emit PermissionRevoked(id, grantorAddress, p.granteeId, newGrantVersion);
     }
 
     // ====================== Internals ======================

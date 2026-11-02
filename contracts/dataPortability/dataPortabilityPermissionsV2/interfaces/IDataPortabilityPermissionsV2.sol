@@ -52,8 +52,16 @@ import "../../dataPortabilityServersV2/interfaces/IDataPortabilityServersV2.sol"
  *           - `addPermissionWithSignature`: any submitter; the grantor's EIP-712
  *             signature authorizes the action
  *
- *         "Revocation" is achieved by upserting with `expiresAt` set to a past
- *         timestamp (and a higher `grantVersion`).
+ *         Revocation: the grantor calls `revokePermission(id)` directly. It
+ *         sets a past `expiresAt` and raises `grantVersion` by the full
+ *         `MAX_GRANT_VERSION_STEP`, which invalidates every signature that
+ *         could still be submitted for the slot. The grantor can re-issue
+ *         afterwards with `grantVersion = stored + 1` (or any value within
+ *         the step). Upserting with a past `expiresAt` still works too, but
+ *         only invalidates signed updates at or below the version it uses.
+ *         If a personal server is compromised, deregister it in
+ *         DataPortabilityServersV2 first, then revoke: while it is still
+ *         registered it can write a fresh grant on top of the revocation.
  *
  * @custom:security-contact security@vana.org
  */
@@ -85,8 +93,10 @@ interface IDataPortabilityPermissionsV2 {
     error ZeroAddress();
     error ZeroGranteeId();
     error EmptyScopes();
-    /// @dev Reverts when `providedVersion <= currentVersion`. For the first
-    ///      write, `currentVersion` is 0 so `providedVersion` must be >= 1.
+    /// @dev Reverts when `providedVersion <= currentVersion` or
+    ///      `providedVersion > currentVersion + MAX_GRANT_VERSION_STEP`. For
+    ///      the first write, `currentVersion` is 0 so `providedVersion` must be
+    ///      in [1, 2^64].
     error InvalidGrantVersion(uint256 currentVersion, uint256 providedVersion);
     error InvalidSignature();
     /// @dev Reverts when the claimed `grantorAddress` does not match the
@@ -95,6 +105,8 @@ interface IDataPortabilityPermissionsV2 {
     ///      the recovered signer is neither the grantor nor a personal server
     ///      currently trusted by the grantor.
     error GrantorMismatch(address claimed, address actual);
+    /// @dev `revokePermission` on an id that was never written.
+    error PermissionNotFound(bytes32 id);
 
     // ====================== Events ======================
 
@@ -118,6 +130,18 @@ interface IDataPortabilityPermissionsV2 {
         bytes32 indexed id,
         address indexed grantorAddress,
         address indexed delegate
+    );
+
+    /// @notice Emitted by `revokePermission`, after the `PermissionSet` that
+    ///         records the new state (past `expiresAt`, version raised by
+    ///         `MAX_GRANT_VERSION_STEP`). Off-chain systems that track the
+    ///         slot's version must pick up `grantVersion` from here: the next
+    ///         write must be above it.
+    event PermissionRevoked(
+        bytes32 indexed id,
+        address indexed grantorAddress,
+        bytes32 indexed granteeId,
+        uint256 grantVersion
     );
 
     /// @notice Emitted when the admin updates the cross-referenced
@@ -194,4 +218,18 @@ interface IDataPortabilityPermissionsV2 {
         AddPermissionInput calldata input,
         bytes calldata signature
     ) external returns (bytes32 id);
+
+    // ====================== Revocation ======================
+
+    /// @notice Revoke a permission. Callable only by its grantor, directly
+    ///         (no signature path, no delegate), and also while paused.
+    ///         Works on any record, including one a delegate wrote with
+    ///         `expiresAt = 0`. Afterwards `isActive(id)` is false, every
+    ///         signature that could previously be submitted for the slot is
+    ///         dead, and the grantor can re-issue with a version above the
+    ///         returned one.
+    /// @return newGrantVersion The stored version after revocation:
+    ///         `previous + MAX_GRANT_VERSION_STEP`, saturating at
+    ///         type(uint256).max.
+    function revokePermission(bytes32 id) external returns (uint256 newGrantVersion);
 }
