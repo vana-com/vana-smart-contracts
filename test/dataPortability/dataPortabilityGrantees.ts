@@ -46,6 +46,78 @@ describe("DataPortabilityGrantees", () => {
     await granteesContract.connect(owner).grantRole(PERMISSION_MANAGER_ROLE, owner.address);
   });
 
+  describe("registerGrantee caller binding", () => {
+    const publicKey = "test-public-key-123";
+
+    it("should reject a third-party caller even when owner equals granteeAddress", async () => {
+      await expect(
+        granteesContract
+          .connect(user1)
+          .registerGrantee(granteeAddress1.address, granteeAddress1.address, publicKey)
+      ).to.be.revertedWithCustomError(granteesContract, "UnauthorizedRegistration");
+
+      expect(await granteesContract.granteeAddressToId(granteeAddress1.address)).to.equal(0n);
+      expect(await granteesContract.granteesCount()).to.equal(0n);
+    });
+
+    it("should reject a third-party caller registering another address under itself", async () => {
+      await expect(
+        granteesContract
+          .connect(user1)
+          .registerGrantee(user1.address, granteeAddress1.address, publicKey)
+      ).to.be.revertedWithCustomError(granteesContract, "UnauthorizedRegistration");
+    });
+
+    it("should allow the grantee to register itself", async () => {
+      await expect(
+        granteesContract
+          .connect(granteeAddress1)
+          .registerGrantee(granteeAddress1.address, granteeAddress1.address, publicKey)
+      )
+        .to.emit(granteesContract, "GranteeRegistered")
+        .withArgs(1n, granteeAddress1.address, granteeAddress1.address, publicKey);
+
+      expect(await granteesContract.granteeAddressToId(granteeAddress1.address)).to.equal(1n);
+    });
+
+    it("should allow the grantee to register itself with a different owner", async () => {
+      await granteesContract
+        .connect(granteeAddress1)
+        .registerGrantee(user1.address, granteeAddress1.address, publicKey);
+
+      const info = await granteesContract.granteeByAddress(granteeAddress1.address);
+      expect(info.owner).to.equal(user1.address);
+      expect(info.granteeAddress).to.equal(granteeAddress1.address);
+    });
+
+    it("should allow a maintainer to register on behalf of a grantee", async () => {
+      await expect(
+        granteesContract
+          .connect(maintainer)
+          .registerGrantee(user1.address, granteeAddress1.address, publicKey)
+      )
+        .to.emit(granteesContract, "GranteeRegistered")
+        .withArgs(1n, user1.address, granteeAddress1.address, publicKey);
+
+      const info = await granteesContract.granteeByAddress(granteeAddress1.address);
+      expect(info.owner).to.equal(user1.address);
+    });
+
+    it("should keep input validation errors ahead of the authorization check", async () => {
+      await expect(
+        granteesContract
+          .connect(user1)
+          .registerGrantee(granteeAddress1.address, granteeAddress1.address, "")
+      ).to.be.revertedWithCustomError(granteesContract, "EmptyPublicKey");
+
+      await expect(
+        granteesContract
+          .connect(user1)
+          .registerGrantee(ethers.ZeroAddress, ethers.ZeroAddress, publicKey)
+      ).to.be.revertedWithCustomError(granteesContract, "ZeroAddress");
+    });
+  });
+
   describe("granteePermissionsPaginated", () => {
     let granteeId: bigint;
     const publicKey = "test-public-key-123";
