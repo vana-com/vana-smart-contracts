@@ -109,6 +109,13 @@ interface IDataRegistryV2 {
     ///         emitted for direct `setStatus` or owner-self-signed calls.
     event StatusSignedByDelegate(bytes32 indexed id, address indexed ownerAddress, address indexed delegate);
 
+    /// @notice Emitted on every successful `setStatusWithSignature`, including
+    ///         the no-op case where the status already equals the requested
+    ///         one and `DataPointStatusChanged` is not emitted. `sequence` is
+    ///         the value just consumed; the next signed status write must use
+    ///         `sequence + 1`. Lets indexers track `statusSequence` from logs.
+    event StatusSequenceConsumed(bytes32 indexed id, uint256 sequence);
+
     event DataPortabilityServersUpdated(address indexed previous, address indexed current);
 
     // ====================== Pure helpers ======================
@@ -227,9 +234,10 @@ interface IDataRegistryV2 {
     ///             the caller supplied)
     ///           - `ECDSAInvalidSignature*` / `OwnerMismatch` as in `addDataWithSignature`
     ///
-    ///         Same silent-no-op semantic as direct `setStatus` when the
-    ///         status is already the requested value — the sequence is still
-    ///         consumed so the signature cannot be replayed.
+    ///         Same no-op semantic as direct `setStatus` when the status is
+    ///         already the requested value (no `DataPointStatusChanged`), but
+    ///         the sequence is still consumed so the signature cannot be
+    ///         replayed. Every call emits `StatusSequenceConsumed`.
     /// @param  ownerAddress     Data point owner.
     /// @param  scope            Data point scope.
     /// @param  newStatus        Target status (must not be `Status.None`).

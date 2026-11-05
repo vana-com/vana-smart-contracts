@@ -322,8 +322,9 @@ contract DataRegistryV2Implementation is
     ///      pattern, against `_statusSequences` instead of `currentVersion` so
     ///      data writes and status flips can't invalidate each other's
     ///      pending signatures. The sequence is consumed even on the
-    ///      silent-no-op case (status already equals newStatus) so the
-    ///      signature can never be replayed.
+    ///      no-op case (status already equals newStatus) so the
+    ///      signature can never be replayed; `StatusSequenceConsumed`
+    ///      records every consumption.
     function setStatusWithSignature(
         address ownerAddress,
         string calldata scope,
@@ -360,10 +361,13 @@ contract DataRegistryV2Implementation is
         uint256 nextSequence = _statusSequences[id] + 1;
         if (expectedSequence != nextSequence) revert UnexpectedVersion(nextSequence, expectedSequence);
         _statusSequences[id] = nextSequence;
+        // Always logged, so the consumed sequence is visible even on the
+        // no-op path below (Hashlock Q-03).
+        emit StatusSequenceConsumed(id, nextSequence);
 
         // Status already at target: counter is consumed (anti-replay), but no
-        // state mutation and no event — matches direct setStatus's silent
-        // no-op semantics on the status side.
+        // status mutation and no DataPointStatusChanged — matches direct
+        // setStatus's silent no-op semantics on the status side.
         if (d.status == newStatus) {
             if (isDelegate) emit StatusSignedByDelegate(id, ownerAddress, signer);
             return;

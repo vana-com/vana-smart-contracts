@@ -1016,6 +1016,9 @@ describe("DataRegistryV2", () => {
       await expect(tx)
         .to.emit(registry, "DataPointStatusChanged")
         .withArgs(id, Status.Inactive);
+      await expect(tx)
+        .to.emit(registry, "StatusSequenceConsumed")
+        .withArgs(id, 1n);
       await expect(tx).to.not.emit(registry, "StatusSignedByDelegate");
 
       (await registry.dataPoints(user1.address, SCOPE)).status.should.eq(
@@ -1125,9 +1128,11 @@ describe("DataRegistryV2", () => {
         .withArgs(dpId(user1.address, missingScope));
     });
 
-    it("should consume the sequence without emitting on a signed no-op", async function () {
+    it("should consume the sequence and log it on an owner-signed no-op", async function () {
       // Data point is Active; sign a change to Active with the correct next
-      // sequence. Tx succeeds, sequence is consumed, but no status event.
+      // sequence. Tx succeeds and the sequence is consumed; no status event,
+      // but StatusSequenceConsumed records the consumption (Hashlock Q-03).
+      const id = dpId(user1.address, SCOPE);
       const signature = await signSetStatus(
         user1,
         user1.address,
@@ -1146,6 +1151,10 @@ describe("DataRegistryV2", () => {
         );
 
       await expect(tx).to.not.emit(registry, "DataPointStatusChanged");
+      await expect(tx)
+        .to.emit(registry, "StatusSequenceConsumed")
+        .withArgs(id, 1n);
+      await expect(tx).to.not.emit(registry, "StatusSignedByDelegate");
       (await registry.statusSequence(user1.address, SCOPE)).should.eq(1n);
       (await registry.dataPoints(user1.address, SCOPE)).status.should.eq(
         Status.Active,
@@ -1193,6 +1202,9 @@ describe("DataRegistryV2", () => {
         .to.emit(registry, "DataPointStatusChanged")
         .withArgs(id, Status.Unavailable);
       await expect(tx)
+        .to.emit(registry, "StatusSequenceConsumed")
+        .withArgs(id, 1n);
+      await expect(tx)
         .to.emit(registry, "StatusSignedByDelegate")
         .withArgs(id, user1.address, server1.address);
     });
@@ -1224,9 +1236,44 @@ describe("DataRegistryV2", () => {
 
       await expect(tx).to.not.emit(registry, "DataPointStatusChanged");
       await expect(tx)
+        .to.emit(registry, "StatusSequenceConsumed")
+        .withArgs(id, 1n);
+      await expect(tx)
         .to.emit(registry, "StatusSignedByDelegate")
         .withArgs(id, user1.address, server1.address);
       (await registry.statusSequence(user1.address, SCOPE)).should.eq(1n);
+    });
+
+    it("should log each consumed sequence in order, change or no-op", async function () {
+      // Active -> Inactive (change), Inactive -> Inactive (no-op),
+      // Inactive -> Active (change). StatusSequenceConsumed carries 1, 2, 3
+      // and always matches statusSequence(), so an indexer can track it.
+      const id = dpId(user1.address, SCOPE);
+      const steps = [Status.Inactive, Status.Inactive, Status.Active];
+      for (let i = 0; i < steps.length; i++) {
+        const seq = BigInt(i + 1);
+        const sig = await signSetStatus(user1, user1.address, SCOPE, steps[i], seq);
+        const tx = await registry
+          .connect(relayer)
+          .setStatusWithSignature(user1.address, SCOPE, steps[i], seq, sig);
+        await expect(tx)
+          .to.emit(registry, "StatusSequenceConsumed")
+          .withArgs(id, seq);
+        if (i === 1) {
+          await expect(tx).to.not.emit(registry, "DataPointStatusChanged");
+        } else {
+          await expect(tx)
+            .to.emit(registry, "DataPointStatusChanged")
+            .withArgs(id, steps[i]);
+        }
+        (await registry.statusSequence(user1.address, SCOPE)).should.eq(seq);
+      }
+    });
+
+    it("should not emit StatusSequenceConsumed on direct setStatus", async function () {
+      const tx = await registry.connect(user1).setStatus(SCOPE, Status.Inactive);
+      await expect(tx).to.not.emit(registry, "StatusSequenceConsumed");
+      (await registry.statusSequence(user1.address, SCOPE)).should.eq(0n);
     });
 
     it("should keep the status sequence independent of the data version", async function () {
