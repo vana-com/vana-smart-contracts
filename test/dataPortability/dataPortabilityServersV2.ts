@@ -95,9 +95,13 @@ describe("DataPortabilityServersV2", () => {
 
   // The server key's proof of possession: same fields as the owner's
   // ServerRegistration, different primary type.
+  // Far enough ahead for every test; expiry has its own cases.
+  const PROOF_DEADLINE = 4102444800n; // 2100-01-01
+
   const signServerProof = async (
     signer: HardhatEthersSigner,
     registration: ServerRegistration,
+    deadline: bigint = PROOF_DEADLINE,
   ) => {
     const domain = await eip712Domain();
     const types = {
@@ -106,9 +110,10 @@ describe("DataPortabilityServersV2", () => {
         { name: "serverAddress", type: "address" },
         { name: "publicKey", type: "string" },
         { name: "serverUrl", type: "string" },
+        { name: "deadline", type: "uint256" },
       ],
     };
-    return await signer.signTypedData(domain, types, registration);
+    return await signer.signTypedData(domain, types, { ...registration, deadline });
   };
 
   const signSelfDeregistration = async (
@@ -196,7 +201,7 @@ describe("DataPortabilityServersV2", () => {
     const serverSignature = await signServerProof(serverSigner, registration);
     const tx = await serversContract
       .connect(relayer)
-      .registerServerWithProof(registration, ownerSignature, serverSignature);
+      .registerServerWithProof(registration, PROOF_DEADLINE, ownerSignature, serverSignature);
     const receipt = await tx.wait();
     const serverId = await serversContract.computeServerId(
       serverSigner.address,
@@ -290,7 +295,7 @@ describe("DataPortabilityServersV2", () => {
       (await serversContract.SERVER_PROOF_TYPEHASH()).should.eq(
         ethers.keccak256(
           ethers.toUtf8Bytes(
-            "ServerProof(address ownerAddress,address serverAddress,string publicKey,string serverUrl)",
+            "ServerProof(address ownerAddress,address serverAddress,string publicKey,string serverUrl,uint256 deadline)",
           ),
         ),
       );
@@ -1013,7 +1018,7 @@ describe("DataPortabilityServersV2", () => {
       await expect(
         serversContract
           .connect(spareSigner)
-          .registerServerWithProof(squat, ownerSignature, forgedProof),
+          .registerServerWithProof(squat, PROOF_DEADLINE, ownerSignature, forgedProof),
       )
         .to.be.revertedWithCustomError(serversContract, "ServerMismatch")
         .withArgs(server1.address, spareSigner.address);
@@ -1034,7 +1039,7 @@ describe("DataPortabilityServersV2", () => {
       await expect(
         serversContract
           .connect(spareSigner)
-          .registerServerWithProof(squat, ownerSignature, genuineProof),
+          .registerServerWithProof(squat, PROOF_DEADLINE, ownerSignature, genuineProof),
       ).to.be.revertedWithCustomError(serversContract, "ServerMismatch");
     });
 
@@ -1053,7 +1058,7 @@ describe("DataPortabilityServersV2", () => {
       await expect(
         serversContract
           .connect(relayer)
-          .registerServerWithProof(registration, ownerSignature, proofForOtherUrl),
+          .registerServerWithProof(registration, PROOF_DEADLINE, ownerSignature, proofForOtherUrl),
       ).to.be.revertedWithCustomError(serversContract, "ServerMismatch");
     });
 
@@ -1070,7 +1075,7 @@ describe("DataPortabilityServersV2", () => {
       await expect(
         serversContract
           .connect(relayer)
-          .registerServerWithProof(registration, ownerSignature, ownerSignature),
+          .registerServerWithProof(registration, PROOF_DEADLINE, ownerSignature, ownerSignature),
       ).to.be.revertedWithCustomError(serversContract, "ServerMismatch");
     });
 
@@ -1086,7 +1091,7 @@ describe("DataPortabilityServersV2", () => {
       await expect(
         serversContract
           .connect(relayer)
-          .registerServerWithProof(registration, notOwner, serverSignature),
+          .registerServerWithProof(registration, PROOF_DEADLINE, notOwner, serverSignature),
       )
         .to.be.revertedWithCustomError(serversContract, "OwnerMismatch")
         .withArgs(serverOwner1.address, spareSigner.address);
@@ -1230,7 +1235,7 @@ describe("DataPortabilityServersV2", () => {
       await expect(
         serversContract
           .connect(spareSigner)
-          .registerServerWithProof(registration, ownerSignature, serverSignature),
+          .registerServerWithProof(registration, PROOF_DEADLINE, ownerSignature, serverSignature),
       ).to.be.revertedWithCustomError(serversContract, "ServerAlreadyRegistered");
     });
 
@@ -1304,7 +1309,66 @@ describe("DataPortabilityServersV2", () => {
         .withArgs(serverId, spareSigner.address, serverOwner1.address);
     });
 
-    it("should keep an owner-revoked tuple burnt", async function () {
+    it("should let the operator reclaim a tuple the squatter deregistered itself", async function () {
+      // The squatter revokes its own squat first, hoping to burn the tuple.
+      const { serverId: squatId } = await registerServer(
+        spareSigner,
+        server1.address,
+        PUBLIC_KEY_1,
+        SERVER_URL_1,
+      );
+      await deregisterServer(spareSigner, server1.address, squatId);
+
+      const { serverId } = await registerServerWithProof(
+        serverOwner1,
+        server1,
+        PUBLIC_KEY_1,
+        SERVER_URL_1,
+      );
+      serverId.should.eq(squatId);
+      const server = await serversContract.getServer(serverId);
+      server.ownerAddress.should.eq(serverOwner1.address);
+      server.revokedAtBlock.should.eq(0);
+      (await serversContract.activeServerId(server1.address)).should.eq(serverId);
+    });
+
+    it("should reject an expired proof", async function () {
+      const registration: ServerRegistration = {
+        ownerAddress: serverOwner1.address,
+        serverAddress: server1.address,
+        publicKey: PUBLIC_KEY_1,
+        serverUrl: SERVER_URL_1,
+      };
+      const deadline = await futureDeadline(60);
+      const ownerSignature = await signRegistration(serverOwner1, registration);
+      const serverSignature = await signServerProof(server1, registration, deadline);
+      await time.increase(120);
+      await expect(
+        serversContract
+          .connect(relayer)
+          .registerServerWithProof(registration, deadline, ownerSignature, serverSignature),
+      ).to.be.revertedWithCustomError(serversContract, "DeadlineExpired");
+    });
+
+    it("should bind the proof to its deadline", async function () {
+      // A relayer cannot extend a proof by submitting a later deadline.
+      const registration: ServerRegistration = {
+        ownerAddress: serverOwner1.address,
+        serverAddress: server1.address,
+        publicKey: PUBLIC_KEY_1,
+        serverUrl: SERVER_URL_1,
+      };
+      const deadline = await futureDeadline(60);
+      const ownerSignature = await signRegistration(serverOwner1, registration);
+      const serverSignature = await signServerProof(server1, registration, deadline);
+      await expect(
+        serversContract
+          .connect(relayer)
+          .registerServerWithProof(registration, deadline + 3600n, ownerSignature, serverSignature),
+      ).to.be.revertedWithCustomError(serversContract, "ServerMismatch");
+    });
+
+    it("should keep an owner-revoked tuple burnt for the same owner", async function () {
       const { serverId } = await registerServer(
         serverOwner1,
         server1.address,

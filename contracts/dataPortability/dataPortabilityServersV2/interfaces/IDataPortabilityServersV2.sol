@@ -55,11 +55,13 @@ interface IDataPortabilityServersV2 {
     ///         Signed by `serverAddress` over the same fields the owner signs,
     ///         so the proof binds this server to this owner and this
     ///         `(publicKey, serverUrl)` and cannot be reused for another owner.
+    ///         `deadline` bounds how long an unused proof stays valid.
     struct ServerProof {
         address ownerAddress;
         address serverAddress;
         string publicKey;
         string serverUrl;
+        uint256 deadline;
     }
 
     /// @notice EIP-712 payload for a server revoking its own active
@@ -216,9 +218,13 @@ interface IDataPortabilityServersV2 {
     ///         a `ServerProof` signature from `input.serverAddress`. The owner
     ///         signature authorizes the registration; the server signature
     ///         proves the owner controls the server key. Same checks and
-    ///         effects as `registerServerWithSignature` otherwise.
+    ///         effects as `registerServerWithSignature` otherwise, except that
+    ///         it may reuse the id of a revoked record registered without a
+    ///         proof, once, for a different owner. Reverts if
+    ///         `block.timestamp > proofDeadline`.
     function registerServerWithProof(
         ServerRegistration calldata input,
+        uint256 proofDeadline,
         bytes calldata ownerSignature,
         bytes calldata serverSignature
     ) external returns (bytes32 serverId);

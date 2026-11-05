@@ -45,7 +45,7 @@ contract DataPortabilityServersV2Implementation is
 
     bytes32 public constant override SERVER_PROOF_TYPEHASH =
         keccak256(
-            "ServerProof(address ownerAddress,address serverAddress,string publicKey,string serverUrl)"
+            "ServerProof(address ownerAddress,address serverAddress,string publicKey,string serverUrl,uint256 deadline)"
         );
 
     bytes32 public constant override SERVER_SELF_DEREGISTRATION_TYPEHASH =
@@ -180,9 +180,11 @@ contract DataPortabilityServersV2Implementation is
 
     function registerServerWithProof(
         ServerRegistration calldata input,
+        uint256 proofDeadline,
         bytes calldata ownerSignature,
         bytes calldata serverSignature
     ) external override whenNotPaused returns (bytes32 serverId) {
+        if (block.timestamp > proofDeadline) revert DeadlineExpired(proofDeadline, block.timestamp);
         _validateRegistration(input);
         _verifyOwnerSignature(input, ownerSignature);
 
@@ -194,7 +196,8 @@ contract DataPortabilityServersV2Implementation is
                     input.ownerAddress,
                     input.serverAddress,
                     keccak256(bytes(input.publicKey)),
-                    keccak256(bytes(input.serverUrl))
+                    keccak256(bytes(input.serverUrl)),
+                    proofDeadline
                 )
             )
         );
@@ -283,9 +286,6 @@ contract DataPortabilityServersV2Implementation is
         }
         s.revokedAtBlock = block.number;
         activeServerId[input.serverAddress] = bytes32(0);
-        // The server never consented to an unproven record, so let a proven
-        // registration reuse its tuple.
-        if (!_provenServerIds[input.serverId]) _reclaimableServerIds[input.serverId] = true;
 
         emit ServerDeregistered(input.serverId, s.ownerAddress, input.serverAddress);
     }
@@ -323,17 +323,19 @@ contract DataPortabilityServersV2Implementation is
 
         // The same `(serverAddress, publicKey, serverUrl)` produces the same id
         // as a previously revoked registration. Reject it, so a replayed
-        // signature cannot resurrect a revoked server. The one exception is an
-        // unproven record the server key itself revoked, reused with a proof
-        // by a different owner (the squat case). The owner must differ, so the
-        // previous owner's unused deregistration signatures, which bind to the
-        // id and not the instance, fail `NotServerOwner` on the reused record.
+        // signature cannot resurrect a revoked server. The one exception is a
+        // revoked unproven record reused with a proof by a different owner
+        // (the squat case). Who revoked it does not matter: the server never
+        // consented to it, and a squatter must not be able to burn the
+        // operator's exact tuple by deregistering first. The reused record is
+        // proven, so a tuple is reclaimed at most once. The owner must differ,
+        // so the previous owner's unused deregistration signatures, which bind
+        // to the id and not the instance, fail `NotServerOwner` on it.
         Server storage s = _servers[serverId];
         if (s.registeredAtBlock != 0) {
-            if (!proven || !_reclaimableServerIds[serverId] || s.ownerAddress == input.ownerAddress) {
+            if (!proven || _provenServerIds[serverId] || s.ownerAddress == input.ownerAddress) {
                 revert ServerAlreadyRegistered(input.serverAddress);
             }
-            delete _reclaimableServerIds[serverId];
         }
 
         s.ownerAddress = input.ownerAddress;
