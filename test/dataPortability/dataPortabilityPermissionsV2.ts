@@ -223,8 +223,8 @@ describe("DataPortabilityPermissionsV2", () => {
       ).should.eq(false);
     });
 
-    it("should return version 1", async () => {
-      (await permissionsContract.version()).should.eq(1);
+    it("should return version 2", async () => {
+      (await permissionsContract.version()).should.eq(2);
     });
 
     it("should leave dataPortabilityServers unset after deploy", async () => {
@@ -915,6 +915,272 @@ describe("DataPortabilityPermissionsV2", () => {
     });
   });
 
+  // ------------------------------------------------------------------
+  // grantVersion freeze (two external reports + Hashlock 6th audit L-01)
+  // and the grantor-only revokePermission escape hatch.
+  // ------------------------------------------------------------------
+  describe("revokePermission and grantVersion freeze regressions", () => {
+    const STEP = 2n ** 64n;
+    const MAX_UINT256 = (1n << 256n) - 1n;
+    const NARROW = ["read:profile"];
+    const WIDE = ["read:files", "read:profile", "read:messages", "read:contacts"];
+
+    let id: string;
+
+    const signAndSubmit = async (signer: HardhatEthersSigner, input: PermissionInput) =>
+      permissionsContract
+        .connect(relayer)
+        .addPermissionWithSignature(input, await signGrantRegistration(signer, input));
+
+    // Writes `value` straight into the stored grantVersion of `grantIdHex`
+    // (slot layout: _permissions at slot 0; Permission.grantVersion at +3).
+    // Simulates a slot that the pre-cap implementation let reach a huge value.
+    const setStoredGrantVersion = async (grantIdHex: string, value: bigint) => {
+      const base = BigInt(
+        ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(["bytes32", "uint256"], [grantIdHex, 0])),
+      );
+      await ethers.provider.send("hardhat_setStorageAt", [
+        await permissionsContract.getAddress(),
+        ethers.toQuantity(base + 3n),
+        ethers.zeroPadValue(ethers.toBeHex(value), 32),
+      ]);
+    };
+
+    beforeEach(async () => {
+      await permissionsContract.connect(owner).setDataPortabilityServers(await serversContract.getAddress());
+      id = await computeGrantIdTs(grantor.address, GRANTEE_ID_1);
+    });
+
+    // Report 1: a registered personal server signs grantVersion = max with
+    // expiresAt = 0; the owner deregisters the server and is still locked out.
+    it("PoC 1: delegate cannot freeze the slot at type(uint256).max; owner deregisters, revokes and re-issues", async () => {
+      const serverId = await registerServer(grantor, serverSigner.address);
+
+      await expect(signAndSubmit(serverSigner, makeInput({ grantVersion: MAX_UINT256, expiresAt: 0 })))
+        .to.be.revertedWithCustomError(permissionsContract, "InvalidGrantVersion")
+        .withArgs(0, MAX_UINT256);
+
+      // The worst the delegate can still do: the largest allowed jump, perpetual.
+      await signAndSubmit(serverSigner, makeInput({ grantVersion: STEP, expiresAt: 0 }));
+      (await permissionsContract.isActive(id)).should.eq(true);
+
+      await deregisterServer(grantor, serverSigner.address, serverId);
+
+      await expect(permissionsContract.connect(grantor).revokePermission(id))
+        .to.emit(permissionsContract, "PermissionRevoked")
+        .withArgs(id, grantor.address, GRANTEE_ID_1, 2n * STEP);
+      (await permissionsContract.isActive(id)).should.eq(false);
+
+      const expiry = BigInt(await time.latest()) + 86400n;
+      await permissionsContract
+        .connect(grantor)
+        .addPermission(makeInput({ scopes: NARROW, grantVersion: 2n * STEP + 1n, expiresAt: expiry }));
+      const stored = await permissionsContract.permissions(id);
+      stored.scopes.should.deep.eq(NARROW);
+      stored.expiresAt.should.eq(expiry);
+      (await permissionsContract.isActive(id)).should.eq(true);
+    });
+
+    // Report 2: the delegate overwrites a narrow, expiring grant the owner
+    // issued with wider scopes and no expiry.
+    it("PoC 2: owner can revoke and restore after a delegate widens an owner-issued grant", async () => {
+      const serverId = await registerServer(grantor, serverSigner.address);
+      const expiry = BigInt(await time.latest()) + 86400n;
+      const ownerGrant = makeInput({ scopes: NARROW, grantVersion: 1, expiresAt: expiry });
+      await permissionsContract.connect(grantor).addPermission(ownerGrant);
+
+      const widened = makeInput({ scopes: WIDE, grantVersion: 2, expiresAt: 0 });
+      const widenedSig = await signGrantRegistration(serverSigner, widened);
+      await permissionsContract.connect(relayer).addPermissionWithSignature(widened, widenedSig);
+      (await permissionsContract.permissions(id)).scopes.should.deep.eq(WIDE);
+
+      // Revoke while the server is still registered: the widened message
+      // cannot be replayed.
+      await permissionsContract.connect(grantor).revokePermission(id);
+      (await permissionsContract.isActive(id)).should.eq(false);
+      await expect(permissionsContract.connect(relayer).addPermissionWithSignature(widened, widenedSig))
+        .to.be.revertedWithCustomError(permissionsContract, "InvalidGrantVersion")
+        .withArgs(2n + STEP, 2);
+
+      await deregisterServer(grantor, serverSigner.address, serverId);
+
+      // Restore the original narrow grant.
+      await permissionsContract
+        .connect(grantor)
+        .addPermission(makeInput({ scopes: NARROW, grantVersion: 2n + STEP + 1n, expiresAt: expiry }));
+      const stored = await permissionsContract.permissions(id);
+      stored.scopes.should.deep.eq(NARROW);
+      stored.expiresAt.should.eq(expiry);
+      (await permissionsContract.isActive(id)).should.eq(true);
+
+      // A deregistered server can no longer write the slot at any version.
+      await expect(signAndSubmit(serverSigner, makeInput({ scopes: WIDE, grantVersion: 3n + STEP })))
+        .to.be.revertedWithCustomError(permissionsContract, "GrantorMismatch")
+        .withArgs(grantor.address, serverSigner.address);
+    });
+
+    it("PoC 2 (freeze variant): delegate cannot widen an owner-issued grant AND freeze it at max", async () => {
+      await registerServer(grantor, serverSigner.address);
+      const expiry = BigInt(await time.latest()) + 86400n;
+      await permissionsContract
+        .connect(grantor)
+        .addPermission(makeInput({ scopes: NARROW, grantVersion: 1, expiresAt: expiry }));
+
+      await expect(signAndSubmit(serverSigner, makeInput({ scopes: WIDE, grantVersion: MAX_UINT256, expiresAt: 0 })))
+        .to.be.revertedWithCustomError(permissionsContract, "InvalidGrantVersion")
+        .withArgs(1, MAX_UINT256);
+      const stored = await permissionsContract.permissions(id);
+      stored.scopes.should.deep.eq(NARROW);
+      stored.expiresAt.should.eq(expiry);
+      // The owner's own direct path keeps working.
+      await permissionsContract.connect(grantor).addPermission(makeInput({ scopes: NARROW, grantVersion: 2, expiresAt: 1 }));
+      (await permissionsContract.isActive(id)).should.eq(false);
+    });
+
+    it("kills grantor-signed updates queued off-chain, before and after re-issue", async () => {
+      await permissionsContract.connect(grantor).addPermission(makeInput({ grantVersion: 1 }));
+      const queued2 = makeInput({ grantVersion: 2, scopes: WIDE });
+      const queued3 = makeInput({ grantVersion: 3, scopes: WIDE });
+      const sig2 = await signGrantRegistration(grantor, queued2);
+      const sig3 = await signGrantRegistration(grantor, queued3);
+
+      await permissionsContract.connect(grantor).revokePermission(id);
+      for (const [input, sig] of [[queued2, sig2], [queued3, sig3]] as const) {
+        await expect(permissionsContract.connect(relayer).addPermissionWithSignature(input, sig))
+          .to.be.revertedWithCustomError(permissionsContract, "InvalidGrantVersion")
+          .withArgs(1n + STEP, input.grantVersion);
+      }
+
+      await permissionsContract.connect(grantor).addPermission(makeInput({ grantVersion: 2n + STEP }));
+      await expect(permissionsContract.connect(relayer).addPermissionWithSignature(queued3, sig3))
+        .to.be.revertedWithCustomError(permissionsContract, "InvalidGrantVersion")
+        .withArgs(2n + STEP, 3);
+    });
+
+    it("documents why the jump is a full step: a +1 upsert revoke leaves a queued v3 replayable", async () => {
+      await permissionsContract.connect(grantor).addPermission(makeInput({ grantVersion: 1 }));
+      const queued3 = makeInput({ grantVersion: 3 });
+      const sig3 = await signGrantRegistration(grantor, queued3);
+
+      // Legacy-style revocation: upsert v2 with a past expiry.
+      await permissionsContract.connect(grantor).addPermission(makeInput({ grantVersion: 2, expiresAt: 1 }));
+      (await permissionsContract.isActive(id)).should.eq(false);
+      // Anyone can now land the queued v3 and re-activate the grant.
+      await permissionsContract.connect(relayer).addPermissionWithSignature(queued3, sig3);
+      (await permissionsContract.isActive(id)).should.eq(true);
+    });
+
+    it("a gasless full-step revoke is possible through the existing signed path", async () => {
+      await permissionsContract.connect(grantor).addPermission(makeInput({ grantVersion: 1 }));
+      const queued2 = makeInput({ grantVersion: 2 });
+      const sig2 = await signGrantRegistration(grantor, queued2);
+
+      await signAndSubmit(grantor, makeInput({ grantVersion: 1n + STEP, expiresAt: 1 }));
+      (await permissionsContract.isActive(id)).should.eq(false);
+      await expect(permissionsContract.connect(relayer).addPermissionWithSignature(queued2, sig2))
+        .to.be.revertedWithCustomError(permissionsContract, "InvalidGrantVersion")
+        .withArgs(1n + STEP, 2);
+    });
+
+    it("only the grantor, directly, can revoke", async () => {
+      await registerServer(grantor, serverSigner.address);
+      await permissionsContract.connect(grantor).addPermission(makeInput());
+
+      for (const caller of [stranger, relayer, serverSigner]) {
+        await expect(permissionsContract.connect(caller).revokePermission(id))
+          .to.be.revertedWithCustomError(permissionsContract, "GrantorMismatch")
+          .withArgs(grantor.address, caller.address);
+      }
+      (await permissionsContract.isActive(id)).should.eq(true);
+    });
+
+    it("reverts PermissionNotFound for an unknown id", async () => {
+      await expect(permissionsContract.connect(grantor).revokePermission(id))
+        .to.be.revertedWithCustomError(permissionsContract, "PermissionNotFound")
+        .withArgs(id);
+    });
+
+    it("emits PermissionSet with the new state, then PermissionRevoked, and returns the new version", async () => {
+      await permissionsContract.connect(grantor).addPermission(makeInput({ grantVersion: 7 }));
+      (await permissionsContract.connect(grantor).revokePermission.staticCall(id)).should.eq(7n + STEP);
+
+      const tx = permissionsContract.connect(grantor).revokePermission(id);
+      await expect(tx)
+        .to.emit(permissionsContract, "PermissionSet")
+        .withArgs(id, grantor.address, GRANTEE_ID_1, makeInput().scopes, 7n + STEP, anyValue);
+      await expect(tx)
+        .to.emit(permissionsContract, "PermissionRevoked")
+        .withArgs(id, grantor.address, GRANTEE_ID_1, 7n + STEP);
+
+      const block = await ethers.provider.getBlock((await (await tx).wait())!.blockNumber);
+      const stored = await permissionsContract.permissions(id);
+      stored.grantVersion.should.eq(7n + STEP);
+      stored.expiresAt.should.eq(BigInt(block!.timestamp) - 1n);
+      stored.scopes.should.deep.eq(makeInput().scopes);
+    });
+
+    it("works while paused (writes stay blocked)", async () => {
+      await permissionsContract.connect(grantor).addPermission(makeInput());
+      await permissionsContract.connect(owner).pause();
+      await permissionsContract.connect(grantor).revokePermission(id).should.be.fulfilled;
+      (await permissionsContract.isActive(id)).should.eq(false);
+      await expect(
+        permissionsContract.connect(grantor).addPermission(makeInput({ grantVersion: 2n + STEP })),
+      ).to.be.revertedWithCustomError(permissionsContract, "EnforcedPause");
+    });
+
+    it("can be repeated, and normal supersede plus the step bound still apply after it", async () => {
+      await permissionsContract.connect(grantor).addPermission(makeInput({ grantVersion: 1 }));
+      await permissionsContract.connect(grantor).revokePermission(id);
+      await permissionsContract.connect(grantor).revokePermission(id);
+      const v = 1n + 2n * STEP;
+      (await permissionsContract.permissions(id)).grantVersion.should.eq(v);
+
+      await expect(permissionsContract.connect(grantor).addPermission(makeInput({ grantVersion: v + STEP + 1n })))
+        .to.be.revertedWithCustomError(permissionsContract, "InvalidGrantVersion")
+        .withArgs(v, v + STEP + 1n);
+      await permissionsContract.connect(grantor).addPermission(makeInput({ grantVersion: v + 1n }));
+      await permissionsContract.connect(grantor).addPermission(makeInput({ grantVersion: v + 2n, scopes: NARROW }));
+      (await permissionsContract.permissions(id)).scopes.should.deep.eq(NARROW);
+      (await permissionsContract.isActive(id)).should.eq(true);
+    });
+
+    it("an untrusted signer is still rejected after a revoke", async () => {
+      await registerServer(otherOwner, otherServerSigner.address);
+      await permissionsContract.connect(grantor).addPermission(makeInput({ grantVersion: 1 }));
+      await permissionsContract.connect(grantor).revokePermission(id);
+      await expect(signAndSubmit(otherServerSigner, makeInput({ grantVersion: 2n + STEP })))
+        .to.be.revertedWithCustomError(permissionsContract, "GrantorMismatch")
+        .withArgs(grantor.address, otherServerSigner.address);
+    });
+
+    // Slots written by the pre-cap implementation could sit at any version.
+    // None exist on mainnet (max observed: 28), but the upgraded code must
+    // still let the grantor shut such a slot off.
+    it("legacy slot already at type(uint256).max: revoke still works (saturates), re-issue is impossible", async () => {
+      await signAndSubmit(grantor, makeInput({ grantVersion: 1, expiresAt: 0 }));
+      await setStoredGrantVersion(id, MAX_UINT256);
+      (await permissionsContract.isActive(id)).should.eq(true);
+
+      await expect(permissionsContract.connect(grantor).revokePermission(id))
+        .to.emit(permissionsContract, "PermissionRevoked")
+        .withArgs(id, grantor.address, GRANTEE_ID_1, MAX_UINT256);
+      (await permissionsContract.isActive(id)).should.eq(false);
+      (await permissionsContract.permissions(id)).grantVersion.should.eq(MAX_UINT256);
+      await expect(permissionsContract.connect(grantor).addPermission(makeInput({ grantVersion: MAX_UINT256 })))
+        .to.be.revertedWithCustomError(permissionsContract, "InvalidGrantVersion")
+        .withArgs(MAX_UINT256, MAX_UINT256);
+    });
+
+    it("legacy slot within one step of max: revoke saturates at type(uint256).max", async () => {
+      await permissionsContract.connect(grantor).addPermission(makeInput({ grantVersion: 1 }));
+      await setStoredGrantVersion(id, MAX_UINT256 - 5n);
+      await permissionsContract.connect(grantor).revokePermission(id);
+      (await permissionsContract.permissions(id)).grantVersion.should.eq(MAX_UINT256);
+      (await permissionsContract.isActive(id)).should.eq(false);
+    });
+  });
+
   describe("pause / unpause", () => {
     it("should be admin-only", async () => {
       await expect(
@@ -1010,7 +1276,7 @@ describe("DataPortabilityPermissionsV2", () => {
       implAddress.should.eq(await newImpl.getAddress());
 
       // State preserved across the upgrade.
-      (await permissionsContract.version()).should.eq(1);
+      (await permissionsContract.version()).should.eq(2);
       const stored = await permissionsContract.permissions(id);
       stored.grantorAddress.should.eq(grantor.address);
       stored.scopes.should.deep.eq(input.scopes);
