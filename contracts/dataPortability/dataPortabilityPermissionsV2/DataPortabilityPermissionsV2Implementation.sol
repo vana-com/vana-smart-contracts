@@ -129,7 +129,6 @@ contract DataPortabilityPermissionsV2Implementation is
         );
 
         address signer = ECDSA.recover(digest, signature);
-        if (signer == address(0)) revert InvalidSignature();
 
         // Two accepted authorities, in order:
         //   1. Grantor self-signed — original V2 behavior.

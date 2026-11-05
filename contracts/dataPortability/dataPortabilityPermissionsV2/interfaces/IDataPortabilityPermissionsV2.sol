@@ -88,6 +88,9 @@ interface IDataPortabilityPermissionsV2 {
     /// @dev Reverts when `providedVersion <= currentVersion`. For the first
     ///      write, `currentVersion` is 0 so `providedVersion` must be >= 1.
     error InvalidGrantVersion(uint256 currentVersion, uint256 providedVersion);
+    /// @dev No longer raised: `ECDSA.recover` reverts with `ECDSAInvalidSignature*`
+    ///      on a malformed signature and never returns address(0). Kept so
+    ///      existing client ABIs still decode it.
     error InvalidSignature();
     /// @dev Reverts when the claimed `grantorAddress` does not match the
     ///      actual authority (msg.sender for direct calls, recovered signer

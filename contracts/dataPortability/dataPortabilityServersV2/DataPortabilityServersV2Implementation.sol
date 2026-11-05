@@ -226,7 +226,6 @@ contract DataPortabilityServersV2Implementation is
             )
         );
         address signer = ECDSA.recover(digest, signature);
-        if (signer == address(0)) revert InvalidSignature();
         if (signer != input.ownerAddress) revert OwnerMismatch(input.ownerAddress, signer);
 
         // The signed `serverId` must match the currently active registration
@@ -314,7 +313,6 @@ contract DataPortabilityServersV2Implementation is
             )
         );
         address signer = ECDSA.recover(digest, signature);
-        if (signer == address(0)) revert InvalidSignature();
         if (signer != input.ownerAddress) revert OwnerMismatch(input.ownerAddress, signer);
     }
 

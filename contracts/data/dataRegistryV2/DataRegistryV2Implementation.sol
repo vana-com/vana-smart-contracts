@@ -291,7 +291,6 @@ contract DataRegistryV2Implementation is
         );
 
         address signer = ECDSA.recover(digest, signature);
-        if (signer == address(0)) revert InvalidSignature();
 
         // Two accepted authorities, identical to `addPermissionWithSignature`:
         //   1. Owner self-signed — original V2 behavior.
@@ -347,7 +346,6 @@ contract DataRegistryV2Implementation is
         );
 
         address signer = ECDSA.recover(digest, signature);
-        if (signer == address(0)) revert InvalidSignature();
 
         bool isOwner = signer == ownerAddress;
         bool isDelegate = !isOwner
@@ -404,7 +402,6 @@ contract DataRegistryV2Implementation is
             )
         );
         address server = ECDSA.recover(digest, signature);
-        if (server == address(0)) revert InvalidSignature();
         if (!_isTrustedServer(ownerAddress, server)) revert UntrustedServer(ownerAddress, server);
 
         bytes32 id = _dataPointId(ownerAddress, scope);

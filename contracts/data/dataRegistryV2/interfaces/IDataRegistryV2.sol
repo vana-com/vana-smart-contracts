@@ -59,6 +59,9 @@ interface IDataRegistryV2 {
     error InvalidStatus();
     error UnknownVersion(bytes32 id, uint256 version);
     error UnexpectedVersion(uint256 expected, uint256 actual);
+    /// @dev No longer raised: `ECDSA.recover` reverts with `ECDSAInvalidSignature*`
+    ///      on a malformed signature and never returns address(0). Kept so
+    ///      existing client ABIs still decode it.
     error InvalidSignature();
     error DataPortabilityServersNotSet();
     error UntrustedServer(address owner, address server);
@@ -222,7 +225,7 @@ interface IDataRegistryV2 {
     ///             (reusing the `UnexpectedVersion` error keeps the surface
     ///             tight; `expected` is the next sequence, `actual` is what
     ///             the caller supplied)
-    ///           - `InvalidSignature` / `OwnerMismatch` as in `addDataWithSignature`
+    ///           - `ECDSAInvalidSignature*` / `OwnerMismatch` as in `addDataWithSignature`
     ///
     ///         Same silent-no-op semantic as direct `setStatus` when the
     ///         status is already the requested value — the sequence is still

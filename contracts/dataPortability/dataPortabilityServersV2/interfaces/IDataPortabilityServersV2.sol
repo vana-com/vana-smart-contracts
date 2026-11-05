@@ -93,6 +93,9 @@ interface IDataPortabilityServersV2 {
     error EmptyPublicKey();
     error EmptyUrl();
     error ServerAlreadyRegistered(address serverAddress);
+    /// @dev No longer raised: `ECDSA.recover` reverts with `ECDSAInvalidSignature*`
+    ///      on a malformed signature and never returns address(0). Kept so
+    ///      existing client ABIs still decode it.
     error InvalidSignature();
     error OwnerMismatch(address claimed, address recovered);
     error ServerNotFound(bytes32 serverId);
