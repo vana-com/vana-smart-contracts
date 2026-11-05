@@ -594,6 +594,10 @@ describe("DataRegistryV2", () => {
       await expect(tx)
         .to.emit(registry, "DataPointStatusChanged")
         .withArgs(id, Status.Unavailable);
+      await expect(tx)
+        .to.emit(registry, "StatusSequenceConsumed")
+        .withArgs(id, 1n);
+      (await registry.statusSequence(user1.address, SCOPE)).should.eq(1n);
 
       const info = await registry.dataPoints(user1.address, SCOPE);
       info.status.should.eq(Status.Unavailable);
@@ -601,14 +605,20 @@ describe("DataRegistryV2", () => {
       (info.modifiedAt > info.createdAt).should.eq(true);
     });
 
-    it("should be a silent no-op when the status is unchanged", async function () {
+    it("should change nothing but the sequence when the status is unchanged", async function () {
       // data point is already Active
+      const id = dpId(user1.address, SCOPE);
       const modifiedBefore = (await registry.dataPoints(user1.address, SCOPE))
         .modifiedAt;
       await time.increase(100);
 
       const tx = await registry.connect(user1).setStatus(SCOPE, Status.Active);
       await expect(tx).to.not.emit(registry, "DataPointStatusChanged");
+      // The sequence still advances, so a no-op cancels pending signatures.
+      await expect(tx)
+        .to.emit(registry, "StatusSequenceConsumed")
+        .withArgs(id, 1n);
+      (await registry.statusSequence(user1.address, SCOPE)).should.eq(1n);
 
       const info = await registry.dataPoints(user1.address, SCOPE);
       info.status.should.eq(Status.Active);
@@ -1270,10 +1280,58 @@ describe("DataRegistryV2", () => {
       }
     });
 
-    it("should not emit StatusSequenceConsumed on direct setStatus", async function () {
-      const tx = await registry.connect(user1).setStatus(SCOPE, Status.Inactive);
-      await expect(tx).to.not.emit(registry, "StatusSequenceConsumed");
-      (await registry.statusSequence(user1.address, SCOPE)).should.eq(0n);
+    it("should not let a pending signature override a newer direct setStatus", async function () {
+      // Hashlock Q-02. Alice signs Inactive at sequence 1 and the relay is
+      // delayed. She then hides the point directly, then shows it again
+      // directly. Her old signature must not be able to hide it once more.
+      const id = dpId(user1.address, SCOPE);
+      const stale = await signSetStatus(user1, user1.address, SCOPE, Status.Inactive, 1n);
+
+      await registry.connect(user1).setStatus(SCOPE, Status.Inactive);
+      await registry.connect(user1).setStatus(SCOPE, Status.Active);
+      (await registry.statusSequence(user1.address, SCOPE)).should.eq(2n);
+
+      await expect(
+        registry
+          .connect(relayer)
+          .setStatusWithSignature(user1.address, SCOPE, Status.Inactive, 1n, stale),
+      )
+        .to.be.revertedWithCustomError(registry, "UnexpectedVersion")
+        .withArgs(3n, 1n);
+      (await registry.dataPoints(user1.address, SCOPE)).status.should.eq(Status.Active);
+
+      // A fresh signature over the current sequence still works.
+      const fresh = await signSetStatus(user1, user1.address, SCOPE, Status.Inactive, 3n);
+      await expect(
+        registry
+          .connect(relayer)
+          .setStatusWithSignature(user1.address, SCOPE, Status.Inactive, 3n, fresh),
+      )
+        .to.emit(registry, "DataPointStatusChanged")
+        .withArgs(id, Status.Inactive);
+    });
+
+    it("should let a direct no-op setStatus cancel a pending signature", async function () {
+      const pending = await signSetStatus(user1, user1.address, SCOPE, Status.Inactive, 1n);
+      // Already Active: status unchanged, but the sequence moves to 1.
+      await registry.connect(user1).setStatus(SCOPE, Status.Active);
+
+      await expect(
+        registry
+          .connect(relayer)
+          .setStatusWithSignature(user1.address, SCOPE, Status.Inactive, 1n, pending),
+      )
+        .to.be.revertedWithCustomError(registry, "UnexpectedVersion")
+        .withArgs(2n, 1n);
+    });
+
+    it("should not advance the status sequence on a data write", async function () {
+      // Status and data sequences stay independent: a new version (which may
+      // auto-revive the status) leaves pending status signatures valid.
+      await registry.connect(user1).setStatus(SCOPE, Status.Inactive); // seq 1
+      await registry.connect(user1).addData(SCOPE, DATA_HASH, META_HASH); // auto-revive
+      (await registry.dataPoints(user1.address, SCOPE)).status.should.eq(Status.Active);
+      (await registry.statusSequence(user1.address, SCOPE)).should.eq(1n);
     });
 
     it("should keep the status sequence independent of the data version", async function () {

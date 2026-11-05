@@ -254,13 +254,24 @@ contract DataRegistryV2Implementation is
         return _addData(msg.sender, scope, dataHash, metadataHash);
     }
 
+    /// @dev Advances the status sequence, so a direct status write cancels
+    ///      every pending `setStatusWithSignature` signature for this data
+    ///      point (Hashlock Q-02). Without this, an older signed intent could
+    ///      land after, and override, the owner's newer direct choice. The
+    ///      sequence also advances on a no-op, which gives the owner a way to
+    ///      cancel pending signatures without changing the status.
     function setStatus(string calldata scope, Status newStatus) external override whenNotPaused {
         if (newStatus == Status.None) revert InvalidStatus();
 
         bytes32 id = _dataPointId(msg.sender, scope);
         DataPoint storage d = _dataPoints[id];
         if (d.currentVersion == 0) revert DataPointNotFound(id);
-        if (d.status == newStatus) return; // silent no-op
+
+        uint256 nextSequence = _statusSequences[id] + 1;
+        _statusSequences[id] = nextSequence;
+        emit StatusSequenceConsumed(id, nextSequence);
+
+        if (d.status == newStatus) return; // no status change
 
         d.status = newStatus;
         d.modifiedAt = uint64(block.timestamp);
@@ -366,8 +377,8 @@ contract DataRegistryV2Implementation is
         emit StatusSequenceConsumed(id, nextSequence);
 
         // Status already at target: counter is consumed (anti-replay), but no
-        // status mutation and no DataPointStatusChanged — matches direct
-        // setStatus's silent no-op semantics on the status side.
+        // status mutation and no DataPointStatusChanged — same as direct
+        // setStatus on the status side.
         if (d.status == newStatus) {
             if (isDelegate) emit StatusSignedByDelegate(id, ownerAddress, signer);
             return;

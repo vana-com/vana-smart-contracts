@@ -109,10 +109,11 @@ interface IDataRegistryV2 {
     ///         emitted for direct `setStatus` or owner-self-signed calls.
     event StatusSignedByDelegate(bytes32 indexed id, address indexed ownerAddress, address indexed delegate);
 
-    /// @notice Emitted on every successful `setStatusWithSignature`, including
-    ///         the no-op case where the status already equals the requested
-    ///         one and `DataPointStatusChanged` is not emitted. `sequence` is
-    ///         the value just consumed; the next signed status write must use
+    /// @notice Emitted on every successful status write (`setStatus` or
+    ///         `setStatusWithSignature`), including the no-op case where the
+    ///         status already equals the requested one and
+    ///         `DataPointStatusChanged` is not emitted. `sequence` is the value
+    ///         just consumed; the next signed status write must use
     ///         `sequence + 1`. Lets indexers track `statusSequence` from logs.
     event StatusSequenceConsumed(bytes32 indexed id, uint256 sequence);
 
@@ -145,8 +146,10 @@ interface IDataRegistryV2 {
 
     /// @notice Monotonic per-`(owner, scope)` counter that gates
     ///         `setStatusWithSignature` (signer must commit to `currentSequence + 1`).
-    ///         Independent of `currentVersion` so status flips do not require
-    ///         a data write. Starts at 0; first signed flip uses sequence 1.
+    ///         Advanced by every status write, signed or direct `setStatus`,
+    ///         so a direct write cancels pending signatures. Independent of
+    ///         `currentVersion` so status flips do not require a data write.
+    ///         Starts at 0. Read it right before signing; do not cache it.
     function statusSequence(address ownerAddress, string calldata scope)
         external view returns (uint256);
 
@@ -209,6 +212,12 @@ interface IDataRegistryV2 {
         bytes32 metadataHash
     ) external returns (bytes32 id, uint256 version_);
 
+    /// @notice Set the caller's data point status directly.
+    ///         Always advances `statusSequence` and emits
+    ///         `StatusSequenceConsumed`, which cancels any pending
+    ///         `setStatusWithSignature` signature for this data point. When the
+    ///         status is already `newStatus` nothing else changes and
+    ///         `DataPointStatusChanged` is not emitted.
     function setStatus(string calldata scope, Status newStatus) external;
 
     // ====================== Writes (delegated, EIP-712 signed) ======================
