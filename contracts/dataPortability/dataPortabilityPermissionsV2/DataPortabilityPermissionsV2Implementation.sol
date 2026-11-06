@@ -28,6 +28,14 @@ contract DataPortabilityPermissionsV2Implementation is
     /// @inheritdoc IDataPortabilityPermissionsV2
     uint256 public constant override MAX_GRANT_VERSION_STEP = 2 ** 64;
 
+    /// @inheritdoc IDataPortabilityPermissionsV2
+    /// @dev Mainnet grants peak at 20 scopes (99.7% have one).
+    uint256 public constant override MAX_SCOPES = 64;
+
+    /// @inheritdoc IDataPortabilityPermissionsV2
+    /// @dev Mainnet scope names peak at 37 bytes.
+    uint256 public constant override MAX_SCOPE_LENGTH = 128;
+
     bytes32 public constant override GRANT_REGISTRATION_TYPEHASH =
         keccak256(
             "GrantRegistration(address grantorAddress,bytes32 granteeId,string[] scopes,uint256 grantVersion,uint256 expiresAt)"
@@ -156,7 +164,7 @@ contract DataPortabilityPermissionsV2Implementation is
     function _addPermission(AddPermissionInput calldata input) internal returns (bytes32) {
         if (input.grantorAddress == address(0)) revert ZeroAddress();
         if (input.granteeId == bytes32(0)) revert ZeroGranteeId();
-        if (input.scopes.length == 0) revert EmptyScopes();
+        _validateScopes(input.scopes);
         // expiresAt == 0 is allowed and means perpetual.
 
         bytes32 id = _computeGrantId(input.grantorAddress, input.granteeId);
@@ -204,6 +212,32 @@ contract DataPortabilityPermissionsV2Implementation is
             input.expiresAt
         );
         return id;
+    }
+
+    /// @dev Non-empty, at most MAX_SCOPES entries, each 1..MAX_SCOPE_LENGTH
+    ///      bytes, no duplicates (Hashlock Q-05). The pairwise check is
+    ///      O(n^2) over hashes, bounded by MAX_SCOPES.
+    function _validateScopes(string[] calldata scopes) internal pure {
+        uint256 n = scopes.length;
+        if (n == 0) revert EmptyScopes();
+        if (n > MAX_SCOPES) revert TooManyScopes(n, MAX_SCOPES);
+
+        bytes32[] memory hashes = new bytes32[](n);
+        for (uint256 i = 0; i < n; ) {
+            uint256 len = bytes(scopes[i]).length;
+            if (len == 0 || len > MAX_SCOPE_LENGTH) revert InvalidScopeLength(i, len);
+            bytes32 h = keccak256(bytes(scopes[i]));
+            for (uint256 j = 0; j < i; ) {
+                if (hashes[j] == h) revert DuplicateScope(i, scopes[i]);
+                unchecked {
+                    ++j;
+                }
+            }
+            hashes[i] = h;
+            unchecked {
+                ++i;
+            }
+        }
     }
 
     function _computeGrantId(address grantorAddress, bytes32 granteeId) internal view returns (bytes32) {

@@ -356,6 +356,79 @@ describe("DataPortabilityPermissionsV2", () => {
       ).to.be.revertedWithCustomError(permissionsContract, "EmptyScopes");
     });
 
+    // ---- Hashlock 6th audit, Q-05: scope validation ----
+    describe("scope validation", () => {
+      const scopesN = (n: number) => Array.from({ length: n }, (_, i) => `scope:${i}`);
+
+      it("should expose MAX_SCOPES = 64 and MAX_SCOPE_LENGTH = 128", async () => {
+        (await permissionsContract.MAX_SCOPES()).should.eq(64n);
+        (await permissionsContract.MAX_SCOPE_LENGTH()).should.eq(128n);
+      });
+
+      it("should accept exactly MAX_SCOPES scopes and reject one more", async () => {
+        await permissionsContract
+          .connect(grantor)
+          .addPermission(makeInput({ scopes: scopesN(64) })).should.be.fulfilled;
+        await expect(
+          permissionsContract
+            .connect(grantor)
+            .addPermission(makeInput({ scopes: scopesN(65), grantVersion: 2 })),
+        )
+          .to.be.revertedWithCustomError(permissionsContract, "TooManyScopes")
+          .withArgs(65, 64);
+      });
+
+      it("should reject an empty scope string", async () => {
+        await expect(
+          permissionsContract
+            .connect(grantor)
+            .addPermission(makeInput({ scopes: ["read:files", ""] })),
+        )
+          .to.be.revertedWithCustomError(permissionsContract, "InvalidScopeLength")
+          .withArgs(1, 0);
+      });
+
+      it("should accept a MAX_SCOPE_LENGTH-byte scope and reject a longer one", async () => {
+        await permissionsContract
+          .connect(grantor)
+          .addPermission(makeInput({ scopes: ["a".repeat(128)] })).should.be.fulfilled;
+        await expect(
+          permissionsContract
+            .connect(grantor)
+            .addPermission(makeInput({ scopes: ["a".repeat(129)], grantVersion: 2 })),
+        )
+          .to.be.revertedWithCustomError(permissionsContract, "InvalidScopeLength")
+          .withArgs(0, 129);
+      });
+
+      it("should reject duplicate scopes, adjacent or not", async () => {
+        await expect(
+          permissionsContract
+            .connect(grantor)
+            .addPermission(makeInput({ scopes: ["read:files", "read:files"] })),
+        )
+          .to.be.revertedWithCustomError(permissionsContract, "DuplicateScope")
+          .withArgs(1, "read:files");
+        await expect(
+          permissionsContract
+            .connect(grantor)
+            .addPermission(makeInput({ scopes: ["a", "b", "c", "b"] })),
+        )
+          .to.be.revertedWithCustomError(permissionsContract, "DuplicateScope")
+          .withArgs(3, "b");
+      });
+
+      it("should apply the same rules on the signature path", async () => {
+        const input = makeInput({ scopes: ["read:profile", "read:profile"] });
+        const signature = await signGrantRegistration(grantor, input);
+        await expect(
+          permissionsContract.connect(relayer).addPermissionWithSignature(input, signature),
+        )
+          .to.be.revertedWithCustomError(permissionsContract, "DuplicateScope")
+          .withArgs(1, "read:profile");
+      });
+    });
+
     describe("grantVersion monotonicity", () => {
       it("should reject grantVersion 0 on first write with InvalidGrantVersion(0, 0)", async () => {
         const input = makeInput({ grantVersion: 0 });

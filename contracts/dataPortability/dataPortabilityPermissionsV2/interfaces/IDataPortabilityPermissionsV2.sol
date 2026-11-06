@@ -85,6 +85,12 @@ interface IDataPortabilityPermissionsV2 {
     error ZeroAddress();
     error ZeroGranteeId();
     error EmptyScopes();
+    /// @dev More than `MAX_SCOPES` scopes in one permission.
+    error TooManyScopes(uint256 count, uint256 max);
+    /// @dev `scopes[index]` is empty or longer than `MAX_SCOPE_LENGTH` bytes.
+    error InvalidScopeLength(uint256 index, uint256 length);
+    /// @dev `scopes[index]` repeats an earlier entry.
+    error DuplicateScope(uint256 index, string scope);
     /// @dev Reverts when `providedVersion <= currentVersion`. For the first
     ///      write, `currentVersion` is 0 so `providedVersion` must be >= 1.
     error InvalidGrantVersion(uint256 currentVersion, uint256 providedVersion);
@@ -171,6 +177,15 @@ interface IDataPortabilityPermissionsV2 {
     ///         (2^64). Off-chain intake should reject signed versions above
     ///         `stored + MAX_GRANT_VERSION_STEP`, or they will revert on-chain.
     function MAX_GRANT_VERSION_STEP() external view returns (uint256);
+
+    /// @notice Largest number of scopes in one permission (64). Bounds the
+    ///         gas of every write and of reading the record back. Off-chain
+    ///         intake should apply the same limit before the grantor signs.
+    function MAX_SCOPES() external view returns (uint256);
+
+    /// @notice Largest byte length of a single scope (128). Scopes must also
+    ///         be non-empty and unique within a permission.
+    function MAX_SCOPE_LENGTH() external view returns (uint256);
 
     /// @notice Create or update a permission. `msg.sender` becomes the grantor.
     /// @return id The deterministic grant id.
