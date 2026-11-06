@@ -14,6 +14,7 @@ import {
   ERC20FeeOnTransferMock,
   ERC20Mock,
   ERC3009Mock,
+  FeeRegistryImplementation,
   NativeRejecterMock,
   OpTargetMock,
 } from "../../typechain-types";
@@ -32,6 +33,7 @@ describe("DataPortabilityEscrow", () => {
   let serverSigner: HardhatEthersSigner;
 
   let escrow: DataPortabilityEscrowImplementation;
+  let feeRegistry: FeeRegistryImplementation;
   let token: ERC20Mock;
   let token3009: ERC3009Mock;
   let feeToken: ERC20FeeOnTransferMock;
@@ -57,6 +59,13 @@ describe("DataPortabilityEscrow", () => {
   };
 
   const abiCoder = ethers.AbiCoder.defaultAbiCoder();
+  const FEE_OPS = [
+    "data_registration",
+    "server_registration",
+    "builder_registration",
+    "grant_registration",
+    "data_access",
+  ];
   const parseEther = ethers.parseEther;
 
   const deploy = async () => {
@@ -98,6 +107,23 @@ describe("DataPortabilityEscrow", () => {
     const OpTargetFactory = await ethers.getContractFactory("OpTargetMock");
     opTarget = await OpTargetFactory.deploy();
     await opTarget.waitForDeployment();
+
+    // FeeRegistry pinning every OpKind's payee to `payee`.
+    const feeRegistryDeploy = await upgrades.deployProxy(
+      await ethers.getContractFactory("FeeRegistryImplementation"),
+      [owner.address],
+      { kind: "uups" },
+    );
+    feeRegistry = await ethers.getContractAt(
+      "FeeRegistryImplementation",
+      feeRegistryDeploy.target,
+    );
+    for (const name of FEE_OPS) {
+      await feeRegistry
+        .connect(owner)
+        .setFeeByName(name, 0, NATIVE, payee.address, true);
+    }
+    await escrow.connect(owner).setFeeRegistry(feeRegistryDeploy.target);
 
     // distribute tokens
     await token.connect(deployer).transfer(user1.address, parseEther("1000"));
@@ -192,7 +218,7 @@ describe("DataPortabilityEscrow", () => {
         false,
       );
       (await escrow.hasRole(FACILITATOR_ROLE, owner.address)).should.eq(false);
-      (await escrow.version()).should.eq(1);
+      (await escrow.version()).should.eq(2);
     });
 
     it("should reject re-initialization", async function () {
@@ -491,7 +517,7 @@ describe("DataPortabilityEscrow", () => {
           payee.address,
           tokenAddress,
           parseEther("4"),
-          OpKind.Unspecified,
+          OpKind.DataAccess,
           ZERO_REF,
         );
       (await token.balanceOf(payee.address)).should.eq(parseEther("4"));
@@ -865,7 +891,7 @@ describe("DataPortabilityEscrow", () => {
             payee.address,
             NATIVE,
             parseEther("1"),
-            OpKind.Unspecified,
+            OpKind.DataAccess,
             ZERO_REF,
           ),
       ).to.be.revertedWithCustomError(
@@ -951,7 +977,7 @@ describe("DataPortabilityEscrow", () => {
             payee.address,
             NATIVE,
             parseEther("2"),
-            OpKind.Unspecified,
+            OpKind.DataAccess,
             ZERO_REF,
           ),
       )
@@ -969,7 +995,7 @@ describe("DataPortabilityEscrow", () => {
             payee.address,
             NATIVE,
             0,
-            OpKind.Unspecified,
+            OpKind.DataAccess,
             ZERO_REF,
           ),
       ).to.be.revertedWithCustomError(escrow, "ZeroAmount");
@@ -981,7 +1007,7 @@ describe("DataPortabilityEscrow", () => {
             payee.address,
             NATIVE,
             parseEther("1"),
-            OpKind.Unspecified,
+            OpKind.DataAccess,
             ZERO_REF,
           ),
       ).to.be.revertedWithCustomError(escrow, "ZeroAddress");
@@ -993,14 +1019,22 @@ describe("DataPortabilityEscrow", () => {
             ethers.ZeroAddress,
             NATIVE,
             parseEther("1"),
-            OpKind.Unspecified,
+            OpKind.DataAccess,
             ZERO_REF,
           ),
-      ).to.be.revertedWithCustomError(escrow, "ZeroAddress");
+      )
+        // A zero `to` is never the registered payee, so the payee check
+        // rejects it before the payout's own zero-address check.
+        .to.be.revertedWithCustomError(escrow, "UnexpectedPayee")
+        .withArgs(OpKind.DataAccess, ethers.ZeroAddress, payee.address);
     });
 
     it("should surface NativeTransferFailed for rejecting recipients", async function () {
       await depositNativeFor(user1, parseEther("1"));
+      // The payee itself rejects native transfers.
+      await feeRegistry
+        .connect(owner)
+        .setFeeByName("data_access", 0, NATIVE, await rejecter.getAddress(), true);
       await expect(
         escrow
           .connect(facilitator)
@@ -1009,7 +1043,7 @@ describe("DataPortabilityEscrow", () => {
             await rejecter.getAddress(),
             NATIVE,
             parseEther("1"),
-            OpKind.Unspecified,
+            OpKind.DataAccess,
             ZERO_REF,
           ),
       ).to.be.revertedWithCustomError(escrow, "NativeTransferFailed");
@@ -1026,7 +1060,7 @@ describe("DataPortabilityEscrow", () => {
             payee.address,
             NATIVE,
             parseEther("1"),
-            OpKind.Unspecified,
+            OpKind.DataAccess,
             ZERO_REF,
           ),
       ).to.be.revertedWithCustomError(escrow, "EnforcedPause");
@@ -1099,7 +1133,7 @@ describe("DataPortabilityEscrow", () => {
             to: payee.address,
             asset: NATIVE,
             amount: parseEther("1"),
-            opKind: OpKind.Unspecified,
+            opKind: OpKind.DataAccess,
             ref: ZERO_REF,
           },
           {
@@ -1107,7 +1141,7 @@ describe("DataPortabilityEscrow", () => {
             to: payee.address,
             asset: NATIVE,
             amount: parseEther("1"),
-            opKind: OpKind.Unspecified,
+            opKind: OpKind.DataAccess,
             ref: ZERO_REF,
           },
         ]),
@@ -1136,6 +1170,210 @@ describe("DataPortabilityEscrow", () => {
       await expect(
         escrow.connect(facilitator).settleBatch([]),
       ).to.be.revertedWithCustomError(escrow, "EnforcedPause");
+    });
+  });
+
+  // ---- Settlement payee pinned to the FeeRegistry payee per OpKind ----
+  describe("Payee pinning (FeeRegistry)", () => {
+    const op = (overrides: Partial<{
+      from: string; to: string; asset: string; amount: bigint; opKind: bigint; ref: string;
+    }> = {}) => ({
+      from: user1.address,
+      to: payee.address,
+      asset: NATIVE,
+      amount: parseEther("1"),
+      opKind: OpKind.DataAccess,
+      ref: ZERO_REF,
+      ...overrides,
+    });
+
+    beforeEach(async () => {
+      await depositNativeFor(user1, parseEther("5"));
+    });
+
+    it("should map every OpKind to its FeeRegistry operation key", async function () {
+      (await escrow.feeOperation(OpKind.Unspecified)).should.eq(ethers.ZeroHash);
+      (await escrow.feeOperation(OpKind.DataRegistration)).should.eq(ethers.id("data_registration"));
+      (await escrow.feeOperation(OpKind.ServerRegistration)).should.eq(ethers.id("server_registration"));
+      (await escrow.feeOperation(OpKind.BuilderRegistration)).should.eq(ethers.id("builder_registration"));
+      (await escrow.feeOperation(OpKind.GrantRegistration)).should.eq(ethers.id("grant_registration"));
+      (await escrow.feeOperation(OpKind.DataAccess)).should.eq(ethers.id("data_access"));
+    });
+
+    it("should settle every fee kind to its registered payee", async function () {
+      for (const kind of [
+        OpKind.DataRegistration,
+        OpKind.ServerRegistration,
+        OpKind.BuilderRegistration,
+        OpKind.GrantRegistration,
+        OpKind.DataAccess,
+      ]) {
+        await escrow
+          .connect(facilitator)
+          .settle(user1.address, payee.address, NATIVE, 1n, kind, ZERO_REF).should.be.fulfilled;
+      }
+    });
+
+    it("should reject a facilitator paying anyone but the payee", async function () {
+      // The threat: a stolen facilitator key paying escrowed funds to itself.
+      await expect(
+        escrow
+          .connect(facilitator)
+          .settle(user1.address, facilitator.address, NATIVE, parseEther("1"), OpKind.DataAccess, ZERO_REF),
+      )
+        .to.be.revertedWithCustomError(escrow, "UnexpectedPayee")
+        .withArgs(OpKind.DataAccess, facilitator.address, payee.address);
+      (await escrow.balanceOf(user1.address, NATIVE)).should.eq(parseEther("5"));
+    });
+
+    it("should check each kind against its own payee", async function () {
+      // grant_registration pays user2; data_access still pays `payee`.
+      await feeRegistry
+        .connect(owner)
+        .setFeeByName("grant_registration", 0, NATIVE, user2.address, true);
+      await expect(
+        escrow
+          .connect(facilitator)
+          .settle(user1.address, payee.address, NATIVE, 1n, OpKind.GrantRegistration, ZERO_REF),
+      )
+        .to.be.revertedWithCustomError(escrow, "UnexpectedPayee")
+        .withArgs(OpKind.GrantRegistration, payee.address, user2.address);
+      await escrow
+        .connect(facilitator)
+        .settle(user1.address, user2.address, NATIVE, 1n, OpKind.GrantRegistration, ZERO_REF).should.be.fulfilled;
+      await escrow
+        .connect(facilitator)
+        .settle(user1.address, payee.address, NATIVE, 1n, OpKind.DataAccess, ZERO_REF).should.be.fulfilled;
+    });
+
+    it("should reject Unspecified, which has no fee operation", async function () {
+      await expect(
+        escrow
+          .connect(facilitator)
+          .settle(user1.address, payee.address, NATIVE, 1n, OpKind.Unspecified, ZERO_REF),
+      )
+        .to.be.revertedWithCustomError(escrow, "UnexpectedPayee")
+        .withArgs(OpKind.Unspecified, payee.address, ethers.ZeroAddress);
+    });
+
+    it("should still settle to the payee of a disabled fee", async function () {
+      // The gateway settles already-paid obligations after a fee is turned off.
+      await feeRegistry
+        .connect(owner)
+        .setFeeByName("data_access", 0, NATIVE, payee.address, false);
+      await escrow
+        .connect(facilitator)
+        .settle(user1.address, payee.address, NATIVE, 1n, OpKind.DataAccess, ZERO_REF).should.be.fulfilled;
+    });
+
+    it("should reject every payee once the fee is cleared", async function () {
+      await feeRegistry.connect(owner).clearFee(ethers.id("data_access"));
+      await expect(
+        escrow
+          .connect(facilitator)
+          .settle(user1.address, payee.address, NATIVE, 1n, OpKind.DataAccess, ZERO_REF),
+      )
+        .to.be.revertedWithCustomError(escrow, "UnexpectedPayee")
+        .withArgs(OpKind.DataAccess, payee.address, ethers.ZeroAddress);
+    });
+
+    it("should follow a payee change immediately", async function () {
+      await feeRegistry
+        .connect(owner)
+        .setFeeByName("data_access", 0, NATIVE, user2.address, true);
+      await expect(
+        escrow
+          .connect(facilitator)
+          .settle(user1.address, payee.address, NATIVE, 1n, OpKind.DataAccess, ZERO_REF),
+      ).to.be.revertedWithCustomError(escrow, "UnexpectedPayee");
+      await escrow
+        .connect(facilitator)
+        .settle(user1.address, user2.address, NATIVE, 1n, OpKind.DataAccess, ZERO_REF).should.be.fulfilled;
+    });
+
+    it("should revert the whole batch when one op has the wrong payee", async function () {
+      await expect(
+        escrow
+          .connect(facilitator)
+          .settleBatch([op(), op({ to: facilitator.address }), op()]),
+      )
+        .to.be.revertedWithCustomError(escrow, "UnexpectedPayee")
+        .withArgs(OpKind.DataAccess, facilitator.address, payee.address);
+      (await escrow.balanceOf(user1.address, NATIVE)).should.eq(parseEther("5"));
+    });
+
+    it("should check payees in runOpAndSettle bundles", async function () {
+      const target = await opTarget.getAddress();
+      const pokeSelector = opTarget.interface.getFunction("poke").selector;
+      await escrow.connect(owner).setOpAllowed(target, pokeSelector, true);
+      const callData = opTarget.interface.encodeFunctionData("poke", [1]);
+      await expect(
+        escrow
+          .connect(facilitator)
+          .runOpAndSettle(target, callData, [op({ to: facilitator.address })]),
+      ).to.be.revertedWithCustomError(escrow, "UnexpectedPayee");
+      await escrow
+        .connect(facilitator)
+        .runOpAndSettle(target, callData, [op()]).should.be.fulfilled;
+    });
+
+    it("should not restrict withdraw, which only pays the account holder", async function () {
+      await feeRegistry.connect(owner).clearFee(ethers.id("data_access"));
+      await expect(
+        escrow.connect(facilitator).withdraw(user1.address, NATIVE, parseEther("1"), ZERO_REF),
+      ).to.changeEtherBalances([user1], [parseEther("1")]);
+    });
+
+    describe("with no FeeRegistry set", () => {
+      let fresh: DataPortabilityEscrowImplementation;
+
+      beforeEach(async () => {
+        const deployed = await upgrades.deployProxy(
+          await ethers.getContractFactory("DataPortabilityEscrowImplementation"),
+          [owner.address, facilitator.address],
+          { kind: "uups" },
+        );
+        fresh = await ethers.getContractAt(
+          "DataPortabilityEscrowImplementation",
+          deployed.target,
+        );
+        await fresh.connect(user1).depositNative(user1.address, { value: parseEther("2") });
+      });
+
+      it("should revert every settle path with FeeRegistryNotSet", async function () {
+        (await fresh.feeRegistry()).should.eq(ethers.ZeroAddress);
+        await expect(
+          fresh
+            .connect(facilitator)
+            .settle(user1.address, payee.address, NATIVE, 1n, OpKind.DataAccess, ZERO_REF),
+        ).to.be.revertedWithCustomError(fresh, "FeeRegistryNotSet");
+        await expect(
+          fresh.connect(facilitator).settleBatch([op()]),
+        ).to.be.revertedWithCustomError(fresh, "FeeRegistryNotSet");
+      });
+
+      it("should still allow an empty batch and withdraw", async function () {
+        await fresh.connect(facilitator).settleBatch([]).should.be.fulfilled;
+        await fresh
+          .connect(facilitator)
+          .withdraw(user1.address, NATIVE, 1n, ZERO_REF).should.be.fulfilled;
+      });
+    });
+
+    describe("setFeeRegistry", () => {
+      it("should be admin-only, reject zero, and emit FeeRegistryUpdated", async function () {
+        const current = await feeRegistry.getAddress();
+        await expect(
+          escrow.connect(facilitator).setFeeRegistry(user2.address),
+        ).to.be.revertedWithCustomError(escrow, "AccessControlUnauthorizedAccount");
+        await expect(
+          escrow.connect(owner).setFeeRegistry(ethers.ZeroAddress),
+        ).to.be.revertedWithCustomError(escrow, "ZeroAddress");
+        await expect(escrow.connect(owner).setFeeRegistry(user2.address))
+          .to.emit(escrow, "FeeRegistryUpdated")
+          .withArgs(current, user2.address);
+        (await escrow.feeRegistry()).should.eq(user2.address);
+      });
     });
   });
 
@@ -1446,7 +1684,7 @@ describe("DataPortabilityEscrow", () => {
             to: payee.address,
             asset: NATIVE,
             amount: parseEther("100"), // more than deposited
-            opKind: OpKind.Unspecified,
+            opKind: OpKind.DataAccess,
             ref: ZERO_REF,
           },
         ]),
@@ -1573,6 +1811,29 @@ describe("DataPortabilityEscrow", () => {
       (await escrow.balanceOf(user1.address, NATIVE)).should.eq(
         parseEther("4"),
       );
+    });
+
+    it("should revert the whole bundle on a wrong payee", async function () {
+      await escrow
+        .connect(owner)
+        .setPermissions(await permissions.getAddress());
+      const { input, signature } = await signGrant(user1, 1n, 0n);
+      const grantId = await permissions.grantId(user1.address, granteeId);
+      await expect(
+        escrow.connect(facilitator).registerAndSettle(input, signature, [
+          {
+            from: user1.address,
+            to: facilitator.address,
+            asset: NATIVE,
+            amount: parseEther("1"),
+            opKind: OpKind.GrantRegistration,
+            ref: grantId,
+          },
+        ]),
+      )
+        .to.be.revertedWithCustomError(escrow, "UnexpectedPayee")
+        .withArgs(OpKind.GrantRegistration, facilitator.address, payee.address);
+      (await permissions.isActive(grantId)).should.eq(false);
     });
 
     it("should revert the whole bundle on a bad grant signature", async function () {
@@ -1796,6 +2057,33 @@ describe("DataPortabilityEscrow", () => {
         await escrow
           .connect(owner)
           .setDataRegistry(await registry.getAddress());
+      });
+
+      it("should revert the whole bundle on a wrong payee", async function () {
+        const recordId = ethers.id("record-wrong-payee");
+        const signature = await signRecordAccess(serverSigner, {
+          ownerAddress: user1.address,
+          version: 1n,
+          accessor: user2.address,
+          recordId,
+        });
+        await expect(
+          escrow
+            .connect(facilitator)
+            .recordAccessAndSettle(user1.address, scope, 1n, user2.address, recordId, signature, [
+              {
+                from: user1.address,
+                to: facilitator.address,
+                asset: NATIVE,
+                amount: parseEther("1"),
+                opKind: OpKind.DataAccess,
+                ref: ZERO_REF,
+              },
+            ]),
+        )
+          .to.be.revertedWithCustomError(escrow, "UnexpectedPayee")
+          .withArgs(OpKind.DataAccess, facilitator.address, payee.address);
+        (await registry.isRecordIdUsed(recordId)).should.eq(false);
       });
 
       it("should record the access and run payouts atomically", async function () {

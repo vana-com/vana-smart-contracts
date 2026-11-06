@@ -3,6 +3,7 @@ pragma solidity 0.8.24;
 
 import "../../dataPortabilityPermissionsV2/interfaces/IDataPortabilityPermissionsV2.sol";
 import "../../../data/dataRegistryV2/interfaces/IDataRegistryV2.sol";
+import "../../../protocol/feeRegistry/interfaces/IFeeRegistry.sol";
 
 /**
  * @title IDataPortabilityEscrow
@@ -18,16 +19,19 @@ import "../../../data/dataRegistryV2/interfaces/IDataRegistryV2.sol";
  * - Deposits are permissionless: any caller may credit any account.
  * - Settlement and withdrawal are restricted to FACILITATOR_ROLE and both
  *   transfer funds OUT of the contract:
- *     - `settle`   pays an arbitrary external `to` from `from`'s in-escrow balance
+ *     - `settle`   pays the fee payee for the op's kind from `from`'s in-escrow
+ *                  balance; `to` must equal that payee in `feeRegistry`
  *     - `withdraw` returns funds to the account holder (recipient == account)
  *
  * @custom:security-contact security@vana.org
  */
 interface IDataPortabilityEscrow {
-    /// @notice Categorizes a settlement op for off-chain indexing / accounting.
-    ///         `Unspecified` (0) is the zero default for callers who don't care
-    ///         to classify. Wire format is `uint8` — future additions should
-    ///         append (never reorder) once any non-test usage exists.
+    /// @notice Categorizes a settlement op. Each kind except `Unspecified`
+    ///         maps to a FeeRegistry operation (see `feeOperation`), whose
+    ///         payee is the only allowed `to`. `Unspecified` (0) has no fee
+    ///         operation, so settling it reverts with `UnexpectedPayee`.
+    ///         Wire format is `uint8` — future additions should append (never
+    ///         reorder).
     enum OpKind {
         Unspecified,         // 0 — default catch-all
         DataRegistration,    // 1 — fee for registering / adding data
@@ -39,10 +43,12 @@ interface IDataPortabilityEscrow {
 
     /// @notice Single settlement entry used by `settleBatch` / `registerAndSettle`.
     /// @param from   In-escrow account whose balance is debited
-    /// @param to     External recipient of the funds
+    /// @param to     External recipient of the funds. Must equal the
+    ///               `feeRegistry` payee for `opKind`, else `UnexpectedPayee`.
     /// @param asset  Asset to transfer; `address(0)` for native VANA
     /// @param amount Amount to transfer
-    /// @param opKind Classification of the operation (off-chain hint).
+    /// @param opKind Classification of the operation; selects the FeeRegistry
+    ///               payee that `to` must equal.
     /// @param ref    Caller-asserted correlation id joining this settlement to
     ///               the protocol entity it pays for. NOT verified on-chain —
     ///               an indexing hint, not consensus data. Every value below is
@@ -85,6 +91,12 @@ interface IDataPortabilityEscrow {
     error DataRegistryNotSet();
     error OpNotAllowed(address target, bytes4 selector);
     error CallDataTooShort();
+    /// @dev A settle path ran before `setFeeRegistry`.
+    error FeeRegistryNotSet();
+    /// @dev `to` is not the payee `feeRegistry` holds for `opKind`'s fee
+    ///      operation. `expected` is zero when the kind has no fee operation
+    ///      (`Unspecified`) or the registry holds no payee for it.
+    error UnexpectedPayee(OpKind opKind, address to, address expected);
 
     // ====================== Events ======================
 
@@ -100,7 +112,8 @@ interface IDataPortabilityEscrow {
     ///      settlements by grantId / dataPointId / serverId via log topics —
     ///      e.g. "all payments under grant X" is a single eth_getLogs query.
     ///      See the `SettleOp.ref` docs for the per-OpKind ref convention.
-    /// @param opKind Classification of the operation (off-chain hint).
+    /// @param opKind Classification of the operation; selects the FeeRegistry
+    ///               payee that `to` was checked against.
     /// @param ref    Caller-asserted correlation id (see SettleOp.ref).
     event Settled(
         address indexed from,
@@ -129,6 +142,9 @@ interface IDataPortabilityEscrow {
     /// @notice Emitted when the admin updates the cross-referenced data-registry contract.
     event DataRegistryUpdated(address indexed previous, address indexed current);
 
+    /// @notice Emitted when the admin updates the FeeRegistry that pins settlement payees.
+    event FeeRegistryUpdated(address indexed previous, address indexed current);
+
     /// @notice Emitted when admin allows a `(target, selector)` pair to be invoked via `runOpAndSettle`.
     event OpAllowed(address indexed target, bytes4 indexed selector);
 
@@ -154,6 +170,17 @@ interface IDataPortabilityEscrow {
     ///         Settable post-deploy via `setDataRegistry` (admin-only).
     function dataRegistry() external view returns (IDataRegistryV2);
 
+    /// @notice FeeRegistry whose per-operation `payee` every settlement must
+    ///         pay. Settable via `setFeeRegistry` (admin-only). While unset,
+    ///         every settle path reverts with `FeeRegistryNotSet`.
+    function feeRegistry() external view returns (IFeeRegistry);
+
+    /// @notice FeeRegistry operation key for an `OpKind`:
+    ///         keccak256 of "data_registration", "server_registration",
+    ///         "builder_registration", "grant_registration" or "data_access".
+    ///         Zero for `Unspecified`, which therefore cannot be settled.
+    function feeOperation(OpKind opKind) external pure returns (bytes32);
+
     /// @notice True iff the `(target, selector)` pair is allowed for `runOpAndSettle`.
     function isAllowedOp(address target, bytes4 selector) external view returns (bool);
 
@@ -172,6 +199,9 @@ interface IDataPortabilityEscrow {
 
     /// @notice Set or update the data-registry contract used by `recordAccessAndSettle`.
     function setDataRegistry(address newDataRegistry) external;
+
+    /// @notice Set or update the FeeRegistry that pins settlement payees.
+    function setFeeRegistry(address newFeeRegistry) external;
 
     /// @notice Allow or disallow a `(target, selector)` pair for `runOpAndSettle`.
     /// @dev When the last selector for a target is removed, the target is also removed

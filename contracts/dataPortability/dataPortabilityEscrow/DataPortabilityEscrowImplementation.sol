@@ -11,7 +11,7 @@ import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 import "../dataPortabilityPermissionsV2/interfaces/IDataPortabilityPermissionsV2.sol";
 import "../../data/dataRegistryV2/interfaces/IDataRegistryV2.sol";
 import "./interfaces/IERC3009.sol";
-import "./interfaces/DataPortabilityEscrowStorageV1.sol";
+import "./interfaces/DataPortabilityEscrowStorageV2.sol";
 
 /**
  * @title DataPortabilityEscrowImplementation
@@ -21,6 +21,12 @@ import "./interfaces/DataPortabilityEscrowStorageV1.sol";
  *      Withdrawal/settlement do NOT re-check the token whitelist: once funds are
  *      credited, they remain movable even if the token is later de-whitelisted.
  *      The whitelist only gates incoming deposits.
+ *
+ *      Payee pinning: every settle path (`settle`, `settleBatch` and the three
+ *      `*AndSettle` bundles) requires `to` to equal the `feeRegistry` payee for
+ *      the op's `OpKind`. A compromised FACILITATOR_ROLE key can then only pay
+ *      escrowed balances to the payees the admin set in the FeeRegistry, not
+ *      to itself. `withdraw` is unaffected: it can only pay the account holder.
  *
  *      Reentrancy model:
  *      - Every state-mutating external entry point is `nonReentrant`. The guard
@@ -37,13 +43,21 @@ contract DataPortabilityEscrowImplementation is
     PausableUpgradeable,
     AccessControlUpgradeable,
     ReentrancyGuardUpgradeable,
-    DataPortabilityEscrowStorageV1
+    DataPortabilityEscrowStorageV2
 {
     using SafeERC20 for IERC20;
     using EnumerableSet for EnumerableSet.AddressSet;
     using EnumerableSet for EnumerableSet.Bytes32Set;
 
     bytes32 public constant FACILITATOR_ROLE = keccak256("FACILITATOR_ROLE");
+
+    // FeeRegistry operation keys, keccak256 of the names data-gateway reads
+    // (lib/fee-registry.ts) and the mainnet registry was configured with.
+    bytes32 private constant DATA_REGISTRATION_OP = keccak256("data_registration");
+    bytes32 private constant SERVER_REGISTRATION_OP = keccak256("server_registration");
+    bytes32 private constant BUILDER_REGISTRATION_OP = keccak256("builder_registration");
+    bytes32 private constant GRANT_REGISTRATION_OP = keccak256("grant_registration");
+    bytes32 private constant DATA_ACCESS_OP = keccak256("data_access");
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -64,8 +78,9 @@ contract DataPortabilityEscrowImplementation is
 
     function _authorizeUpgrade(address newImplementation) internal virtual override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
+    /// @dev 2: settlement payee pinned to the FeeRegistry payee per OpKind.
     function version() external pure virtual override returns (uint256) {
-        return 1;
+        return 2;
     }
 
     // ====================== Admin ======================
@@ -101,6 +116,13 @@ contract DataPortabilityEscrowImplementation is
         address previous = address(dataRegistry);
         dataRegistry = IDataRegistryV2(newDataRegistry);
         emit DataRegistryUpdated(previous, newDataRegistry);
+    }
+
+    function setFeeRegistry(address newFeeRegistry) external override onlyRole(DEFAULT_ADMIN_ROLE) {
+        if (newFeeRegistry == address(0)) revert ZeroAddress();
+        address previous = address(feeRegistry);
+        feeRegistry = IFeeRegistry(newFeeRegistry);
+        emit FeeRegistryUpdated(previous, newFeeRegistry);
     }
 
     /// @inheritdoc IDataPortabilityEscrow
@@ -149,6 +171,15 @@ contract DataPortabilityEscrowImplementation is
 
     function getAllowedTargets() external view override returns (address[] memory) {
         return _allowedTargets.values();
+    }
+
+    function feeOperation(OpKind opKind) public pure override returns (bytes32) {
+        if (opKind == OpKind.DataRegistration) return DATA_REGISTRATION_OP;
+        if (opKind == OpKind.ServerRegistration) return SERVER_REGISTRATION_OP;
+        if (opKind == OpKind.BuilderRegistration) return BUILDER_REGISTRATION_OP;
+        if (opKind == OpKind.GrantRegistration) return GRANT_REGISTRATION_OP;
+        if (opKind == OpKind.DataAccess) return DATA_ACCESS_OP;
+        return bytes32(0);
     }
 
     function getAllowedSelectors(address target) external view override returns (bytes4[] memory out) {
@@ -251,6 +282,8 @@ contract DataPortabilityEscrowImplementation is
         onlyRole(FACILITATOR_ROLE)
         nonReentrant
     {
+        IFeeRegistry registry = _feeRegistryOrRevert();
+        _checkPayee(registry, opKind, to);
         _payout(from, to, asset, amount);
         emit Settled(from, to, ref, asset, amount, opKind);
     }
@@ -262,15 +295,7 @@ contract DataPortabilityEscrowImplementation is
         onlyRole(FACILITATOR_ROLE)
         nonReentrant
     {
-        uint256 len = ops.length;
-        for (uint256 i = 0; i < len; ) {
-            SettleOp calldata op = ops[i];
-            _payout(op.from, op.to, op.asset, op.amount);
-            emit Settled(op.from, op.to, op.ref, op.asset, op.amount, op.opKind);
-            unchecked {
-                ++i;
-            }
-        }
+        _settleOps(ops);
     }
 
     // ====================== Facilitator: withdraw (refund to account holder) ======================
@@ -284,6 +309,41 @@ contract DataPortabilityEscrowImplementation is
     {
         _payout(account, account, asset, amount);
         emit Withdrawn(account, asset, amount, ref);
+    }
+
+    /// @dev Pay each op in order, checking its payee first. Shared by
+    ///      `settleBatch` and the `*AndSettle` bundles so every path applies
+    ///      the same check and emits the same `Settled` event shape.
+    function _settleOps(SettleOp[] calldata ops) internal {
+        uint256 len = ops.length;
+        if (len == 0) return; // a bundle with no fee ops needs no registry
+        IFeeRegistry registry = _feeRegistryOrRevert();
+        for (uint256 i = 0; i < len; ) {
+            SettleOp calldata op = ops[i];
+            _checkPayee(registry, op.opKind, op.to);
+            _payout(op.from, op.to, op.asset, op.amount);
+            emit Settled(op.from, op.to, op.ref, op.asset, op.amount, op.opKind);
+            unchecked {
+                ++i;
+            }
+        }
+    }
+
+    function _feeRegistryOrRevert() internal view returns (IFeeRegistry registry) {
+        registry = feeRegistry;
+        if (address(registry) == address(0)) revert FeeRegistryNotSet();
+    }
+
+    /// @dev `to` must be the FeeRegistry payee of `opKind`'s fee operation.
+    ///      `enabled` is deliberately not checked: data-gateway snapshots the
+    ///      payee when a fee is paid and still settles that payment after the
+    ///      fee is disabled. Changing a payee, or clearing a fee, does block
+    ///      settlements already snapshotted with the old payee, so drain them
+    ///      first. A zero payee (cleared or never set) matches nothing.
+    function _checkPayee(IFeeRegistry registry, OpKind opKind, address to) internal view {
+        bytes32 operation = feeOperation(opKind);
+        address expected = operation == bytes32(0) ? address(0) : registry.fees(operation).payee;
+        if (expected == address(0) || to != expected) revert UnexpectedPayee(opKind, to, expected);
     }
 
     /// @dev Debit `from`'s in-escrow balance and send the funds to external address `to`.
@@ -334,17 +394,9 @@ contract DataPortabilityEscrowImplementation is
         // ZeroAddress, ZeroGranteeId — all from addPermissionWithSignature.
         grantId = permissions.addPermissionWithSignature(input, signature);
 
-        // Step 2: identical loop to settleBatch — preserves event shape so
-        // indexers don't need a special case for bundled txs.
-        uint256 len = ops.length;
-        for (uint256 i = 0; i < len; ) {
-            SettleOp calldata op = ops[i];
-            _payout(op.from, op.to, op.asset, op.amount);
-            emit Settled(op.from, op.to, op.ref, op.asset, op.amount, op.opKind);
-            unchecked {
-                ++i;
-            }
-        }
+        // Step 2: same payee-checked payouts as settleBatch, same event shape,
+        // so indexers don't need a special case for bundled txs.
+        _settleOps(ops);
     }
 
     // ====================== Facilitator: record access + settle (atomic) ======================
@@ -376,17 +428,9 @@ contract DataPortabilityEscrowImplementation is
         // DataPortabilityServersNotSet — all from DataRegistryV2.
         dataRegistry.recordDataAccess(ownerAddress, scope, version_, accessor, recordId, serverSignature);
 
-        // Step 2: identical loop to settleBatch — same event shape so indexers
-        // don't need a special case for bundled txs.
-        uint256 len = ops.length;
-        for (uint256 i = 0; i < len; ) {
-            SettleOp calldata op = ops[i];
-            _payout(op.from, op.to, op.asset, op.amount);
-            emit Settled(op.from, op.to, op.ref, op.asset, op.amount, op.opKind);
-            unchecked {
-                ++i;
-            }
-        }
+        // Step 2: same payee-checked payouts as settleBatch, same event shape,
+        // so indexers don't need a special case for bundled txs.
+        _settleOps(ops);
     }
 
     // ====================== Facilitator: generalized op + settle (atomic) ======================
@@ -437,17 +481,9 @@ contract DataPortabilityEscrowImplementation is
         }
         emit OpExecuted(target, selector, returnData);
 
-        // Step 2: identical loop to settleBatch — preserves event shape so
-        // indexers don't need a special case for bundled txs.
-        uint256 len = ops.length;
-        for (uint256 i = 0; i < len; ) {
-            SettleOp calldata op = ops[i];
-            _payout(op.from, op.to, op.asset, op.amount);
-            emit Settled(op.from, op.to, op.ref, op.asset, op.amount, op.opKind);
-            unchecked {
-                ++i;
-            }
-        }
+        // Step 2: same payee-checked payouts as settleBatch, same event shape,
+        // so indexers don't need a special case for bundled txs.
+        _settleOps(ops);
     }
 
     // ====================== Fallback ======================
