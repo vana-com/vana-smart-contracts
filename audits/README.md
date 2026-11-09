@@ -15,5 +15,3 @@ External security audits of Vana smart contracts.
 | Jul 2025 | [Hashlock](https://hashlock.com/audits/vana) | [Hashlock-Vana-3rd-Query-DLP-VanaEpoch.pdf](./Hashlock-Vana-3rd-Query-DLP-VanaEpoch.pdf) | Query, DLP, VanaEpoch |
 | Sep 2025 | [Hashlock](https://hashlock.com/audits/vana) | [Hashlock-Vana-4th-Data-Portability.pdf](./Hashlock-Vana-4th-Data-Portability.pdf) | Data Portability (Permissions, Servers, Grantees), Data Registry, Data Refiner Registry, DLP rewards, VanaEpoch |
 | Dec 2025 | [Hashlock](https://hashlock.com/audits/vana) | [Hashlock-Vana-5th-Staking-Bonding-Period.pdf](./Hashlock-Vana-5th-Staking-Bonding-Period.pdf) | VanaPool staking bonding period |
-| Sep 2026 | [Nethermind](https://github.com/NethermindEth/PublicAuditReports) | [NM0451-1030-FINAL_Vana_Deposit.pdf](./NM0451-1030-FINAL_Vana_Deposit.pdf) | Deposit contract (L1 deposit migration) |
-| Sep 2026 | [Nethermind](https://github.com/NethermindEth/PublicAuditReports) | [NM1052-FINAL_Vana_Staking.pdf](./NM1052-FINAL_Vana_Staking.pdf) | VanaPool staking and reward models |
