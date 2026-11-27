@@ -44,6 +44,9 @@ describe("DataLiquidityPool", () => {
   const proofInstruction =
     "https://ipfs.io/ipfs/qf34f34q4fq3fgdsgjgbdugsgwegqlgqhfejrfqjfwjfeql3u4iq4u47ll1";
 
+  // proofs[1].data.dlpId === 1 in the shared helper; the DLP under test claims that id.
+  const dlpId = 1;
+
   const DEFAULT_ADMIN_ROLE =
     "0x0000000000000000000000000000000000000000000000000000000000000000";
   const MAINTAINER_ROLE = ethers.keccak256(
@@ -64,12 +67,16 @@ describe("DataLiquidityPool", () => {
       sponsor,
     ] = await ethers.getSigners();
 
-    const datDeploy = await ethers.deployContract("DAT", [
-      dlpTokenName,
-      dlpTokenSymbol,
-      owner,
-    ]);
-    dat = await ethers.getContractAt("DAT", datDeploy.target);
+    // DAT is an initializable clone target (constructor disables initializers), so
+    // deploy the implementation and initialize a clone, as test/dlpTemplate/dat.ts does.
+    const datImplementation = await ethers.deployContract("DAT");
+    const cloneHelper = await ethers.deployContract("CloneHelper");
+    await cloneHelper.clone(datImplementation.target);
+    const datAddress = await cloneHelper.predictDeterministicAddress(
+      datImplementation.target,
+    );
+    dat = await ethers.getContractAt("DAT", datAddress);
+    await dat.initialize(dlpTokenName, dlpTokenSymbol, owner.address, 0, [], []);
 
     const dataRegistryDeploy = await upgrades.deployProxy(
       await ethers.getContractFactory("DataRegistryImplementation"),
@@ -131,6 +138,9 @@ describe("DataLiquidityPool", () => {
       dlpDeploy.target,
     );
 
+    // dlpId is assigned by the DLPRegistry after deployment; the owner binds it here.
+    await dlp.connect(owner).updateDlpId(dlpId);
+
     await dat.connect(owner).mint(user1, user1InitialBalance);
     await dat.connect(owner).mint(owner, ownerInitialBalance);
   };
@@ -150,7 +160,29 @@ describe("DataLiquidityPool", () => {
       (await dlp.publicKey()).should.eq("publicKey");
       (await dlp.paused()).should.eq(false);
       (await dlp.fileRewardFactor()).should.eq(fileRewardFactor);
-      (await dlp.version()).should.eq(1);
+      (await dlp.dlpId()).should.eq(dlpId);
+      (await dlp.version()).should.eq(2);
+    });
+
+    it("Should updateDlpId when owner", async function () {
+      await dlp
+        .connect(owner)
+        .updateDlpId(7)
+        .should.emit(dlp, "DlpIdUpdated")
+        .withArgs(7);
+
+      (await dlp.dlpId()).should.eq(7);
+    });
+
+    it("Should reject updateDlpId when non-owner", async function () {
+      await dlp
+        .connect(user1)
+        .updateDlpId(7)
+        .should.be.rejectedWith(
+          `AccessControlUnauthorizedAccount("${user1.address}", "${DEFAULT_ADMIN_ROLE}")`,
+        );
+
+      (await dlp.dlpId()).should.eq(dlpId);
     });
 
     it("Should pause when owner", async function () {
@@ -306,7 +338,7 @@ describe("DataLiquidityPool", () => {
       (await newDlp.name()).should.eq(dlpName);
       (await newDlp.paused()).should.eq(false);
       (await newDlp.fileRewardFactor()).should.eq(fileRewardFactor);
-      (await newDlp.version()).should.eq(2);
+      (await newDlp.version()).should.eq(3);
 
       (await newDlp.test()).should.eq("test");
     });
@@ -330,7 +362,7 @@ describe("DataLiquidityPool", () => {
       (await newDlp.name()).should.eq(dlpName);
       (await newDlp.paused()).should.eq(false);
       (await newDlp.fileRewardFactor()).should.eq(fileRewardFactor);
-      (await newDlp.version()).should.eq(2);
+      (await newDlp.version()).should.eq(3);
 
       (await newDlp.test()).should.eq("test");
     });
@@ -474,6 +506,124 @@ describe("DataLiquidityPool", () => {
       );
       (await dat.balanceOf(user1)).should.eq(
         user1InitialBalance + file1.rewardAmount,
+      );
+    });
+
+    it("should reject requestReward when proof was issued for another dlpId", async function () {
+      await dataRegistry
+        .connect(sponsor)
+        .addFileWithPermissions("file1Url", user1, []);
+
+      await teePool.connect(sponsor).submitJob(1, { value: parseEther(0.01) });
+
+      // Same instruction as this DLP, signed by a genuine TEE, but issued for dlpId 2.
+      const foreignProofData = { ...proofs[1].data, dlpId: 2 };
+      const foreignProof: Proof = {
+        signature: await signProof(tee0, "file1Url", foreignProofData),
+        data: foreignProofData,
+      };
+
+      await dataRegistry.connect(tee0).addProof(1, foreignProof);
+
+      await dlp
+        .connect(sponsor)
+        .requestReward(1, 1)
+        .should.be.rejectedWith("InvalidDlpId()");
+
+      (await dlp.filesListCount()).should.eq(0);
+      (await dat.balanceOf(dlp)).should.eq(dlpInitialBalance);
+    });
+
+    it("should reject requestReward when dlpId is not set", async function () {
+      await dlp.connect(owner).updateDlpId(0);
+
+      await dataRegistry
+        .connect(sponsor)
+        .addFileWithPermissions("file1Url", user1, []);
+
+      await teePool.connect(sponsor).submitJob(1, { value: parseEther(0.01) });
+
+      const proof1: Proof = {
+        signature: await signProof(tee0, "file1Url", proofs[1].data),
+        data: proofs[1].data,
+      };
+
+      await dataRegistry.connect(tee0).addProof(1, proof1);
+
+      await dlp
+        .connect(sponsor)
+        .requestReward(1, 1)
+        .should.be.rejectedWith("DlpIdNotSet()");
+
+      (await dat.balanceOf(dlp)).should.eq(dlpInitialBalance);
+    });
+
+    it("should not pay a sibling DLP for a proof issued to this DLP (cross-DLP replay)", async function () {
+      // Sibling shares the TeePool and the proofInstruction (the shipped deploy default
+      // makes this trivial) but is a different DLP with its own reward pool.
+      const siblingDlpId = 2;
+      const siblingDeploy = await upgrades.deployProxy(
+        await ethers.getContractFactory("DataLiquidityPoolImplementation"),
+        [
+          {
+            trustedForwarder: trustedForwarder.address,
+            ownerAddress: owner.address,
+            tokenAddress: dat.target,
+            dataRegistryAddress: dataRegistry.target,
+            teePoolAddress: teePool.target,
+            name: "Sibling DLP",
+            publicKey: "publicKey",
+            proofInstruction: proofInstruction,
+            fileRewardFactor: fileRewardFactor,
+          },
+        ],
+        { kind: "uups" },
+      );
+      const sibling = await ethers.getContractAt(
+        "DataLiquidityPoolImplementation",
+        siblingDeploy.target,
+      );
+      await sibling.connect(owner).updateDlpId(siblingDlpId);
+      await dat.connect(owner).approve(sibling.target, dlpInitialBalance);
+      await sibling.connect(owner).addRewardsForContributors(dlpInitialBalance);
+
+      // One genuine contribution to this DLP (dlpId 1), one genuine TEE proof.
+      await dataRegistry
+        .connect(sponsor)
+        .addFileWithPermissions("file1Url", user1, []);
+
+      await teePool.connect(sponsor).submitJob(1, { value: parseEther(0.01) });
+
+      const proof1: Proof = {
+        signature: await signProof(tee0, "file1Url", proofs[1].data),
+        data: proofs[1].data,
+      };
+
+      await dataRegistry.connect(tee0).addProof(1, proof1);
+
+      const rewardAmount =
+        (proofs[1].data.score * fileRewardFactor) / parseEther("1");
+
+      // Legitimate claim at this DLP pays.
+      await dlp
+        .connect(sponsor)
+        .requestReward(1, 1)
+        .should.emit(dlp, "RewardRequested")
+        .withArgs(user1, 1, 1, rewardAmount);
+
+      // Replay of the same proof at the sibling must not pay.
+      await sibling
+        .connect(sponsor)
+        .requestReward(1, 1)
+        .should.be.rejectedWith("InvalidDlpId()");
+
+      (await sibling.filesListCount()).should.eq(0);
+      (await sibling.totalContributorsRewardAmount()).should.eq(
+        dlpInitialBalance,
+      );
+      (await dat.balanceOf(sibling)).should.eq(dlpInitialBalance);
+      (await dat.balanceOf(user1)).should.eq(
+        user1InitialBalance + rewardAmount,
       );
     });
   });

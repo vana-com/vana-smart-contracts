@@ -38,7 +38,7 @@ OWNER_ADDRESS=0x18781A2B6B843E0BBe4F491B28139abb6942d785
 DLP_PUBLIC_KEY=04920ff366433d60fcebfa9d072d860e6fd7a482e4c055621ef986025076c9fb6418c15712a22bff61a3add75b645345c7c338f19a8ab0d1a3ac6be1be331eac45
 ```
 
-You can leave other fields (e.g., `DLP_PROOF_INSTRUCTION`, `DLP_FILE_REWARD_FACTOR`) as defaults for testing.
+`DLP_PROOF_INSTRUCTION` is required and must be your DataDAO's own proof-of-contribution instruction URL. The deploy script refuses the placeholder, because a proof instruction shared between two DataDAOs on the same TEE pool would let one DataDAO's proofs be presented to the other. Other fields (e.g., `DLP_FILE_REWARD_FACTOR`) can stay at their defaults for testing.
 
 **Deploy to Moksha Testnet:**
 
@@ -86,5 +86,9 @@ Now that you've deployed your smart contracts, register your DataDAO onchain in 
 5. Retrieve your `dlpId`:
     - Go to the [dlpIds](https://moksha.vanascan.io/address/0x4D59880a924526d1dD33260552Ff4328b1E18a43?tab=read_write_proxy&source_address=0x752301d732e3Ef8fbFCAa700e25C3Fa1a6D1629e#0xc06020b0) method in the DLPRegistryProxy contract
     - Use your `dlpAddress` to query your dlpId from the blockchain
+
+6. Bind your DLP contract to its `dlpId`:
+    - Open your `DataLiquidityPoolProxy` on Vanascan (**Contract** tab, write methods) and call `updateDlpId(dlpId)` from your `OWNER_ADDRESS`
+    - Until this is done, `requestReward` reverts with `DlpIdNotSet()`. Once set, the contract only pays out proofs that a TEE issued for this `dlpId`.
 
 🚧 **Tip:** You can update your registration info later using the `updateDlp` function. All metadata is editable.
